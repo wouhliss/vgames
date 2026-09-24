@@ -31,6 +31,7 @@ google-cloud-auth.workspace = true
 google-cloud-gax.workspace = true
 http.workspace = true
 governor.workspace = true
+strsim.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true

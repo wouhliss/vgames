@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE packages SET\n             title = COALESCE($2, title),\n             summary = COALESCE($3, summary),\n             description = COALESCE($4, description),\n             developer = COALESCE($5, developer),\n             publisher = COALESCE($6, publisher),\n             release_date = COALESCE($7, release_date),\n             genres = COALESCE($8, genres),\n             steam_app_id = COALESCE($9, steam_app_id),\n             igdb_id = COALESCE($10, igdb_id),\n             field_sources = $11\n           WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Date",
+        "TextArray",
+        "Int8",
+        "Int8",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b4f4ed57a2e5c42295859a78e28ee7dc6032b3f48a1d7a4a6ff3b8b9101cbcbc"
+}

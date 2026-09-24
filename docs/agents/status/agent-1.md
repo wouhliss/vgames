@@ -36,9 +36,17 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   (`GET /v1/packages` with `q`/`genre`/`platform`/`sort` and signed cursors, `GET /v1/packages/{id}`),
   `GET /v1/assets/{id}` → 302 to a signed URL. Migration `20260924140000_catalog_search` (trigram title index).
 
+- A1-T10 — Metadata fetching: `metadata.fetch` job (IGDB with a cached Twitch token at ≤ 4 req/s, Steam
+  storesearch/appdetails at ≤ 1 req/s; lookup by explicit IGDB id, else by Steam id, else by title), normalized
+  candidates (HTML → text, clamped, title score), auto-apply only for explicit ids or one unambiguous ≥ 0.95 match
+  (never over `admin` fields), ProtonDB tier on the package and umu id on the Steam candidate (best effort).
+  `POST …/metadata/refresh` (202, deduplicated), `GET …/metadata/candidates`, `POST …/metadata/apply` (If-Match,
+  `overwrite_admin_fields`). `metadata.images` job downloads through `metadata::safe_fetch` (HTTPS, host allowlist,
+  resolver refusing private/loopback/link-local, same-host redirects only, 10 MiB, 15 s) into the T09 image pipeline.
+
 ## In progress
-- A1-T08 — Trust endpoints (waiting for `vgames_core::trust` from Agent 5, who has started)
-- A1-T10 — Metadata fetch (IGDB / Steam) next
+- A1-T08 — Trust endpoints (Agent 5 delivered fingerprints in A5-T03; waiting for `verify_bundle` & co. from A5-T04)
+- A1-T11 — Versions and uploads next
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_api::error::ApiError` / `ApiResult` (problem+json), `vgames_api::http::json::{Json, Validate}`
@@ -77,6 +85,10 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   `GET /v1/packages/{id}` and the admin package endpoints match `openapi/openapi.yaml`; asset `url`s are
   `/v1/assets/{id}` and answer `302` to a short-lived signed URL (`Cache-Control: private, max-age=3600`), so
   fetch them with the session token. Catalog lists only `published` packages with at least one release.
+- **Metadata for Agent 3 (admin UI):** candidates come from `GET /v1/admin/packages/{id}/metadata/candidates`
+  (`items` best score first, plus the latest `job`); a Steam candidate may carry `data.external.umu_id`
+  (contract PR #6), show it as a compat-profile hint. `AdminPackage.protondb_tier` is filled when the Steam app is
+  known. Poll `metadata_job.state` on the package after create/refresh.
 - `vgames_proto::packages` holds the package/asset/catalog DTOs (`PackageSummary`, `PackageDetail`,
   `AdminPackage`, `AdminPackagePatch` with `null`-clears semantics).
 - Test harness: `apps/api/tests/common/mod.rs` (`app(pool)`, `send`, `body_json`, `json_request`) with
@@ -89,7 +101,10 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
 - From Agent 2: `vgames_pack::verify::PackStreamVerifier` (A2-T03) for the `version.verify` job (A1-T12).
 
 ## Blockers / contract questions
-- None. (PR permission was granted on 2026-09-24; A1-T09 onward merge through PRs.)
+- My PRs wait for a human merge: the harness does not let me merge my own PRs yet and there is no CI workflow
+  (Agent 5 owns `.github/`). Open: #2 (A1-T09), #6 (`contract:` umu id + 428 on metadata apply), T10 (stacked on #2).
+- Follow-up contract fix: `DELETE /v1/admin/packages/{id}` returns 428 without `If-Match` but does not list it;
+  I will add it (contract + handler) once #2 is merged, to keep the two-way drift test green.
 
 ## Local environment notes
 - My tests use a dedicated Postgres 18 container on `127.0.0.1:55432` (`vgames-a1-pg`); ports 8080 and 4443

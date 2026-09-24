@@ -95,6 +95,9 @@ impl Registry {
         for (kind, h) in builtin::handlers() {
             r.register(kind, h);
         }
+        for (kind, h) in crate::metadata::job_handlers() {
+            r.register(kind, h);
+        }
         for (kind, h) in crate::social::job_handlers() {
             r.register(kind, h);
         }

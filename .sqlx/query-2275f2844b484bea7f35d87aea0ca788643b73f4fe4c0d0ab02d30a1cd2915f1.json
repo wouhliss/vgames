@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO metadata_candidates (package_id, source, external_id, title, release_year, score, data)\n               VALUES ($1, $2, $3, $4, $5, $6, $7)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Int8",
+        "Text",
+        "Int2",
+        "Float4",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2275f2844b484bea7f35d87aea0ca788643b73f4fe4c0d0ab02d30a1cd2915f1"
+}
