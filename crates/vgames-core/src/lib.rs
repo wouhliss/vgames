@@ -10,12 +10,14 @@
 //!
 //! Modules:
 //! - [`codec`] — strict wire encodings: BLAKE3 digests (lowercase hex), base64, RFC 3339 UTC.
+//! - [`keyfile`] — `vgames.key/1` encrypted key files (Argon2id + XChaCha20-Poly1305).
 //! - [`layout`] — the single chunk/pack layout function (02 §4).
 //! - [`manifest`] — `vgames.manifest/1` types and `parse_and_validate` (02 §5).
 //! - [`paths`] — package path safety rules (02 §3), exact Unicode simple case folding.
 //! - [`sign`]  — domain-separated Ed25519 signatures, key ids, `VG1-…` fingerprints,
 //!   `vgames.sig/1` envelopes.
 //! - [`trust`] — `vgames.trust/1` bundles, `verify_bundle`, root rotation, `TrustState`.
+//! - `wasm` (feature `wasm`) — browser worker exports: unlock a key file, sign a digest, fingerprint.
 //! - [`verify`] — `verify_manifest`: 01-security §3.4 steps 1–6 in one function.
 //!
 //! Rules: no filesystem or network I/O, no clock reads (callers pass `now`),
@@ -24,12 +26,15 @@
 #![forbid(unsafe_code)]
 
 pub mod codec;
+pub mod keyfile;
 pub mod layout;
 pub mod manifest;
 pub mod paths;
 pub mod sign;
 pub mod trust;
 pub mod verify;
+#[cfg(feature = "wasm")]
+pub mod wasm;
 
 pub use codec::{Digest, Timestamp};
 pub use sign::{Context, Envelope, Fingerprint, KeyId, PublicKey, SecretKey, Signature};

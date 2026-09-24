@@ -166,3 +166,8 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.zstd-sys]
 opt-level = 3
+# Key files use Argon2id with 64 MiB: unoptimized it takes seconds per unlock.
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3

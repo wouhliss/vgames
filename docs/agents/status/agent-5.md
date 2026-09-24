@@ -5,9 +5,11 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
 `.changes/` tooling).
 
 ## Done
+- A5-T01 CI foundation — https://github.com/wouhliss/vgames/pull/3 (all jobs green on the first run).
+  `ci.yml`, `deny.toml`, `.gitleaks.toml`, required checks and branch-protection settings in `docs/security/ci.md`.
 
 ## In progress
-- A5-T01 CI (now). Then A5-T03 keyfile + WASM → A5-T02/T04 compat + `verify_compat_profile`.
+- A5-T03 keyfile + WASM exports (in review). Then A5-T02/T04 compat + `verify_compat_profile`, then A5-T08 changelog lint.
 
 ## Interfaces delivered (other agents may now rely on these)
 - **Signatures, key ids, fingerprints** (A5-T03 slice 1, for Agents 1, 2, 3):
@@ -58,6 +60,32 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
     `VerifyMode::Install { now, allow_older }` (launcher install/update: refused while the bundle is expired),
     `VerifyMode::Launch` (pre-launch: only revocation blocks), `VerifyMode::Server { now, caller }` (finalize /
     re-sign: key validity window + `holder_user_id == caller`). One `VerifyError` variant per step.
+
+- **Key files and WASM exports** (A5-T03, for Agents 2 and 3 and my CLI):
+  - `vgames_core::keyfile::{KeyFile, KeyKind::{Root, Publisher}, KeyFileError}`: `KeyFile::encrypt(&SecretKey, kind,
+    label, created_at, passphrase) -> KeyFile` (fresh random salt + nonce), `KeyFile::parse(bytes)` (no passphrase
+    needed: `kind`, `key_id`, `public_key`, `label`, `created_at` are public), `decrypt(passphrase) -> SecretKey`
+    (zeroized on drop), `to_bytes()` (write it `0600`). Errors: `WrongPassphrase` (distinct), `AuthenticationFailed`
+    (modified header or ciphertext), `UnsupportedKdf` (Argon2id params are fixed at m=64 MiB t=3 p=1).
+  - WASM (feature `wasm` of `vgames-core`): `keyfileInfo(bytes)`, `fingerprint(publicKeyBase64)`,
+    `UnlockedKey.unlock(bytes, passphrase)` (publisher keys only) → `.keyId`, `.signManifestDigest(blake3Hex)` /
+    `.signCompatDigest(blake3Hex)` returning the `vgames.sig/1` envelope JSON, `.free()`. The key never leaves WASM
+    memory. **Agent 2:** add `pub use vgames_core::wasm::{KeyfileInfo, UnlockedKey, fingerprint, keyfile_info};` to
+    `crates/vgames-pack/src/wasm.rs`; without a reference the linker drops core's exports (I checked: with that line
+    they appear in `vgames_pack.d.ts`). **Agent 3:** the admin upload worker uses exactly these; post only the
+    envelope JSON to the main thread.
+
+- **CI for everyone** (A5-T01): every PR runs `.github/workflows/ci.yml` (Rust fmt/clippy/tests with Postgres 18,
+  sqlx offline check + migrations on an empty DB and upgrade from the base revision, WASM + pack-wasm smoke,
+  Biome/typecheck/Vitest/OpenAPI lint, launcher Playwright (mock), desktop clippy with WebKitGTK, cargo-deny,
+  cargo-audit, pnpm audit, gitleaks). **How to wait for CI with our token:** `gh pr checks` fails (no checks
+  permission); use `gh run list -R wouhliss/vgames --branch <your-branch> -L 1` then
+  `gh run watch <run-id> -R wouhliss/vgames --exit-status`, and merge with `gh pr merge <n> --rebase`.
+  PR creation works now (`gh pr create`). Agent 3's request (desktop e2e in CI) and Agent 2's (pack-wasm build +
+  smoke) are included.
+- Formatting-only fixes I made so `main` is green (please pull before editing): `apps/api/src/storage/mod.rs`,
+  `crates/vgames-pack/tests/roundtrip.rs` (rustfmt), `packages/pack-wasm/test/smoke.mjs`, `infra/gcs/cors.json`
+  (Biome); `biome.json` migrated (`preset`) and now ignores `.sqlx/`, `**/tests/vectors`, `**/snapshots`, `**/pkg`.
 
 ## Needs from others
 
