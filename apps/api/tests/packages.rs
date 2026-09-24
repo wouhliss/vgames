@@ -577,3 +577,55 @@ async fn asset_upload_rejects_bad_images(pool: PgPool) {
         .unwrap();
     assert_eq!(count, 0);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn release_dates_are_iso_strings(pool: PgPool) {
+    let app = app(pool.clone());
+    let (_, _, admin) = seed_session(&pool, "admin").await;
+    let (_, pkg, etag) = create(&app, &admin, json!({ "title": "Dated" })).await;
+    let id = pkg["id"].as_str().unwrap();
+
+    let resp = patch(
+        &app,
+        &admin,
+        id,
+        etag.as_deref(),
+        json!({ "release_date": "25/01/2018" }),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+
+    let resp = patch(
+        &app,
+        &admin,
+        id,
+        etag.as_deref(),
+        json!({ "release_date": "2018-01-25" }),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let etag = resp
+        .headers()
+        .get(header::ETAG)
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+    assert_eq!(body_json(resp).await["release_date"], "2018-01-25");
+
+    let resp = patch(
+        &app,
+        &admin,
+        id,
+        Some(&etag),
+        json!({ "release_date": null }),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert!(
+        body_json(resp)
+            .await
+            .get("release_date")
+            .is_none_or(Value::is_null)
+    );
+}
