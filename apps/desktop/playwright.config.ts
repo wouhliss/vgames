@@ -23,7 +23,7 @@ export default defineConfig({
   ],
   webServer: {
     // A prebuilt bundle: deterministic and fast under parallel workers (the dev server compiles on demand).
-    command: `pnpm exec vite build --mode mock --outDir dist-mock && pnpm exec vite preview --outDir dist-mock --port ${PORT} --strictPort`,
+    command: `pnpm build:mock && pnpm exec vite preview --outDir node_modules/.vgames-mock-dist --port ${PORT} --strictPort`,
     url: `http://localhost:${PORT}`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

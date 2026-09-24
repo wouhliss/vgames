@@ -8,7 +8,7 @@
   },
   "scripts": {
     "generate": "openapi-typescript ../../openapi/openapi.yaml -o src/schema.d.ts",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json"
   },
   "dependencies": {
     "openapi-fetch": "^0.17.0"
@@ -16,5 +16,6 @@
   "devDependencies": {
     "openapi-typescript": "^7.13.0",
     "typescript": "~5.9.3"
-  }
+  },
+  "//": "typescript 5 is only for openapi-typescript (it needs the TS 5 compiler API); typecheck uses the workspace TypeScript 7."
 }
