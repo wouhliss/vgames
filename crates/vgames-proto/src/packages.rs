@@ -170,7 +170,7 @@ pub struct PackageDetail {
     pub developer: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub publisher: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "iso_date")]
     #[cfg_attr(feature = "openapi", schema(value_type = Option<String>, format = Date))]
     pub release_date: Option<Date>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -244,6 +244,55 @@ where
     Option::<T>::deserialize(de).map(Some)
 }
 
+/// Calendar dates as `YYYY-MM-DD` (`time`'s own serde format is a `[year, ordinal]` tuple).
+mod iso_date {
+    use serde::{Deserialize, Deserializer, Serializer, de::Error};
+    use time::{Date, format_description::BorrowedFormatItem, macros::format_description};
+
+    const FORMAT: &[BorrowedFormatItem<'static>] = format_description!("[year]-[month]-[day]");
+
+    fn parse<E: Error>(s: &str) -> Result<Date, E> {
+        Date::parse(s, FORMAT).map_err(|_| E::custom("expected a date as YYYY-MM-DD"))
+    }
+
+    fn write<S: Serializer>(d: &Date, s: S) -> Result<S::Ok, S::Error> {
+        let text = d.format(FORMAT).map_err(serde::ser::Error::custom)?;
+        s.serialize_str(&text)
+    }
+
+    pub fn serialize<S: Serializer>(d: &Option<Date>, s: S) -> Result<S::Ok, S::Error> {
+        match d {
+            Some(d) => write(d, s),
+            None => s.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(de: D) -> Result<Option<Date>, D::Error> {
+        Option::<String>::deserialize(de)?
+            .as_deref()
+            .map(parse)
+            .transpose()
+    }
+
+    /// Merge-patch form: absent → `None`, `null` → `Some(None)`.
+    pub mod patch {
+        use super::*;
+
+        pub fn serialize<S: Serializer>(d: &Option<Option<Date>>, s: S) -> Result<S::Ok, S::Error> {
+            match d {
+                Some(Some(d)) => write(d, s),
+                _ => s.serialize_none(),
+            }
+        }
+
+        pub fn deserialize<'de, D: Deserializer<'de>>(
+            de: D,
+        ) -> Result<Option<Option<Date>>, D::Error> {
+            super::deserialize(de).map(Some)
+        }
+    }
+}
+
 /// JSON Merge Patch. Every field set here is marked with source `admin`.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -279,8 +328,8 @@ pub struct AdminPackagePatch {
     pub publisher: Option<Option<String>>,
     #[serde(
         default,
-        deserialize_with = "double_option",
-        skip_serializing_if = "Option::is_none"
+        skip_serializing_if = "Option::is_none",
+        with = "iso_date::patch"
     )]
     #[cfg_attr(feature = "openapi", schema(value_type = Option<String>, format = Date))]
     pub release_date: Option<Option<Date>>,
