@@ -96,9 +96,13 @@ tower-http = { version = "0.7", features = ["trace", "cors", "compression-gzip",
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring-webpki", "postgres", "macros", "migrate", "uuid", "time", "json", "derive"] }
 utoipa = { version = "5.5", features = ["axum_extras", "uuid", "time", "yaml"] }
 utoipa-axum = "0.2"
-utoipa-swagger-ui = { version = "9", features = ["axum"] }
+utoipa-swagger-ui = { version = "9", features = ["axum", "vendored"] }
 google-cloud-storage = "1.18"
 governor = "0.10"
+hmac = "0.13"
+dotenvy = "0.15"
+serde_path_to_error = "0.1"
+http-body-util = "0.1"
 
 # --- HTTP client (desktop, cli, api -> Discord/IGDB/Steam) -----------------
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "http2", "json", "stream", "gzip"] }

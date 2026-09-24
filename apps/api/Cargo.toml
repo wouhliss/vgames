@@ -40,8 +40,17 @@ blake3.workspace = true
 sha2.workspace = true
 base64.workspace = true
 getrandom.workspace = true
+hmac.workspace = true
+dotenvy.workspace = true
+serde_path_to_error.workspace = true
+clap.workspace = true
+ed25519-dalek.workspace = true
+hex.workspace = true
 
 [dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+tokio-tungstenite.workspace = true
+http-body-util.workspace = true
 wiremock.workspace = true
 insta.workspace = true
 tempfile.workspace = true
