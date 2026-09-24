@@ -1164,6 +1164,7 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "412": { $ref: "#/components/responses/PreconditionFailed" }
+        "428": { $ref: "#/components/responses/PreconditionRequired" }
   /v1/admin/packages/{package_id}/assets:
     post:
       tags: [admin-packages]
@@ -2481,6 +2482,9 @@ components:
               properties:
                 steam_app_id: { type: integer }
                 igdb_id: { type: integer }
+                umu_id:
+                  type: string
+                  description: umu-database id (Steam candidates only), a hint for writing compat profiles (09-compatibility §4)
         fetched_at: { $ref: "#/components/schemas/Timestamp" }
     MetadataApply:
       type: object

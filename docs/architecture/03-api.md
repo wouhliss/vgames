@@ -183,7 +183,8 @@ On package creation (`title`, optional `steam_app_id` / `igdb_id`), job `metadat
    With a Steam app id, also the ProtonDB summary tier (informational) and the umu-database id
    (a hint shown to admins writing compat profiles).
 3. Normalize both into `metadata_candidates.data`:
-   `{title, summary, description, release_date, developer, publisher, genres[], images:{cover, hero, logo, screenshots[]}, external:{steam_app_id, igdb_id}}`.
+   `{title, summary, description, release_date, developer, publisher, genres[], images:{cover, hero, logo, screenshots[]}, external:{steam_app_id, igdb_id, umu_id}}`.
+   `umu_id` is set on the Steam candidate for the package's Steam app (the admin UI shows it as a compat-profile hint).
 4. Auto-apply **only** if an explicit id was given or exactly one candidate has a
    normalized-title similarity ≥ 0.95. Fill only fields whose `field_sources` is not
    `admin`. Otherwise leave the candidates for the admin to pick.
