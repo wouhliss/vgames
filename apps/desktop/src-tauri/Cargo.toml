@@ -1,0 +1,70 @@
+[package]
+name = "vgames-desktop"
+description = "vgames desktop launcher (Tauri 2): Rust core that owns networking, storage, crypto, installs, controllers and the overlay."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lib]
+name = "vgames_desktop_lib"
+
+[[bin]]
+name = "vgames-desktop"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build.workspace = true
+
+[dependencies]
+vgames-core.workspace = true
+vgames-proto.workspace = true
+vgames-pack.workspace = true
+vgames-transfer.workspace = true
+vgames-overlay.workspace = true
+tauri.workspace = true
+tauri-plugin-deep-link.workspace = true
+tauri-plugin-single-instance.workspace = true
+tauri-plugin-updater.workspace = true
+tauri-plugin-global-shortcut.workspace = true
+tauri-plugin-notification.workspace = true
+tauri-plugin-dialog.workspace = true
+tauri-plugin-process.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+futures-util.workspace = true
+reqwest.workspace = true
+tokio-tungstenite.workspace = true
+rusqlite.workspace = true
+keyring.workspace = true
+vodozemac.workspace = true
+directories.workspace = true
+sysinfo.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
+time.workspace = true
+url.workspace = true
+blake3.workspace = true
+sha2.workspace = true
+base64.workspace = true
+zeroize.workspace = true
+# Controllers: SDL3 reads every vendor's pads (HIDAPI drivers for DualSense,
+# Switch Pro, ...). Agent 2 picks static vs bundled linking (task 10).
+sdl3.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+# Virtual Xbox 360 pad through ViGEmBus (retired upstream, still the de-facto
+# driver). Keep behind the `VirtualPadBackend` trait so it can be swapped.
+vigem-client = "0.1"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Virtual pads through /dev/uinput.
+evdev = "0.13"
+
+[lints]
+workspace = true

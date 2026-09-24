@@ -1,0 +1,9 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "Main launcher window. Deliberately minimal: every feature goes through vgames' own typed commands (src/commands), which validate input in Rust. Do not add fs, shell, http or dialog permissions here — implement a command instead.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default"
+  ]
+}

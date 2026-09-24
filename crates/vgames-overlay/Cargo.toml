@@ -1,0 +1,24 @@
+[package]
+name = "vgames-overlay"
+description = "In-game overlay: renderer injected into games (Windows DLL via hudhook, Vulkan implicit layer, Linux GL preload) and the IPC protocol shared with the launcher broker."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["rlib", "cdylib"]
+
+[features]
+default = []
+# Build the in-game renderer (hooks + Dear ImGui). The launcher depends on this crate
+# without it, for the IPC protocol types only. Agent 4 adds hudhook (Windows), ash
+# (Vulkan layer) and imgui dependencies behind this feature.
+renderer = []
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

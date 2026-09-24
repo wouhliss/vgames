@@ -1,0 +1,150 @@
+[workspace]
+resolver = "3"
+members = [
+  "apps/api",
+  "apps/desktop/src-tauri",
+  "crates/vgames-core",
+  "crates/vgames-proto",
+  "crates/vgames-pack",
+  "crates/vgames-transfer",
+  "crates/vgames-cli",
+  "crates/vgames-overlay",
+  "xtask",
+]
+# The desktop crate needs WebKitGTK (Linux) / WebView2 (Windows) system libraries.
+# It is left out of the default set so `cargo check` / `cargo test` work on
+# API-only machines and CI jobs. Build it explicitly with `-p vgames-desktop`.
+default-members = [
+  "apps/api",
+  "crates/vgames-core",
+  "crates/vgames-proto",
+  "crates/vgames-pack",
+  "crates/vgames-transfer",
+  "crates/vgames-cli",
+  "crates/vgames-overlay",
+  "xtask",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+publish = false
+
+[workspace.lints.rust]
+# Allowed locally with `#[allow(unsafe_code)]` + a `// SAFETY:` comment (FFI only).
+unsafe_code = "deny"
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+dbg_macro = "deny"
+todo = "warn"
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+indexing_slicing = "warn"
+large_futures = "warn"
+
+[workspace.dependencies]
+# --- internal crates -------------------------------------------------------
+vgames-core = { path = "crates/vgames-core" }
+vgames-proto = { path = "crates/vgames-proto" }
+vgames-pack = { path = "crates/vgames-pack" }
+vgames-transfer = { path = "crates/vgames-transfer" }
+vgames-overlay = { path = "crates/vgames-overlay" }
+
+# --- async runtime & plumbing ---------------------------------------------
+tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "sync", "time", "fs", "io-util", "signal", "net"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+futures-util = "0.3"
+bytes = "1.12"
+
+# --- serialization ---------------------------------------------------------
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# --- errors & observability -----------------------------------------------
+thiserror = "2"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }
+
+# --- ids, time, text -------------------------------------------------------
+uuid = { version = "1.26", features = ["v7", "serde"] }
+time = { version = "0.3", features = ["serde-well-known", "macros", "formatting", "parsing"] }
+semver = { version = "1", features = ["serde"] }
+url = "2.5"
+unicode-normalization = "0.1"
+
+# --- crypto & hashing (see docs/architecture/01-security.md before adding) --
+ed25519-dalek = { version = "3", features = ["zeroize"] }
+blake3 = "1.8"
+sha2 = "0.11"
+argon2 = "0.6"
+chacha20poly1305 = "0.11"
+getrandom = "0.4"
+zeroize = { version = "1.9", features = ["derive"] }
+base64 = "0.23"
+hex = "0.4"
+vodozemac = "0.11"
+
+# --- HTTP server (apps/api) -------------------------------------------------
+axum = { version = "0.8", features = ["ws", "macros"] }
+tower = "0.5"
+tower-http = { version = "0.7", features = ["trace", "cors", "compression-gzip", "limit", "request-id", "timeout", "fs", "set-header", "sensitive-headers", "catch-panic"] }
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring-webpki", "postgres", "macros", "migrate", "uuid", "time", "json", "derive"] }
+utoipa = { version = "5.5", features = ["axum_extras", "uuid", "time", "yaml"] }
+utoipa-axum = "0.2"
+utoipa-swagger-ui = { version = "9", features = ["axum"] }
+google-cloud-storage = "1.18"
+governor = "0.10"
+
+# --- HTTP client (desktop, cli, api -> Discord/IGDB/Steam) -----------------
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "http2", "json", "stream", "gzip"] }
+tokio-tungstenite = { version = "0.30", features = ["rustls-tls-native-roots"] }
+
+# --- desktop ---------------------------------------------------------------
+tauri = { version = "2.11", features = [] }
+tauri-build = { version = "2.6", features = [] }
+tauri-plugin-deep-link = "2.4"
+tauri-plugin-single-instance = { version = "2.4", features = ["deep-link"] }
+tauri-plugin-updater = "2.12"
+tauri-plugin-global-shortcut = "2.3"
+tauri-plugin-notification = "2.4"
+tauri-plugin-dialog = "2.7"
+tauri-plugin-process = "2.3"
+# Pinned to 0.39: its libsqlite3-sys (0.37) must match the one sqlx 0.9 resolves,
+# because only one crate in the graph may link the native sqlite3 library.
+rusqlite = { version = "0.39", features = ["bundled"] }
+keyring = "4"
+zstd = "0.14"
+directories = "6"
+sysinfo = "0.39"
+sdl3 = "0.20"
+
+# --- tooling & tests -------------------------------------------------------
+clap = { version = "4.6", features = ["derive", "env"] }
+rpassword = "7"
+walkdir = "2.5"
+globset = "0.4"
+tempfile = "3"
+proptest = "1"
+insta = { version = "1", features = ["json", "yaml"] }
+wiremock = "0.6"
+criterion = "0.8"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+# Keep unwinding: the API relies on tower-http's CatchPanic to turn a handler
+# panic into a 500 instead of taking the whole process down.
+
+# Hashing and crypto dominate transfer/verify paths; keep them fast in debug builds.
+[profile.dev.package.blake3]
+opt-level = 3
+[profile.dev.package.ed25519-dalek]
+opt-level = 3
+[profile.dev.package.zstd-sys]
+opt-level = 3

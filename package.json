@@ -1,0 +1,24 @@
+{
+  "name": "vgames",
+  "private": true,
+  "packageManager": "pnpm@10.18.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev:desktop": "pnpm --filter @vgames/desktop tauri dev",
+    "dev:admin": "pnpm --filter @vgames/admin-web dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "api:types": "pnpm --filter @vgames/api-client generate",
+    "openapi:lint": "redocly lint openapi/openapi.yaml"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.14",
+    "@redocly/cli": "^2.54.2",
+    "typescript": "^7.0.2"
+  }
+}

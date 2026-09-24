@@ -1,0 +1,34 @@
+# Rust
+/target/
+**/*.rs.bk
+
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
+.vite/
+coverage/
+playwright-report/
+test-results/
+
+# Tauri
+apps/desktop/src-tauri/gen/schemas/
+
+# Env & secrets — never commit keys (see docs/architecture/01-security.md)
+.env
+.env.*
+!.env.example
+*.vgkey
+*.key
+*.pem
+secrets/
+
+# Local dev data
+/.data/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json

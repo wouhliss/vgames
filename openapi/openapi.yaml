@@ -1,0 +1,2634 @@
+openapi: 3.1.0
+info:
+  title: vgames API
+  version: 1.0.0
+  summary: Server API for the vgames launcher, admin web UI and CLI.
+  description: |
+    Contract for `/v1`. Conventions (errors, pagination, idempotency, concurrency) are in
+    `docs/architecture/03-api.md`. Every error response is RFC 9457 `application/problem+json`
+    with a stable `code`.
+
+    Authentication:
+    - **Launcher / CLI:** `Authorization: Bearer vga_…` (15 min access token; refresh via `/v1/auth/token`).
+    - **Admin web:** `__Host-vgames_session` cookie **plus** `X-CSRF-Token` header on unsafe methods.
+
+    Bulk bytes never pass through this API: package packs, manifests, save blobs and images
+    are transferred with short-lived signed storage URLs issued by the endpoints below.
+servers:
+  - url: http://localhost:8080
+    description: Local development (docker compose + cargo run)
+  - url: "https://{host}"
+    description: A vgames server
+    variables:
+      host:
+        default: vgames.invalid
+tags:
+  - name: discovery
+    description: Server identity and health.
+  - name: auth
+    description: Discord sign-in and sessions.
+  - name: catalog
+    description: Browsing and downloading packages.
+  - name: trust
+    description: Root-signed trust bundle (publisher keys and revocations).
+  - name: saves
+    description: Cloud saves.
+  - name: social
+    description: Friends, blocks, presence. (Agent 4)
+  - name: messaging
+    description: E2EE devices, key directory and ciphertext relay. (Agent 4)
+  - name: invites
+    description: Game invite handshake. (Agent 4)
+  - name: realtime
+    description: WebSocket gateway.
+  - name: admin-packages
+    description: Package, metadata and version management.
+  - name: admin-server
+    description: Users, allowlist, settings, trust, jobs, audit.
+
+security:
+  - bearerAuth: []
+  - cookieAuth: []
+
+paths:
+  # ------------------------------------------------------------------ discovery
+  /.well-known/vgames.json:
+    get:
+      tags: [discovery]
+      operationId: getServerInfo
+      summary: Server identity and capabilities
+      description: Stable forever. The launcher pins `root_key_fingerprint` when a user adds the server.
+      security: []
+      responses:
+        "200":
+          description: Server information
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ServerInfo" }
+  /v1/health:
+    get:
+      tags: [discovery]
+      operationId: getHealth
+      summary: Liveness and dependency readiness
+      security: []
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+        "503":
+          description: A dependency is unavailable
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+
+  # ------------------------------------------------------------------ auth
+  /v1/auth/discord/start:
+    post:
+      tags: [auth]
+      operationId: startDiscordLogin
+      summary: Begin Discord sign-in
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AuthStartRequest" }
+      responses:
+        "200":
+          description: URL to open in the system browser
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthStartResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /v1/auth/discord/callback:
+    get:
+      tags: [auth]
+      operationId: discordCallback
+      summary: Discord OAuth2 redirect target
+      description: |
+        Desktop flows redirect to `vgames://auth/callback?code=…&client_state=…` (with an HTML
+        fallback page showing a copyable code). Web flows set the session and CSRF cookies and
+        redirect to `return_to` under `/admin/`.
+      security: []
+      parameters:
+        - { name: code, in: query, required: false, schema: { type: string, maxLength: 256 } }
+        - { name: state, in: query, required: true, schema: { type: string, maxLength: 128 } }
+        - { name: error, in: query, required: false, schema: { type: string, maxLength: 128 } }
+      responses:
+        "302":
+          description: Redirect to the launcher deep link or the admin UI
+          headers:
+            Location:
+              schema: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/auth/token:
+    post:
+      tags: [auth]
+      operationId: exchangeToken
+      summary: Exchange a login code or refresh token for tokens
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TokenRequest" }
+      responses:
+        "200":
+          description: New token pair
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TokenResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /v1/auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      summary: Revoke the current session
+      responses:
+        "204": { description: Signed out }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/me:
+    get:
+      tags: [auth]
+      operationId: getMe
+      summary: Current user and session
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Me" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/me/sessions:
+    get:
+      tags: [auth]
+      operationId: listMySessions
+      summary: List own active sessions
+      responses:
+        "200":
+          description: Sessions
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Session" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/me/sessions/{session_id}:
+    delete:
+      tags: [auth]
+      operationId: revokeMySession
+      summary: Revoke one of own sessions
+      parameters:
+        - { name: session_id, in: path, required: true, schema: { $ref: "#/components/schemas/Uuid" } }
+      responses:
+        "204": { description: Revoked }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ------------------------------------------------------------------ trust
+  /v1/trust/bundle:
+    get:
+      tags: [trust]
+      operationId: getTrustBundle
+      summary: Latest root-signed trust bundle
+      security: []
+      responses:
+        "200":
+          description: Bundle bytes and root signature
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SignedTrustBundle" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ------------------------------------------------------------------ catalog
+  /v1/packages:
+    get:
+      tags: [catalog]
+      operationId: listPackages
+      summary: Browse published packages
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+        - { name: q, in: query, schema: { type: string, maxLength: 100 }, description: Case-insensitive title search }
+        - { name: genre, in: query, schema: { type: string, maxLength: 64 } }
+        - { name: platform, in: query, schema: { $ref: "#/components/schemas/Platform" }, description: Only packages with a release for this platform }
+        - { name: sort, in: query, schema: { type: string, enum: [title, recent], default: title } }
+      responses:
+        "200":
+          description: Page of packages
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PackagePage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/packages/{package_id}:
+    get:
+      tags: [catalog]
+      operationId: getPackage
+      summary: Package details
+      parameters:
+        - $ref: "#/components/parameters/PackageId"
+      responses:
+        "200":
+          description: Package
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PackageDetail" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/packages/{package_id}/releases/{platform}:
+    get:
+      tags: [catalog]
+      operationId: getRelease
+      summary: Current release for a platform
+      description: Everything the launcher needs to download and verify the manifest.
+      parameters:
+        - $ref: "#/components/parameters/PackageId"
+        - { name: platform, in: path, required: true, schema: { $ref: "#/components/schemas/Platform" } }
+      responses:
+        "200":
+          description: Release descriptor
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReleaseDescriptor" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/packages/{package_id}/compat:
+    get:
+      tags: [catalog]
+      operationId: getCompatProfiles
+      summary: Latest signed compatibility profile per target (linux, macos)
+      description: The launcher verifies each profile's publisher signature (context vgames/compat/v1) before use. See docs/architecture/09-compatibility.md.
+      parameters:
+        - $ref: "#/components/parameters/PackageId"
+      responses:
+        "200":
+          description: Profiles (possibly empty)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/SignedCompatProfile" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/versions/{version_id}/download-urls:
+    post:
+      tags: [catalog]
+      operationId: createDownloadUrls
+      summary: Signed GET URLs for packs
+      parameters:
+        - $ref: "#/components/parameters/VersionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [packs]
+              properties:
+                packs:
+                  type: array
+                  minItems: 1
+                  maxItems: 500
+                  uniqueItems: true
+                  items: { type: integer, minimum: 0, maximum: 99999 }
+      responses:
+        "200":
+          description: One URL per requested pack
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/PackUrl" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "410": { $ref: "#/components/responses/Gone" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /v1/versions/{version_id}/integrity-reports:
+    post:
+      tags: [catalog]
+      operationId: reportIntegrity
+      summary: Report a chunk hash mismatch seen twice
+      parameters:
+        - $ref: "#/components/parameters/VersionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [pack_index]
+              properties:
+                pack_index: { type: integer, minimum: 0 }
+                chunk_index: { type: integer, minimum: 0 }
+                detail: { type: string, maxLength: 1000 }
+      responses:
+        "202": { description: Recorded }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /v1/assets/{asset_id}:
+    get:
+      tags: [catalog]
+      operationId: getAsset
+      summary: Redirect to a signed image URL
+      parameters:
+        - { name: asset_id, in: path, required: true, schema: { $ref: "#/components/schemas/Uuid" } }
+      responses:
+        "302":
+          description: Signed URL (Cache-Control max-age=3600)
+          headers:
+            Location:
+              schema: { type: string, format: uri }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ------------------------------------------------------------------ saves
+  /v1/saves/{package_id}/head:
+    get:
+      tags: [saves]
+      operationId: getSaveHead
+      summary: Current cloud save head
+      parameters:
+        - $ref: "#/components/parameters/PackageId"
+      responses:
+        "200":
+          description: Head snapshot (with files)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SaveSnapshot" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/saves/{package_id}/snapshots:
+    get:
+      tags: [saves]
+      operationId: listSaveSnapshots
+      summary: Snapshot history (newest first)
+      parameters:
+        - $ref: "#/components/parameters/PackageId"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: Page of snapshots (without file lists)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SaveSnapshotPage" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [saves]
+      operationId: commitSaveSnapshot
+      summary: Commit a snapshot (compare-and-swap on parent)
+      parameters:
+        - $ref: "#/components/parameters/PackageId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CommitSnapshotRequest" }
+      responses:
+        "201":
+          description: New head
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SaveSnapshot" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+  /v1/saves/{package_id}/snapshots/{snapshot_id}:
+    get:
+      tags: [saves]
+      operationId: getSaveSnapshot
+      summary: One snapshot with its file list
+      parameters:
+        - $ref: "#/components/parameters/PackageId"
+        - { name: snapshot_id, in: path, required: true, schema: { $ref: "#/components/schemas/Uuid" } }
+      responses:
+        "200":
+          description: Snapshot
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SaveSnapshot" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/saves/{package_id}/blobs/prepare:
+    post:
+      tags: [saves]
+      operationId: prepareSaveBlobs
+      summary: Find missing blobs and get upload URLs
+      parameters:
+        - $ref: "#/components/parameters/PackageId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [blobs]
+              properties:
+                blobs:
+                  type: array
+                  maxItems: 10000
+                  items: { $ref: "#/components/schemas/BlobRef" }
+      responses:
+        "200":
+          description: Upload targets for blobs the server does not have
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [missing]
+                properties:
+                  missing:
+                    type: array
+                    items: { $ref: "#/components/schemas/BlobUploadTarget" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+  /v1/saves/{package_id}/blobs/download-urls:
+    post:
+      tags: [saves]
+      operationId: createSaveBlobDownloadUrls
+      summary: Signed GET URLs for blobs
+      parameters:
+        - $ref: "#/components/parameters/PackageId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [blake3]
+              properties:
+                blake3:
+                  type: array
+                  minItems: 1
+                  maxItems: 1000
+                  uniqueItems: true
+                  items: { $ref: "#/components/schemas/Blake3Hex" }
+      responses:
+        "200":
+          description: URLs
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [blake3, url, expires_at]
+                      properties:
+                        blake3: { $ref: "#/components/schemas/Blake3Hex" }
+                        url: { type: string, format: uri }
+                        expires_at: { $ref: "#/components/schemas/Timestamp" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ------------------------------------------------------------------ social
+  /v1/friends:
+    get:
+      tags: [social]
+      operationId: listFriends
+      summary: Friends and pending requests with presence
+      responses:
+        "200":
+          description: Friend list
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FriendList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/friends/requests:
+    post:
+      tags: [social]
+      operationId: sendFriendRequest
+      summary: Send a friend request by user id or friend code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FriendRequestCreate" }
+      responses:
+        "201":
+          description: Request created (or already friends)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Friend" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /v1/friends/{user_id}/accept:
+    post:
+      tags: [social]
+      operationId: acceptFriendRequest
+      summary: Accept an incoming request
+      parameters: [{ $ref: "#/components/parameters/UserId" }]
+      responses:
+        "200":
+          description: Now friends
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Friend" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/friends/{user_id}/decline:
+    post:
+      tags: [social]
+      operationId: declineFriendRequest
+      summary: Decline an incoming request
+      parameters: [{ $ref: "#/components/parameters/UserId" }]
+      responses:
+        "204": { description: Declined }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/friends/{user_id}:
+    delete:
+      tags: [social]
+      operationId: removeFriend
+      summary: Remove a friend or cancel an outgoing request
+      parameters: [{ $ref: "#/components/parameters/UserId" }]
+      responses:
+        "204": { description: Removed }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/friend-codes:
+    post:
+      tags: [social]
+      operationId: createFriendCode
+      summary: Create a single-use friend code (15 minutes)
+      responses:
+        "201":
+          description: Code
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FriendCode" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /v1/blocks/{user_id}:
+    post:
+      tags: [social]
+      operationId: blockUser
+      summary: Block a user
+      parameters: [{ $ref: "#/components/parameters/UserId" }]
+      responses:
+        "204": { description: Blocked }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [social]
+      operationId: unblockUser
+      summary: Unblock a user
+      parameters: [{ $ref: "#/components/parameters/UserId" }]
+      responses:
+        "204": { description: Unblocked }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/users/{user_id}:
+    get:
+      tags: [social]
+      operationId: getUserProfile
+      summary: Public profile of a related user
+      parameters: [{ $ref: "#/components/parameters/UserId" }]
+      responses:
+        "200":
+          description: Profile
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserPublic" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/presence:
+    put:
+      tags: [social]
+      operationId: setPresence
+      summary: Set own presence
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PresenceUpdate" }
+      responses:
+        "204": { description: Updated }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  # ------------------------------------------------------------------ messaging
+  /v1/devices:
+    get:
+      tags: [messaging]
+      operationId: listMyDevices
+      summary: Own devices (with remaining one-time key counts)
+      responses:
+        "200":
+          description: Devices
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Device" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [messaging]
+      operationId: registerDevice
+      summary: Register this launcher install and its identity keys
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DeviceRegister" }
+      responses:
+        "201":
+          description: Registered; the current session is bound to this device
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Device" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/devices/{device_id}:
+    delete:
+      tags: [messaging]
+      operationId: revokeDevice
+      summary: Revoke one of own devices
+      parameters: [{ $ref: "#/components/parameters/DeviceId" }]
+      responses:
+        "204": { description: Revoked }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/devices/{device_id}/one-time-keys:
+    post:
+      tags: [messaging]
+      operationId: uploadOneTimeKeys
+      summary: Upload signed one-time keys and (optionally) a new fallback key
+      parameters: [{ $ref: "#/components/parameters/DeviceId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OneTimeKeysUpload" }
+      responses:
+        "200":
+          description: Stored
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [available]
+                properties:
+                  available: { type: integer, minimum: 0 }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/users/{user_id}/devices:
+    get:
+      tags: [messaging]
+      operationId: listUserDevices
+      summary: Device public keys of a friend or conversation member
+      parameters: [{ $ref: "#/components/parameters/UserId" }]
+      responses:
+        "200":
+          description: Devices
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/DeviceKeys" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/keys/claim:
+    post:
+      tags: [messaging]
+      operationId: claimOneTimeKeys
+      summary: Atomically claim one one-time key per device
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [device_ids]
+              properties:
+                device_ids:
+                  type: array
+                  minItems: 1
+                  maxItems: 64
+                  uniqueItems: true
+                  items: { $ref: "#/components/schemas/Uuid" }
+      responses:
+        "200":
+          description: Claimed keys (devices with no key left return their fallback key)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/ClaimedKey" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /v1/conversations:
+    get:
+      tags: [messaging]
+      operationId: listConversations
+      summary: Conversations the user is a member of
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: Page of conversations
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConversationPage" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [messaging]
+      operationId: createConversation
+      summary: Get-or-create a direct conversation, or create a party
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConversationCreate" }
+      responses:
+        "200":
+          description: Existing direct conversation
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Conversation" }
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Conversation" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/conversations/{conversation_id}/messages:
+    post:
+      tags: [messaging]
+      operationId: sendMessage
+      summary: Send one message as per-device ciphertext envelopes
+      parameters: [{ $ref: "#/components/parameters/ConversationId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SendMessageRequest" }
+      responses:
+        "202":
+          description: Queued for delivery (idempotent on client_message_id)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [accepted]
+                properties:
+                  accepted: { type: integer, minimum: 0 }
+                  unknown_devices:
+                    type: array
+                    description: Member devices that were not addressed; encrypt for them and resend.
+                    items: { $ref: "#/components/schemas/Uuid" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /v1/inbox:
+    get:
+      tags: [messaging]
+      operationId: getInbox
+      summary: Undelivered envelopes for the calling device
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: Page of envelopes (oldest first)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InboxPage" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/inbox/ack:
+    post:
+      tags: [messaging]
+      operationId: ackInbox
+      summary: Acknowledge (delete) delivered envelopes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  minItems: 1
+                  maxItems: 500
+                  items: { $ref: "#/components/schemas/Uuid" }
+      responses:
+        "204": { description: Acknowledged }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  # ------------------------------------------------------------------ invites
+  /v1/invites:
+    get:
+      tags: [invites]
+      operationId: listInvites
+      summary: Active invites, sent and received
+      responses:
+        "200":
+          description: Invites
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Invite" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [invites]
+      operationId: createInvite
+      summary: Invite a friend to play a package
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/InviteCreate" }
+      responses:
+        "200":
+          description: An identical active invite already exists
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Invite" }
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Invite" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /v1/invites/{invite_id}/accept:
+    post:
+      tags: [invites]
+      operationId: acceptInvite
+      summary: Accept (invitee)
+      parameters: [{ $ref: "#/components/parameters/InviteId" }]
+      responses:
+        "200": { $ref: "#/components/responses/InviteOk" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/invites/{invite_id}/decline:
+    post:
+      tags: [invites]
+      operationId: declineInvite
+      summary: Decline (invitee)
+      parameters: [{ $ref: "#/components/parameters/InviteId" }]
+      responses:
+        "200": { $ref: "#/components/responses/InviteOk" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/invites/{invite_id}/cancel:
+    post:
+      tags: [invites]
+      operationId: cancelInvite
+      summary: Cancel (sender)
+      parameters: [{ $ref: "#/components/parameters/InviteId" }]
+      responses:
+        "200": { $ref: "#/components/responses/InviteOk" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/invites/{invite_id}/status:
+    post:
+      tags: [invites]
+      operationId: reportInviteStatus
+      summary: Invitee reports installing progress, ready, joined or failed
+      parameters: [{ $ref: "#/components/parameters/InviteId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/InviteStatusUpdate" }
+      responses:
+        "200": { $ref: "#/components/responses/InviteOk" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  # ------------------------------------------------------------------ realtime
+  /v1/realtime/ticket:
+    post:
+      tags: [realtime]
+      operationId: createRealtimeTicket
+      summary: One-time WebSocket ticket (30 s)
+      responses:
+        "201":
+          description: Ticket
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ticket, expires_at]
+                properties:
+                  ticket: { type: string, minLength: 43, maxLength: 64 }
+                  expires_at: { $ref: "#/components/schemas/Timestamp" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/realtime:
+    get:
+      tags: [realtime]
+      operationId: connectRealtime
+      summary: WebSocket upgrade (protocol in docs/architecture/03-api.md §6)
+      security:
+        - wsTicket: []
+      responses:
+        "101": { description: Switching protocols }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  # ------------------------------------------------------------------ admin: packages
+  /v1/admin/packages:
+    get:
+      tags: [admin-packages]
+      operationId: adminListPackages
+      summary: All packages, any status
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+        - { name: q, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/PackageStatus" } }
+      responses:
+        "200":
+          description: Page
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminPackagePage" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [admin-packages]
+      operationId: adminCreatePackage
+      summary: Create a package (enqueues metadata fetch)
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminPackageCreate" }
+      responses:
+        "201":
+          description: Created
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminPackage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/admin/packages/{package_id}:
+    get:
+      tags: [admin-packages]
+      operationId: adminGetPackage
+      summary: Package with admin fields
+      parameters: [{ $ref: "#/components/parameters/PackageId" }]
+      responses:
+        "200":
+          description: Package
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminPackage" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [admin-packages]
+      operationId: adminUpdatePackage
+      summary: Edit package fields (JSON Merge Patch, requires If-Match)
+      parameters:
+        - $ref: "#/components/parameters/PackageId"
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema: { $ref: "#/components/schemas/AdminPackagePatch" }
+      responses:
+        "200":
+          description: Updated
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminPackage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "412": { $ref: "#/components/responses/PreconditionFailed" }
+        "428": { $ref: "#/components/responses/PreconditionRequired" }
+    delete:
+      tags: [admin-packages]
+      operationId: adminDeletePackage
+      summary: Soft-delete a package (hidden from clients; installs keep working offline)
+      parameters:
+        - $ref: "#/components/parameters/PackageId"
+        - $ref: "#/components/parameters/IfMatch"
+      responses:
+        "204": { description: Deleted }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "412": { $ref: "#/components/responses/PreconditionFailed" }
+  /v1/admin/packages/{package_id}/metadata/refresh:
+    post:
+      tags: [admin-packages]
+      operationId: adminRefreshMetadata
+      summary: Re-query IGDB and Steam
+      parameters: [{ $ref: "#/components/parameters/PackageId" }]
+      responses:
+        "202":
+          description: Job queued (or already queued)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/admin/packages/{package_id}/metadata/candidates:
+    get:
+      tags: [admin-packages]
+      operationId: adminListMetadataCandidates
+      summary: Candidates found by the last fetch
+      parameters: [{ $ref: "#/components/parameters/PackageId" }]
+      responses:
+        "200":
+          description: Candidates, best score first
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/MetadataCandidate" }
+                  job: { $ref: "#/components/schemas/Job" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/admin/packages/{package_id}/metadata/apply:
+    post:
+      tags: [admin-packages]
+      operationId: adminApplyMetadata
+      summary: Apply chosen fields from a candidate
+      parameters:
+        - $ref: "#/components/parameters/PackageId"
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MetadataApply" }
+      responses:
+        "200":
+          description: Updated package (images are fetched by a job)
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminPackage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "412": { $ref: "#/components/responses/PreconditionFailed" }
+  /v1/admin/packages/{package_id}/assets:
+    post:
+      tags: [admin-packages]
+      operationId: adminUploadAsset
+      summary: Upload a custom image (JPEG/PNG/WebP, ≤ 10 MiB)
+      parameters: [{ $ref: "#/components/parameters/PackageId" }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [kind, file]
+              properties:
+                kind: { $ref: "#/components/schemas/AssetKind" }
+                file: { type: string, contentMediaType: application/octet-stream }
+      responses:
+        "201":
+          description: Stored
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Asset" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+  /v1/admin/packages/{package_id}/compat/{target}:
+    put:
+      tags: [admin-packages]
+      operationId: adminPutCompatProfile
+      summary: Publish a new signed compatibility profile revision
+      description: The document must be a valid vgames.compat/1 profile for this package and target, signed by a trusted publisher key held by the caller, with a revision greater than the current one.
+      parameters:
+        - $ref: "#/components/parameters/PackageId"
+        - { name: target, in: path, required: true, schema: { type: string, enum: [linux, macos] } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [document, signature]
+              properties:
+                document: { $ref: "#/components/schemas/Base64" }
+                signature: { $ref: "#/components/schemas/SignatureEnvelope" }
+      responses:
+        "201":
+          description: Stored
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SignedCompatProfile" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+  /v1/admin/assets/{asset_id}:
+    delete:
+      tags: [admin-packages]
+      operationId: adminDeleteAsset
+      summary: Delete an image
+      parameters:
+        - { name: asset_id, in: path, required: true, schema: { $ref: "#/components/schemas/Uuid" } }
+      responses:
+        "204": { description: Deleted }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/admin/packages/{package_id}/versions:
+    get:
+      tags: [admin-packages]
+      operationId: adminListVersions
+      summary: Versions of a package (all states)
+      parameters:
+        - $ref: "#/components/parameters/PackageId"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: Page of versions (newest first)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VersionPage" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [admin-packages]
+      operationId: adminCreateVersion
+      summary: Start a version upload (assigns id and sequence)
+      parameters:
+        - $ref: "#/components/parameters/PackageId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VersionCreate" }
+      responses:
+        "201":
+          description: Created in state `uploading`
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Version" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/admin/versions/{version_id}:
+    get:
+      tags: [admin-packages]
+      operationId: adminGetVersion
+      summary: Version status
+      parameters: [{ $ref: "#/components/parameters/VersionId" }]
+      responses:
+        "200":
+          description: Version
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Version" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [admin-packages]
+      operationId: adminAbortVersion
+      summary: Abort an unpublished version (objects deleted by a job)
+      parameters: [{ $ref: "#/components/parameters/VersionId" }]
+      responses:
+        "204": { description: Aborted }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/admin/versions/{version_id}/packs/{pack_index}/upload-session:
+    post:
+      tags: [admin-packages]
+      operationId: adminCreatePackUploadSession
+      summary: Signed URL that starts a resumable upload for one pack
+      parameters:
+        - $ref: "#/components/parameters/VersionId"
+        - { name: pack_index, in: path, required: true, schema: { type: integer, minimum: 0, maximum: 99999 } }
+      responses:
+        "200":
+          description: Start URL (POST with the returned headers; the Location response header is the session URI)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadTarget" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/admin/versions/{version_id}/manifest-upload:
+    post:
+      tags: [admin-packages]
+      operationId: adminCreateManifestUpload
+      summary: Signed PUT URL for manifest.json (≤ 256 MiB)
+      parameters: [{ $ref: "#/components/parameters/VersionId" }]
+      responses:
+        "200":
+          description: Upload target
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadTarget" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/admin/versions/{version_id}/finalize:
+    post:
+      tags: [admin-packages]
+      operationId: adminFinalizeVersion
+      summary: Verify manifest + signature, then start server-side verification
+      parameters: [{ $ref: "#/components/parameters/VersionId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FinalizeRequest" }
+      responses:
+        "202":
+          description: Accepted, state `verifying`
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Version" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+  /v1/admin/versions/{version_id}/signature:
+    post:
+      tags: [admin-packages]
+      operationId: adminReplaceSignature
+      summary: Replace a version's signature envelope (re-sign after key revocation or expiry)
+      description: |
+        Manifest bytes never change. The new envelope must verify over the stored manifest with a
+        currently trusted publisher key held by the caller. Launchers blocked by a revoked key fetch the
+        new envelope through the release descriptor and re-verify.
+      parameters: [{ $ref: "#/components/parameters/VersionId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [signature]
+              properties:
+                signature: { $ref: "#/components/schemas/SignatureEnvelope" }
+      responses:
+        "200":
+          description: Signature replaced
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Version" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+  /v1/admin/versions/{version_id}/publish:
+    post:
+      tags: [admin-packages]
+      operationId: adminPublishVersion
+      summary: Make this version the current release for its platform
+      parameters: [{ $ref: "#/components/parameters/VersionId" }]
+      responses:
+        "200":
+          description: Published
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Version" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/admin/versions/{version_id}/yank:
+    post:
+      tags: [admin-packages]
+      operationId: adminYankVersion
+      summary: Withdraw a published version
+      parameters: [{ $ref: "#/components/parameters/VersionId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 3, maxLength: 500 }
+      responses:
+        "200":
+          description: Yanked
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Version" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  # ------------------------------------------------------------------ admin: server
+  /v1/admin/users:
+    get:
+      tags: [admin-server]
+      operationId: adminListUsers
+      summary: Users
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+        - { name: q, in: query, schema: { type: string, maxLength: 64 }, description: Username or Discord id }
+        - { name: role, in: query, schema: { $ref: "#/components/schemas/Role" } }
+      responses:
+        "200":
+          description: Page of users
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminUserPage" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/admin/users/{user_id}:
+    patch:
+      tags: [admin-server]
+      operationId: adminUpdateUser
+      summary: Disable/enable a user; change role (owner only)
+      parameters: [{ $ref: "#/components/parameters/UserId" }]
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema: { $ref: "#/components/schemas/AdminUserPatch" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminUser" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/admin/allowlist:
+    get:
+      tags: [admin-server]
+      operationId: adminListAllowlist
+      summary: Registration allowlist
+      responses:
+        "200":
+          description: Entries
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/AllowlistEntry" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [admin-server]
+      operationId: adminAddAllowlist
+      summary: Allow a Discord account to sign in
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [discord_id]
+              properties:
+                discord_id: { $ref: "#/components/schemas/DiscordId" }
+                note: { type: string, maxLength: 200 }
+      responses:
+        "201":
+          description: Added
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AllowlistEntry" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/admin/allowlist/{discord_id}:
+    delete:
+      tags: [admin-server]
+      operationId: adminRemoveAllowlist
+      summary: Remove from allowlist (existing sessions are unaffected)
+      parameters:
+        - { name: discord_id, in: path, required: true, schema: { $ref: "#/components/schemas/DiscordId" } }
+      responses:
+        "204": { description: Removed }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/admin/settings:
+    get:
+      tags: [admin-server]
+      operationId: adminGetSettings
+      summary: Server settings
+      responses:
+        "200":
+          description: Settings
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ServerSettings" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    patch:
+      tags: [admin-server]
+      operationId: adminUpdateSettings
+      summary: Update server settings (owner only)
+      parameters: [{ $ref: "#/components/parameters/IfMatch" }]
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema: { $ref: "#/components/schemas/ServerSettingsPatch" }
+      responses:
+        "200":
+          description: Updated
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ServerSettings" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "412": { $ref: "#/components/responses/PreconditionFailed" }
+        "428": { $ref: "#/components/responses/PreconditionRequired" }
+  /v1/admin/trust/publisher-keys:
+    get:
+      tags: [admin-server]
+      operationId: adminListPublisherKeys
+      summary: Publisher keys from the current trust bundle
+      responses:
+        "200":
+          description: Keys
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [bundle_version, items]
+                properties:
+                  bundle_version: { type: integer, minimum: 0 }
+                  bundle_expires_at: { $ref: "#/components/schemas/Timestamp" }
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/PublisherKey" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/admin/trust/bundles:
+    post:
+      tags: [admin-server]
+      operationId: adminUploadTrustBundle
+      summary: Upload a new root-signed trust bundle (owner only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SignedTrustBundle" }
+      responses:
+        "201":
+          description: Stored; publisher keys rebuilt
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [version]
+                properties:
+                  version: { type: integer, minimum: 1 }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+  /v1/admin/jobs:
+    get:
+      tags: [admin-server]
+      operationId: adminListJobs
+      summary: Background jobs
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+        - { name: state, in: query, schema: { $ref: "#/components/schemas/JobState" } }
+        - { name: kind, in: query, schema: { type: string, maxLength: 64 } }
+      responses:
+        "200":
+          description: Page of jobs
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobPage" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/admin/jobs/{job_id}/retry:
+    post:
+      tags: [admin-server]
+      operationId: adminRetryJob
+      summary: Requeue a failed or dead job
+      parameters:
+        - { name: job_id, in: path, required: true, schema: { $ref: "#/components/schemas/Uuid" } }
+      responses:
+        "200":
+          description: Requeued
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/admin/audit-log:
+    get:
+      tags: [admin-server]
+      operationId: adminListAuditLog
+      summary: Audit trail (newest first)
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+        - { name: actor_user_id, in: query, schema: { $ref: "#/components/schemas/Uuid" } }
+        - { name: action, in: query, schema: { type: string, maxLength: 64 } }
+        - { name: target_type, in: query, schema: { type: string, maxLength: 64 } }
+        - { name: target_id, in: query, schema: { type: string, maxLength: 128 } }
+        - { name: since, in: query, schema: { $ref: "#/components/schemas/Timestamp" } }
+        - { name: until, in: query, schema: { $ref: "#/components/schemas/Timestamp" } }
+      responses:
+        "200":
+          description: Page of entries
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuditPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque (vga_…)
+      description: Launcher and CLI access token.
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: __Host-vgames_session
+      description: Admin web session. Unsafe methods also require the X-CSRF-Token header and a same-origin Origin header.
+    wsTicket:
+      type: apiKey
+      in: query
+      name: ticket
+      description: Single-use ticket from POST /v1/realtime/ticket.
+
+  headers:
+    ETag:
+      description: Opaque version of the resource for If-Match.
+      schema: { type: string }
+    RetryAfter:
+      description: Seconds to wait before retrying.
+      schema: { type: integer, minimum: 1 }
+
+  parameters:
+    PackageId:
+      { name: package_id, in: path, required: true, schema: { $ref: "#/components/schemas/Uuid" } }
+    VersionId:
+      { name: version_id, in: path, required: true, schema: { $ref: "#/components/schemas/Uuid" } }
+    UserId:
+      { name: user_id, in: path, required: true, schema: { $ref: "#/components/schemas/Uuid" } }
+    DeviceId:
+      { name: device_id, in: path, required: true, schema: { $ref: "#/components/schemas/Uuid" } }
+    InviteId:
+      { name: invite_id, in: path, required: true, schema: { $ref: "#/components/schemas/Uuid" } }
+    ConversationId:
+      { name: conversation_id, in: path, required: true, schema: { $ref: "#/components/schemas/Uuid" } }
+    Limit:
+      { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+    Cursor:
+      { name: cursor, in: query, required: false, schema: { type: string, maxLength: 512 }, description: Opaque cursor from a previous page }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema: { type: string, pattern: "^[A-Za-z0-9_-]{16,128}$" }
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      schema: { type: string }
+
+  responses:
+    BadRequest:
+      description: Invalid request (validation_failed, unknown_field, invalid_cursor, …)
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Unauthorized:
+      description: Missing, invalid or expired credentials (unauthenticated, session_expired)
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Forbidden:
+      description: Authenticated but not allowed (forbidden, user_disabled, registration_closed, blocked)
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    NotFound:
+      description: Resource does not exist or is not visible to the caller
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Conflict:
+      description: State conflict (conflict, invalid_state_transition, save_head_conflict, idempotency_key_reused, …)
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    PreconditionFailed:
+      description: If-Match did not match the current ETag
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    PreconditionRequired:
+      description: If-Match header is required
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    PayloadTooLarge:
+      description: Body or quota limit exceeded
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    UnsupportedMediaType:
+      description: Unsupported content type
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Gone:
+      description: The resource was withdrawn (e.g. version_yanked)
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Unprocessable:
+      description: Semantically invalid (bad signature, invalid manifest, untrusted key, …)
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    TooManyRequests:
+      description: Rate limited
+      headers:
+        Retry-After: { $ref: "#/components/headers/RetryAfter" }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    InviteOk:
+      description: Updated invite
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Invite" }
+
+  schemas:
+    # ---------------------------------------------------------------- primitives
+    Uuid: { type: string, format: uuid }
+    Timestamp: { type: string, format: date-time }
+    Blake3Hex: { type: string, pattern: "^[0-9a-f]{64}$" }
+    Base64: { type: string, contentEncoding: base64 }
+    DiscordId: { type: string, pattern: "^[0-9]{5,25}$" }
+    Platform:
+      type: string
+      enum: [windows-x86_64, windows-aarch64, linux-x86_64, linux-aarch64, macos-aarch64, macos-x86_64]
+    OsFamily:
+      type: string
+      enum: [windows, linux, macos]
+    Role:
+      type: string
+      enum: [user, admin, owner]
+    PackageStatus:
+      type: string
+      enum: [draft, published, hidden, archived]
+    VersionState:
+      type: string
+      enum: [uploading, verifying, ready, published, failed, yanked, aborted]
+    AssetKind:
+      type: string
+      enum: [cover, hero, logo, screenshot, icon]
+    JobState:
+      type: string
+      enum: [queued, running, succeeded, failed, dead]
+
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type: { type: string, description: "urn:vgames:problem:<code>" }
+        title: { type: string }
+        status: { type: integer, minimum: 400, maximum: 599 }
+        code: { type: string, pattern: "^[a-z][a-z0-9_]*$" }
+        detail: { type: string }
+        instance: { type: string }
+        request_id: { type: string }
+        errors:
+          type: array
+          items:
+            type: object
+            required: [field, code]
+            properties:
+              field: { type: string }
+              code: { type: string }
+              message: { type: string }
+
+    # ---------------------------------------------------------------- discovery
+    ServerInfo:
+      type: object
+      required: [format, server_id, name, api_versions, root_public_key, root_key_fingerprint, features]
+      properties:
+        format: { type: string, const: vgames.server/1 }
+        server_id: { $ref: "#/components/schemas/Uuid" }
+        name: { type: string, maxLength: 100 }
+        motd: { type: string, maxLength: 500 }
+        api_versions:
+          type: array
+          items: { type: string, enum: [v1] }
+        root_public_key: { $ref: "#/components/schemas/Base64" }
+        root_key_fingerprint: { type: string, pattern: "^VG1(-[0-9A-HJKMNP-TV-Z]{4}){8}$" }
+        registration_mode: { type: string, enum: [open, allowlist, closed] }
+        features:
+          type: array
+          items: { type: string, enum: [cloud_saves, social, messaging, invites, admin_web] }
+        min_launcher_version: { type: string, description: Semver; older launchers must update before connecting }
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [ok, degraded, down] }
+        db: { type: string, enum: [ok, down] }
+        storage: { type: string, enum: [ok, down] }
+        version: { type: string }
+
+    # ---------------------------------------------------------------- auth
+    AuthStartRequest:
+      type: object
+      additionalProperties: false
+      required: [client]
+      properties:
+        client: { type: string, enum: [desktop, web] }
+        code_challenge:
+          type: string
+          pattern: "^[A-Za-z0-9_-]{43}$"
+          description: Required for desktop. BASE64URL(SHA-256(code_verifier)).
+        client_state:
+          type: string
+          pattern: "^[A-Za-z0-9_-]{16,64}$"
+          description: Desktop only; echoed in the vgames:// callback.
+        device_name: { type: string, minLength: 1, maxLength: 64 }
+        return_to:
+          type: string
+          pattern: "^/admin(/[A-Za-z0-9._~/-]*)?$"
+          description: Web only.
+    AuthStartResponse:
+      type: object
+      required: [authorize_url, expires_at]
+      properties:
+        authorize_url: { type: string, format: uri }
+        expires_at: { $ref: "#/components/schemas/Timestamp" }
+    TokenRequest:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [grant_type, code, code_verifier]
+          properties:
+            grant_type: { type: string, const: authorization_code }
+            code: { type: string, minLength: 43, maxLength: 64 }
+            code_verifier: { type: string, pattern: "^[A-Za-z0-9._~-]{43,128}$" }
+        - type: object
+          additionalProperties: false
+          required: [grant_type, refresh_token]
+          properties:
+            grant_type: { type: string, const: refresh_token }
+            refresh_token: { type: string, pattern: "^vgr_[A-Za-z0-9_-]{43}$" }
+    TokenResponse:
+      type: object
+      required: [access_token, refresh_token, token_type, expires_in, user]
+      properties:
+        access_token: { type: string, pattern: "^vga_[A-Za-z0-9_-]{43}$" }
+        refresh_token: { type: string, pattern: "^vgr_[A-Za-z0-9_-]{43}$" }
+        token_type: { type: string, const: Bearer }
+        expires_in: { type: integer, description: Seconds }
+        user: { $ref: "#/components/schemas/User" }
+    User:
+      type: object
+      required: [id, username, role, created_at]
+      properties:
+        id: { $ref: "#/components/schemas/Uuid" }
+        discord_id: { $ref: "#/components/schemas/DiscordId" }
+        username: { type: string }
+        display_name: { type: string }
+        avatar_url: { type: string, format: uri }
+        role: { $ref: "#/components/schemas/Role" }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+    UserPublic:
+      type: object
+      required: [id, username]
+      properties:
+        id: { $ref: "#/components/schemas/Uuid" }
+        username: { type: string }
+        display_name: { type: string }
+        avatar_url: { type: string, format: uri }
+    Me:
+      type: object
+      required: [user, session]
+      properties:
+        user: { $ref: "#/components/schemas/User" }
+        session: { $ref: "#/components/schemas/Session" }
+        device_id: { $ref: "#/components/schemas/Uuid" }
+        csrf_token: { type: string, description: Web sessions only }
+    Session:
+      type: object
+      required: [id, kind, created_at, last_used_at, current]
+      properties:
+        id: { $ref: "#/components/schemas/Uuid" }
+        kind: { type: string, enum: [desktop, web] }
+        device_name: { type: string }
+        user_agent: { type: string }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        last_used_at: { $ref: "#/components/schemas/Timestamp" }
+        current: { type: boolean }
+
+    # ---------------------------------------------------------------- trust
+    SignedTrustBundle:
+      type: object
+      additionalProperties: false
+      required: [bundle, signature]
+      properties:
+        bundle:
+          allOf: [{ $ref: "#/components/schemas/Base64" }]
+          description: Exact bytes of the vgames.trust/1 JSON document (docs/architecture/01-security.md §3.2)
+        signature:
+          allOf: [{ $ref: "#/components/schemas/Base64" }]
+          description: Ed25519 signature by the root key over "vgames/trust/v1" || 0x00 || BLAKE3(bundle)
+    SignatureEnvelope:
+      type: object
+      required: [format, alg, context, key_id, payload_blake3, signature]
+      properties:
+        format: { type: string, const: vgames.sig/1 }
+        alg: { type: string, const: ed25519 }
+        context: { type: string, enum: [vgames/manifest/v1, vgames/compat/v1], description: Must match the signed document type (manifest or compat profile) }
+        key_id: { type: string, pattern: "^[0-9a-f]{32}$" }
+        payload_blake3: { $ref: "#/components/schemas/Blake3Hex" }
+        signature: { $ref: "#/components/schemas/Base64" }
+    PublisherKey:
+      type: object
+      required: [key_id, public_key, holder, label, not_before, not_after]
+      properties:
+        key_id: { type: string, pattern: "^[0-9a-f]{32}$" }
+        public_key: { $ref: "#/components/schemas/Base64" }
+        holder: { $ref: "#/components/schemas/UserPublic" }
+        label: { type: string }
+        not_before: { $ref: "#/components/schemas/Timestamp" }
+        not_after: { $ref: "#/components/schemas/Timestamp" }
+        revoked_at: { $ref: "#/components/schemas/Timestamp" }
+        revocation_reason: { type: string }
+
+    # ---------------------------------------------------------------- catalog
+    Asset:
+      type: object
+      required: [id, kind, url, width, height, content_type]
+      properties:
+        id: { $ref: "#/components/schemas/Uuid" }
+        kind: { $ref: "#/components/schemas/AssetKind" }
+        url: { type: string, description: "API path /v1/assets/{id} (redirects to a signed URL)" }
+        width: { type: integer }
+        height: { type: integer }
+        content_type: { type: string, enum: [image/jpeg, image/png, image/webp] }
+        source: { type: string, enum: [igdb, steam, upload] }
+    PackageSummary:
+      type: object
+      required: [id, slug, title, platforms, updated_at]
+      properties:
+        id: { $ref: "#/components/schemas/Uuid" }
+        slug: { type: string }
+        title: { type: string }
+        summary: { type: string }
+        genres: { type: array, items: { type: string } }
+        cover: { $ref: "#/components/schemas/Asset" }
+        platforms:
+          type: array
+          items: { $ref: "#/components/schemas/Platform" }
+        updated_at: { $ref: "#/components/schemas/Timestamp" }
+    PackageDetail:
+      allOf:
+        - $ref: "#/components/schemas/PackageSummary"
+        - type: object
+          properties:
+            description: { type: string, description: Plain text / CommonMark subset; render without HTML }
+            developer: { type: string }
+            publisher: { type: string }
+            release_date: { type: string, format: date }
+            protondb_tier: { type: string, enum: [platinum, gold, silver, bronze, borked, pending], description: "Informational, from ProtonDB" }
+            hero: { $ref: "#/components/schemas/Asset" }
+            logo: { $ref: "#/components/schemas/Asset" }
+            screenshots: { type: array, items: { $ref: "#/components/schemas/Asset" } }
+            releases:
+              type: array
+              items:
+                type: object
+                required: [platform, version_id, version_label, sequence, total_size, published_at]
+                properties:
+                  platform: { $ref: "#/components/schemas/Platform" }
+                  version_id: { $ref: "#/components/schemas/Uuid" }
+                  version_label: { type: string }
+                  sequence: { type: integer, minimum: 1 }
+                  total_size: { type: integer, minimum: 0 }
+                  published_at: { $ref: "#/components/schemas/Timestamp" }
+    PackagePage:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/PackageSummary" } }
+        next_cursor: { type: string }
+    ReleaseDescriptor:
+      type: object
+      required: [package_id, version_id, platform, sequence, version_label, total_size, pack_count, manifest, signature, published_at]
+      properties:
+        package_id: { $ref: "#/components/schemas/Uuid" }
+        version_id: { $ref: "#/components/schemas/Uuid" }
+        platform: { $ref: "#/components/schemas/Platform" }
+        sequence: { type: integer, minimum: 1 }
+        version_label: { type: string }
+        total_size: { type: integer, minimum: 0 }
+        pack_count: { type: integer, minimum: 1 }
+        manifest:
+          type: object
+          required: [url, size, blake3, expires_at]
+          properties:
+            url: { type: string, format: uri }
+            size: { type: integer, minimum: 1 }
+            blake3: { $ref: "#/components/schemas/Blake3Hex" }
+            expires_at: { $ref: "#/components/schemas/Timestamp" }
+        signature: { $ref: "#/components/schemas/SignatureEnvelope" }
+        yanked_version_ids:
+          type: array
+          description: Versions of this package/platform that were withdrawn; launchers on them are offered this release even if its sequence is lower.
+          items: { $ref: "#/components/schemas/Uuid" }
+        published_at: { $ref: "#/components/schemas/Timestamp" }
+    SignedCompatProfile:
+      type: object
+      required: [target, revision, status, document, signature, created_at]
+      properties:
+        target: { type: string, enum: [linux, macos] }
+        revision: { type: integer, minimum: 1 }
+        status: { type: string, enum: [verified, playable, unsupported, untested] }
+        document:
+          allOf: [{ $ref: "#/components/schemas/Base64" }]
+          description: Exact bytes of the vgames.compat/1 JSON document
+        signature: { $ref: "#/components/schemas/SignatureEnvelope" }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+    PackUrl:
+      type: object
+      required: [pack_index, url, size, expires_at]
+      properties:
+        pack_index: { type: integer, minimum: 0 }
+        url: { type: string, format: uri }
+        size: { type: integer, minimum: 1 }
+        expires_at: { $ref: "#/components/schemas/Timestamp" }
+
+    # ---------------------------------------------------------------- saves
+    BlobRef:
+      type: object
+      additionalProperties: false
+      required: [blake3, size]
+      properties:
+        blake3: { $ref: "#/components/schemas/Blake3Hex" }
+        size: { type: integer, minimum: 0, maximum: 4294967296 }
+    BlobUploadTarget:
+      type: object
+      required: [blake3, url, method, headers, expires_at]
+      properties:
+        blake3: { $ref: "#/components/schemas/Blake3Hex" }
+        url: { type: string, format: uri }
+        method: { type: string, const: PUT }
+        headers: { type: object, additionalProperties: { type: string } }
+        expires_at: { $ref: "#/components/schemas/Timestamp" }
+    SaveFile:
+      type: object
+      additionalProperties: false
+      required: [root, path, size, blake3, mtime]
+      properties:
+        root: { type: string, pattern: "^[a-z0-9_-]{1,32}$", description: Save location id from the manifest }
+        path: { type: string, maxLength: 512 }
+        size: { type: integer, minimum: 0 }
+        blake3: { $ref: "#/components/schemas/Blake3Hex" }
+        mtime: { $ref: "#/components/schemas/Timestamp" }
+    SaveSnapshotSummary:
+      type: object
+      required: [id, package_id, platform, file_count, total_size, created_at]
+      properties:
+        id: { $ref: "#/components/schemas/Uuid" }
+        package_id: { $ref: "#/components/schemas/Uuid" }
+        parent_id: { $ref: "#/components/schemas/Uuid" }
+        device_id: { $ref: "#/components/schemas/Uuid" }
+        device_name: { type: string }
+        platform: { $ref: "#/components/schemas/OsFamily" }
+        file_count: { type: integer, minimum: 0 }
+        total_size: { type: integer, minimum: 0 }
+        label: { type: string }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+    SaveSnapshot:
+      allOf:
+        - $ref: "#/components/schemas/SaveSnapshotSummary"
+        - type: object
+          required: [files]
+          properties:
+            files:
+              type: array
+              items: { $ref: "#/components/schemas/SaveFile" }
+    SaveSnapshotPage:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/SaveSnapshotSummary" } }
+        next_cursor: { type: string }
+    CommitSnapshotRequest:
+      type: object
+      additionalProperties: false
+      required: [parent_snapshot_id, platform, files]
+      properties:
+        parent_snapshot_id:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+          description: The head this snapshot is based on; null only when no head exists yet.
+        platform: { $ref: "#/components/schemas/OsFamily" }
+        label: { type: string, maxLength: 100 }
+        files:
+          type: array
+          maxItems: 10000
+          items: { $ref: "#/components/schemas/SaveFile" }
+
+    # ---------------------------------------------------------------- social
+    PresenceStatus:
+      type: string
+      enum: [online, away, in_game, offline]
+    Presence:
+      type: object
+      required: [status]
+      properties:
+        status: { $ref: "#/components/schemas/PresenceStatus" }
+        package_id: { $ref: "#/components/schemas/Uuid" }
+        package_title: { type: string }
+        updated_at: { $ref: "#/components/schemas/Timestamp" }
+    PresenceUpdate:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { type: string, enum: [online, away, in_game] }
+        package_id: { $ref: "#/components/schemas/Uuid" }
+    Friend:
+      type: object
+      required: [user, state]
+      properties:
+        user: { $ref: "#/components/schemas/UserPublic" }
+        state: { type: string, enum: [accepted, incoming, outgoing] }
+        presence: { $ref: "#/components/schemas/Presence" }
+        since: { $ref: "#/components/schemas/Timestamp" }
+    FriendList:
+      type: object
+      required: [friends, incoming, outgoing]
+      properties:
+        friends: { type: array, items: { $ref: "#/components/schemas/Friend" } }
+        incoming: { type: array, items: { $ref: "#/components/schemas/Friend" } }
+        outgoing: { type: array, items: { $ref: "#/components/schemas/Friend" } }
+    FriendRequestCreate:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [user_id]
+          properties:
+            user_id: { $ref: "#/components/schemas/Uuid" }
+        - type: object
+          additionalProperties: false
+          required: [friend_code]
+          properties:
+            friend_code: { type: string, pattern: "^[0-9A-HJKMNP-TV-Z]{8}$" }
+    FriendCode:
+      type: object
+      required: [code, expires_at]
+      properties:
+        code: { type: string, pattern: "^[0-9A-HJKMNP-TV-Z]{8}$" }
+        expires_at: { $ref: "#/components/schemas/Timestamp" }
+
+    # ---------------------------------------------------------------- messaging
+    Device:
+      type: object
+      required: [id, display_name, platform, created_at]
+      properties:
+        id: { $ref: "#/components/schemas/Uuid" }
+        display_name: { type: string }
+        platform: { $ref: "#/components/schemas/OsFamily" }
+        identity_key: { type: string, minLength: 43, maxLength: 43 }
+        signing_key: { type: string, minLength: 43, maxLength: 43 }
+        one_time_keys_available: { type: integer, minimum: 0 }
+        has_fallback_key: { type: boolean }
+        current: { type: boolean }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        last_seen_at: { $ref: "#/components/schemas/Timestamp" }
+    DeviceRegister:
+      type: object
+      additionalProperties: false
+      required: [display_name, platform, identity_key, signing_key, keys_signature]
+      properties:
+        display_name: { type: string, minLength: 1, maxLength: 64 }
+        platform: { $ref: "#/components/schemas/OsFamily" }
+        identity_key: { type: string, minLength: 43, maxLength: 43, description: "Curve25519, unpadded base64" }
+        signing_key: { type: string, minLength: 43, maxLength: 43, description: "Ed25519, unpadded base64" }
+        keys_signature: { type: string, minLength: 86, maxLength: 86, description: Ed25519 signature by signing_key over the canonical JSON of the two keys }
+    DeviceKeys:
+      type: object
+      required: [device_id, identity_key, signing_key, keys_signature, created_at]
+      properties:
+        device_id: { $ref: "#/components/schemas/Uuid" }
+        display_name: { type: string }
+        identity_key: { type: string }
+        signing_key: { type: string }
+        keys_signature: { type: string }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+    SignedOneTimeKey:
+      type: object
+      additionalProperties: false
+      required: [key_id, public_key, signature]
+      properties:
+        key_id: { type: string, minLength: 1, maxLength: 64 }
+        public_key: { type: string, minLength: 43, maxLength: 43 }
+        signature: { type: string, minLength: 86, maxLength: 86 }
+    OneTimeKeysUpload:
+      type: object
+      additionalProperties: false
+      properties:
+        one_time_keys:
+          type: array
+          maxItems: 100
+          items: { $ref: "#/components/schemas/SignedOneTimeKey" }
+        fallback_key: { $ref: "#/components/schemas/SignedOneTimeKey" }
+    ClaimedKey:
+      type: object
+      required: [device_id, key_id, public_key, signature, is_fallback]
+      properties:
+        device_id: { $ref: "#/components/schemas/Uuid" }
+        key_id: { type: string }
+        public_key: { type: string }
+        signature: { type: string }
+        is_fallback: { type: boolean }
+    Conversation:
+      type: object
+      required: [id, kind, members, created_at]
+      properties:
+        id: { $ref: "#/components/schemas/Uuid" }
+        kind: { type: string, enum: [direct, party] }
+        members: { type: array, items: { $ref: "#/components/schemas/UserPublic" } }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        last_activity_at: { $ref: "#/components/schemas/Timestamp" }
+    ConversationPage:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Conversation" } }
+        next_cursor: { type: string }
+    ConversationCreate:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [kind, user_id]
+          properties:
+            kind: { type: string, const: direct }
+            user_id: { $ref: "#/components/schemas/Uuid" }
+        - type: object
+          additionalProperties: false
+          required: [kind, user_ids]
+          properties:
+            kind: { type: string, const: party }
+            user_ids:
+              type: array
+              minItems: 1
+              maxItems: 15
+              uniqueItems: true
+              items: { $ref: "#/components/schemas/Uuid" }
+    OutgoingEnvelope:
+      type: object
+      additionalProperties: false
+      required: [recipient_device_id, olm_message_type, ciphertext]
+      properties:
+        recipient_device_id: { $ref: "#/components/schemas/Uuid" }
+        olm_message_type: { type: integer, enum: [0, 1], description: "0 = pre-key, 1 = normal" }
+        ciphertext: { $ref: "#/components/schemas/Base64" }
+    SendMessageRequest:
+      type: object
+      additionalProperties: false
+      required: [client_message_id, envelopes]
+      properties:
+        client_message_id: { $ref: "#/components/schemas/Uuid" }
+        envelopes:
+          type: array
+          minItems: 1
+          maxItems: 64
+          items: { $ref: "#/components/schemas/OutgoingEnvelope" }
+    InboxEnvelope:
+      type: object
+      required: [id, conversation_id, sender_user_id, sender_device_id, sender_identity_key, algorithm, olm_message_type, ciphertext, created_at]
+      properties:
+        id: { $ref: "#/components/schemas/Uuid" }
+        conversation_id: { $ref: "#/components/schemas/Uuid" }
+        sender_user_id: { $ref: "#/components/schemas/Uuid" }
+        sender_device_id: { $ref: "#/components/schemas/Uuid" }
+        sender_identity_key: { type: string }
+        algorithm: { type: string, const: olm.v1 }
+        olm_message_type: { type: integer, enum: [0, 1] }
+        ciphertext: { $ref: "#/components/schemas/Base64" }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+    InboxPage:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/InboxEnvelope" } }
+        next_cursor: { type: string }
+
+    # ---------------------------------------------------------------- invites
+    InviteState:
+      type: string
+      enum: [pending, accepted, installing, ready, joined, declined, cancelled, expired, failed]
+    Invite:
+      type: object
+      required: [id, from, to, package, state, created_at, updated_at, expires_at]
+      properties:
+        id: { $ref: "#/components/schemas/Uuid" }
+        from: { $ref: "#/components/schemas/UserPublic" }
+        to: { $ref: "#/components/schemas/UserPublic" }
+        package: { $ref: "#/components/schemas/PackageSummary" }
+        state: { $ref: "#/components/schemas/InviteState" }
+        progress: { type: number, minimum: 0, maximum: 1 }
+        message: { type: string, maxLength: 200 }
+        failure_reason: { type: string }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        updated_at: { $ref: "#/components/schemas/Timestamp" }
+        expires_at: { $ref: "#/components/schemas/Timestamp" }
+    InviteCreate:
+      type: object
+      additionalProperties: false
+      required: [to_user_id, package_id]
+      properties:
+        to_user_id: { $ref: "#/components/schemas/Uuid" }
+        package_id: { $ref: "#/components/schemas/Uuid" }
+        message: { type: string, maxLength: 200 }
+    InviteStatusUpdate:
+      type: object
+      additionalProperties: false
+      required: [state]
+      properties:
+        state: { type: string, enum: [installing, ready, joined, failed] }
+        progress: { type: number, minimum: 0, maximum: 1, description: Only with installing }
+        failure_reason: { type: string, enum: [no_build_for_platform, install_failed, insufficient_space, cancelled_by_user] }
+
+    # ---------------------------------------------------------------- admin
+    AdminPackage:
+      allOf:
+        - $ref: "#/components/schemas/PackageDetail"
+        - type: object
+          required: [status, field_sources, created_at, created_by]
+          properties:
+            status: { $ref: "#/components/schemas/PackageStatus" }
+            steam_app_id: { type: integer, minimum: 1 }
+            igdb_id: { type: integer, minimum: 1 }
+            field_sources:
+              type: object
+              additionalProperties: { type: string, enum: [admin, igdb, steam] }
+            created_at: { $ref: "#/components/schemas/Timestamp" }
+            created_by: { $ref: "#/components/schemas/UserPublic" }
+            metadata_job: { $ref: "#/components/schemas/Job" }
+    AdminPackagePage:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/AdminPackage" } }
+        next_cursor: { type: string }
+    AdminPackageCreate:
+      type: object
+      additionalProperties: false
+      required: [title]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200 }
+        slug: { type: string, pattern: "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$", description: Derived from title if omitted }
+        steam_app_id: { type: integer, minimum: 1 }
+        igdb_id: { type: integer, minimum: 1 }
+        fetch_metadata: { type: boolean, default: true }
+    AdminPackagePatch:
+      type: object
+      additionalProperties: false
+      description: JSON Merge Patch. Every field set here is marked with source `admin`.
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200 }
+        slug: { type: string, pattern: "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$" }
+        summary: { type: [string, "null"], maxLength: 500 }
+        description: { type: [string, "null"], maxLength: 20000 }
+        developer: { type: [string, "null"], maxLength: 200 }
+        publisher: { type: [string, "null"], maxLength: 200 }
+        release_date: { type: [string, "null"], format: date }
+        genres: { type: array, maxItems: 20, items: { type: string, minLength: 1, maxLength: 64 } }
+        steam_app_id: { type: [integer, "null"], minimum: 1 }
+        igdb_id: { type: [integer, "null"], minimum: 1 }
+        status: { $ref: "#/components/schemas/PackageStatus" }
+        cover_asset_id: { oneOf: [{ $ref: "#/components/schemas/Uuid" }, { type: "null" }] }
+        hero_asset_id: { oneOf: [{ $ref: "#/components/schemas/Uuid" }, { type: "null" }] }
+        logo_asset_id: { oneOf: [{ $ref: "#/components/schemas/Uuid" }, { type: "null" }] }
+    MetadataCandidate:
+      type: object
+      required: [source, external_id, title, score, data, fetched_at]
+      properties:
+        source: { type: string, enum: [igdb, steam] }
+        external_id: { type: integer, minimum: 1 }
+        title: { type: string }
+        release_year: { type: integer }
+        score: { type: number, minimum: 0, maximum: 1 }
+        data:
+          type: object
+          properties:
+            title: { type: string }
+            summary: { type: string }
+            description: { type: string }
+            release_date: { type: string, format: date }
+            developer: { type: string }
+            publisher: { type: string }
+            genres: { type: array, items: { type: string } }
+            images:
+              type: object
+              properties:
+                cover: { type: string, format: uri }
+                hero: { type: string, format: uri }
+                logo: { type: string, format: uri }
+                screenshots: { type: array, items: { type: string, format: uri } }
+            external:
+              type: object
+              properties:
+                steam_app_id: { type: integer }
+                igdb_id: { type: integer }
+        fetched_at: { $ref: "#/components/schemas/Timestamp" }
+    MetadataApply:
+      type: object
+      additionalProperties: false
+      required: [source, external_id, fields]
+      properties:
+        source: { type: string, enum: [igdb, steam] }
+        external_id: { type: integer, minimum: 1 }
+        fields:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string, enum: [title, summary, description, release_date, developer, publisher, genres, cover, hero, logo, screenshots, external_ids] }
+        overwrite_admin_fields: { type: boolean, default: false }
+    VersionCreate:
+      type: object
+      additionalProperties: false
+      required: [platform, version_label]
+      properties:
+        platform: { $ref: "#/components/schemas/Platform" }
+        version_label: { type: string, minLength: 1, maxLength: 64 }
+    Version:
+      type: object
+      required: [id, package_id, platform, sequence, version_label, state, server_id, created_at, created_by]
+      properties:
+        id: { $ref: "#/components/schemas/Uuid" }
+        package_id: { $ref: "#/components/schemas/Uuid" }
+        server_id: { $ref: "#/components/schemas/Uuid" }
+        platform: { $ref: "#/components/schemas/Platform" }
+        sequence: { type: integer, minimum: 1 }
+        version_label: { type: string }
+        state: { $ref: "#/components/schemas/VersionState" }
+        is_current_release: { type: boolean }
+        failure_reason: { type: string }
+        total_size: { type: integer, minimum: 0 }
+        file_count: { type: integer, minimum: 0 }
+        chunk_count: { type: integer, minimum: 0 }
+        pack_count: { type: integer, minimum: 1 }
+        publisher_key_id: { type: string }
+        verify_progress: { type: number, minimum: 0, maximum: 1 }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        created_by: { $ref: "#/components/schemas/UserPublic" }
+        finalized_at: { $ref: "#/components/schemas/Timestamp" }
+        verified_at: { $ref: "#/components/schemas/Timestamp" }
+        published_at: { $ref: "#/components/schemas/Timestamp" }
+        yanked_at: { $ref: "#/components/schemas/Timestamp" }
+    VersionPage:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Version" } }
+        next_cursor: { type: string }
+    UploadTarget:
+      type: object
+      required: [url, method, headers, expires_at]
+      properties:
+        url: { type: string, format: uri }
+        method: { type: string, enum: [POST, PUT] }
+        headers:
+          type: object
+          description: Headers that must be sent exactly (they are part of the signature).
+          additionalProperties: { type: string }
+        expires_at: { $ref: "#/components/schemas/Timestamp" }
+    FinalizeRequest:
+      type: object
+      additionalProperties: false
+      required: [manifest_size, manifest_blake3, signature]
+      properties:
+        manifest_size: { type: integer, minimum: 1, maximum: 268435456 }
+        manifest_blake3: { $ref: "#/components/schemas/Blake3Hex" }
+        signature: { $ref: "#/components/schemas/SignatureEnvelope" }
+    AdminUser:
+      allOf:
+        - $ref: "#/components/schemas/User"
+        - type: object
+          properties:
+            disabled_at: { $ref: "#/components/schemas/Timestamp" }
+            disabled_reason: { type: string }
+            last_seen_at: { $ref: "#/components/schemas/Timestamp" }
+    AdminUserPage:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/AdminUser" } }
+        next_cursor: { type: string }
+    AdminUserPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        role: { $ref: "#/components/schemas/Role" }
+        disabled: { type: boolean }
+        disabled_reason: { type: string, maxLength: 500 }
+    AllowlistEntry:
+      type: object
+      required: [discord_id, created_at]
+      properties:
+        discord_id: { $ref: "#/components/schemas/DiscordId" }
+        note: { type: string }
+        added_by: { $ref: "#/components/schemas/UserPublic" }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+    ServerSettings:
+      type: object
+      required: [registration_mode, name]
+      properties:
+        registration_mode: { type: string, enum: [open, allowlist, closed] }
+        name: { type: string, maxLength: 100 }
+        motd: { type: string, maxLength: 500 }
+    ServerSettingsPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        registration_mode: { type: string, enum: [open, allowlist, closed] }
+        name: { type: string, minLength: 1, maxLength: 100 }
+        motd: { type: string, maxLength: 500 }
+    Job:
+      type: object
+      required: [id, kind, state, attempts, max_attempts, created_at]
+      properties:
+        id: { $ref: "#/components/schemas/Uuid" }
+        kind: { type: string }
+        state: { $ref: "#/components/schemas/JobState" }
+        attempts: { type: integer, minimum: 0 }
+        max_attempts: { type: integer, minimum: 1 }
+        last_error: { type: string }
+        run_at: { $ref: "#/components/schemas/Timestamp" }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        finished_at: { $ref: "#/components/schemas/Timestamp" }
+    JobPage:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Job" } }
+        next_cursor: { type: string }
+    AuditEntry:
+      type: object
+      required: [id, action, created_at]
+      properties:
+        id: { $ref: "#/components/schemas/Uuid" }
+        actor: { $ref: "#/components/schemas/UserPublic" }
+        action: { type: string }
+        target_type: { type: string }
+        target_id: { type: string }
+        ip: { type: string }
+        details: { type: object }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+    AuditPage:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/AuditEntry" } }
+        next_cursor: { type: string }

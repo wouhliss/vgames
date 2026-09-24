@@ -1,0 +1,31 @@
+[package]
+name = "vgames-transfer"
+description = "Native transfer engines: parallel range downloads written straight to disk, parallel resumable uploads to GCS."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+vgames-core.workspace = true
+vgames-pack.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+futures-util.workspace = true
+bytes.workspace = true
+reqwest.workspace = true
+zstd.workspace = true
+blake3.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+wiremock.workspace = true
+proptest.workspace = true
+criterion.workspace = true
+
+[lints]
+workspace = true

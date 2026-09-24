@@ -1,0 +1,29 @@
+[package]
+name = "vgames-pack"
+description = "Deterministic packer: scans a folder, plans chunks and packs, hashes and builds a vgames manifest. Native and WASM."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["rlib", "cdylib"]
+
+[features]
+default = []
+# wasm-bindgen API consumed by apps/admin-web's upload worker.
+wasm = ["vgames-core/wasm"]
+
+[dependencies]
+vgames-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+blake3.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true

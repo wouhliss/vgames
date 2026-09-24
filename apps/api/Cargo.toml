@@ -1,0 +1,50 @@
+[package]
+name = "vgames-api"
+description = "vgames server: REST /v1 API, realtime gateway, job runner, and host for the admin web UI."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "vgames-api"
+path = "src/main.rs"
+
+[dependencies]
+vgames-core.workspace = true
+vgames-proto = { workspace = true, features = ["openapi"] }
+tokio.workspace = true
+tokio-util.workspace = true
+futures-util.workspace = true
+bytes.workspace = true
+axum.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+sqlx.workspace = true
+utoipa.workspace = true
+utoipa-axum.workspace = true
+utoipa-swagger-ui.workspace = true
+google-cloud-storage.workspace = true
+governor.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
+time.workspace = true
+url.workspace = true
+blake3.workspace = true
+sha2.workspace = true
+base64.workspace = true
+getrandom.workspace = true
+
+[dev-dependencies]
+wiremock.workspace = true
+insta.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true

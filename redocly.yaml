@@ -1,0 +1,6 @@
+extends:
+  - recommended
+rules:
+  # Servers are self-hosted; there is no canonical public host or license URL.
+  info-license: off
+  no-server-example.com: off
