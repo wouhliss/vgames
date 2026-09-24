@@ -1,4 +1,5 @@
 use super::*;
+use crate::compat::Target;
 use crate::layout::PACK_SIZE;
 use crate::manifest::tests::build;
 use crate::sign::SecretKey;
@@ -394,4 +395,142 @@ fn resign_after_revocation() {
         VerifyMode::Launch,
     )
     .unwrap();
+}
+
+// ---- compat profiles ---------------------------------------------------------
+
+mod compat_profiles {
+    use super::*;
+    use crate::compat::tests::{PACKAGE, linux};
+
+    fn signed_profile(
+        f: &Fixture,
+        edit: impl FnOnce(&mut serde_json::Value),
+    ) -> (Vec<u8>, Envelope) {
+        let mut v = linux();
+        edit(&mut v);
+        let bytes = serde_json::to_vec(&v).unwrap();
+        let env = Envelope::sign(&f.publisher, Context::Compat, &bytes);
+        (bytes, env)
+    }
+
+    fn expected() -> ExpectedCompat {
+        ExpectedCompat {
+            server_id: server(),
+            package_id: PACKAGE.parse().unwrap(),
+            target: Target::Linux,
+        }
+    }
+
+    fn server_mode(caller: &str) -> VerifyMode {
+        VerifyMode::Server {
+            now: ts(NOW),
+            caller: caller.parse().unwrap(),
+        }
+    }
+
+    #[test]
+    fn valid_profile_verifies() {
+        let f = fixture();
+        let t = state(&f, |_| {});
+        let (bytes, env) = signed_profile(&f, |_| {});
+        let v = verify_compat_profile(&t, &env, &bytes, &expected(), Some(2), VerifyMode::Launch)
+            .unwrap();
+        assert!(v.newer);
+        assert_eq!(v.profile.revision, 3);
+        verify_compat_profile(&t, &env, &bytes, &expected(), Some(2), server_mode(ALICE)).unwrap();
+    }
+
+    #[test]
+    fn manifest_signature_is_not_a_compat_signature() {
+        let f = fixture();
+        let t = state(&f, |_| {});
+        let (bytes, _) = signed_profile(&f, |_| {});
+        let mut env = Envelope::sign(&f.publisher, Context::Manifest, &bytes);
+        assert_eq!(
+            verify_compat_profile(&t, &env, &bytes, &expected(), None, VerifyMode::Launch),
+            Err(VerifyError::WrongContext(Context::Manifest))
+        );
+        env.context = Context::Compat;
+        assert_eq!(
+            verify_compat_profile(&t, &env, &bytes, &expected(), None, VerifyMode::Launch),
+            Err(VerifyError::Signature(SignatureError::Invalid))
+        );
+    }
+
+    #[test]
+    fn revoked_key_and_holder_rules_apply() {
+        let f = fixture();
+        let t = state(&f, |b| {
+            b.revoked.push(Revocation {
+                key_id: f.publisher.public_key().key_id(),
+                revoked_at: ts("2026-10-01T00:00:00Z"),
+                reason: String::new(),
+            })
+        });
+        let (bytes, env) = signed_profile(&f, |_| {});
+        assert!(matches!(
+            verify_compat_profile(&t, &env, &bytes, &expected(), None, VerifyMode::Launch),
+            Err(VerifyError::RevokedKey(_))
+        ));
+        let t = state(&f, |_| {});
+        assert!(matches!(
+            verify_compat_profile(&t, &env, &bytes, &expected(), None, server_mode(BOB)),
+            Err(VerifyError::NotKeyHolder(_))
+        ));
+    }
+
+    #[test]
+    fn identity_must_match() {
+        let f = fixture();
+        let t = state(&f, |_| {});
+        let (bytes, env) = signed_profile(&f, |_| {});
+        let mut e = expected();
+        e.target = Target::Macos;
+        assert_eq!(
+            verify_compat_profile(&t, &env, &bytes, &e, None, VerifyMode::Launch),
+            Err(VerifyError::CompatMismatch { field: "target" })
+        );
+        let mut e = expected();
+        e.package_id = BOB.parse().unwrap();
+        assert_eq!(
+            verify_compat_profile(&t, &env, &bytes, &e, None, VerifyMode::Launch),
+            Err(VerifyError::CompatMismatch {
+                field: "package_id"
+            })
+        );
+    }
+
+    #[test]
+    fn revision_rollback() {
+        let f = fixture();
+        let t = state(&f, |_| {});
+        let (bytes, env) = signed_profile(&f, |_| {});
+        // Lower than the one the launcher has: refused.
+        assert_eq!(
+            verify_compat_profile(&t, &env, &bytes, &expected(), Some(4), VerifyMode::Launch),
+            Err(VerifyError::CompatRollback { last: 4, found: 3 })
+        );
+        // Same revision: a refresh for the launcher, a conflict for the server.
+        let v = verify_compat_profile(&t, &env, &bytes, &expected(), Some(3), VerifyMode::Launch)
+            .unwrap();
+        assert!(!v.newer);
+        assert_eq!(
+            verify_compat_profile(&t, &env, &bytes, &expected(), Some(3), server_mode(ALICE)),
+            Err(VerifyError::CompatRollback { last: 3, found: 3 })
+        );
+    }
+
+    #[test]
+    fn invalid_profile_even_if_signed() {
+        let f = fixture();
+        let t = state(&f, |_| {});
+        let (bytes, env) = signed_profile(&f, |v| {
+            v["runner"]["env"] = serde_json::json!({ "LD_PRELOAD": "/tmp/x.so" })
+        });
+        assert!(matches!(
+            verify_compat_profile(&t, &env, &bytes, &expected(), None, VerifyMode::Launch),
+            Err(VerifyError::Compat(_))
+        ));
+    }
 }

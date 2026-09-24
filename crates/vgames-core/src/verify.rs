@@ -10,10 +10,13 @@
 //! 4. The manifest parses and validates, and its identity equals the release requested.
 //! 5. `sequence ≥ installed sequence` unless the user explicitly chose an older version.
 //! 6. Every path passes the path rules (part of step 4's validation).
+//!
+//! [`verify_compat_profile`] applies the same key rules to `vgames.compat/1` profiles.
 
 use uuid::Uuid;
 
 use crate::codec::{Digest, Timestamp};
+use crate::compat::{self, CompatError, CompatProfile, Target};
 use crate::manifest::{self, Manifest, ManifestError, Platform};
 use crate::sign::{Context, Envelope, KeyId, SignatureError};
 use crate::trust::{KeyStatus, PublisherKey, TrustState};
@@ -68,6 +71,12 @@ pub enum VerifyError {
     Mismatch { field: &'static str },
     #[error("manifest sequence {found} is lower than the installed {installed} (rollback)")]
     Rollback { installed: u64, found: u64 },
+    #[error("compat profile: {0}")]
+    Compat(#[from] CompatError),
+    #[error("compat profile {field} does not match the package")]
+    CompatMismatch { field: &'static str },
+    #[error("compat profile revision {found} is not newer than {last} (rollback)")]
+    CompatRollback { last: u64, found: u64 },
 }
 
 /// A manifest that passed every step, with what the caller needs to record.
@@ -167,6 +176,68 @@ pub fn verify_manifest(
         digest,
         key_id: key.key_id,
         holder_user_id: key.holder_user_id,
+    })
+}
+
+/// What a compat profile must be for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExpectedCompat {
+    pub server_id: Uuid,
+    pub package_id: Uuid,
+    pub target: Target,
+}
+
+/// A compat profile that passed [`verify_compat_profile`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VerifiedCompat {
+    pub profile: CompatProfile,
+    pub digest: Digest,
+    pub key_id: KeyId,
+    pub holder_user_id: Uuid,
+    /// True when `revision` is greater than `last_revision` (or none was known).
+    pub newer: bool,
+}
+
+/// Verifies a signed `vgames.compat/1` profile with the same key rules as
+/// manifests (context `vgames/compat/v1`). Launchers refuse a revision lower
+/// than the one they have (`last_revision`); the server (`VerifyMode::Server`)
+/// requires a strictly greater one.
+pub fn verify_compat_profile(
+    trust: &TrustState,
+    envelope: &Envelope,
+    profile_bytes: &[u8],
+    expected: &ExpectedCompat,
+    last_revision: Option<u64>,
+    mode: VerifyMode,
+) -> Result<VerifiedCompat, VerifyError> {
+    let key = check_signing_key(trust, envelope, expected.server_id, Context::Compat, mode)?;
+    let digest = Digest::of(profile_bytes);
+    envelope.verify_digest(&key.public_key, Context::Compat, &digest)?;
+    let profile = compat::parse_and_validate(profile_bytes)?;
+    let checks: [(&'static str, bool); 3] = [
+        ("server_id", profile.server_id == expected.server_id),
+        ("package_id", profile.package_id == expected.package_id),
+        ("target", profile.target == expected.target),
+    ];
+    if let Some((field, _)) = checks.iter().find(|(_, ok)| !ok) {
+        return Err(VerifyError::CompatMismatch { field });
+    }
+    let newer = last_revision.is_none_or(|last| profile.revision > last);
+    if let Some(last) = last_revision {
+        let strict = matches!(mode, VerifyMode::Server { .. });
+        if profile.revision < last || (strict && profile.revision == last) {
+            return Err(VerifyError::CompatRollback {
+                last,
+                found: profile.revision,
+            });
+        }
+    }
+    Ok(VerifiedCompat {
+        profile,
+        digest,
+        key_id: key.key_id,
+        holder_user_id: key.holder_user_id,
+        newer,
     })
 }
 

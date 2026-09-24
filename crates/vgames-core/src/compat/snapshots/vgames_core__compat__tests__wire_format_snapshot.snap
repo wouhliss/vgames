@@ -1,0 +1,5 @@
+---
+source: crates/vgames-core/src/compat/tests.rs
+expression: "serde_json::to_string(&p).unwrap()"
+---
+{"format":"vgames.compat/1","server_id":"01920000-0000-7000-8000-000000000000","package_id":"0192a6f0-1c2d-7e3f-8a9b-0c1d2e3f4a5b","target":"linux","revision":3,"created_at":"2026-09-24T10:00:00Z","applies_to":{"platform":"windows-x86_64","min_sequence":1,"max_sequence":null},"status":"verified","notes":"Controller works out of the box.","runner":{"kind":"proton","prefer":["umu-proton","ge-proton"],"min_version":"GE-Proton10-1","umu_game_id":"umu-12345","env":{"PROTON_ENABLE_NVAPI":"1"},"dll_overrides":{"d3dcompiler_47":"native,builtin"},"winetricks":["vcrun2022"]}}
