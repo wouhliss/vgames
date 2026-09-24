@@ -310,8 +310,9 @@ notices and per-contact safety-number verification.
 
 - Known-answer tests: RFC 8032 Ed25519, official BLAKE3 vectors, Google's V4 signing samples.
 - Negative tests for every verification step in §3.4 (one test per failure).
-- `cargo fuzz` targets: manifest parser, trust bundle parser, signature envelope,
-  path validator, deep-link parser, realtime frame decoder, zstd chunk decoder (size-bounded).
+- No-panic property tests (`proptest`, arbitrary input, in the normal test suite) for the manifest parser,
+  trust bundle parser, signature envelope, key file parser, path validator, deep-link parser, realtime frame
+  decoder and zstd chunk decoder (size-bounded). No `cargo fuzz` (dropped by the owner, 2026-09-25).
 - Property tests: pack → download round-trip equals the source tree; path validator
   never accepts a path that escapes the root under any normalization.
 - Security review checklist in `docs/agents/agent-5-devops-security.md` runs before every release.

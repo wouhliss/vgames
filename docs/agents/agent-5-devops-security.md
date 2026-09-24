@@ -33,7 +33,7 @@ and the `.changes/` tooling.
 
 - Implement exactly the primitives and constructions in 01-security §2–§3. Adding a primitive
   requires a `contract:` PR.
-- `vgames-core`: no I/O, no `unsafe`, no panics on any input (fuzzed), WASM-compatible
+- `vgames-core`: no I/O, no `unsafe`, no panics on any input (property-tested), WASM-compatible
   (`--features wasm` on `wasm32-unknown-unknown`), constant-time comparisons for secrets,
   `zeroize` for key material, strict Ed25519 verification (`verify_strict`).
 - Signatures cover **exact bytes** via the domain-separated pre-hash. Never re-serialize before verifying.
@@ -96,11 +96,11 @@ and the `.changes/` tooling.
 - **Acceptance:** one negative test per verification step, rotation chain tests, rollback tests,
   a revoked key → failure, an expired key → accepted by the client and rejected by server mode.
 
-### A5-T05 — Fuzzing and property testing
-- `cargo fuzz` targets: manifest parse/validate, trust bundle, signature envelope, keyfile parse,
-  paths, zstd bounded decode helper (if hosted in core). A nightly workflow runs each target for 10
-  min, with corpora committed and minimized.
-- **Acceptance:** no crashes after 1 h per target locally; the nightly job is green.
+### A5-T05 — No-panic property tests
+- No `cargo fuzz` (dropped by the owner, 2026-09-25: no fuzz targets, corpora or fuzz workflows anywhere).
+- `proptest` properties over arbitrary bytes, in the normal test suite: manifest parse/validate, trust bundle,
+  signature envelope, keyfile parse, compat profile and paths never panic.
+- **Acceptance:** those properties exist and pass in CI.
 
 ### A5-T06 — `vgames` CLI (the key signature pipeline)
 - `vgames keys init-root` (offline ceremony: generate, passphrase twice with a strength check, write
@@ -254,5 +254,5 @@ list is finished, then send the final report.
 
 ## Final report
 
-When done, reply with: tasks completed (PR links), fuzzing hours and findings, the security test matrix
+When done, reply with: tasks completed (PR links), the security test matrix
 status, release dry-run evidence, and open risks ranked by severity.
