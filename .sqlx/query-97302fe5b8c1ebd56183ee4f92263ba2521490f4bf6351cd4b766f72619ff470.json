@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE jobs\n                   SET state = CASE WHEN $3 THEN 'dead' ELSE 'queued' END,\n                       run_at = CASE WHEN $3 THEN run_at ELSE now() + make_interval(secs => $4) END,\n                       finished_at = CASE WHEN $3 THEN now() ELSE NULL END,\n                       last_error = $5, locked_by = NULL, locked_until = NULL\n                   WHERE id = $1 AND locked_by = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Bool",
+        "Float8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "97302fe5b8c1ebd56183ee4f92263ba2521490f4bf6351cd4b766f72619ff470"
+}

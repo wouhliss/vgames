@@ -14,3 +14,8 @@ pub fn routes() -> OpenApiRouter<AppState> {
 pub fn realtime_handlers() -> Vec<(&'static str, crate::realtime::hub::InboundHandler)> {
     Vec::new()
 }
+
+/// Background job handlers this module owns (kinds prefixed `social.`).
+pub fn job_handlers() -> Vec<(&'static str, crate::jobs::JobHandler)> {
+    Vec::new()
+}

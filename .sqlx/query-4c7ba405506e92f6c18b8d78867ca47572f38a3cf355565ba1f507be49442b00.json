@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM realtime_events WHERE created_at < now() - interval '5 minutes'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "4c7ba405506e92f6c18b8d78867ca47572f38a3cf355565ba1f507be49442b00"
+}

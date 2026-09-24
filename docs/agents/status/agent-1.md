@@ -23,9 +23,12 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   UNLOGGED `realtime_tickets`), 25 s ping / 60 s idle / 64 KiB frames, bounded per-socket queues (slow consumers
   closed with 4002), `LISTEN/NOTIFY` fan-out across instances (payloads > 7.5 KB by reference), `session.revoked`
   + close 4001 on logout / revoke / refresh reuse / disable, close 1012 on shutdown.
+- A1-T06 — Job queue: `SKIP LOCKED` claims, 5 min leases with heartbeat, reaper, backoff `2^n × 10 s`,
+  `dead` after `max_attempts`, dedupe keys, advisory-locked schedules (`sweep.expired` every minute,
+  `saves.gc` daily). Workers run with `--role=all|worker`.
 
 ## In progress
-- A1-T06 — Job runner
+- A1-T07 — Object storage
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_api::error::ApiError` / `ApiResult` (problem+json), `vgames_api::http::json::{Json, Validate}`
@@ -50,6 +53,10 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   - Presence helpers: `state.realtime.is_connected(user_id)` (this instance only).
   - Envelope/ticket types: `vgames_proto::realtime::{Envelope, RealtimeTicket, Hello, SessionRevoked, close}`.
     **I created `crates/vgames-proto/src/realtime.rs`; it is yours to extend** with typed social events.
+- **Jobs for Agent 4:** return `("social.sweep", jobs::handler(|ctx| async move { … }))` from
+  `vgames_api::social::job_handlers()`; enqueue with `jobs::enqueue(&mut tx, kind, payload, Enqueue { dedupe_key, run_at, .. })`
+  or `jobs::enqueue_now(&pool, …)`. Return `JobError::Retry` / `JobError::Fatal`. Social expiry (invites, friend codes,
+  message envelopes) is yours to sweep; `sweep.expired` covers auth, realtime and idempotency tables.
 - Test harness: `apps/api/tests/common/mod.rs` (`app(pool)`, `send`, `body_json`, `json_request`) with
   `#[sqlx::test(migrations = "./migrations")]`.
 - Root `clippy.toml` allows unwrap/expect/panic/indexing in tests (AGENTS.md §5).
