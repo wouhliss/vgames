@@ -8,12 +8,18 @@
 //! Owner: Agent 5 (DevOps & Security). Spec: `docs/architecture/01-security.md`
 //! and `docs/architecture/02-package-format.md`.
 //!
-//! Planned modules:
-//! - `manifest`   — `vgames.manifest/1` types, parse + structural validation.
-//! - `paths`      — install-path safety rules (traversal, reserved names, case collisions).
-//! - `sign`       — domain-separated Ed25519 signing/verification over BLAKE3 pre-hashes.
-//! - `trust`      — root-signed trust bundles, publisher certificates, revocation.
-//! - `keyfile`    — `vgames.key/1` encrypted key files (Argon2id + XChaCha20-Poly1305).
-//! - `fingerprint`— human-readable key fingerprints shown in the UI.
+//! Modules:
+//! - [`codec`] — strict wire encodings: BLAKE3 digests (lowercase hex), base64, RFC 3339 UTC.
+//! - [`sign`]  — domain-separated Ed25519 signatures, key ids, `VG1-…` fingerprints,
+//!   `vgames.sig/1` envelopes.
 //!
-//! Rules: no filesystem or network I/O, no `unsafe`, no panics on untrusted input.
+//! Rules: no filesystem or network I/O, no clock reads (callers pass `now`),
+//! no `unsafe`, no panics on untrusted input, WASM-compatible.
+
+#![forbid(unsafe_code)]
+
+pub mod codec;
+pub mod sign;
+
+pub use codec::{Digest, Timestamp};
+pub use sign::{Context, Envelope, Fingerprint, KeyId, PublicKey, SecretKey, Signature};
