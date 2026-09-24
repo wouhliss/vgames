@@ -2,7 +2,15 @@
   {
     "origin": ["https://REPLACE_WITH_VGAMES_PUBLIC_HOST"],
     "method": ["GET", "PUT", "POST"],
-    "responseHeader": ["Content-Type", "Content-Range", "Range", "Location", "ETag", "X-GUploader-UploadID", "x-goog-resumable"],
+    "responseHeader": [
+      "Content-Type",
+      "Content-Range",
+      "Range",
+      "Location",
+      "ETag",
+      "X-GUploader-UploadID",
+      "x-goog-resumable"
+    ],
     "maxAgeSeconds": 3600
   }
 ]

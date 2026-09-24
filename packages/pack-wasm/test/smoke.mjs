@@ -7,7 +7,11 @@ import { Blake3Hasher, initSync, WasmPacker } from "../pkg/vgames_pack.js";
 initSync({ module: readFileSync(new URL("../pkg/vgames_pack_bg.wasm", import.meta.url)) });
 
 const CHUNK = 4 * 1024 * 1024;
-const contents = [new Uint8Array(CHUNK + 10).fill(7), new TextEncoder().encode("hello"), new Uint8Array(0)];
+const contents = [
+  new Uint8Array(CHUNK + 10).fill(7),
+  new TextEncoder().encode("hello"),
+  new Uint8Array(0),
+];
 const files = [
   { path: "Game/big.bin", size: contents[0].length, mtime_ms: 1 },
   { path: "Game/readme.txt", size: 5, mtime_ms: 2 },
@@ -19,9 +23,9 @@ const data = new Map(files.map((f, i) => [f.path, contents[i]]));
 
 for (let p = 0; p < packer.packCount(); p++) {
   for (const c of packer.packChunks(p)) {
-    const parts = packer.chunkExtents(c).map(({ file, offset, len }) =>
-      data.get(planned[file].path).subarray(offset, offset + len),
-    );
+    const parts = packer
+      .chunkExtents(c)
+      .map(({ file, offset, len }) => data.get(planned[file].path).subarray(offset, offset + len));
     const bytes = new Uint8Array(parts.reduce((n, a) => n + a.length, 0));
     let at = 0;
     for (const part of parts) {
