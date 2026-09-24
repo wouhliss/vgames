@@ -3,7 +3,5 @@
   "identifier": "overlay",
   "description": "In-game overlay window (created lazily while a package runs). It may only receive events and call the overlay_* commands whitelisted by Agent 4.",
   "windows": ["overlay"],
-  "permissions": [
-    "core:event:default"
-  ]
+  "permissions": ["core:event:default"]
 }

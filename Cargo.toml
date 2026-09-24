@@ -127,6 +127,11 @@ zstd = "0.14"
 directories = "6"
 sysinfo = "0.39"
 sdl3 = "0.20"
+# tauri-specta v2 is a release candidate: keep `=` pins so the generated bindings stay stable.
+tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
+specta = { version = "=2.0.0-rc.25", features = ["derive", "uuid"] }
+specta-typescript = "=0.0.12"
+tracing-appender = "0.2"
 
 # --- tooling & tests -------------------------------------------------------
 clap = { version = "4.6", features = ["derive", "env"] }

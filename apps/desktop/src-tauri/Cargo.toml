@@ -30,6 +30,9 @@ tauri-plugin-global-shortcut.workspace = true
 tauri-plugin-notification.workspace = true
 tauri-plugin-dialog.workspace = true
 tauri-plugin-process.workspace = true
+tauri-specta.workspace = true
+specta.workspace = true
+specta-typescript.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 futures-util.workspace = true
@@ -46,6 +49,7 @@ thiserror.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+tracing-appender.workspace = true
 uuid.workspace = true
 time.workspace = true
 url.workspace = true
@@ -56,6 +60,9 @@ zeroize.workspace = true
 # Controllers: SDL3 reads every vendor's pads (HIDAPI drivers for DualSense,
 # Switch Pro, ...). Agent 2 picks static vs bundled linking (task 10).
 sdl3.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 # Virtual Xbox 360 pad through ViGEmBus (retired upstream, still the de-facto

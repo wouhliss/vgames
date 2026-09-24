@@ -1,4 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <title>vgames</title>
   <!-- Placeholder mark. Generate all bundle icons with: pnpm tauri icon src-tauri/icons/icon-source.svg -->
   <rect x="64" y="64" width="896" height="896" rx="200" fill="#101216"/>
   <path d="M272 300 L512 740 L752 300" fill="none" stroke="#5b8cff" stroke-width="96" stroke-linecap="round" stroke-linejoin="round"/>
