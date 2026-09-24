@@ -1,0 +1,75 @@
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.label {
+  color: var(--color-text);
+}
+
+.valueText {
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.track {
+  position: relative;
+  height: 6px;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-hover);
+}
+
+.sm .track {
+  height: 4px;
+}
+
+.fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--tone, var(--color-accent));
+  transition: width var(--motion-base) linear;
+}
+
+.indeterminate .fill {
+  width: 35%;
+  animation: slide 1.2s ease-in-out infinite;
+}
+
+.success {
+  --tone: var(--color-success);
+}
+
+.warning {
+  --tone: var(--color-warning);
+}
+
+.danger {
+  --tone: var(--color-danger);
+}
+
+@keyframes slide {
+  from {
+    translate: -100% 0;
+  }
+  to {
+    translate: 300% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .indeterminate .fill {
+    width: 100%;
+    opacity: 0.45;
+    animation: none;
+  }
+}

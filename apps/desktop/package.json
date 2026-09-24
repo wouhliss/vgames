@@ -8,21 +8,34 @@
     "build": "tsc -p tsconfig.json && vite build",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "dev:mock": "vite --mode mock",
+    "build:mock": "vite build --mode mock --outDir dist-mock",
+    "e2e": "playwright test"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.11.1",
     "@tanstack/react-query": "^5.103.2",
     "@tanstack/react-virtual": "^3.14.13",
+    "@tauri-apps/api": "^2.11.1",
+    "mdast-util-from-markdown": "^2.0.3",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-router": "^8.4.0"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@playwright/test": "^1.63.0",
     "@tauri-apps/cli": "^2.11.5",
-    "@vitejs/plugin-react": "^6.1.1",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
+    "@types/mdast": "^4.0.4",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^6.1.1",
+    "axe-core": "^4.13.0",
+    "jsdom": "^30.1.1",
     "vite": "^8.3.0",
     "vitest": "^5.0.1"
   }

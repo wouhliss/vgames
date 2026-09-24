@@ -1,0 +1,182 @@
+/*
+ * Design tokens. Every color, size and duration in the launcher comes from here.
+ * Themes: dark (default), light, high-contrast. Set with <html data-theme="…">.
+ * Components use CSS Modules and only reference these variables.
+ */
+
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Surfaces, from the window background up to raised layers. */
+  --color-bg: #101216;
+  --color-surface: #171a20;
+  --color-surface-raised: #1f232b;
+  --color-surface-overlay: #262b35;
+  --color-surface-hover: #2c323d;
+  --color-border: #343b48;
+  --color-border-strong: #4a5364;
+
+  /* Text. */
+  --color-text: #e8ebf0;
+  --color-text-muted: #a3acba;
+  --color-text-subtle: #7b8494;
+  --color-text-on-accent: #0b0d10;
+
+  /* Accent and semantic tones. */
+  --color-accent: #6cb6ff;
+  --color-accent-hover: #8cc6ff;
+  --color-accent-subtle: #1b2f45;
+  --color-success: #4cc38a;
+  --color-success-subtle: #15352a;
+  --color-warning: #f0b43c;
+  --color-warning-subtle: #3a2e12;
+  --color-danger: #ff6b6b;
+  --color-danger-hover: #ff8787;
+  --color-danger-subtle: #3d1c1f;
+  --color-info: #6cb6ff;
+  --color-info-subtle: #1b2f45;
+
+  --color-focus: #ffd24a;
+  --color-backdrop: rgb(4 6 9 / 72%);
+  --shadow-raised: 0 2px 8px rgb(0 0 0 / 35%);
+  --shadow-overlay: 0 12px 40px rgb(0 0 0 / 55%);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --color-bg: #f4f6f9;
+  --color-surface: #ffffff;
+  --color-surface-raised: #ffffff;
+  --color-surface-overlay: #ffffff;
+  --color-surface-hover: #eef1f5;
+  --color-border: #d6dbe3;
+  --color-border-strong: #aeb6c3;
+
+  --color-text: #151920;
+  --color-text-muted: #4d5666;
+  --color-text-subtle: #6b7484;
+  --color-text-on-accent: #ffffff;
+
+  --color-accent: #0a62c9;
+  --color-accent-hover: #0853ab;
+  --color-accent-subtle: #e2eefc;
+  --color-success: #127a4b;
+  --color-success-subtle: #dff4ea;
+  --color-warning: #8a5a00;
+  --color-warning-subtle: #fdf1d8;
+  --color-danger: #c42b2b;
+  --color-danger-hover: #a32222;
+  --color-danger-subtle: #fbe4e4;
+  --color-info: #0a62c9;
+  --color-info-subtle: #e2eefc;
+
+  --color-focus: #9a5b00;
+  --color-backdrop: rgb(20 24 32 / 45%);
+  --shadow-raised: 0 1px 4px rgb(16 24 40 / 12%);
+  --shadow-overlay: 0 12px 40px rgb(16 24 40 / 22%);
+}
+
+:root[data-theme="high-contrast"] {
+  color-scheme: dark;
+
+  --color-bg: #000000;
+  --color-surface: #000000;
+  --color-surface-raised: #000000;
+  --color-surface-overlay: #000000;
+  --color-surface-hover: #1a1a1a;
+  --color-border: #ffffff;
+  --color-border-strong: #ffffff;
+
+  --color-text: #ffffff;
+  --color-text-muted: #ffffff;
+  --color-text-subtle: #e0e0e0;
+  --color-text-on-accent: #000000;
+
+  --color-accent: #ffff00;
+  --color-accent-hover: #ffff80;
+  --color-accent-subtle: #000000;
+  --color-success: #00ff7f;
+  --color-success-subtle: #000000;
+  --color-warning: #ffbf00;
+  --color-warning-subtle: #000000;
+  --color-danger: #ff5c5c;
+  --color-danger-hover: #ff8080;
+  --color-danger-subtle: #000000;
+  --color-info: #00e5ff;
+  --color-info-subtle: #000000;
+
+  --color-focus: #00e5ff;
+  --color-backdrop: rgb(0 0 0 / 85%);
+  --shadow-raised: none;
+  --shadow-overlay: none;
+}
+
+:root {
+  /* Type scale (1.2 ratio around 14px body text; the launcher is read at arm's length or from a couch). */
+  --font-sans:
+    system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, Cantarell, "Noto Sans", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, Consolas, monospace;
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-md: 0.875rem;
+  --text-lg: 1rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 2rem;
+  --leading-tight: 1.25;
+  --leading-normal: 1.5;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-bold: 650;
+
+  /* Spacing (4px grid). */
+  --space-0: 0;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+
+  /* Radii. */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-full: 999px;
+
+  /* Sizes. */
+  --control-height-sm: 28px;
+  --control-height-md: 36px;
+  --control-height-lg: 44px;
+  --focus-ring-width: 3px;
+  --focus-ring-offset: 2px;
+
+  /* Layers. */
+  --z-sticky: 10;
+  --z-popover: 100;
+  --z-dialog: 200;
+  --z-toast: 300;
+  --z-block: 400;
+
+  /* Motion: 150 ms at most, and none when the user asks for reduced motion. */
+  --motion-fast: 100ms;
+  --motion-base: 150ms;
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0ms;
+    --motion-base: 0ms;
+  }
+}
+
+:root[data-reduce-motion="true"] {
+  --motion-fast: 0ms;
+  --motion-base: 0ms;
+}
