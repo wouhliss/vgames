@@ -43,10 +43,14 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   `POST …/metadata/refresh` (202, deduplicated), `GET …/metadata/candidates`, `POST …/metadata/apply` (If-Match,
   `overwrite_admin_fields`). `metadata.images` job downloads through `metadata::safe_fetch` (HTTPS, host allowlist,
   resolver refusing private/loopback/link-local, same-host redirects only, 10 MiB, 15 s) into the T09 image pipeline.
+- A1-T08 — Trust endpoints: `GET /v1/trust/bundle` (public, `max-age=60`), `POST /v1/admin/trust/bundles`
+  (owner; `vgames_core::trust::verify_bundle` under `VGAMES_ROOT_PUBLIC_KEY` moved along the stored `next_root`
+  chain; versions only go up; holders must be active admins/owners; bytes stored verbatim; `publisher_keys`
+  upserted in the same transaction, revocations applied; audited), `GET /v1/admin/trust/publisher-keys`.
+  `/.well-known/vgames.json` now serves the `VG1-…` fingerprint (the ignored test runs again).
 
 ## In progress
-- A1-T08 — Trust endpoints (Agent 5 delivered fingerprints in A5-T03; waiting for `verify_bundle` & co. from A5-T04)
-- A1-T11 — Versions and uploads next
+- A1-T11 — Version upload protocol
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_api::error::ApiError` / `ApiResult` (problem+json), `vgames_api::http::json::{Json, Validate}`
@@ -91,20 +95,23 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   known. Poll `metadata_job.state` on the package after create/refresh.
 - `vgames_proto::packages` holds the package/asset/catalog DTOs (`PackageSummary`, `PackageDetail`,
   `AdminPackage`, `AdminPackagePatch` with `null`-clears semantics).
+- **Trust for Agent 2 (launcher) and Agent 3 (admin UI):** `GET /v1/trust/bundle` returns
+  `{bundle, signature}` (base64 of the exact bytes) with no auth; feed it to `vgames_core::trust::verify_bundle`.
+  `/.well-known/vgames.json` `root_key_fingerprint` is `PublicKey::fingerprint()` of the configured root.
+  Admin upload errors: 422 `bad_signature` / `wrong_server` / `invalid_bundle` / `unknown_holder`
+  (`errors[].field = publishers[i].holder_user_id`), 409 `stale_version`.
+- `Config::root_public_key` is now a `vgames_core::PublicKey` (off-curve and small-order keys fail at startup).
 - Test harness: `apps/api/tests/common/mod.rs` (`app(pool)`, `send`, `body_json`, `json_request`) with
   `#[sqlx::test(migrations = "./migrations")]`.
 - Root `clippy.toml` allows unwrap/expect/panic/indexing in tests (AGENTS.md §5).
 
 ## Needs from others
-- From Agent 5: `vgames_core` fingerprint (`VG1-…`) and key id functions (A5-T03) for `/.well-known/vgames.json`;
-  `verify_bundle` / `verify_manifest` / `verify_compat_profile` (A5-T04) for trust and publishing endpoints.
 - From Agent 2: `vgames_pack::verify::PackStreamVerifier` (A2-T03) for the `version.verify` job (A1-T12).
 
 ## Blockers / contract questions
-- My PRs wait for a human merge: the harness does not let me merge my own PRs yet and there is no CI workflow
-  (Agent 5 owns `.github/`). Open: #2 (A1-T09), #6 (`contract:` umu id + 428 on metadata apply), T10 (stacked on #2).
+- None. I merge my own PRs (rebase merge) once Agent 5's CI is green.
 - Follow-up contract fix: `DELETE /v1/admin/packages/{id}` returns 428 without `If-Match` but does not list it;
-  I will add it (contract + handler) once #2 is merged, to keep the two-way drift test green.
+  I will add it (contract + handler) in a small `contract:` PR.
 
 ## Local environment notes
 - My tests use a dedicated Postgres 18 container on `127.0.0.1:55432` (`vgames-a1-pg`); ports 8080 and 4443

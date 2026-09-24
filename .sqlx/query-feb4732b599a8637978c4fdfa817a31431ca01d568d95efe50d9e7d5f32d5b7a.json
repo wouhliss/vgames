@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT bundle, signature FROM trust_bundles ORDER BY version",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bundle",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "trust_bundles",
+            "name": "bundle"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "signature",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "trust_bundles",
+            "name": "signature"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "feb4732b599a8637978c4fdfa817a31431ca01d568d95efe50d9e7d5f32d5b7a"
+}

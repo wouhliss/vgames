@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO publisher_keys (key_id, public_key, holder_user_id, label, not_before, not_after,\n                                           trust_version, revoked_at, revocation_reason)\n               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)\n               ON CONFLICT (key_id) DO UPDATE SET\n                 holder_user_id = EXCLUDED.holder_user_id, label = EXCLUDED.label,\n                 not_before = EXCLUDED.not_before, not_after = EXCLUDED.not_after,\n                 trust_version = EXCLUDED.trust_version, revoked_at = EXCLUDED.revoked_at,\n                 revocation_reason = EXCLUDED.revocation_reason",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Bytea",
+        "Uuid",
+        "Text",
+        "Timestamptz",
+        "Timestamptz",
+        "Int8",
+        "Timestamptz",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6365961f4ba1cc384301428834feb8d27c7b823ba53fc18d064603fe5da3d5ae"
+}

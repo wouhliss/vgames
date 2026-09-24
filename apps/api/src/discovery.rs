@@ -3,7 +3,6 @@
 use std::time::Duration;
 
 use axum::{extract::State, http::StatusCode, response::IntoResponse};
-use base64::Engine as _;
 use utoipa_axum::{router::OpenApiRouter, routes};
 use vgames_proto::discovery::{
     ApiVersion, DependencyStatus, Feature, Health, HealthStatus, ServerInfo,
@@ -28,7 +27,6 @@ pub fn routes() -> OpenApiRouter<AppState> {
 )]
 pub async fn server_info(State(state): State<AppState>) -> ApiResult<impl IntoResponse> {
     let settings = crate::settings::load(&state.db).await?;
-    let fingerprint = crate::trust::root_fingerprint(&state.config.root_public_key)?;
     let mut features = vec![
         Feature::CloudSaves,
         Feature::Social,
@@ -44,9 +42,8 @@ pub async fn server_info(State(state): State<AppState>) -> ApiResult<impl IntoRe
         name: state.config.server_name.clone(),
         motd: settings.motd.filter(|m| !m.is_empty()),
         api_versions: vec![ApiVersion::V1],
-        root_public_key: base64::engine::general_purpose::STANDARD
-            .encode(state.config.root_public_key),
-        root_key_fingerprint: fingerprint,
+        root_public_key: state.config.root_public_key.to_base64(),
+        root_key_fingerprint: state.config.root_public_key.fingerprint().to_string(),
         registration_mode: Some(settings.registration_mode),
         features,
         min_launcher_version: None,
