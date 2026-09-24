@@ -10,6 +10,8 @@
 //!
 //! Modules:
 //! - [`codec`] — strict wire encodings: BLAKE3 digests (lowercase hex), base64, RFC 3339 UTC.
+//! - [`layout`] — the single chunk/pack layout function (02 §4).
+//! - [`paths`] — package path safety rules (02 §3), exact Unicode simple case folding.
 //! - [`sign`]  — domain-separated Ed25519 signatures, key ids, `VG1-…` fingerprints,
 //!   `vgames.sig/1` envelopes.
 //!
@@ -19,6 +21,8 @@
 #![forbid(unsafe_code)]
 
 pub mod codec;
+pub mod layout;
+pub mod paths;
 pub mod sign;
 
 pub use codec::{Digest, Timestamp};
