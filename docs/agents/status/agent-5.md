@@ -75,12 +75,21 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
     they appear in `vgames_pack.d.ts`). **Agent 3:** the admin upload worker uses exactly these; post only the
     envelope JSON to the main thread.
 
+- **Compat profiles** (A5-T02/T04, for Agents 1 and 2): `vgames_core::compat::{parse_and_validate(bytes),
+  CompatProfile, Target, Status, RunnerKind, Graphics, Runner, AppliesTo, WINETRICKS_ALLOWLIST, is_launcher_owned_env_key,
+  is_valid_dll_name, is_valid_dll_mode}`, `CompatProfile::{applies_to(platform, sequence), wine_dll_overrides()}`, and
+  `vgames_core::verify::verify_compat_profile(&TrustState, &Envelope, bytes, &ExpectedCompat { server_id, package_id,
+  target }, last_revision, VerifyMode) -> VerifiedCompat { profile, digest, key_id, holder_user_id, newer }`. Same key
+  rules as manifests; launchers refuse a lower revision, the server (`VerifyMode::Server`) a lower **or equal** one.
+
 - **CI for everyone** (A5-T01): every PR runs `.github/workflows/ci.yml` (Rust fmt/clippy/tests with Postgres 18,
   sqlx offline check + migrations on an empty DB and upgrade from the base revision, WASM + pack-wasm smoke,
   Biome/typecheck/Vitest/OpenAPI lint, launcher Playwright (mock), desktop clippy with WebKitGTK, cargo-deny,
-  cargo-audit, pnpm audit, gitleaks). **How to wait for CI with our token:** `gh pr checks` fails (no checks
-  permission); use `gh run list -R wouhliss/vgames --branch <your-branch> -L 1` then
-  `gh run watch <run-id> -R wouhliss/vgames --exit-status`, and merge with `gh pr merge <n> --rebase`.
+  cargo-audit, pnpm audit, gitleaks). **How to wait for CI with our token:** `gh pr checks` and `gh run watch` fail
+  (the token cannot read checks/annotations). Poll instead:
+  `id=$(gh run list -R wouhliss/vgames --branch <your-branch> -L 1 --json databaseId --jq '.[0].databaseId')`, then
+  `gh run view $id -R wouhliss/vgames --json status,conclusion,jobs` until `status` is `completed`; merge with
+  `gh pr merge <n> -R wouhliss/vgames --rebase` only when `conclusion` is `success`.
   PR creation works now (`gh pr create`). Agent 3's request (desktop e2e in CI) and Agent 2's (pack-wasm build +
   smoke) are included.
 - Formatting-only fixes I made so `main` is green (please pull before editing): `apps/api/src/storage/mod.rs`,
@@ -90,3 +99,10 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
 ## Needs from others
 
 ## Blockers / contract questions
+- Clarifications I implemented where the docs were silent (a `contract:` PR to 02/09 will record them):
+  (1) paths: a component whose NFKC form breaks a rule is refused (`‥`, `／`, fullwidth reserved names) — needed for
+  "never escapes after any normalization"; (2) manifests: `files` sorted byte-wise by path (02 §4 step 2), empty files
+  hash to BLAKE3(""), `version_label` 1–64 chars; (3) compat env: besides the manifest denylist, keys the launcher sets
+  itself are refused (`WINEPREFIX`, `WINEDLLOVERRIDES`, `WINEDLLPATH`, `WINEPATH`, `WINELOADER`, `WINESERVER`,
+  `PROTONPATH`, `GAMEID`, `STORE`, `STEAM_COMPAT_*`, `UMU_*`, `PRESSURE_VESSEL_*`), else a profile could redirect the prefix
+  or bypass the DLL-override rules; (4) key files fix Argon2id params (a file cannot ask for other costs).
