@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT field_sources FROM packages WHERE id = $1 AND deleted_at IS NULL FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "field_sources",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "packages",
+            "name": "field_sources"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "07aa4f755baab2d64d88ffbc6fe4f4ad718543745cee933b175b2c542d82bedf"
+}

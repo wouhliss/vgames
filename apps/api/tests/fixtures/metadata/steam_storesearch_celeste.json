@@ -1,0 +1,12 @@
+{
+  "total": 2,
+  "items": [
+    {
+      "type": "app",
+      "name": "Celeste",
+      "id": 504230,
+      "tiny_image": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/504230/capsule_231x87.jpg"
+    },
+    { "type": "app", "name": "Celeste Soundtrack Collection", "id": 800000 }
+  ]
+}

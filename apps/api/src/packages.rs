@@ -39,7 +39,6 @@ use crate::{
         pagination::{CursorCodec, PageParams, finish_page},
         query::Query,
     },
-    jobs::{self, Enqueue},
     openapi_problems::{
         BadRequest, Conflict, Forbidden, NotFound, PreconditionFailed, PreconditionRequired,
         Unauthorized,
@@ -111,6 +110,17 @@ fn parse_asset_source(s: &str) -> AssetSource {
         "igdb" => AssetSource::Igdb,
         "steam" => AssetSource::Steam,
         _ => AssetSource::Upload,
+    }
+}
+
+pub(crate) fn protondb_tier_str(t: ProtonDbTier) -> &'static str {
+    match t {
+        ProtonDbTier::Platinum => "platinum",
+        ProtonDbTier::Gold => "gold",
+        ProtonDbTier::Silver => "silver",
+        ProtonDbTier::Bronze => "bronze",
+        ProtonDbTier::Borked => "borked",
+        ProtonDbTier::Pending => "pending",
     }
 }
 
@@ -307,7 +317,7 @@ pub async fn users_public(state: &AppState, ids: &[Uuid]) -> ApiResult<HashMap<U
 }
 
 /// The latest `metadata.fetch` job per package.
-async fn metadata_jobs(state: &AppState, ids: &[Uuid]) -> ApiResult<HashMap<Uuid, Job>> {
+pub(crate) async fn metadata_jobs(state: &AppState, ids: &[Uuid]) -> ApiResult<HashMap<Uuid, Job>> {
     let keys: Vec<String> = ids.iter().map(Uuid::to_string).collect();
     let rows = sqlx::query!(
         r#"SELECT DISTINCT ON (payload->>'package_id') payload->>'package_id' AS "package_id!",
@@ -822,7 +832,7 @@ pub async fn admin_list(
     }))
 }
 
-fn with_etag(mut resp: Response, updated_at: OffsetDateTime) -> Response {
+pub(crate) fn with_etag(mut resp: Response, updated_at: OffsetDateTime) -> Response {
     let (k, v) = etag_header(updated_at);
     resp.headers_mut().insert(k, v);
     resp
@@ -899,16 +909,7 @@ pub async fn admin_create(
             }
         })?;
         if req.fetch_metadata.unwrap_or(true) {
-            jobs::enqueue(
-                &mut tx,
-                "metadata.fetch",
-                json!({ "package_id": id.to_string() }),
-                Enqueue {
-                    dedupe_key: Some(format!("metadata.fetch:{id}")),
-                    ..Default::default()
-                },
-            )
-            .await?;
+            crate::metadata::enqueue_fetch(&mut tx, id).await?;
         }
         audit::record(
             &mut tx,

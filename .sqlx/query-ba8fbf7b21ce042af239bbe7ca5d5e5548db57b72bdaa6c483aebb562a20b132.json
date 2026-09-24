@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM metadata_candidates WHERE package_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ba8fbf7b21ce042af239bbe7ca5d5e5548db57b72bdaa6c483aebb562a20b132"
+}

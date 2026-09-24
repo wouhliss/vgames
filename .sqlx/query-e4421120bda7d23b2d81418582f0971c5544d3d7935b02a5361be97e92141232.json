@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE packages SET protondb_tier = $2 WHERE id = $1 AND protondb_tier IS DISTINCT FROM $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e4421120bda7d23b2d81418582f0971c5544d3d7935b02a5361be97e92141232"
+}

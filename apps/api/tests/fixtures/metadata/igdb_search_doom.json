@@ -1,0 +1,17 @@
+[
+  {
+    "id": 673,
+    "name": "Doom",
+    "first_release_date": 755222400,
+    "genres": [{ "id": 5, "name": "Shooter" }],
+    "cover": { "id": 1, "image_id": "co1rkx" }
+  },
+  {
+    "id": 7351,
+    "name": "DOOM",
+    "first_release_date": 1463097600,
+    "genres": [{ "id": 5, "name": "Shooter" }],
+    "cover": { "id": 2, "image_id": "co1ntv" },
+    "external_games": [{ "id": 3, "category": 1, "uid": "379720" }]
+  }
+]
