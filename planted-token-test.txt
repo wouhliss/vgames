@@ -1,0 +1,2 @@
+This file exists only to prove CI secret scanning (A5-T01). It must never merge.
+access_token = vga_tXIJ1mjZvpq_ajlufmEoongOJdgqapuUvBRHQDt_bpA
