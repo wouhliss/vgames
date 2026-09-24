@@ -1,10 +1,9 @@
-// Stand-in for the generated `src/bindings.ts` (Agent 2, A2-T01).
+// Commands and events the UI needs that are NOT in the generated `src/bindings.ts` yet.
 //
-// This file has exactly the shape tauri-specta generates (`commands`, `events`, `Result`, snake_case
-// payload fields, camelCase argument keys) so the UI can be built and tested today against mockIPC.
-// It is also the request list for Agent 2 and Agent 4: every command and event here is listed in
-// docs/agents/status/agent-3.md under "Needs from others". When `bindings.ts` lands, `src/ipc/index.ts`
-// re-exports from it instead and this file is deleted; type errors then show any drift.
+// Same shape as tauri-specta output (`Result`, snake_case payload fields, camelCase argument keys), so
+// the UI can be built and tested today against mockIPC. This is the request list for Agent 2 and
+// Agent 4 (docs/agents/status/agent-3.md, "Needs from others"). As each item lands in `bindings.ts`,
+// delete it here: `src/ipc/index.ts` merges both and the generated one wins, so type errors show drift.
 //
 // Conventions (tauri-specta defaults):
 // - Command names are snake_case on the wire; argument keys are camelCase.
@@ -13,6 +12,7 @@
 // - Event names are the kebab-case type name (`UiNav` → "ui-nav").
 import { invoke as TAURI_INVOKE } from "@tauri-apps/api/core";
 import * as TAURI_API_EVENT from "@tauri-apps/api/event";
+import type { ControllerKind } from "../bindings";
 
 export type Result<T, E> = { status: "ok"; data: T } | { status: "error"; error: E };
 
@@ -31,7 +31,6 @@ async function call<T, E>(cmd: string, args?: Record<string, unknown>): Promise<
 export type Os = "windows" | "linux" | "macos";
 export type Arch = "x86_64" | "aarch64";
 export type Role = "user" | "admin" | "owner";
-export type ControllerKind = "xinput" | "dualshock4" | "dualsense" | "switch_pro" | "generic";
 
 /** Generic error for commands without a more specific error type. Messages are English fallbacks. */
 export type AppError =
@@ -42,16 +41,6 @@ export type AppError =
   | { kind: "invalid_input"; field: string; message: string }
   | { kind: "io"; path: string | null; detail: string }
   | { kind: "internal"; detail: string };
-
-export type AppInfo = {
-  version: string;
-  os: Os;
-  arch: Arch;
-  /** Debug builds allow http://localhost servers. */
-  debug: boolean;
-  /** Tokens are stored in a 0600 file because no OS keychain was available (01-security §7). */
-  keychain_fallback: boolean;
-};
 
 export type Theme = "system" | "dark" | "light" | "high_contrast";
 
@@ -202,14 +191,7 @@ export type LibrariesChanged = Record<string, never>;
 // ------------------------------------------------------------------------------------------------
 // Commands
 
-export const commands = {
-  /** Shows the main window. Call once, after the first paint. */
-  async appReady(): Promise<null> {
-    return await TAURI_INVOKE("app_ready");
-  },
-  async appInfo(): Promise<AppInfo> {
-    return await TAURI_INVOKE("app_info");
-  },
+export const pendingCommands = {
   /** Redacted diagnostics text for bug reports (no tokens, ids or paths under the home directory). */
   async appDiagnostics(): Promise<string> {
     return await TAURI_INVOKE("app_diagnostics");
@@ -295,7 +277,7 @@ function makeEvents<T extends Record<string, unknown>>(mappings: Record<keyof T,
   return out;
 }
 
-export const events = makeEvents<{
+export const pendingEvents = makeEvents<{
   uiNav: UiNav;
   activeControllerChanged: ActiveControllerChanged;
   connectivityChanged: ConnectivityChanged;

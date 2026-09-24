@@ -20,13 +20,7 @@ const PRESETS: Record<string, () => Partial<MockState>> = {
   "no-library": () => ({ servers: [MOCK_SERVER] }),
   /** Debug build (http://localhost allowed). */
   debug: () => ({
-    appInfo: {
-      version: "0.4.0",
-      os: "linux",
-      arch: "x86_64",
-      debug: true,
-      keychain_fallback: false,
-    },
+    appInfo: { version: "0.4.0", profile: null, debug_build: true, os: "linux", arch: "x86_64" },
   }),
 };
 

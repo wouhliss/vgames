@@ -85,10 +85,10 @@ export function defaultState(): MockState {
   return {
     appInfo: {
       version: "0.4.0",
+      profile: null,
+      debug_build: false,
       os: "linux",
       arch: "x86_64",
-      debug: false,
-      keychain_fallback: false,
     },
     appearance: { theme: "dark", reduce_motion: false },
     servers: [],
@@ -217,7 +217,7 @@ export function installMockBackend(overrides: Partial<MockState> = {}): MockBack
 
     servers_list: () => state.servers,
     server_preview: (args) => {
-      const normalized = normalizeUrl(String(args.url), state.appInfo.debug);
+      const normalized = normalizeUrl(String(args.url), state.appInfo.debug_build);
       if (!(normalized instanceof URL)) fail(normalized);
       const host = normalized.hostname;
       const behaviour = HOSTS[host] ?? { name: host };

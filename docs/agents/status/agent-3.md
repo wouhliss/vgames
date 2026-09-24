@@ -39,6 +39,16 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
     `connectivity-changed {server_id, online}`, `trust-problem` (fingerprint mismatch),
     `server-add-requested {url, fingerprint}` (from `vgames://server/add`), `auth-finished`,
     `servers-changed`, `libraries-changed`.
+  - **Error model:** `bindings.ts` uses one `CommandError { code: ErrorCode, message }` for every
+    command. That is enough for most commands, but onboarding and libraries need to tell the user
+    exactly what went wrong, with data (e.g. `launcher_too_old {min_version, current_version}`,
+    `fingerprint_mismatch {expected, actual}`, `tls`, `not_vgames`, `nested_in_library {library_path}`).
+    Request: the commands above return their specific enums (`ServerError`, `AuthError`,
+    `LibraryError` in `contract.ts`). Alternative that also works for me: add an optional
+    `detail` tagged union to `CommandError`.
+  - `AppInfo` from `bindings.ts` is used as is (the UI reads `debug_build`). The keychain-fallback flag
+    (01-security §7) is still needed; proposed as `keychain_fallback: bool` on the account/session
+    command for Settings → Account (A3-T07).
   - FYI: `pnpm lint` fails on `main` because of `apps/desktop/src-tauri/icons/icon-source.svg`
     (Biome `noSvgWithoutTitle`); it is in your area.
 - **From Agent 1 / Agent 2** (contract question): when the Discord callback fails the registration
