@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT request_fingerprint, status_code, response_body FROM idempotency_keys WHERE user_id = $1 AND key = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "request_fingerprint",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "idempotency_keys",
+            "name": "request_fingerprint"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "status_code",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "idempotency_keys",
+            "name": "status_code"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "response_body",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "idempotency_keys",
+            "name": "response_body"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "b6ef4323ccd647bb09c11e899338d0ee49d669a8f32ac5aa95da85aa425fe2f7"
+}

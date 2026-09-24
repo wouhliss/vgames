@@ -5,7 +5,7 @@ use std::{ops::Deref, sync::Arc, time::Duration};
 use sqlx::PgPool;
 use tokio_util::sync::CancellationToken;
 
-use crate::{config::Config, secret::Secret};
+use crate::{config::Config, http::ratelimit::RateLimits, secret::Secret};
 
 #[derive(Clone)]
 pub struct AppState(Arc<AppStateInner>);
@@ -16,6 +16,7 @@ pub struct AppStateInner {
     /// Outbound HTTP (Discord, IGDB, Steam). Never used to fetch user-supplied URLs.
     pub http: reqwest::Client,
     pub keys: DerivedKeys,
+    pub limits: RateLimits,
     /// Cancelled on shutdown: long-lived tasks and sockets watch it.
     pub shutdown: CancellationToken,
     /// Identifies this process among API instances (realtime fan-out, job leases).
@@ -52,6 +53,7 @@ impl AppState {
             db,
             http,
             keys,
+            limits: RateLimits::new(),
             shutdown: CancellationToken::new(),
             instance_id: format!("{}-{}", hostname_hint(), uuid::Uuid::now_v7()),
         })))

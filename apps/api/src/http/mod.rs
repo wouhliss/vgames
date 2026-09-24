@@ -6,7 +6,12 @@
 
 pub mod client_ip;
 pub mod context;
+pub mod etag;
+pub mod idempotency;
 pub mod json;
+pub mod pagination;
+pub mod query;
+pub mod ratelimit;
 pub mod security_headers;
 
 use std::{any::Any, time::Duration};
@@ -64,6 +69,10 @@ pub fn with_layers(routes: Router<AppState>, state: AppState) -> Router {
         .layer(
             ServiceBuilder::new()
                 .layer(middleware::from_fn(context::request_context))
+                .layer(middleware::from_fn_with_state(
+                    state.clone(),
+                    ratelimit::ip_limits,
+                ))
                 .layer(SetSensitiveRequestHeadersLayer::new([
                     header::AUTHORIZATION,
                     header::COOKIE,

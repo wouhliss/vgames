@@ -7,14 +7,19 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   redacted logging (pretty/JSON), layer stack, problem+json errors, `/v1/health`, `/openapi.json`, `/docs`,
   graceful shutdown, `--role/--migrate/--check-config`, sqlx test harness. `/.well-known/vgames.json` is
   implemented but answers 503 until `vgames_core` provides the fingerprint (test `#[ignore]`d).
+- A1-T02 — API conventions: `http::pagination` (HMAC-signed cursors, `PageParams`, `finish_page`),
+  `http::idempotency` (`IdempotencyKey` extractor + `run`), `http::etag` (`etag`, `IfMatch::check` → 428/412),
+  `http::ratelimit` (`RateLimits::check/check_n`, `Policy::*`; IP limits applied to every route),
+  `http::query::Query<T>`, problem catalogue snapshot.
 
 ## In progress
-- A1-T02 — API conventions
+- A1-T03 — OpenAPI generation and drift check
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_api::error::ApiError` / `ApiResult` (problem+json), `vgames_api::http::json::{Json, Validate}`
   (rejects unknown fields, reports field paths) — for Agent 4's `social` handlers.
 - `vgames_api::social::routes() -> OpenApiRouter<AppState>` mount point (convert `social.rs` to `social/mod.rs`).
+- `state.limits.check(Policy::FriendRequests | Invites | Messages, key)` for Agent 4's per-action limits.
 - Test harness: `apps/api/tests/common/mod.rs` (`app(pool)`, `send`, `body_json`, `json_request`) with
   `#[sqlx::test(migrations = "./migrations")]`.
 - Root `clippy.toml` allows unwrap/expect/panic/indexing in tests (AGENTS.md §5).

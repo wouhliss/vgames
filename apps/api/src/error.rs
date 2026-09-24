@@ -269,3 +269,53 @@ pub fn is_unique_violation(err: &sqlx::Error, constraint: Option<&str>) -> bool 
         _ => false,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every common problem (03-api §2), snapshotted so wire changes are deliberate.
+    #[test]
+    fn problem_catalogue() {
+        let all = vec![
+            ApiError::field("title", "too_long", "must be at most 200 characters"),
+            ApiError::bad_request("unknown_field", "The request contains an unknown field"),
+            ApiError::bad_request(
+                "invalid_cursor",
+                "The cursor is invalid or belongs to a different query",
+            ),
+            ApiError::unauthenticated(),
+            ApiError::session_expired(),
+            ApiError::forbidden(),
+            ApiError::forbidden_code("user_disabled", "This account is disabled"),
+            ApiError::not_found(),
+            ApiError::conflict(
+                "idempotency_key_reused",
+                "This Idempotency-Key was already used for a different request",
+            ),
+            ApiError::precondition_failed(),
+            ApiError::precondition_required(),
+            ApiError::payload_too_large(),
+            ApiError::unsupported_media_type(),
+            ApiError::unprocessable("signature_invalid", "The signature does not verify"),
+            ApiError::gone("version_yanked", "This version was withdrawn"),
+            ApiError::rate_limited(7),
+            ApiError::internal(),
+            ApiError::unavailable(),
+            ApiError::timeout(),
+        ];
+        let problems: Vec<Problem> = all.iter().map(ApiError::to_problem).collect();
+        insta::assert_json_snapshot!(problems);
+    }
+
+    #[test]
+    fn rate_limited_sets_retry_after() {
+        let resp = ApiError::rate_limited(7).into_response();
+        assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(resp.headers()[header::RETRY_AFTER], "7");
+        assert_eq!(
+            resp.headers()[header::CONTENT_TYPE],
+            "application/problem+json"
+        );
+    }
+}

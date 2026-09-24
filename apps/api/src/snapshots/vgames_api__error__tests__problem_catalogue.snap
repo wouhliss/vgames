@@ -1,0 +1,127 @@
+---
+source: apps/api/src/error.rs
+expression: problems
+---
+[
+  {
+    "type": "urn:vgames:problem:validation_failed",
+    "title": "The request is invalid",
+    "status": 400,
+    "code": "validation_failed",
+    "errors": [
+      {
+        "field": "title",
+        "code": "too_long",
+        "message": "must be at most 200 characters"
+      }
+    ]
+  },
+  {
+    "type": "urn:vgames:problem:unknown_field",
+    "title": "The request contains an unknown field",
+    "status": 400,
+    "code": "unknown_field"
+  },
+  {
+    "type": "urn:vgames:problem:invalid_cursor",
+    "title": "The cursor is invalid or belongs to a different query",
+    "status": 400,
+    "code": "invalid_cursor"
+  },
+  {
+    "type": "urn:vgames:problem:unauthenticated",
+    "title": "Sign in to continue",
+    "status": 401,
+    "code": "unauthenticated"
+  },
+  {
+    "type": "urn:vgames:problem:session_expired",
+    "title": "Your session has expired",
+    "status": 401,
+    "code": "session_expired"
+  },
+  {
+    "type": "urn:vgames:problem:forbidden",
+    "title": "You are not allowed to do this",
+    "status": 403,
+    "code": "forbidden"
+  },
+  {
+    "type": "urn:vgames:problem:user_disabled",
+    "title": "This account is disabled",
+    "status": 403,
+    "code": "user_disabled"
+  },
+  {
+    "type": "urn:vgames:problem:not_found",
+    "title": "Not found",
+    "status": 404,
+    "code": "not_found"
+  },
+  {
+    "type": "urn:vgames:problem:idempotency_key_reused",
+    "title": "This Idempotency-Key was already used for a different request",
+    "status": 409,
+    "code": "idempotency_key_reused"
+  },
+  {
+    "type": "urn:vgames:problem:precondition_failed",
+    "title": "This resource was changed by someone else; reload it and try again",
+    "status": 412,
+    "code": "precondition_failed"
+  },
+  {
+    "type": "urn:vgames:problem:precondition_required",
+    "title": "An If-Match header is required",
+    "status": 428,
+    "code": "precondition_required"
+  },
+  {
+    "type": "urn:vgames:problem:payload_too_large",
+    "title": "The request body is too large",
+    "status": 413,
+    "code": "payload_too_large"
+  },
+  {
+    "type": "urn:vgames:problem:unsupported_media_type",
+    "title": "Unsupported content type",
+    "status": 415,
+    "code": "unsupported_media_type"
+  },
+  {
+    "type": "urn:vgames:problem:signature_invalid",
+    "title": "The signature does not verify",
+    "status": 422,
+    "code": "signature_invalid"
+  },
+  {
+    "type": "urn:vgames:problem:version_yanked",
+    "title": "This version was withdrawn",
+    "status": 410,
+    "code": "version_yanked"
+  },
+  {
+    "type": "urn:vgames:problem:rate_limited",
+    "title": "Too many requests",
+    "status": 429,
+    "code": "rate_limited"
+  },
+  {
+    "type": "urn:vgames:problem:internal",
+    "title": "Something went wrong on the server",
+    "status": 500,
+    "code": "internal"
+  },
+  {
+    "type": "urn:vgames:problem:unavailable",
+    "title": "The service is temporarily unavailable",
+    "status": 503,
+    "code": "unavailable"
+  },
+  {
+    "type": "urn:vgames:problem:timeout",
+    "title": "The server took too long to respond",
+    "status": 503,
+    "code": "timeout"
+  }
+]

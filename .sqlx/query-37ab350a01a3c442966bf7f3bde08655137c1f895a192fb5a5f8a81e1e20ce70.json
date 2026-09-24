@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO idempotency_keys (user_id, key, request_fingerprint)\n           VALUES ($1, $2, $3)\n           ON CONFLICT (user_id, key) DO NOTHING\n           RETURNING 1 AS \"one!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "one!",
+        "type_info": "Int4",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "37ab350a01a3c442966bf7f3bde08655137c1f895a192fb5a5f8a81e1e20ce70"
+}
