@@ -9,6 +9,7 @@ the GitHub settings below; agents cannot.
 |---|---|
 | `Rust (fmt, clippy, tests)` | `cargo fmt --check`, `cargo clippy --all-targets -D warnings`, `cargo test` (default members) against a Postgres 18 service (`#[sqlx::test]` creates one database per test) |
 | `SQLx offline data and migrations` | Migrations apply to an empty database; the upgrade path from the base revision works and no merged migration was edited (checksum mismatch fails); `cargo sqlx prepare --workspace --check` (committed `.sqlx/` matches the queries) |
+| `Changelog fragments` | PRs: `cargo xtask changelog check --base <base>` — every fragment is valid (08-release §3.2), the PR adds at least one, and a warning when `apps/desktop/**` changed without an `audience: user` launcher fragment. Pushes: `cargo xtask changelog lint` |
 | `WASM (vgames-core, pack-wasm)` | `vgames-core --features wasm` builds and passes clippy on `wasm32-unknown-unknown`; the `@vgames/pack-wasm` package builds and its Node smoke test passes |
 | `TypeScript (Biome, typecheck, Vitest, OpenAPI lint)` | `pnpm install --frozen-lockfile`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `redocly lint` of `openapi/openapi.yaml` |
 | `Launcher UI end-to-end (mock mode)` | Playwright suite of `apps/desktop` against the mock backend (Chromium) |
@@ -17,8 +18,7 @@ the GitHub settings below; agents cannot.
 | `Secret scan (gitleaks)` | Full history with [`.gitleaks.toml`](../../.gitleaks.toml): default rules plus `vga_`/`vgr_`/`vgs_` tokens, `vgames.key/1` key files, `.vgkey` files, minisign secret keys |
 | `Dependency review` | PRs only: new dependencies with moderate+ advisories or GPL/AGPL licenses. Needs GitHub Advanced Security on a private repository (see below) |
 
-Coming with later tasks: the changelog fragment lint (A5-T08) and the OpenAPI drift check, which already runs
-inside `cargo test` (`apps/api/tests/openapi_contract.rs`).
+The OpenAPI drift check runs inside `cargo test` (`apps/api/tests/openapi_contract.rs`).
 
 Workflow rules (08-release §1): every action is pinned by commit SHA, `permissions: {}` at the top and
 `contents: read` per job, no secrets in `ci.yml` (fork PRs get nothing to steal), caches keyed by lockfiles
@@ -35,6 +35,7 @@ Settings → Rules → Rulesets → new branch ruleset targeting `main`:
    (exact job names):
    - `Rust (fmt, clippy, tests)`
    - `SQLx offline data and migrations`
+   - `Changelog fragments`
    - `WASM (vgames-core, pack-wasm)`
    - `TypeScript (Biome, typecheck, Vitest, OpenAPI lint)`
    - `Launcher UI end-to-end (mock mode)`

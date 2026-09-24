@@ -43,6 +43,35 @@ inside your area. For anything else:
   fragment but never promote an internal one, so label honestly.
 - Rebase on `main` before opening a PR; never force-push `main`.
 
+### How to write your fragment
+
+Add `.changes/<short-kebab-slug>.md` in the same PR (CI's `Changelog fragments` check fails without one;
+`cargo xtask changelog lint` runs the same rules locally):
+
+```markdown
+---
+audience: user        # user | internal
+component: launcher   # launcher | admin | server
+type: fixed           # added | changed | fixed | removed | security
+---
+Downloads now resume after your computer restarts.
+```
+
+- `audience: user` only when a player (or an admin in the admin UI) can see or feel the change. The text is shown
+  **verbatim** to players: one or two plain sentences, 10–240 characters, starting with a capital letter and ending
+  with a period. No technical words (`refactor`, `dependency`, `bump`, `crate`, `CI`, `test`, `rust`, `tauri`, `API`,
+  `endpoint`, `schema`, `migration`, `PR`, `commit`, … in any form), no backticks, file paths, file names, `#123`
+  or hashes. `type: security` says what could have happened to the player ("Fixed an issue that could …"), never how.
+- Everything else is `audience: internal` (any wording; it only reaches `CHANGELOG.md`). Label honestly: the
+  release-notes agent may drop or reword user fragments but can never promote an internal one.
+
+| Good (`audience: user`) | Bad |
+|---|---|
+| You can now pin favorite packages to the top of your library. | Added `pinned` column to the library table. |
+| Downloads now resume after your computer restarts. | Refactored the download engine. |
+| Fixed an issue that could show another server's covers in your library. | Fixed XSS via crafted cover URL (#42). |
+| Installing large games no longer freezes the launcher for a few seconds. | Bumped tauri to 2.12.
+
 ## 4. Commands
 
 ```sh

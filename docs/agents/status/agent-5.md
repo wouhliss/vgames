@@ -82,6 +82,11 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
   target }, last_revision, VerifyMode) -> VerifiedCompat { profile, digest, key_id, holder_user_id, newer }`. Same key
   rules as manifests; launchers refuse a lower revision, the server (`VerifyMode::Server`) a lower **or equal** one.
 
+- **Changelog lint for every agent** (A5-T08, part 1): CI job `Changelog fragments` fails a PR that adds no
+  `.changes/*.md` or has an invalid one; run `cargo xtask changelog lint` locally. Rules and good/bad examples:
+  `AGENTS.md` → "How to write your fragment". `echo "text" | cargo xtask changelog lint-text --type fixed` checks one
+  player-facing sentence. All 27 existing fragments pass.
+
 - **CI for everyone** (A5-T01): every PR runs `.github/workflows/ci.yml` (Rust fmt/clippy/tests with Postgres 18,
   sqlx offline check + migrations on an empty DB and upgrade from the base revision, WASM + pack-wasm smoke,
   Biome/typecheck/Vitest/OpenAPI lint, launcher Playwright (mock), desktop clippy with WebKitGTK, cargo-deny,

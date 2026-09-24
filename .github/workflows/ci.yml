@@ -135,6 +135,32 @@ jobs:
           DATABASE_URL: ${{ env.PG }}/ci_empty
         run: cargo sqlx prepare --workspace --check
 
+  changelog:
+    name: Changelog fragments
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Install toolchain (rust-toolchain.toml)
+        run: rustup toolchain install && rustup show active-toolchain
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: xtask
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Every PR adds a valid fragment (08-release §3)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: cargo xtask changelog check --base "$BASE_SHA"
+      - name: All fragments are valid
+        if: github.event_name != 'pull_request'
+        run: cargo xtask changelog lint
+
   wasm:
     name: WASM (vgames-core, pack-wasm)
     runs-on: ubuntu-24.04

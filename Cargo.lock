@@ -9054,6 +9054,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "regex",
  "semver",
  "serde",
  "serde_json",
