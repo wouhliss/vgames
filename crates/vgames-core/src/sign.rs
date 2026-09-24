@@ -786,6 +786,17 @@ mod tests {
     }
 
     #[test]
+    fn envelope_wire_format_snapshot() {
+        // Ed25519 is deterministic, so the whole envelope is stable.
+        let env = Envelope::sign(&key(6), Context::Manifest, b"manifest bytes");
+        insta::assert_snapshot!(String::from_utf8(env.to_bytes()).unwrap());
+        insta::assert_snapshot!(
+            "root_fingerprint",
+            key(6).public_key().fingerprint().to_string()
+        );
+    }
+
+    #[test]
     fn envelope_rejects_malformed_fields() {
         let good: serde_json::Value =
             serde_json::from_slice(&Envelope::sign(&key(8), Context::Manifest, b"x").to_bytes())

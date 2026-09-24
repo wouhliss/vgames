@@ -1,0 +1,5 @@
+---
+source: crates/vgames-core/src/sign.rs
+expression: "String::from_utf8(env.to_bytes()).unwrap()"
+---
+{"format":"vgames.sig/1","alg":"ed25519","context":"vgames/manifest/v1","key_id":"529eb3098bf4c47a11adee0f63dbbaa7","payload_blake3":"56baadd3a4b327025f893e9f06fe3b3eb741a102bd59cbd169faf42f5237c16a","signature":"DPgtV9iiR2QVyDdce4wSFVbOiBU1Y0ATbbW7p/prWg8u+u4/qhT2CPo1eFzjSZFQJBQS+1vlMSfSsxlsFRl6Cg=="}

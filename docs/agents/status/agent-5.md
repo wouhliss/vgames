@@ -7,10 +7,7 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
 ## Done
 
 ## In progress
-- A5-T03 (first slice, critical path): `vgames_core::sign` — key ids, `VG1-…` fingerprints, domain-separated
-  signatures, `vgames.sig/1` envelopes. Lands first because it unblocks `/.well-known/vgames.json` (Agent 1).
-- Next, in order: A5-T01 CI → A5-T02 paths / layout / manifest → A5-T04 trust + `verify_manifest` →
-  A5-T03 keyfile + WASM → A5-T02 compat.
+- Next, in order: A5-T01 CI → A5-T04 trust + `verify_manifest` → A5-T03 keyfile + WASM → A5-T02 compat.
 
 ## Interfaces delivered (other agents may now rely on these)
 - **Signatures, key ids, fingerprints** (A5-T03 slice 1, for Agents 1, 2, 3):
@@ -35,6 +32,17 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
   - `vgames_core::layout::{assign_chunks, assign_chunks_bounded, count_chunks, packs (= assign_packs), Layout,
     FileSlot, ChunkSlot, PackSlot, ChunkPlacement, Layout::extents, CHUNK_SIZE, PACK_SIZE, MAX_STORED_OVERHEAD}`:
     your interim API unchanged; `packs` also refuses zero-byte stored chunks.
+
+- **Manifest** (A5-T02, for Agents 1 and 2): `vgames_core::manifest::{parse_and_validate(bytes) -> Result<Manifest,
+  ManifestError>, Manifest, Platform, Encoding, Chunk, Pack, File, Launch, LaunchTarget, SaveLocation, SaveBase,
+  Controllers, ControllerKind, EmulatedController, Multiplayer, Join, EMPTY_BLAKE3, JOIN_SECRET_PLACEHOLDER,
+  is_valid_env_key, is_denied_env_key}`. Every 02 §5 rule, one error variant per rule with the array index
+  (`ManifestError::{Chunk, Pack, File, LaunchTarget, Env, Save, …}`). Accepts `vgames-pack`'s exact output
+  (its snapshot is a test vector here). Rules the spec implied and I made explicit: files must be sorted byte-wise
+  (02 §4 step 2); empty files carry the BLAKE3 of zero bytes; UUIDs lowercase hyphenated, non-nil;
+  `version_label` 1–64 chars (as the API); duplicate JSON keys are refused; args/env values without NUL; bounded
+  counts (64 targets, 256 env vars, 64 save locations). Verify the signature over the exact bytes **before**
+  calling this (A5-T04 `verify_manifest` does both).
 
 ## Needs from others
 

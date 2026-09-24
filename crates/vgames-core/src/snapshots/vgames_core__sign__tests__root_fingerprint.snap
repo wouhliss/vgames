@@ -1,0 +1,5 @@
+---
+source: crates/vgames-core/src/sign.rs
+expression: key(6).public_key().fingerprint().to_string()
+---
+VG1-AAFB-62CB-YK27-M4DD-XR7P-7PXT-MWPS-2DCX
