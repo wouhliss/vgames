@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO audit_log (actor_user_id, action, target_type, target_id, details)\n                   VALUES ($1, 'user.bootstrap_owner', 'user', $2, '{}')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1f5986669ad108ea25c0882cd60755a3defef04502aa2f0293747cf526c072e8"
+}

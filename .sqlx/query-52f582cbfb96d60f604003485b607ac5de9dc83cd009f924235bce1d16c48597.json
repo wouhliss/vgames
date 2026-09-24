@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE sessions SET revoked_at = now(), revoked_reason = 'refresh_reuse'\n           WHERE previous_refresh_token_hash = $1 AND revoked_at IS NULL\n           RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "52f582cbfb96d60f604003485b607ac5de9dc83cd009f924235bce1d16c48597"
+}

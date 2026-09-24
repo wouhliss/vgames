@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (SELECT 1 FROM sessions WHERE refresh_token_hash = $1 AND revoked_at IS NULL) AS \"e!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "e!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "92311f18fc088a015a1bccd7a5e2cdb696afce4ebada6246535cd16be514a538"
+}

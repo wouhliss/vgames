@@ -1,0 +1,136 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id AS session_id, s.kind, s.device_id, s.access_expires_at, s.csrf_token_hash,\n                      s.created_at, s.last_used_at, u.id AS user_id, u.role, u.disabled_at\n               FROM sessions s JOIN users u ON u.id = s.user_id\n               WHERE s.access_token_hash = $1 AND s.revoked_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "session_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "device_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "device_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "access_expires_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "access_expires_at"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "csrf_token_hash",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "csrf_token_hash"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "last_used_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "last_used_at"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "role",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "role"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "disabled_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "disabled_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "65bf036236d293c7a8561c06dabd9243b57e8d3ed498fe8007cf5d6e48e67424"
+}

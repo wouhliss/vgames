@@ -126,3 +126,10 @@ pub struct Me {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub csrf_token: Option<String>,
 }
+
+/// `GET /v1/me/sessions` body.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SessionList {
+    pub items: Vec<Session>,
+}

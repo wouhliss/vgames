@@ -50,6 +50,20 @@ pub fn base_document() -> OpenApi {
         .build()
 }
 
+/// Adds schemas referenced only by hand-built responses (`openapi_problems`), which the
+/// route collection cannot see.
+pub fn finalize(mut doc: OpenApi) -> OpenApi {
+    use utoipa::PartialSchema;
+    let components = doc.components.get_or_insert_with(Default::default);
+    components
+        .schemas
+        .insert("Problem".to_string(), vgames_proto::Problem::schema());
+    components
+        .schemas
+        .insert("FieldError".to_string(), vgames_proto::FieldError::schema());
+    doc
+}
+
 /// `/openapi.json` and Swagger UI at `/docs` (vendored assets, no CDN).
 pub fn docs_routes(doc: OpenApi) -> Router<AppState> {
     Router::new().merge(SwaggerUi::new("/docs").url("/openapi.json", doc))

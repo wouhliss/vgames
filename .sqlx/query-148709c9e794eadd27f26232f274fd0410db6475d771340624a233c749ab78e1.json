@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE login_codes SET consumed_at = now()\n                   WHERE code_hash = $1 AND consumed_at IS NULL AND expires_at > now()\n                   RETURNING user_id, code_challenge, device_name",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "login_codes",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "code_challenge",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "login_codes",
+            "name": "code_challenge"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "device_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "login_codes",
+            "name": "device_name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "148709c9e794eadd27f26232f274fd0410db6475d771340624a233c749ab78e1"
+}

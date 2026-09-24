@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO oauth_flows (state_hash, client_kind, code_challenge, client_state, device_name, return_to, expires_at)\n           VALUES ($1, $2, $3, $4, $5, $6, $7)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6004cc69618d1323cbc6b00b94f2d2f0b872318bbe1a15bf1816dcf545e9719d"
+}

@@ -15,9 +15,13 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   (`vgames_api::http::openapi()`) with `openapi/openapi.yaml`; unimplemented contract operations are listed in
   `apps/api/tests/openapi_unimplemented.txt` (83 today, must only shrink). Reusable problem responses for
   handlers: `vgames_api::openapi_problems::{BadRequest, Unauthorized, NotFound, …}`.
+- A1-T04 — Discord sign-in and sessions: start/callback/token/logout/me/sessions per 01-security §4
+  (PKCE, login codes, refresh rotation with reuse detection, web cookies + CSRF + Origin, registration modes,
+  bootstrap owner, disabled-user lockout). Dev fake Discord at `/v1/auth/dev/fake-discord`
+  (`VGAMES_DEV_FAKE_DISCORD=true`, debug builds, localhost only). Migration `20260924120000_auth_session_fields`.
 
 ## In progress
-- A1-T04 — Discord authentication and sessions
+- A1-T05 — Realtime gateway plumbing
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_api::error::ApiError` / `ApiResult` (problem+json), `vgames_api::http::json::{Json, Validate}`
@@ -27,6 +31,13 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
 - **Agent 4:** when you implement a social/messaging/invites operation, remove it from
   `apps/api/tests/openapi_unimplemented.txt`; the drift test fails until the handler matches the contract.
 - **Agent 5:** `cargo xtask openapi check` can run `cargo test -p vgames-api --test openapi_contract`.
+- **Auth for every handler (Agents 4, 1):** `vgames_api::auth::{CurrentUser, RequireAdmin, RequireOwner, RequestMeta}`.
+  `CurrentUser { user_id, role, session_id, device_id, kind }` accepts `Bearer vga_…` or the admin-web cookie
+  (CSRF + Origin enforced on unsafe methods) and applies the per-user rate limit. `device_id` is `None` until the
+  launcher registers a device (A4-T04 sets `sessions.device_id`).
+- **Launcher sign-in (Agent 2, A2-T07):** `POST /v1/auth/discord/start` → browser → `vgames://auth/callback?code=…&client_state=…`
+  → `POST /v1/auth/token`; see `apps/api/tests/auth.rs` for the exact flow. Refresh-token reuse returns
+  `401 refresh_token_reused` and ends the session.
 - Test harness: `apps/api/tests/common/mod.rs` (`app(pool)`, `send`, `body_json`, `json_request`) with
   `#[sqlx::test(migrations = "./migrations")]`.
 - Root `clippy.toml` allows unwrap/expect/panic/indexing in tests (AGENTS.md §5).

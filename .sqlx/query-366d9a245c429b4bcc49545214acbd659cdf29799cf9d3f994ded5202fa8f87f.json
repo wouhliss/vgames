@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users SET role = 'owner' WHERE id = $1 AND NOT EXISTS (SELECT 1 FROM users WHERE role = 'owner')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "366d9a245c429b4bcc49545214acbd659cdf29799cf9d3f994ded5202fa8f87f"
+}

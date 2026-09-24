@@ -51,13 +51,17 @@ pub fn api_routes() -> OpenApiRouter<AppState> {
 
 /// The OpenAPI document generated from the handlers.
 pub fn openapi() -> utoipa::openapi::OpenApi {
-    api_routes().split_for_parts().1
+    crate::openapi::finalize(api_routes().split_for_parts().1)
 }
 
 /// Builds the complete application router.
 pub fn router(state: AppState) -> Router {
     let (api, doc) = api_routes().split_for_parts();
-    with_layers(api.merge(crate::openapi::docs_routes(doc)), state)
+    let doc = crate::openapi::finalize(doc);
+    let routes = api
+        .merge(crate::openapi::docs_routes(doc))
+        .merge(crate::auth::dev_routes(&state));
+    with_layers(routes, state)
 }
 
 /// Applies the fallbacks and the cross-cutting layer stack to `routes`.

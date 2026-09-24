@@ -1,0 +1,33 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE sessions\n                   SET access_token_hash = $2, access_expires_at = $3,\n                       previous_refresh_token_hash = refresh_token_hash, refresh_token_hash = $4,\n                       refresh_expires_at = LEAST($5, created_at + make_interval(secs => $6)),\n                       last_used_at = now()\n                   WHERE refresh_token_hash = $1 AND revoked_at IS NULL AND kind = 'desktop'\n                     AND refresh_expires_at > now()\n                   RETURNING user_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "user_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        "Timestamptz",
+        "Bytea",
+        "Timestamptz",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "1b38b9ab1806337417d6198c125130ba56810a178a4736256e7db5f7d3e42250"
+}

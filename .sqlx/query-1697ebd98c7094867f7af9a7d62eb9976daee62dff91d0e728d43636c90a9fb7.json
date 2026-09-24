@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO sessions (user_id, kind, access_token_hash, access_expires_at, csrf_token_hash, user_agent, ip)\n               VALUES ($1, 'web', $2, $3, $4, $5, $6::text::inet)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bytea",
+        "Timestamptz",
+        "Bytea",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1697ebd98c7094867f7af9a7d62eb9976daee62dff91d0e728d43636c90a9fb7"
+}
