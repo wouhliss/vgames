@@ -119,7 +119,9 @@ impl Storage {
                 signing_key.expose(),
                 config.public_origin(),
             )?)),
-            StorageConfig::Gcs { .. } => Ok(Storage::Gcs(Box::new(gcs::GcsStore::new(config).await?))),
+            StorageConfig::Gcs { .. } => {
+                Ok(Storage::Gcs(Box::new(gcs::GcsStore::new(config).await?)))
+            }
         }
     }
 

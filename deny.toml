@@ -1,0 +1,70 @@
+# cargo-deny policy (01-security §8). Owner: Agent 5.
+# Run locally: `cargo deny check` (https://github.com/EmbarkStudios/cargo-deny).
+
+[graph]
+# The platforms we ship; dependencies only used elsewhere are ignored.
+targets = [
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+  "x86_64-pc-windows-msvc",
+  "aarch64-pc-windows-msvc",
+  "x86_64-apple-darwin",
+  "aarch64-apple-darwin",
+  "wasm32-unknown-unknown",
+]
+# Dev-dependencies are never shipped.
+exclude-dev = true
+
+[output]
+feature-depth = 1
+
+[advisories]
+# RustSec advisories are errors. An exception needs an entry here with the
+# advisory id, the reason it does not apply, and an owner + task id.
+yanked = "deny"
+unmaintained = "workspace"
+ignore = []
+
+[licenses]
+# Permissive licenses only. GPL/AGPL (and LGPL) are not allowed in anything we
+# ship; compatibility runtimes (umu, Wine, Proton) are downloaded separately and
+# never linked (09-compatibility).
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Zlib",
+  "Unicode-3.0",
+  "CC0-1.0",
+  "BSL-1.0",
+  "MPL-2.0",
+]
+confidence-threshold = 0.93
+# Workspace crates are unpublished (publish = false) and carry no license field.
+private = { ignore = true }
+# Per-crate exceptions for permissive licenses outside the list above.
+exceptions = [
+  # Build-time only (cfg-expr ← system-deps ← GTK/WebKit build scripts); the LLVM
+  # exception only removes Apache-2.0 obligations.
+  { crate = "target-lexicon", allow = ["Apache-2.0 WITH LLVM-exception"] },
+  # Mozilla's CA certificate data (permissive data license, no copyleft).
+  { crate = "webpki-roots", allow = ["CDLA-Permissive-2.0"] },
+  { crate = "webpki-root-certs", allow = ["CDLA-Permissive-2.0"] },
+]
+
+[bans]
+# Duplicate versions (including duplicate crypto crates such as two
+# ed25519-dalek or getrandom majors) are reported as warnings to review.
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+highlight = "all"
+
+[sources]
+# crates.io only: no git dependencies, no other registries.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

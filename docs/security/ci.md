@@ -1,0 +1,72 @@
+# CI and branch protection
+
+Owner: Agent 5. Workflow: [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml). Humans configure
+the GitHub settings below; agents cannot.
+
+## What runs on every PR and push to `main`
+
+| Check (job name) | What it enforces |
+|---|---|
+| `Rust (fmt, clippy, tests)` | `cargo fmt --check`, `cargo clippy --all-targets -D warnings`, `cargo test` (default members) against a Postgres 18 service (`#[sqlx::test]` creates one database per test) |
+| `SQLx offline data and migrations` | Migrations apply to an empty database; the upgrade path from the base revision works and no merged migration was edited (checksum mismatch fails); `cargo sqlx prepare --workspace --check` (committed `.sqlx/` matches the queries) |
+| `WASM (vgames-core, pack-wasm)` | `vgames-core --features wasm` builds and passes clippy on `wasm32-unknown-unknown`; the `@vgames/pack-wasm` package builds and its Node smoke test passes |
+| `TypeScript (Biome, typecheck, Vitest, OpenAPI lint)` | `pnpm install --frozen-lockfile`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `redocly lint` of `openapi/openapi.yaml` |
+| `Launcher UI end-to-end (mock mode)` | Playwright suite of `apps/desktop` against the mock backend (Chromium) |
+| `Desktop build check (Linux, WebKitGTK)` | Builds the launcher UI, then `cargo clippy -p vgames-desktop -D warnings` with the Tauri system libraries |
+| `Supply chain (cargo-deny, cargo-audit, pnpm audit)` | [`deny.toml`](../../deny.toml): RustSec advisories, license allowlist (no GPL/AGPL), crates.io only, duplicate versions reported; `cargo audit`; `pnpm audit --prod` |
+| `Secret scan (gitleaks)` | Full history with [`.gitleaks.toml`](../../.gitleaks.toml): default rules plus `vga_`/`vgr_`/`vgs_` tokens, `vgames.key/1` key files, `.vgkey` files, minisign secret keys |
+| `Dependency review` | PRs only: new dependencies with moderate+ advisories or GPL/AGPL licenses. Needs GitHub Advanced Security on a private repository (see below) |
+
+Coming with later tasks: the changelog fragment lint (A5-T08) and the OpenAPI drift check, which already runs
+inside `cargo test` (`apps/api/tests/openapi_contract.rs`).
+
+Workflow rules (08-release §1): every action is pinned by commit SHA, `permissions: {}` at the top and
+`contents: read` per job, no secrets in `ci.yml` (fork PRs get nothing to steal), caches keyed by lockfiles
+and saved only from `main`, `concurrency` cancels superseded runs.
+
+## Branch protection for `main` (humans)
+
+Settings → Rules → Rulesets → new branch ruleset targeting `main`:
+
+1. **Require a pull request before merging.** Required approvals: 0 while the agents run unattended (raise it
+   to 1 when humans review), dismiss stale approvals, require review from Code Owners once
+   `.github/CODEOWNERS` lands (A5-T10).
+2. **Require status checks to pass**, with "Require branches to be up to date before merging". Required checks
+   (exact job names):
+   - `Rust (fmt, clippy, tests)`
+   - `SQLx offline data and migrations`
+   - `WASM (vgames-core, pack-wasm)`
+   - `TypeScript (Biome, typecheck, Vitest, OpenAPI lint)`
+   - `Launcher UI end-to-end (mock mode)`
+   - `Desktop build check (Linux, WebKitGTK)`
+   - `Supply chain (cargo-deny, cargo-audit, pnpm audit)`
+   - `Secret scan (gitleaks)`
+   - `Dependency review` (only after enabling it, see below; a skipped job never satisfies a required check)
+3. **Require linear history** and allow **rebase merging only** (agents use `gh pr merge --rebase`).
+4. **Block force pushes** and **restrict deletions**.
+5. Do not add bypass actors for the agents' token. If agents cannot create PRs (token without
+   `pull_requests: write`), grant that permission to their fine-grained token instead of letting them push to `main`.
+
+Tags: protect `desktop-v*`, `api-v*` and `runtimes-*` with a tag ruleset so only maintainers can create them.
+
+## Repository settings (humans)
+
+- Actions → General → Workflow permissions: **Read repository contents** (the default token is read-only;
+  jobs widen it explicitly). Do **not** allow Actions to create or approve pull requests, except for the
+  `runtimes.yml` bot flow (A5-T12), which uses its own `pull-requests: write` job permission.
+- Actions → General → Fork pull request workflows: **require approval for all outside collaborators**.
+- Environments → `release`: required reviewers (humans), deployment branches limited to protected tags.
+  Release secrets live only there (infra/README.md §2).
+- Dependency review on a private repository needs GitHub Advanced Security (Code Security). When it is enabled,
+  set the repository variable `DEPENDENCY_REVIEW=true` (Settings → Secrets and variables → Actions → Variables)
+  and add `Dependency review` to the required checks.
+
+## Running the checks locally
+
+```sh
+cargo fmt --all -- --check && cargo clippy --all-targets -- -D warnings && cargo test
+cargo clippy -p vgames-core --features wasm --target wasm32-unknown-unknown -- -D warnings
+cargo deny --workspace check            # https://github.com/EmbarkStudios/cargo-deny
+gitleaks git --config .gitleaks.toml .  # https://github.com/gitleaks/gitleaks
+pnpm lint && pnpm typecheck && pnpm test && pnpm openapi:lint
+```

@@ -1,0 +1,49 @@
+# Secret scanning for vgames (gitleaks, run by ci.yml on every PR and push).
+# Owner: Agent 5. Default gitleaks rules plus the vgames-specific formats from
+# docs/architecture/01-security.md §4.2 (token prefixes) and §3.1 (key files).
+
+title = "vgames"
+
+[extend]
+useDefault = true
+
+# Access (vga_), refresh (vgr_) and web session (vgs_) tokens: prefix + 43
+# base64url characters (256 bits). The entropy floor skips obvious test
+# placeholders such as `vga_AAAA…`; real tokens are random.
+[[rules]]
+id = "vgames-token"
+description = "vgames API token (vga_ access, vgr_ refresh, vgs_ web session)"
+regex = '''(?:^|[^A-Za-z0-9_])(vg[ars]_[A-Za-z0-9_-]{43})(?:[^A-Za-z0-9_-]|$)'''
+secretGroup = 1
+entropy = 3.5
+keywords = ["vga_", "vgr_", "vgs_"]
+
+# An encrypted vgames.key/1 key file (root or publisher private key). Even
+# encrypted, a key file must never be committed: the passphrase is the only
+# thing left protecting it.
+[[rules]]
+id = "vgames-key-file"
+description = "vgames.key/1 encrypted private key file"
+regex = '''(?s)"format"\s*:\s*"vgames\.key/1".{0,1000}?"ciphertext"\s*:\s*"[A-Za-z0-9+/]{40,}={0,2}"'''
+keywords = ["vgames.key/1"]
+
+[[rules]]
+id = "vgames-key-file-name"
+description = "a .vgkey key file"
+path = '''(?i)\.vgkey$'''
+
+# minisign secret keys (updater and runtime-catalog keys, 08-release §2).
+[[rules]]
+id = "minisign-secret-key"
+description = "minisign / Tauri updater secret key"
+regex = '''untrusted comment: (?:minisign|rsign) (?:encrypted )?secret key'''
+keywords = ["secret key"]
+
+# Published known-answer test vectors (BLAKE3 official vectors, RFC 8032 §7.1).
+# Their "secret keys" are the RFC's public examples. Only these exact files.
+[[allowlists]]
+description = "public cryptographic test vectors"
+paths = [
+  '''^crates/vgames-core/tests/vectors/blake3\.json$''',
+  '''^crates/vgames-core/tests/vectors/rfc8032_ed25519\.json$''',
+]

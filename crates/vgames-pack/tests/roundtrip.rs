@@ -1,4 +1,9 @@
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing, clippy::panic)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic
+)]
 
 //! A2-T03 acceptance: plan → generate packs → verify every chunk → reassemble
 //! → byte-identical tree; determinism; resume offsets; source changes.
