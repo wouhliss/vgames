@@ -2,6 +2,13 @@
 //! root → publisher → bundle v1 → sign → verify → revoke in v2 → refuse to
 //! re-add the revoked key. Non-interactive (`--passphrase-env`).
 
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+
 use std::path::Path;
 use std::process::{Command, Output};
 
