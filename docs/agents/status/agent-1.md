@@ -50,7 +50,10 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   `/.well-known/vgames.json` now serves the `VG1-…` fingerprint (the ignored test runs again).
 
 ## In progress
-- A1-T11 — Version upload protocol
+- A1-T11 — Version upload protocol. Part 1 (this PR): `POST/GET /v1/admin/packages/{id}/versions` (sequence =
+  max + 1 per platform under the package row lock, Idempotency-Key), `GET`/`DELETE /v1/admin/versions/{id}` (abort →
+  `aborted` + `version.cleanup` job), `…/packs/{i}/upload-session` (resumable, 1..=256 MiB, creator only, while
+  `uploading`) and `…/manifest-upload` (PUT 1..=256 MiB). Part 2 next: `finalize` and re-sign.
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_api::error::ApiError` / `ApiResult` (problem+json), `vgames_api::http::json::{Json, Validate}`
@@ -101,6 +104,12 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   Admin upload errors: 422 `bad_signature` / `wrong_server` / `invalid_bundle` / `unknown_holder`
   (`errors[].field = publishers[i].holder_user_id`), 409 `stale_version`.
 - `Config::root_public_key` is now a `vgames_core::PublicKey` (off-curve and small-order keys fail at startup).
+- **Uploads for Agent 2 (packer/launcher admin mode) and Agent 3 (browser worker):** create a version, then for each
+  pack `POST …/packs/{i}/upload-session` → `UploadTarget {url, method: POST, headers, expires_at}`: send the POST with
+  exactly those headers, take `Location` as the session URI, `PUT` chunks with `Content-Range`. The manifest target is a
+  single `PUT` with `content-type: application/json` and `x-goog-content-length-range: 1,268435456`. Objects:
+  `v1/{package}/{version}/packs/{i:05}.pack`, `…/manifest.json` (`vgames_api::versions::{pack_object, manifest_object}`).
+- `Storage::sign_put_range(bucket, name, ttl, content_type, min, max)` (both backends).
 - Test harness: `apps/api/tests/common/mod.rs` (`app(pool)`, `send`, `body_json`, `json_request`) with
   `#[sqlx::test(migrations = "./migrations")]`.
 - Root `clippy.toml` allows unwrap/expect/panic/indexing in tests (AGENTS.md §5).

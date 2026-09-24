@@ -155,6 +155,26 @@ impl Storage {
         }
     }
 
+    /// Signed single-shot PUT of `min..=max` bytes of `content_type` (size unknown in advance).
+    pub async fn sign_put_range(
+        &self,
+        bucket: BucketKind,
+        name: &str,
+        ttl: Duration,
+        content_type: &str,
+        min: u64,
+        max: u64,
+    ) -> Result<SignedRequest, StorageError> {
+        validate_name(name)?;
+        match self {
+            Storage::Fs(s) => s.sign_put_range(bucket, name, ttl, content_type, min, max),
+            Storage::Gcs(s) => {
+                s.sign_put_range(bucket, name, ttl, content_type, min, max)
+                    .await
+            }
+        }
+    }
+
     /// Signed POST that starts a resumable upload (`x-goog-resumable: start`); the
     /// response's `Location` is the session URI. The final object must be `min..=max` bytes.
     pub async fn sign_resumable_start(

@@ -214,6 +214,39 @@ impl FsStore {
         )
     }
 
+    /// Single-shot PUT of `min..=max` bytes (length unknown when signing).
+    pub fn sign_put_range(
+        &self,
+        bucket: BucketKind,
+        name: &str,
+        ttl: Duration,
+        content_type: &str,
+        min: u64,
+        max: u64,
+    ) -> Result<SignedRequest, StorageError> {
+        let claims = Claims {
+            op: Op::Put,
+            b: bucket,
+            o: name.to_string(),
+            e: Self::expiry(ttl),
+            ct: Some(content_type.to_string()),
+            len: Some((min, max)),
+        };
+        let headers = vec![
+            ("content-type".to_string(), content_type.to_string()),
+            (
+                "x-goog-content-length-range".to_string(),
+                format!("{min},{max}"),
+            ),
+        ];
+        self.signed(
+            claims,
+            &format!("/_storage/{}/{name}", bucket.as_str()),
+            "PUT",
+            headers,
+        )
+    }
+
     pub fn sign_resumable_start(
         &self,
         bucket: BucketKind,
@@ -563,7 +596,7 @@ async fn put_object(
     if header_str(req.headers(), "content-type") != claims.ct.as_deref() {
         return status(StatusCode::FORBIDDEN, "SignatureDoesNotMatch");
     }
-    let (Some(bk), Some((len, _))) = (BucketKind::parse(&bucket), claims.len) else {
+    let (Some(bk), Some((min, max))) = (BucketKind::parse(&bucket), claims.len) else {
         return status(StatusCode::BAD_REQUEST, "");
     };
     let path = match store.object_path(bk, &name) {
@@ -577,14 +610,14 @@ async fn put_object(
     let Ok(mut file) = tokio::fs::File::create(&tmp).await else {
         return status(StatusCode::INTERNAL_SERVER_ERROR, "");
     };
-    let written = match stream_body_to(req.into_body(), &mut file, len).await {
+    let written = match stream_body_to(req.into_body(), &mut file, max).await {
         Ok(n) => n,
         Err(r) => {
             let _ = tokio::fs::remove_file(&tmp).await;
             return *r;
         }
     };
-    if written != len {
+    if written < min {
         let _ = tokio::fs::remove_file(&tmp).await;
         return status(StatusCode::BAD_REQUEST, "IncompleteBody");
     }

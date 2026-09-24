@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO package_versions (package_id, platform, sequence, version_label, created_by)\n               VALUES ($1, $2, (SELECT COALESCE(max(sequence), 0) + 1 FROM package_versions\n                                WHERE package_id = $1 AND platform = $2), $3, $4)\n               RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "package_versions",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "a4300596afc2c8314b7240162bbe22f44392bb8889725b7dd4913264e990e453"
+}
