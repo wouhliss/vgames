@@ -15,6 +15,8 @@
 //! - [`paths`] — package path safety rules (02 §3), exact Unicode simple case folding.
 //! - [`sign`]  — domain-separated Ed25519 signatures, key ids, `VG1-…` fingerprints,
 //!   `vgames.sig/1` envelopes.
+//! - [`trust`] — `vgames.trust/1` bundles, `verify_bundle`, root rotation, `TrustState`.
+//! - [`verify`] — `verify_manifest`: 01-security §3.4 steps 1–6 in one function.
 //!
 //! Rules: no filesystem or network I/O, no clock reads (callers pass `now`),
 //! no `unsafe`, no panics on untrusted input, WASM-compatible.
@@ -26,6 +28,8 @@ pub mod layout;
 pub mod manifest;
 pub mod paths;
 pub mod sign;
+pub mod trust;
+pub mod verify;
 
 pub use codec::{Digest, Timestamp};
 pub use sign::{Context, Envelope, Fingerprint, KeyId, PublicKey, SecretKey, Signature};

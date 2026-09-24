@@ -1,0 +1,24 @@
+---
+source: crates/vgames-core/src/trust/tests.rs
+expression: "String::from_utf8(bytes).unwrap()"
+---
+{
+  "format": "vgames.trust/1",
+  "server_id": "01920000-0000-7000-8000-000000000000",
+  "version": 1,
+  "issued_at": "2026-09-24T10:00:00Z",
+  "expires_at": null,
+  "root_key_id": "83561adb398fd87f8e7ed8331bff2fcb",
+  "publishers": [
+    {
+      "key_id": "1eed29b1654fbca94617004d7969dfc4",
+      "public_key": "gTl3Dqh9F19Wo1Rmw0x+zMuNipG07jeiXfYPW4/Js5Q=",
+      "holder_user_id": "0192aaaa-0000-7000-8000-000000000001",
+      "label": "alice@workstation",
+      "not_before": "2026-09-24T00:00:00Z",
+      "not_after": "2028-09-24T00:00:00Z"
+    }
+  ],
+  "revoked": [],
+  "next_root": null
+}

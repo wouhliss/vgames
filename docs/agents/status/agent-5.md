@@ -7,7 +7,7 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
 ## Done
 
 ## In progress
-- Next, in order: A5-T01 CI → A5-T04 trust + `verify_manifest` → A5-T03 keyfile + WASM → A5-T02 compat.
+- A5-T01 CI (now). Then A5-T03 keyfile + WASM → A5-T02/T04 compat + `verify_compat_profile`.
 
 ## Interfaces delivered (other agents may now rely on these)
 - **Signatures, key ids, fingerprints** (A5-T03 slice 1, for Agents 1, 2, 3):
@@ -43,6 +43,21 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
   `version_label` 1–64 chars (as the API); duplicate JSON keys are refused; args/env values without NUL; bounded
   counts (64 targets, 256 env vars, 64 save locations). Verify the signature over the exact bytes **before**
   calling this (A5-T04 `verify_manifest` does both).
+
+- **Trust bundles and `verify_manifest`** (A5-T04, for Agents 1 and 2):
+  - `vgames_core::trust::verify_bundle(bytes, &Signature, &RootPin, last_seen_version: Option<u64>, server_id)
+    -> Result<VerifiedBundle { state: TrustState, pin: RootPin, rotated, newer }, TrustError>`. Signature is checked
+    first over the exact bytes. `newer == false` means same version (a refresh): **the server stores only `newer`
+    bundles** and rebuilds `publisher_keys` from `state.bundle().publishers`. Launchers persist `pin` after each
+    verification (`RootPin { root, next_root }`): that is how `next_root` rotation re-pins automatically.
+  - `TrustState::{key_status(&KeyId) -> Trusted(&PublisherKey) | Revoked | Unknown, is_expired(now), version(),
+    expires_at(), bundle()}`; `trust::{TrustBundle, PublisherKey, Revocation, NextRoot, SignedBundle (the
+    `GET /v1/trust/bundle` body), sign_bundle}`.
+  - `vgames_core::verify::verify_manifest(&TrustState, &Envelope, manifest_bytes, &ExpectedRelease, installed_sequence,
+    VerifyMode) -> Result<VerifiedManifest { manifest, digest, key_id, holder_user_id }, VerifyError>` with
+    `VerifyMode::Install { now, allow_older }` (launcher install/update: refused while the bundle is expired),
+    `VerifyMode::Launch` (pre-launch: only revocation blocks), `VerifyMode::Server { now, caller }` (finalize /
+    re-sign: key validity window + `holder_user_id == caller`). One `VerifyError` variant per step.
 
 ## Needs from others
 
