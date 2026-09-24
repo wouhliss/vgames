@@ -26,7 +26,7 @@ pub struct Config {
     pub log_filter: String,
     pub log_format: LogFormat,
     /// Ed25519 public half of the offline root key.
-    pub root_public_key: [u8; 32],
+    pub root_public_key: vgames_core::PublicKey,
     /// Server-side secret for MACs (cursors, fs storage URLs, tickets). ≥ 32 bytes.
     pub server_secret: Secret<Vec<u8>>,
     pub discord: DiscordConfig,
@@ -526,15 +526,15 @@ fn decode_b64(v: &str) -> Result<Vec<u8>, String> {
 }
 
 /// Decodes and validates a base64 Ed25519 public key.
-pub fn decode_ed25519_public_key(v: &str) -> Result<[u8; 32], String> {
+/// Decodes a root public key; `vgames-core` refuses off-curve and small-order points.
+pub fn decode_ed25519_public_key(v: &str) -> Result<vgames_core::PublicKey, String> {
     let bytes = decode_b64(v)?;
     let arr: [u8; 32] = bytes
         .as_slice()
         .try_into()
         .map_err(|_| format!("must decode to 32 bytes, got {}", bytes.len()))?;
-    ed25519_dalek::VerifyingKey::from_bytes(&arr)
-        .map_err(|_| "is not a valid Ed25519 public key".to_string())?;
-    Ok(arr)
+    vgames_core::PublicKey::from_bytes(&arr)
+        .map_err(|_| "is not a valid Ed25519 public key".to_string())
 }
 
 fn decode_secret_bytes(v: &str, min_len: usize) -> Result<Vec<u8>, String> {
@@ -668,6 +668,11 @@ mod tests {
                 .unwrap_err()
                 .contains("not a valid Ed25519")
         );
+        // The identity point decodes but has small order: useless as a signing key.
+        let mut identity = [0u8; 32];
+        identity[0] = 1;
+        let b64 = base64::engine::general_purpose::STANDARD.encode(identity);
+        assert!(decode_ed25519_public_key(&b64).is_err());
     }
 
     #[test]

@@ -145,7 +145,6 @@ async fn hsts_is_sent_for_https_servers() {
 }
 
 #[sqlx::test(migrations = "./migrations")]
-#[ignore = "needs vgames-core fingerprint (A5-T03); until then the endpoint answers 503"]
 async fn well_known_describes_the_server(pool: PgPool) {
     let resp = send(&app(pool), get_req("/.well-known/vgames.json")).await;
     assert_eq!(resp.status(), StatusCode::OK);
