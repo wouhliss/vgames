@@ -189,13 +189,13 @@ Implement 02-package-format §7 exactly:
 ### A2-T10 — `vgames://` protocol and shortcuts
 - Verify the scheme registration on each start (deep-link plugin: Windows HKCU, Linux `.desktop`
   including the AppImage caveat, macOS via bundle `Info.plist`); repair if missing.
-- Strict deep-link parser for exactly the grammar in 00-overview §3.1 (a fuzz target in
-  `src-tauri/fuzz/`), with the routing rules of 01-security §7 (launch rate limit 1/3 s, launch only
+- Strict deep-link parser for exactly the grammar in 00-overview §3.1 (no-panic property tests
+  over arbitrary input), with the routing rules of 01-security §7 (launch rate limit 1/3 s, launch only
   installed and verified packages, no URL-provided args, confirmation for `server/add`, `auth/callback` only with a pending flow).
 - Desktop shortcuts: Windows `.url` (`URL=vgames://launch/<id>`, `IconFile` = an `.ico` rendered
   from the cover into app data), Linux `.desktop` (`Exec=xdg-open vgames://launch/<id>`, PNG icon),
   macOS `.webloc`. Create/remove commands; shortcuts are removed on uninstall; names are sanitized.
-- **Acceptance:** parser fuzzing (1 h locally, 10 min in CI nightly) without panics; unit tests for
+- **Acceptance:** no-panic property tests of the parser on arbitrary input; unit tests for
   every accepted and rejected form; shortcut files validated per OS in CI matrix jobs.
 
 ### A2-T11 — Cloud saves client

@@ -236,8 +236,8 @@ truth for the HTTP API they all consume.
   (100k packages, 1M envelopes, 1M audit rows) with no sequential scans on hot paths; add indexes via migration.
 - Load test script (`apps/api/bench/`, using `oha` or k6): p99 < 100 ms at 200 rps on catalog, release
   descriptor, inbox and download-urls; record the results in your status file.
-- Property tests for cursor codec and slug generation. Fuzz the multipart and JSON extractors with `cargo fuzz`
-  (targets in `apps/api/fuzz/`).
+- Property tests for cursor codec and slug generation. No-panic property tests for the multipart and JSON
+  extractors on arbitrary input (no `cargo fuzz`).
 - **Acceptance:** numbers recorded; no endpoint without a rate limit (test enumerates the router).
 
 ### A1-T17 — Handoff
