@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT a.object_name, p.status FROM package_assets a JOIN packages p ON p.id = a.package_id\n           WHERE a.id = $1 AND p.deleted_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "object_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "package_assets",
+            "name": "object_name"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "packages",
+            "name": "status"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "b996a3025a7298c2284ec2adad48631a16813b2c6efd6bf9741f93249b9ccab5"
+}

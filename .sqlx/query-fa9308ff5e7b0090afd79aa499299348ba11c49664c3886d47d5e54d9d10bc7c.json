@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO package_assets (id, package_id, kind, object_name, content_type, width, height, byte_size, sha256,\n                                       source, source_url, position)\n           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,\n                   COALESCE((SELECT max(position) + 1 FROM package_assets WHERE package_id = $2 AND kind = $3), 0))\n           ON CONFLICT (package_id, sha256) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Bytea",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fa9308ff5e7b0090afd79aa499299348ba11c49664c3886d47d5e54d9d10bc7c"
+}

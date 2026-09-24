@@ -1,0 +1,100 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT r.package_id, r.platform, v.id AS version_id, v.version_label, v.sequence,\n                  v.total_size AS \"total_size!\", v.published_at AS \"published_at!\"\n           FROM package_releases r JOIN package_versions v ON v.id = r.version_id\n           WHERE r.package_id = ANY($1) AND v.total_size IS NOT NULL AND v.published_at IS NOT NULL\n           ORDER BY r.platform",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "package_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "package_releases",
+            "name": "package_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "platform",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "package_releases",
+            "name": "platform"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "version_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "package_versions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "version_label",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "package_versions",
+            "name": "version_label"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "sequence",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "package_versions",
+            "name": "sequence"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "total_size!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "package_versions",
+            "name": "total_size"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "published_at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "package_versions",
+            "name": "published_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "6ff2136b3c119a7afeaab341d3ef600d3f3e4264c2bb75987f035d5330756b20"
+}

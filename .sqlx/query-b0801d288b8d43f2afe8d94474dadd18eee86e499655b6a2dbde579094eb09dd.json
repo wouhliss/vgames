@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE packages SET\n                 cover_asset_id = CASE WHEN $2 = 'cover' THEN COALESCE(cover_asset_id, $3) ELSE cover_asset_id END,\n                 hero_asset_id = CASE WHEN $2 = 'hero' THEN COALESCE(hero_asset_id, $3) ELSE hero_asset_id END,\n                 logo_asset_id = CASE WHEN $2 = 'logo' THEN COALESCE(logo_asset_id, $3) ELSE logo_asset_id END\n               WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b0801d288b8d43f2afe8d94474dadd18eee86e499655b6a2dbde579094eb09dd"
+}

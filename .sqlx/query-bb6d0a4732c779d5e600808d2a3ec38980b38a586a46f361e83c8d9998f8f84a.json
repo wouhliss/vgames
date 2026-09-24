@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM package_assets WHERE id = $1 RETURNING package_id, object_name",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "package_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "package_assets",
+            "name": "package_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "object_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "package_assets",
+            "name": "object_name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "bb6d0a4732c779d5e600808d2a3ec38980b38a586a46f361e83c8d9998f8f84a"
+}

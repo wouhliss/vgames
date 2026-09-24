@@ -1,0 +1,39 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, lower(title) AS \"title_key!\" FROM packages\n           WHERE deleted_at IS NULL\n             AND ($1::text IS NULL OR lower(title) LIKE $1 ESCAPE '\\' OR slug LIKE $1 ESCAPE '\\')\n             AND ($2::text IS NULL OR status = $2)\n             AND ($3::text IS NULL OR (lower(title), id) > ($3, $4))\n           ORDER BY lower(title), id\n           LIMIT $5",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "packages",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title_key!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "17c9fe6f1bcee1e17b9b850dfef62785cc885549f06cebc377467c785278fbae"
+}

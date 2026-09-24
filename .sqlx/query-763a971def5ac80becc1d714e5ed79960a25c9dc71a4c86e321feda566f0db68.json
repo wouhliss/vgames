@@ -1,0 +1,39 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE packages SET\n             title = COALESCE($2, title),\n             slug = COALESCE($3, slug),\n             summary = CASE WHEN $4 THEN $5 ELSE summary END,\n             description = CASE WHEN $6 THEN $7 ELSE description END,\n             developer = CASE WHEN $8 THEN $9 ELSE developer END,\n             publisher = CASE WHEN $10 THEN $11 ELSE publisher END,\n             release_date = CASE WHEN $12 THEN $13 ELSE release_date END,\n             genres = COALESCE($14, genres),\n             steam_app_id = CASE WHEN $15 THEN $16 ELSE steam_app_id END,\n             igdb_id = CASE WHEN $17 THEN $18 ELSE igdb_id END,\n             status = COALESCE($19, status),\n             cover_asset_id = CASE WHEN $20 THEN $21 ELSE cover_asset_id END,\n             hero_asset_id = CASE WHEN $22 THEN $23 ELSE hero_asset_id END,\n             logo_asset_id = CASE WHEN $24 THEN $25 ELSE logo_asset_id END,\n             field_sources = field_sources || $26\n           WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Bool",
+        "Text",
+        "Bool",
+        "Text",
+        "Bool",
+        "Text",
+        "Bool",
+        "Text",
+        "Bool",
+        "Date",
+        "TextArray",
+        "Bool",
+        "Int8",
+        "Bool",
+        "Int8",
+        "Text",
+        "Bool",
+        "Uuid",
+        "Bool",
+        "Uuid",
+        "Bool",
+        "Uuid",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "763a971def5ac80becc1d714e5ed79960a25c9dc71a4c86e321feda566f0db68"
+}

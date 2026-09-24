@@ -17,9 +17,11 @@ tokio.workspace = true
 tokio-util = { workspace = true, features = ["io"] }
 futures-util.workspace = true
 bytes.workspace = true
-axum.workspace = true
+axum = { workspace = true, features = ["multipart"] }
 tower.workspace = true
 tower-http.workspace = true
+image.workspace = true
+unicode-normalization.workspace = true
 sqlx.workspace = true
 utoipa.workspace = true
 utoipa-axum.workspace = true
