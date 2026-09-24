@@ -175,6 +175,26 @@ impl GcsStore {
             .await
     }
 
+    pub async fn sign_put_range(
+        &self,
+        bucket: BucketKind,
+        name: &str,
+        ttl: Duration,
+        content_type: &str,
+        min: u64,
+        max: u64,
+    ) -> Result<SignedRequest, StorageError> {
+        let headers = vec![
+            ("content-type".to_string(), content_type.to_string()),
+            (
+                "x-goog-content-length-range".to_string(),
+                format!("{min},{max}"),
+            ),
+        ];
+        self.sign(bucket, name, http::Method::PUT, ttl, &headers)
+            .await
+    }
+
     pub async fn sign_resumable_start(
         &self,
         bucket: BucketKind,

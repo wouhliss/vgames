@@ -18,5 +18,6 @@ pub mod jobs;
 pub mod packages;
 pub mod realtime;
 pub mod trust;
+pub mod versions;
 
 pub use common::{FieldError, Problem};

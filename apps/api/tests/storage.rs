@@ -89,6 +89,36 @@ async fn conformance(storage: &Storage) {
         10_000
     );
 
+    // PUT with a length range: anything in 1..=8192 bytes, nothing else.
+    let ranged = format!("{prefix}/ranged.json");
+    let put = storage
+        .sign_put_range(
+            BucketKind::Packages,
+            &ranged,
+            TTL,
+            "application/json",
+            1,
+            8192,
+        )
+        .await
+        .unwrap();
+    for (len, ok) in [(0usize, false), (8193, false), (5000, true)] {
+        let resp = request(&c, &put).body(payload(len)).send().await.unwrap();
+        assert_eq!(
+            resp.status().is_success(),
+            ok,
+            "{len} bytes: {}",
+            resp.status()
+        );
+    }
+    let meta = storage
+        .head(BucketKind::Packages, &ranged)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(meta.size, 5000);
+    storage.delete(BucketKind::Packages, &ranged).await.unwrap();
+
     let get = storage
         .sign_get(BucketKind::Packages, &name, TTL)
         .await

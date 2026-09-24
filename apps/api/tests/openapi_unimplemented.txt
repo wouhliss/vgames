@@ -2,17 +2,14 @@
 # A1-T17 empties it. Social/messaging/invites operations are Agent 4's.
 
 DELETE /v1/admin/allowlist/{discord_id}
-DELETE /v1/admin/versions/{version_id}
 DELETE /v1/blocks/{user_id}
 DELETE /v1/devices/{device_id}
 DELETE /v1/friends/{user_id}
 GET /v1/admin/allowlist
 GET /v1/admin/audit-log
 GET /v1/admin/jobs
-GET /v1/admin/packages/{package_id}/versions
 GET /v1/admin/settings
 GET /v1/admin/users
-GET /v1/admin/versions/{version_id}
 GET /v1/conversations
 GET /v1/devices
 GET /v1/friends
@@ -29,10 +26,7 @@ PATCH /v1/admin/settings
 PATCH /v1/admin/users/{user_id}
 POST /v1/admin/allowlist
 POST /v1/admin/jobs/{job_id}/retry
-POST /v1/admin/packages/{package_id}/versions
 POST /v1/admin/versions/{version_id}/finalize
-POST /v1/admin/versions/{version_id}/manifest-upload
-POST /v1/admin/versions/{version_id}/packs/{pack_index}/upload-session
 POST /v1/admin/versions/{version_id}/publish
 POST /v1/admin/versions/{version_id}/signature
 POST /v1/admin/versions/{version_id}/yank
