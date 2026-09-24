@@ -5,7 +5,9 @@ use std::time::Duration;
 use axum::{extract::State, http::StatusCode, response::IntoResponse};
 use base64::Engine as _;
 use utoipa_axum::{router::OpenApiRouter, routes};
-use vgames_proto::discovery::{DependencyStatus, Health, HealthStatus, ServerInfo};
+use vgames_proto::discovery::{
+    ApiVersion, DependencyStatus, Feature, Health, HealthStatus, ServerInfo,
+};
 
 use crate::{error::ApiResult, http::json::JsonResponse, state::AppState};
 
@@ -27,21 +29,26 @@ pub fn routes() -> OpenApiRouter<AppState> {
 pub async fn server_info(State(state): State<AppState>) -> ApiResult<impl IntoResponse> {
     let settings = crate::settings::load(&state.db).await?;
     let fingerprint = crate::trust::root_fingerprint(&state.config.root_public_key)?;
-    let mut features = vec!["cloud_saves", "social", "messaging", "invites"];
+    let mut features = vec![
+        Feature::CloudSaves,
+        Feature::Social,
+        Feature::Messaging,
+        Feature::Invites,
+    ];
     if state.config.admin_dist.is_some() {
-        features.push("admin_web");
+        features.push(Feature::AdminWeb);
     }
     let info = ServerInfo {
         format: "vgames.server/1".to_string(),
         server_id: state.config.server_id,
         name: state.config.server_name.clone(),
         motd: settings.motd.filter(|m| !m.is_empty()),
-        api_versions: vec!["v1".to_string()],
+        api_versions: vec![ApiVersion::V1],
         root_public_key: base64::engine::general_purpose::STANDARD
             .encode(state.config.root_public_key),
         root_key_fingerprint: fingerprint,
         registration_mode: Some(settings.registration_mode),
-        features: features.into_iter().map(String::from).collect(),
+        features,
         min_launcher_version: None,
     };
     Ok((

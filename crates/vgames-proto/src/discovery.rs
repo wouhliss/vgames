@@ -13,16 +13,35 @@ pub struct ServerInfo {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub motd: Option<String>,
-    pub api_versions: Vec<String>,
+    pub api_versions: Vec<ApiVersion>,
     /// Standard base64 of the 32-byte Ed25519 root public key.
     pub root_public_key: String,
     /// `VG1-XXXX-…` (docs/architecture/01-security.md §3.1).
     pub root_key_fingerprint: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub registration_mode: Option<RegistrationMode>,
-    pub features: Vec<String>,
+    pub features: Vec<Feature>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_launcher_version: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub enum ApiVersion {
+    #[serde(rename = "v1")]
+    V1,
+}
+
+/// Optional capabilities a server advertises.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum Feature {
+    CloudSaves,
+    Social,
+    Messaging,
+    Invites,
+    AdminWeb,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
