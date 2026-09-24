@@ -10,9 +10,12 @@ publish.workspace = true
 crate-type = ["rlib", "cdylib"]
 
 [features]
-default = []
+default = ["zstd"]
+# Per-chunk zstd (encode with `compression = auto`, decode when verifying).
+# Off in the browser build: the browser packer always stores chunks raw.
+zstd = ["dep:zstd"]
 # wasm-bindgen API consumed by apps/admin-web's upload worker.
-wasm = ["vgames-core/wasm"]
+wasm = ["vgames-core/wasm", "dep:wasm-bindgen", "dep:js-sys", "dep:serde-wasm-bindgen"]
 
 [dependencies]
 vgames-core.workspace = true
@@ -20,10 +23,27 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 blake3.workspace = true
+hex.workspace = true
+uuid.workspace = true
+time.workspace = true
+unicode-normalization.workspace = true
+zstd = { workspace = true, optional = true }
+wasm-bindgen = { workspace = true, optional = true }
+js-sys = { workspace = true, optional = true }
+serde-wasm-bindgen = { workspace = true, optional = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+walkdir.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
 tempfile.workspace = true
+insta.workspace = true
 
 [lints]
 workspace = true
+
+# Recent rustc emits bulk-memory, non-trapping float-to-int and sign-ext by default;
+# wasm-opt must be told to accept them.
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["-O", "--enable-bulk-memory", "--enable-nontrapping-float-to-int", "--enable-sign-ext", "--enable-mutable-globals", "--enable-reference-types", "--enable-multivalue"]

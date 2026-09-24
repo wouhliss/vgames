@@ -1,0 +1,15 @@
+{
+  "name": "@vgames/pack-wasm",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "vgames-pack compiled to WebAssembly for the admin-web upload worker. Generated; build with `pnpm --filter @vgames/pack-wasm build`.",
+  "exports": {
+    ".": "./pkg/vgames_pack.js"
+  },
+  "types": "./pkg/vgames_pack.d.ts",
+  "scripts": {
+    "build": "wasm-pack build ../../crates/vgames-pack --target web --release --out-dir ../../packages/pack-wasm/pkg --out-name vgames_pack --no-pack -- --no-default-features --features wasm",
+    "smoke": "node test/smoke.mjs"
+  }
+}
