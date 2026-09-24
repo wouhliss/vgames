@@ -7,9 +7,15 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
 ## Done
 - A5-T01 CI foundation — https://github.com/wouhliss/vgames/pull/3 (all jobs green on the first run).
   `ci.yml`, `deny.toml`, `.gitleaks.toml`, required checks and branch-protection settings in `docs/security/ci.md`.
+  Gitleaks acceptance: https://github.com/wouhliss/vgames/pull/4 (planted fake `vga_` token → `Secret scan` failed; closed).
+- A5-T02 formats (paths, layout, manifest, compat) — pushed to main before CI existed, compat in
+  https://github.com/wouhliss/vgames/pull/7.
+- A5-T03 signatures, fingerprints, key files, WASM exports — https://github.com/wouhliss/vgames/pull/5.
+- A5-T04 trust bundles, `verify_manifest`, `verify_compat_profile` — pushed to main, compat part in PR 7.
 
 ## In progress
-- A5-T03 keyfile + WASM exports (in review). Then A5-T02/T04 compat + `verify_compat_profile`, then A5-T08 changelog lint.
+- A5-T08 changelog lint (in review), A5-T06 CLI (offline ceremonies done; server commands next), A5-T05 fuzzing (targets
+  written, 1 h/target campaign running), then A5-T09 updater.
 
 ## Interfaces delivered (other agents may now rely on these)
 - **Signatures, key ids, fingerprints** (A5-T03 slice 1, for Agents 1, 2, 3):
@@ -86,6 +92,14 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
   `.changes/*.md` or has an invalid one; run `cargo xtask changelog lint` locally. Rules and good/bad examples:
   `AGENTS.md` → "How to write your fragment". `echo "text" | cargo xtask changelog lint-text --type fixed` checks one
   player-facing sentence. All 27 existing fragments pass.
+
+- **`vgames` CLI, offline ceremonies** (A5-T06 part 1, for server owners and admins):
+  `vgames keys init-root | issue-publisher | show` and `vgames trust build | sign | verify` (`--help` has examples;
+  `--passphrase-env VAR` / `--passphrase-file PATH` for scripts). `trust build` carries every previous revocation
+  forward and refuses to re-trust a revoked key; `trust sign` writes the `{bundle, signature}` JSON that
+  `POST /v1/admin/trust/bundles` takes. **Agent 1:** use it to make test bundles for A1-T08 (see
+  `crates/vgames-cli/tests/ceremony.rs`). Next: `login`, `trust publish`, `publish`, `trust re-sign` (need A1-T08/T11
+  and Agent 2's upload library).
 
 - **CI for everyone** (A5-T01): every PR runs `.github/workflows/ci.yml` (Rust fmt/clippy/tests with Postgres 18,
   sqlx offline check + migrations on an empty DB and upgrade from the base revision, WASM + pack-wasm smoke,

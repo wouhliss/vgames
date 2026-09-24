@@ -149,6 +149,7 @@ rpassword = "7"
 walkdir = "2.5"
 globset = "0.4"
 regex = "1.13"
+toml = "1"
 tempfile = "3"
 proptest = "1"
 insta = { version = "1", features = ["json", "yaml"] }
