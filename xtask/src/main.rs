@@ -4,6 +4,7 @@
 //! - `changelog check --base <rev>`   the PR gate: lint, and require a new fragment in this PR
 //! - `changelog lint-text --type T`   lint one player-facing text from stdin (release-notes guard)
 //! - `casefold <CaseFolding.txt>`     regenerate vgames-core's Unicode simple case folding table
+//! - `openapi check`                  fail if the API's generated spec drifts from openapi/openapi.yaml
 
 mod casefold;
 mod changelog;
@@ -30,11 +31,23 @@ enum Cmd {
         #[command(subcommand)]
         command: ChangelogCmd,
     },
+    /// OpenAPI contract checks.
+    Openapi {
+        #[command(subcommand)]
+        command: OpenapiCmd,
+    },
     /// Regenerate crates/vgames-core/src/paths/casefold.rs from Unicode's CaseFolding.txt.
     Casefold {
         /// Path to CaseFolding.txt (https://www.unicode.org/Public/UCD/latest/ucd/CaseFolding.txt).
         input: PathBuf,
     },
+}
+
+#[derive(Subcommand)]
+enum OpenapiCmd {
+    /// Compare the API's generated OpenAPI document with openapi/openapi.yaml
+    /// (Agent 1's drift test, apps/api/tests/openapi_contract.rs).
+    Check,
 }
 
 #[derive(Subcommand)]
@@ -195,6 +208,14 @@ fn main() -> ExitCode {
             Ok(errors.is_empty())
         })(),
         Cmd::Casefold { input } => casefold::generate(&input, &root).map(|()| true),
+        Cmd::Openapi {
+            command: OpenapiCmd::Check,
+        } => Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()))
+            .current_dir(&root)
+            .args(["test", "-p", "vgames-api", "--test", "openapi_contract"])
+            .status()
+            .context("running cargo test")
+            .map(|s| s.success()),
     };
     match result {
         Ok(true) => ExitCode::SUCCESS,
