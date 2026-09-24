@@ -78,27 +78,28 @@ pub async fn health(State(state): State<AppState>) -> JsonResponse<Health> {
         .await,
         Ok(Ok(_))
     );
-    let db = if db_ok {
-        DependencyStatus::Ok
-    } else {
-        DependencyStatus::Down
+    let storage_ok = matches!(
+        tokio::time::timeout(Duration::from_secs(2), state.storage.ping()).await,
+        Ok(true)
+    );
+    let dep = |ok: bool| {
+        if ok {
+            DependencyStatus::Ok
+        } else {
+            DependencyStatus::Down
+        }
     };
-    let status = if db_ok {
-        HealthStatus::Ok
-    } else {
-        HealthStatus::Down
-    };
-    let code = if db_ok {
-        StatusCode::OK
-    } else {
-        StatusCode::SERVICE_UNAVAILABLE
+    let (status, code) = match (db_ok, storage_ok) {
+        (true, true) => (HealthStatus::Ok, StatusCode::OK),
+        (true, false) => (HealthStatus::Degraded, StatusCode::SERVICE_UNAVAILABLE),
+        _ => (HealthStatus::Down, StatusCode::SERVICE_UNAVAILABLE),
     };
     JsonResponse(
         code,
         Health {
             status,
-            db: Some(db),
-            storage: None,
+            db: Some(dep(db_ok)),
+            storage: Some(dep(storage_ok)),
             version: Some(env!("CARGO_PKG_VERSION").to_string()),
         },
     )

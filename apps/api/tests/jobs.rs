@@ -79,7 +79,10 @@ async fn two_workers_never_process_a_job_twice(pool: PgPool) {
     }
     let counts = seen.lock().unwrap().clone();
     assert_eq!(counts.len(), 60);
-    assert!(counts.values().all(|n| *n == 1), "a job ran twice: {counts:?}");
+    assert!(
+        counts.values().all(|n| *n == 1),
+        "a job ran twice: {counts:?}"
+    );
     let done: i64 = sqlx::query_scalar("SELECT count(*) FROM jobs WHERE state = 'succeeded'")
         .fetch_one(&pool)
         .await

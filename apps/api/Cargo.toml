@@ -14,7 +14,7 @@ path = "src/main.rs"
 vgames-core.workspace = true
 vgames-proto = { workspace = true, features = ["openapi"] }
 tokio.workspace = true
-tokio-util.workspace = true
+tokio-util = { workspace = true, features = ["io"] }
 futures-util.workspace = true
 bytes.workspace = true
 axum.workspace = true
@@ -25,6 +25,9 @@ utoipa.workspace = true
 utoipa-axum.workspace = true
 utoipa-swagger-ui.workspace = true
 google-cloud-storage.workspace = true
+google-cloud-auth.workspace = true
+google-cloud-gax.workspace = true
+http.workspace = true
 governor.workspace = true
 reqwest.workspace = true
 serde.workspace = true

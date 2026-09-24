@@ -26,9 +26,12 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
 - A1-T06 — Job queue: `SKIP LOCKED` claims, 5 min leases with heartbeat, reaper, backoff `2^n × 10 s`,
   `dead` after `max_attempts`, dedupe keys, advisory-locked schedules (`sweep.expired` every minute,
   `saves.gc` daily). Workers run with `--role=all|worker`.
+- A1-T07 — Object storage: `vgames_api::storage::Storage` (GCS via the official crate with V4 signed URLs;
+  `fs` backend for dev/tests/self-hosting), conformance suite in `apps/api/tests/storage.rs`; `/v1/health` now
+  reports storage.
 
 ## In progress
-- A1-T07 — Object storage
+- A1-T08 — Trust endpoints (needs `vgames_core::trust` from Agent 5; continuing with A1-T09 meanwhile)
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_api::error::ApiError` / `ApiResult` (problem+json), `vgames_api::http::json::{Json, Validate}`
@@ -57,6 +60,12 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   `vgames_api::social::job_handlers()`; enqueue with `jobs::enqueue(&mut tx, kind, payload, Enqueue { dedupe_key, run_at, .. })`
   or `jobs::enqueue_now(&pool, …)`. Return `JobError::Retry` / `JobError::Fatal`. Social expiry (invites, friend codes,
   message envelopes) is yours to sweep; `sweep.expired` covers auth, realtime and idempotency tables.
+- **fs storage protocol for Agent 2 (A2-T04/T05 tests):** run the API with `VGAMES_STORAGE_BACKEND=fs`; signed
+  URLs point at `/_storage/…` on the API origin and behave like GCS: `GET` + `Range: bytes=a-b` → 206 with
+  `Content-Range`; exact-length `PUT` with the signed `content-type`; resumable start = `POST` with the returned
+  headers (`x-goog-resumable: start`, `x-goog-content-length-range`) → `201` + `Location`; chunks `PUT` with
+  `Content-Range: bytes a-b/total|*` → `308` + `Range: bytes=0-n` until complete (`200`); progress query
+  `Content-Range: bytes */*`. See `conformance()` in `apps/api/tests/storage.rs`.
 - Test harness: `apps/api/tests/common/mod.rs` (`app(pool)`, `send`, `body_json`, `json_request`) with
   `#[sqlx::test(migrations = "./migrations")]`.
 - Root `clippy.toml` allows unwrap/expect/panic/indexing in tests (AGENTS.md §5).

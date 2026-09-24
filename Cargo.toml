@@ -98,6 +98,9 @@ utoipa = { version = "5.5", features = ["axum_extras", "uuid", "time", "yaml"] }
 utoipa-axum = "0.2"
 utoipa-swagger-ui = { version = "9", features = ["axum", "vendored"] }
 google-cloud-storage = "1.18"
+google-cloud-auth = "1.16"
+google-cloud-gax = "1"
+http = "1"
 governor = "0.10"
 hmac = "0.13"
 dotenvy = "0.15"

@@ -7,7 +7,13 @@ use tokio_util::sync::CancellationToken;
 
 use tokio::sync::watch;
 
-use crate::{config::Config, http::ratelimit::RateLimits, realtime::hub::Hub, secret::Secret};
+use crate::{
+    config::{Config, StorageConfig},
+    http::ratelimit::RateLimits,
+    realtime::hub::Hub,
+    secret::Secret,
+    storage::{Storage, StorageError, fs::FsStore},
+};
 
 #[derive(Clone)]
 pub struct AppState(Arc<AppStateInner>);
@@ -18,6 +24,8 @@ pub struct AppStateInner {
     /// Outbound HTTP (Discord, IGDB, Steam). Never used to fetch user-supplied URLs.
     pub http: reqwest::Client,
     pub keys: DerivedKeys,
+    /// Object storage (GCS or fs).
+    pub storage: Arc<Storage>,
     pub limits: RateLimits,
     /// Sockets connected to this instance.
     pub realtime: Hub,
@@ -45,8 +53,38 @@ impl DerivedKeys {
     }
 }
 
+/// Why the application state could not be built.
+#[derive(Debug, thiserror::Error)]
+pub enum InitError {
+    #[error("http client: {0}")]
+    Http(#[from] reqwest::Error),
+    #[error("object storage: {0}")]
+    Storage(#[from] StorageError),
+    #[error("the GCS backend must be created with AppState::connect")]
+    NeedsAsync,
+}
+
 impl AppState {
-    pub fn new(config: Config, db: PgPool) -> Result<Self, reqwest::Error> {
+    /// Builds the state; storage is created from the configuration (async for GCS).
+    pub async fn connect(config: Config, db: PgPool) -> Result<Self, InitError> {
+        let storage = Storage::from_config(&config).await?;
+        Self::with_storage(config, db, storage)
+    }
+
+    /// Synchronous constructor for the `fs` storage backend (development and tests).
+    pub fn new(config: Config, db: PgPool) -> Result<Self, InitError> {
+        let storage = match &config.storage {
+            StorageConfig::Fs { root, signing_key } => Storage::Fs(FsStore::new(
+                root.clone(),
+                signing_key.expose(),
+                config.public_origin(),
+            )?),
+            StorageConfig::Gcs { .. } => return Err(InitError::NeedsAsync),
+        };
+        Self::with_storage(config, db, storage)
+    }
+
+    pub fn with_storage(config: Config, db: PgPool, storage: Storage) -> Result<Self, InitError> {
         let http = reqwest::Client::builder()
             .timeout(Duration::from_secs(10))
             .connect_timeout(Duration::from_secs(5))
@@ -59,6 +97,7 @@ impl AppState {
             db,
             http,
             keys,
+            storage: Arc::new(storage),
             limits: RateLimits::new(),
             realtime: Hub::new(crate::social::realtime_handlers()),
             realtime_ready: watch::Sender::new(false),

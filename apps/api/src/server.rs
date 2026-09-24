@@ -19,7 +19,7 @@ pub const DRAIN_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub async fn run(config: Config, role: Role) -> anyhow::Result<()> {
     let db = crate::db::connect(&config).await?;
-    let state = AppState::new(config, db)?;
+    let state = AppState::connect(config, db).await?;
 
     let shutdown = state.shutdown.clone();
     tokio::spawn(async move {
