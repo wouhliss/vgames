@@ -6,6 +6,7 @@ import { commands } from "../ipc";
 import { createQueryClient, useIpcInvalidation } from "../ipc/query";
 import { NavProvider } from "../nav/NavProvider";
 import { AppearanceSync } from "./appearance";
+import { ErrorBoundary } from "./ErrorBoundary";
 import { createAppRouter } from "./router";
 
 function IpcInvalidation(): null {
@@ -32,14 +33,16 @@ export function App() {
   const [router] = useState(createAppRouter);
   useAppReady();
   return (
-    <QueryClientProvider client={queryClient}>
-      <NavProvider>
-        <ToastProvider>
-          <AppearanceSync />
-          <IpcInvalidation />
-          <RouterProvider router={router} />
-        </ToastProvider>
-      </NavProvider>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <NavProvider>
+          <ToastProvider>
+            <AppearanceSync />
+            <IpcInvalidation />
+            <RouterProvider router={router} />
+          </ToastProvider>
+        </NavProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }

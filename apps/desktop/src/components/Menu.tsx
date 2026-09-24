@@ -28,10 +28,10 @@ export type MenuEntry =
       id: string;
       label: string;
       onSelect: () => void;
-      icon?: IconName;
-      hint?: string;
-      disabled?: boolean;
-      danger?: boolean;
+      icon?: IconName | undefined;
+      hint?: string | undefined;
+      disabled?: boolean | undefined;
+      danger?: boolean | undefined;
     }
   | { id: string; separator: true };
 

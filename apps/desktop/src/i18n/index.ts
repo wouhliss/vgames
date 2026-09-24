@@ -4,6 +4,7 @@
 // - `{name}` placeholders are extracted from the message type, so missing or unknown params are
 //   type errors too.
 // - Plural messages are objects with CLDR categories (`one`, `other`, …) and take a numeric `count`.
+//   So never name an ordinary catalog key `other`: its group would be read as a plural message.
 //
 // There is only an English catalog today. Other locales implement the `Catalog` shape and are
 // installed with `setCatalog`.

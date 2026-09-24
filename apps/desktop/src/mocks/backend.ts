@@ -17,6 +17,7 @@ import type {
   ServerError,
   ServerPreview,
   ServerProfile,
+  UpdateCheck,
 } from "../ipc";
 import { events } from "../ipc";
 
@@ -79,6 +80,7 @@ export interface MockState {
   /** How long sign-in takes in the browser before `auth-finished` arrives (ms). */
   authDelayMs: number;
   diagnostics: string;
+  updateCheck: UpdateCheck;
 }
 
 export function defaultState(): MockState {
@@ -100,6 +102,7 @@ export function defaultState(): MockState {
     },
     libraryAddError: null,
     authDelayMs: 600,
+    updateCheck: { kind: "available", version: "0.9.1" },
     diagnostics: "vgames 0.4.0 (linux x86_64)\nservers: 1\nlibraries: 1",
   };
 }
@@ -276,23 +279,22 @@ export function installMockBackend(overrides: Partial<MockState> = {}): MockBack
       const serverId = String(args.serverId);
       const host = hostOf(serverId);
       const behaviour = HOSTS[host];
-      if (
+      const browserOpened = !(
         behaviour?.auth &&
         behaviour.auth !== "paste" &&
         behaviour.auth.kind === "browser_unavailable"
-      ) {
-        fail(behaviour.auth);
-      }
+      );
       const flow: AuthFlow = {
         flow_id: `flow-${Date.now()}-${flows.size}`,
         expires_at: new Date(Date.now() + 600_000).toISOString(),
+        browser_opened: browserOpened,
       };
       const entry: { serverId: string; host: string; timer?: ReturnType<typeof setTimeout> } = {
         serverId,
         host,
       };
       flows.set(flow.flow_id, entry);
-      if (behaviour?.auth !== "paste") {
+      if (behaviour?.auth !== "paste" && browserOpened) {
         entry.timer = setTimeout(() => {
           if (!flows.has(flow.flow_id)) return;
           flows.delete(flow.flow_id);
@@ -314,7 +316,15 @@ export function installMockBackend(overrides: Partial<MockState> = {}): MockBack
       return flow;
     },
     auth_open_browser: (args) => {
-      if (!flows.has(String(args.flowId))) fail({ kind: "expired" } satisfies AuthError);
+      const flow = flows.get(String(args.flowId));
+      if (!flow) fail({ kind: "expired" } satisfies AuthError);
+      const behaviour = HOSTS[flow.host];
+      if (
+        behaviour?.auth &&
+        behaviour.auth !== "paste" &&
+        behaviour.auth.kind === "browser_unavailable"
+      )
+        fail(behaviour.auth);
       return null;
     },
     auth_submit_code: (args) => {
@@ -334,6 +344,16 @@ export function installMockBackend(overrides: Partial<MockState> = {}): MockBack
       flows.delete(String(args.flowId));
       return null;
     },
+
+    auth_sign_out: (args) => {
+      state.servers = state.servers.map((s) =>
+        s.id === args.serverId ? { ...s, account: null } : s,
+      );
+      void events.serversChanged.emit({});
+      return null;
+    },
+
+    updater_check: () => state.updateCheck,
 
     libraries_list: () => state.libraries,
     library_pick_folder: () => {

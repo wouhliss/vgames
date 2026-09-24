@@ -1,0 +1,31 @@
+import { defineConfig, devices } from "@playwright/test";
+
+// Launcher UI end-to-end tests. They run the real UI in Chromium in mock mode (`vite --mode mock`):
+// the Rust core is replaced by the fixtures in src/mocks, driven per test through `?mock=` presets and
+// `window.__vgamesMock`.
+const PORT = 1421;
+
+export default defineConfig({
+  testDir: "e2e",
+  fullyParallel: true,
+  forbidOnly: Boolean(process.env.CI),
+  retries: 0,
+  reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : "list",
+  use: {
+    baseURL: `http://localhost:${PORT}`,
+    trace: "retain-on-failure",
+  },
+  projects: [
+    {
+      name: "chromium",
+      use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 } },
+    },
+  ],
+  webServer: {
+    // A prebuilt bundle: deterministic and fast under parallel workers (the dev server compiles on demand).
+    command: `pnpm exec vite build --mode mock --outDir dist-mock && pnpm exec vite preview --outDir dist-mock --port ${PORT} --strictPort`,
+    url: `http://localhost:${PORT}`,
+    reuseExistingServer: !process.env.CI,
+    timeout: 120_000,
+  },
+});

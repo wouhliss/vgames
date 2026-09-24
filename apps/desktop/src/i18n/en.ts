@@ -65,6 +65,58 @@ export const en = {
     options: "Options",
     switchTab: "Switch tab",
   },
+  shell: {
+    skipToContent: "Skip to content",
+    serverMenu: "Servers",
+    serverSwitcher: "Server: {name}",
+    addServer: "Add a server…",
+    activeServer: "Current server",
+    switched: "Switched to {name}",
+    switchFailed: "Couldn't switch servers. Try again.",
+    accountMenu: "Account: {name}",
+    signedInAs: "Signed in as {name}",
+    signOut: "Sign out",
+    signOutTitle: "Sign out of {server}?",
+    signOutText:
+      "Your installed packages stay on this device. You'll need to sign in again to install or update.",
+    signOutFailed: "Couldn't sign out. Try again.",
+    downloadsIdle: "Downloads",
+    downloadsActive: "Downloads: {percent}",
+    offlineTitle: "You're offline",
+    offlineText:
+      "{server} can't be reached. Installed packages still work; browsing, downloads and friends come back when the connection does.",
+    trust: {
+      title: "This server's identity has changed",
+      text: "vgames stopped connecting to {server} because it presented a different fingerprint than the one you confirmed. This can mean someone is impersonating the server, or that the owner replaced its key without warning.",
+      pinned: "Fingerprint you confirmed",
+      presented: "Fingerprint the server shows now",
+      advice:
+        "Contact the server owner through a channel you trust. If they replaced the key, remove the server and add it again after comparing the new fingerprint.",
+      switchTo: "Use {server} instead",
+      remove: "Remove this server",
+      removeTitle: "Remove {server}?",
+      removeText: "Your installed packages stay on disk. You can add the server again later.",
+    },
+    placeholder: "This screen is coming in a later update.",
+  },
+  library: {
+    title: "Library",
+    emptyTitle: "Your library is empty",
+    emptyText: "Packages you install from this server show up here.",
+    emptyAction: "Browse the catalog",
+  },
+  browse: {
+    title: "Browse",
+  },
+  friends: {
+    title: "Friends",
+  },
+  downloads: {
+    title: "Downloads",
+  },
+  settings: {
+    title: "Settings",
+  },
   gallery: {
     title: "Component gallery",
     description:
@@ -126,6 +178,10 @@ export const en = {
     stepLibrary: "Library",
     progress: "Step {current} of {total}",
     welcomeTitle: "Welcome to vgames",
+    addTitle: "Add a server",
+    addText: "Enter the address of the server you want to add.",
+    fromLink: "Opened from a link. Check the address before you continue.",
+    cancelAdd: "Back to the library",
     welcomeText:
       "vgames connects to a server run by someone you know. Enter the address they gave you.",
     urlLabel: "Server address",
@@ -151,6 +207,13 @@ export const en = {
       title: "Update vgames to use this server",
       text: "This server needs vgames {min} or newer. You have {current}.",
       action: "Check for updates",
+      checking: "Checking for updates…",
+      upToDate:
+        "No update is available yet. Try again later, or ask the server owner which version they need.",
+      available:
+        "vgames {version} is available. Install it from the update notice, then add this server again.",
+      failed: "Couldn't check for updates. Try again later.",
+      differentServer: "Use a different server",
     },
     linkMismatch: {
       title: "Don't add this server",
@@ -167,6 +230,9 @@ export const en = {
         "Compare this fingerprint with the one your server owner published, for example in their Discord or on their website. If any group is different, don't continue.",
       why: "The fingerprint proves you're talking to the real server, and every package you install is checked against it.",
       linkMatch: "It matches the fingerprint in the link you opened.",
+      name: "Server",
+      motd: "Message from the server",
+      address: "Address",
       registrationOpen: "Anyone with a Discord account can join.",
       registrationAllowlist: "Only invited Discord accounts can join.",
       registrationClosed: "This server isn't accepting new members.",
@@ -189,6 +255,8 @@ export const en = {
       codeLabel: "Sign-in code",
       submitCode: "Sign in",
       cancel: "Cancel sign-in",
+      browserNotOpened:
+        "vgames couldn't open your browser. Paste the sign-in code instead, or try opening the browser again.",
       success: "Signed in as {name}",
       errors: {
         registrationClosed: "This server isn't accepting new members right now.",

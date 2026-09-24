@@ -98,7 +98,12 @@ export type ServerError =
   | { kind: "already_added"; server_id: string }
   | { kind: "preview_expired" };
 
-export type AuthFlow = { flow_id: string; expires_at: string };
+export type AuthFlow = {
+  flow_id: string;
+  expires_at: string;
+  /** False when the system browser could not be opened; the UI then offers the paste-code fallback. */
+  browser_opened: boolean;
+};
 
 export type AuthError =
   | { kind: "registration_closed" }
@@ -114,6 +119,14 @@ export type AuthError =
 export type AuthOutcome =
   | { kind: "signed_in"; account: Account }
   | { kind: "failed"; error: AuthError };
+
+// ------------------------------------------------------------------------------------------------
+// Launcher updates (Agent 5, A5-T09)
+
+export type UpdateCheck =
+  | { kind: "up_to_date" }
+  | { kind: "available"; version: string }
+  | { kind: "failed"; detail: string };
 
 // ------------------------------------------------------------------------------------------------
 // Libraries (A2-T08)
@@ -241,6 +254,16 @@ export const pendingCommands = {
   },
   async authCancel(flowId: string): Promise<null> {
     return await TAURI_INVOKE("auth_cancel", { flowId });
+  },
+
+  /** Revokes this device's session on the server and deletes its tokens from the keychain. */
+  async authSignOut(serverId: string): Promise<Result<null, AppError>> {
+    return call("auth_sign_out", { serverId });
+  },
+
+  /** Checks the release feed now (Agent 5). The update banner then appears through its own event. */
+  async updaterCheck(): Promise<UpdateCheck> {
+    return await TAURI_INVOKE("updater_check");
   },
 
   async librariesList(): Promise<Result<Library[], AppError>> {
