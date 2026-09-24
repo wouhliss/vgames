@@ -19,9 +19,13 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   (PKCE, login codes, refresh rotation with reuse detection, web cookies + CSRF + Origin, registration modes,
   bootstrap owner, disabled-user lockout). Dev fake Discord at `/v1/auth/dev/fake-discord`
   (`VGAMES_DEV_FAKE_DISCORD=true`, debug builds, localhost only). Migration `20260924120000_auth_session_fields`.
+- A1-T05 — Realtime gateway: `POST /v1/realtime/ticket`, `GET /v1/realtime?ticket=` (single-use tickets in
+  UNLOGGED `realtime_tickets`), 25 s ping / 60 s idle / 64 KiB frames, bounded per-socket queues (slow consumers
+  closed with 4002), `LISTEN/NOTIFY` fan-out across instances (payloads > 7.5 KB by reference), `session.revoked`
+  + close 4001 on logout / revoke / refresh reuse / disable, close 1012 on shutdown.
 
 ## In progress
-- A1-T05 — Realtime gateway plumbing
+- A1-T06 — Job runner
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_api::error::ApiError` / `ApiResult` (problem+json), `vgames_api::http::json::{Json, Validate}`
@@ -38,6 +42,14 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
 - **Launcher sign-in (Agent 2, A2-T07):** `POST /v1/auth/discord/start` → browser → `vgames://auth/callback?code=…&client_state=…`
   → `POST /v1/auth/token`; see `apps/api/tests/auth.rs` for the exact flow. Refresh-token reuse returns
   `401 refresh_token_reused` and ends the session.
+- **Realtime for Agent 4:**
+  - Publish: `vgames_api::realtime::bus::publish(&pool, &Target::users(&[..]), "invite.created", data)`, or
+    `publish_tx(&mut tx, …)` inside a transaction (delivered only on commit). `Target { users, sessions, close }`.
+  - Inbound events: return `("presence.set", realtime::hub::handler(|ctx, data| async move { … }))` from
+    `vgames_api::social::realtime_handlers()`; `ctx` has `state`, `user_id`, `session_id`, `device_id`.
+  - Presence helpers: `state.realtime.is_connected(user_id)` (this instance only).
+  - Envelope/ticket types: `vgames_proto::realtime::{Envelope, RealtimeTicket, Hello, SessionRevoked, close}`.
+    **I created `crates/vgames-proto/src/realtime.rs`; it is yours to extend** with typed social events.
 - Test harness: `apps/api/tests/common/mod.rs` (`app(pool)`, `send`, `body_json`, `json_request`) with
   `#[sqlx::test(migrations = "./migrations")]`.
 - Root `clippy.toml` allows unwrap/expect/panic/indexing in tests (AGENTS.md §5).

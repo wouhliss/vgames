@@ -9,3 +9,8 @@ use crate::state::AppState;
 pub fn routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
 }
+
+/// Client→server realtime events this module handles (e.g. `presence.set`, `typing`).
+pub fn realtime_handlers() -> Vec<(&'static str, crate::realtime::hub::InboundHandler)> {
+    Vec::new()
+}

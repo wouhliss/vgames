@@ -610,15 +610,25 @@ pub async fn token(
 
 /// Why a refresh failed: reuse of a rotated-out token revokes the whole session.
 async fn refresh_failure(state: &AppState, old: &[u8]) -> ApiResult<ApiError> {
-    let reused = sqlx::query_scalar!(
+    let reused = sqlx::query!(
         r#"UPDATE sessions SET revoked_at = now(), revoked_reason = 'refresh_reuse'
            WHERE previous_refresh_token_hash = $1 AND revoked_at IS NULL
-           RETURNING id"#,
+           RETURNING id, user_id"#,
         old
     )
     .fetch_optional(&state.db)
     .await?;
-    if let Some(session_id) = reused {
+    if let Some(row) = reused {
+        let session_id = row.id;
+        extract::notify_revoked(
+            crate::realtime::bus::revoke_sessions(
+                state,
+                row.user_id,
+                &[session_id],
+                "refresh_reuse",
+            )
+            .await,
+        );
         tracing::warn!(%session_id, "refresh token reuse detected; session revoked");
         return Ok(ApiError::new(
             StatusCode::UNAUTHORIZED,
@@ -694,6 +704,10 @@ pub async fn logout(State(state): State<AppState>, user: CurrentUser) -> ApiResu
     )
     .execute(&state.db)
     .await?;
+    extract::notify_revoked(
+        crate::realtime::bus::revoke_sessions(&state, user.user_id, &[user.session_id], "logout")
+            .await,
+    );
     let mut resp = StatusCode::NO_CONTENT.into_response();
     if user.kind == ClientKind::Web {
         append_cookie(
@@ -814,6 +828,9 @@ pub async fn revoke_session(
     if done.rows_affected() == 0 {
         return Err(ApiError::not_found());
     }
+    extract::notify_revoked(
+        crate::realtime::bus::revoke_sessions(&state, user.user_id, &[session_id], "logout").await,
+    );
     Ok(StatusCode::NO_CONTENT)
 }
 

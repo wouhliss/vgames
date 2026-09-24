@@ -5,7 +5,9 @@ use std::{ops::Deref, sync::Arc, time::Duration};
 use sqlx::PgPool;
 use tokio_util::sync::CancellationToken;
 
-use crate::{config::Config, http::ratelimit::RateLimits, secret::Secret};
+use tokio::sync::watch;
+
+use crate::{config::Config, http::ratelimit::RateLimits, realtime::hub::Hub, secret::Secret};
 
 #[derive(Clone)]
 pub struct AppState(Arc<AppStateInner>);
@@ -17,6 +19,10 @@ pub struct AppStateInner {
     pub http: reqwest::Client,
     pub keys: DerivedKeys,
     pub limits: RateLimits,
+    /// Sockets connected to this instance.
+    pub realtime: Hub,
+    /// Becomes `true` once this instance is `LISTEN`ing for realtime events.
+    pub realtime_ready: watch::Sender<bool>,
     /// Cancelled on shutdown: long-lived tasks and sockets watch it.
     pub shutdown: CancellationToken,
     /// Identifies this process among API instances (realtime fan-out, job leases).
@@ -54,6 +60,8 @@ impl AppState {
             http,
             keys,
             limits: RateLimits::new(),
+            realtime: Hub::new(crate::social::realtime_handlers()),
+            realtime_ready: watch::Sender::new(false),
             shutdown: CancellationToken::new(),
             instance_id: format!("{}-{}", hostname_hint(), uuid::Uuid::now_v7()),
         })))

@@ -35,7 +35,9 @@ pub async fn run(config: Config, role: Role) -> anyhow::Result<()> {
     };
 
     if role != Role::Worker {
+        let listener = crate::realtime::start(&state);
         serve(state.clone()).await?;
+        listener.abort();
     } else {
         state.shutdown.cancelled().await;
     }
@@ -62,6 +64,7 @@ pub async fn serve_on(listener: TcpListener, state: AppState) -> anyhow::Result<
         let s = shutdown.clone();
         async move { s.cancelled().await }
     });
+    // Sockets watch `shutdown` themselves and close with 1012.
     let mut server = std::pin::pin!(server.into_future());
     tokio::select! {
         res = &mut server => res?,

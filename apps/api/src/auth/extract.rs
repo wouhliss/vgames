@@ -225,7 +225,15 @@ pub async fn revoke_all_for_user(
     )
     .execute(&state.db)
     .await?;
+    notify_revoked(crate::realtime::bus::revoke_user(state, user_id, reason).await);
     Ok(())
+}
+
+/// Realtime notices are best effort: the revocation itself already happened in the database.
+pub fn notify_revoked(res: Result<(), ApiError>) {
+    if let Err(e) = res {
+        tracing::warn!(error = %e, "could not publish session.revoked");
+    }
 }
 
 /// Requires `admin` or `owner`.

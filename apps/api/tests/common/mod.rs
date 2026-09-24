@@ -96,3 +96,48 @@ pub fn json_request(method: &str, uri: &str, body: &serde_json::Value) -> Reques
         .body(Body::from(serde_json::to_vec(body).expect("json")))
         .expect("request")
 }
+
+/// Creates a user and a desktop session; returns `(user_id, session_id, access_token)`.
+pub async fn seed_session(pool: &PgPool, role: &str) -> (uuid::Uuid, uuid::Uuid, String) {
+    use sha2::{Digest, Sha256};
+    let mut raw = [0u8; 32];
+    getrandom::fill(&mut raw).unwrap();
+    let token = format!(
+        "vga_{}",
+        base64::Engine::encode(&base64::engine::general_purpose::URL_SAFE_NO_PAD, raw)
+    );
+    let discord_id = format!(
+        "{}",
+        600_000_000_000_000_000u64 + u64::from(raw[0]) * 1000 + u64::from(raw[1])
+    );
+    let user_id: uuid::Uuid = sqlx::query_scalar(
+        "INSERT INTO users (discord_id, username, role) VALUES ($1, 'seeded', $2) RETURNING id",
+    )
+    .bind(&discord_id)
+    .bind(role)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let mut refresh = [0u8; 32];
+    getrandom::fill(&mut refresh).unwrap();
+    let session_id: uuid::Uuid = sqlx::query_scalar(
+        "INSERT INTO sessions (user_id, kind, access_token_hash, access_expires_at, refresh_token_hash, refresh_expires_at)
+         VALUES ($1, 'desktop', $2, now() + interval '15 minutes', $3, now() + interval '30 days') RETURNING id",
+    )
+    .bind(user_id)
+    .bind(Sha256::digest(token.as_bytes()).to_vec())
+    .bind(Sha256::digest(refresh).to_vec())
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    (user_id, session_id, token)
+}
+
+pub fn bearer_request(method: &str, uri: &str, token: &str) -> Request<Body> {
+    Request::builder()
+        .method(method)
+        .uri(uri)
+        .header("authorization", format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap()
+}

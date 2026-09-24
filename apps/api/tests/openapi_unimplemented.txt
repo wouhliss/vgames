@@ -29,7 +29,6 @@ GET /v1/packages
 GET /v1/packages/{package_id}
 GET /v1/packages/{package_id}/compat
 GET /v1/packages/{package_id}/releases/{platform}
-GET /v1/realtime
 GET /v1/saves/{package_id}/head
 GET /v1/saves/{package_id}/snapshots
 GET /v1/saves/{package_id}/snapshots/{snapshot_id}
@@ -69,7 +68,6 @@ POST /v1/invites/{invite_id}/cancel
 POST /v1/invites/{invite_id}/decline
 POST /v1/invites/{invite_id}/status
 POST /v1/keys/claim
-POST /v1/realtime/ticket
 POST /v1/saves/{package_id}/blobs/download-urls
 POST /v1/saves/{package_id}/blobs/prepare
 POST /v1/saves/{package_id}/snapshots

@@ -14,5 +14,6 @@
 pub mod auth;
 pub mod common;
 pub mod discovery;
+pub mod realtime;
 
 pub use common::{FieldError, Problem};
