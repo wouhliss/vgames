@@ -9,6 +9,7 @@
 //! notifications or cancellation tokens.
 
 pub mod commands;
+pub mod db;
 pub mod error;
 pub mod events;
 pub mod logging;
@@ -98,7 +99,8 @@ fn setup(app: &AppHandle, profile: Option<String>) -> Result<(), Box<dyn std::er
         "starting vgames"
     );
 
-    let state = AppState::new(paths);
+    let db = db::Db::open(&paths.database_file())?;
+    let state = AppState::new(paths, db);
     events::spawn_ui_bridge(app.clone(), &state.bus, state.shutdown.child_token());
     spawn_show_fallback(app.clone(), &state);
 

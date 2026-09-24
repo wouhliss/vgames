@@ -2,9 +2,9 @@
 
 ## Done
 - A2-T01 Desktop shell bootstrap (commit on `main`, "feat(desktop): shell bootstrap")
+- A2-T02 Local database (commit on `main`, "feat(desktop): local SQLite database")
 
 ## In progress
-- A2-T02 Local database (SQLite on a dedicated thread, embedded migrations)
 - A2-T03 `vgames-pack` planner (coded against 02 §4 until `vgames_core::layout` lands)
 
 ## Interfaces delivered (other agents may now rely on these)
@@ -24,6 +24,12 @@
   To add overlay commands, send me the names (or a small PR touching `names.rs` + `capabilities/overlay.json`).
 - **Debug profiles** (A2-T01, for M3): `VGAMES_PROFILE=<a-z0-9->` (debug builds) gives identifier
   `app.vgames.launcher.profile-<name>`, so its own data dir, logs, WebView storage and single-instance lock.
+
+- **SQLite + migration hook** (A2-T02, for Agent 4): `state.db.call(|conn| { … Ok(x) }).await`
+  runs on the dedicated `vgames-db` thread (`vgames_desktop_lib::db::{Db, DbError}`; `rusqlite` is re-exported
+  as `db::rusqlite`). Social migrations: append a `Migration { name, sql }` to `db::migrations::MIGRATIONS`
+  (append-only; name/BLAKE3 recorded in `schema_migrations` and checked at startup). Typed settings:
+  `db::settings::{Setting, get, set}`.
 
 ## Measurements
 - A2-T01 idle, Linux (WSLg, debug build, Vite dev server, software GL), 60 s window

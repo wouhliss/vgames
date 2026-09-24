@@ -7,11 +7,14 @@ use std::sync::Arc;
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
+use crate::db::Db;
 use crate::events::EventBus;
 use crate::paths::AppPaths;
 
 pub struct AppState {
     pub paths: AppPaths,
+    /// Local SQLite database (see `db`).
+    pub db: Db,
     /// Internal typed event bus (see `events`).
     pub bus: EventBus,
     /// Root of every task's cancellation token; cancelled on exit.
@@ -21,9 +24,10 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(paths: AppPaths) -> Self {
+    pub fn new(paths: AppPaths, db: Db) -> Self {
         Self {
             paths,
+            db,
             bus: EventBus::new(),
             shutdown: CancellationToken::new(),
             ui_ready: Arc::new(Notify::new()),
