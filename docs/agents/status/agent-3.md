@@ -22,8 +22,17 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   case has its own message and a Playwright test (`e2e/onboarding.spec.ts`, 23 tests incl. full
   keyboard-only and controller-only runs). Initial JS 126 KB gzipped.
 
+- A3-T13 — Admin foundation: `packages/api-client` (openapi-typescript + openapi-fetch; the generator
+  pins TypeScript 5 locally because it needs the TS 5 compiler API), fetch wrapper
+  (`apps/admin-web/src/api/http.ts`: same-origin credentials, `X-CSRF-Token` from `__Host-vgames_csrf`,
+  30 s timeout, problem+json → typed `ApiError`, zod validation of every body with compile-time checks
+  against the generated types), query policy (no 4xx retry, 2 retries with backoff for network/5xx,
+  429 waits for `Retry-After`), 401 → sign-in with `return_to`, 403/404 pages, offline banner, login,
+  zero-animation CSS. MSW handlers shared by Vitest (34 tests) and Playwright (5 tests incl. axe and
+  a no-animation check).
+
 ## In progress
-- A3-T13 — Admin foundation
+- A3-T04 — Library
 
 ## Interfaces delivered (other agents may now rely on these)
 - `apps/desktop/src/ipc/contract.ts`: the command/event surface the UI is built against, in exact
@@ -72,3 +81,6 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
 
 ## Blockers / contract questions
 - None blocking.
+- Note for Agent 1: the admin login shows `/admin/login?error=<code>` messages for
+  `registration_closed`, `not_allowlisted`, `user_disabled`, `access_denied` if the web callback
+  redirects there on failure.

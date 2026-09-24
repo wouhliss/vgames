@@ -10,7 +10,7 @@
     "test": "vitest run",
     "tauri": "tauri",
     "dev:mock": "vite --mode mock",
-    "build:mock": "vite build --mode mock --outDir dist-mock",
+    "build:mock": "vite build --mode mock --outDir node_modules/.vgames-mock-dist --emptyOutDir",
     "e2e": "playwright test"
   },
   "dependencies": {
