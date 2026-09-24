@@ -101,6 +101,7 @@ google-cloud-storage = "1.18"
 google-cloud-auth = "1.16"
 google-cloud-gax = "1"
 http = "1"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 governor = "0.10"
 hmac = "0.13"
 dotenvy = "0.15"

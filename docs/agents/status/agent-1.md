@@ -29,9 +29,16 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
 - A1-T07 — Object storage: `vgames_api::storage::Storage` (GCS via the official crate with V4 signed URLs;
   `fs` backend for dev/tests/self-hosting), conformance suite in `apps/api/tests/storage.rs`; `/v1/health` now
   reports storage.
+- A1-T09 — Packages, assets and catalog: admin CRUD (`/v1/admin/packages[/{id}]`, Idempotency-Key on create,
+  `If-Match` on PATCH/DELETE, slug generation with `-2…` suffixes, soft delete keeps the slug), image upload
+  (`POST /v1/admin/packages/{id}/assets`: JPEG/PNG/WebP ≤ 10 MiB, ≤ 16384 px per side, re-encoded, sha256 dedupe,
+  first cover/hero/logo becomes the default), `DELETE /v1/admin/assets/{id}`, public catalog
+  (`GET /v1/packages` with `q`/`genre`/`platform`/`sort` and signed cursors, `GET /v1/packages/{id}`),
+  `GET /v1/assets/{id}` → 302 to a signed URL. Migration `20260924140000_catalog_search` (trigram title index).
 
 ## In progress
-- A1-T08 — Trust endpoints (needs `vgames_core::trust` from Agent 5; continuing with A1-T09 meanwhile)
+- A1-T08 — Trust endpoints (waiting for `vgames_core::trust` from Agent 5, who has started)
+- A1-T10 — Metadata fetch (IGDB / Steam) next
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_api::error::ApiError` / `ApiResult` (problem+json), `vgames_api::http::json::{Json, Validate}`
@@ -66,6 +73,12 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   headers (`x-goog-resumable: start`, `x-goog-content-length-range`) → `201` + `Location`; chunks `PUT` with
   `Content-Range: bytes a-b/total|*` → `308` + `Range: bytes=0-n` until complete (`200`); progress query
   `Content-Range: bytes */*`. See `conformance()` in `apps/api/tests/storage.rs`.
+- **Catalog for Agent 3 (library/store views) and Agent 2 (launcher client):** `GET /v1/packages`,
+  `GET /v1/packages/{id}` and the admin package endpoints match `openapi/openapi.yaml`; asset `url`s are
+  `/v1/assets/{id}` and answer `302` to a short-lived signed URL (`Cache-Control: private, max-age=3600`), so
+  fetch them with the session token. Catalog lists only `published` packages with at least one release.
+- `vgames_proto::packages` holds the package/asset/catalog DTOs (`PackageSummary`, `PackageDetail`,
+  `AdminPackage`, `AdminPackagePatch` with `null`-clears semantics).
 - Test harness: `apps/api/tests/common/mod.rs` (`app(pool)`, `send`, `body_json`, `json_request`) with
   `#[sqlx::test(migrations = "./migrations")]`.
 - Root `clippy.toml` allows unwrap/expect/panic/indexing in tests (AGENTS.md §5).
@@ -76,8 +89,7 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
 - From Agent 2: `vgames_pack::verify::PackStreamVerifier` (A2-T03) for the `version.verify` job (A1-T12).
 
 ## Blockers / contract questions
-- The GitHub token cannot create pull requests (`createPullRequest` not permitted), so I integrate with
-  the fast-forward push path from the prompt.
+- None. (PR permission was granted on 2026-09-24; A1-T09 onward merge through PRs.)
 
 ## Local environment notes
 - My tests use a dedicated Postgres 18 container on `127.0.0.1:55432` (`vgames-a1-pg`); ports 8080 and 4443
