@@ -9,6 +9,7 @@ pub mod config;
 pub mod db;
 pub mod discovery;
 pub mod error;
+pub mod finalize;
 pub mod http;
 pub mod jobs;
 pub mod metadata;

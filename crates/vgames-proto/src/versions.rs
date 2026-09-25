@@ -155,3 +155,50 @@ pub struct UploadTarget {
     #[cfg_attr(feature = "openapi", schema(value_type = String, format = DateTime))]
     pub expires_at: OffsetDateTime,
 }
+
+/// A `vgames.sig/1` signature envelope (docs/architecture/01-security.md §3.3).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(deny_unknown_fields)]
+pub struct SignatureEnvelope {
+    /// Always `vgames.sig/1`.
+    pub format: String,
+    /// Always `ed25519`.
+    pub alg: String,
+    /// `vgames/manifest/v1` or `vgames/compat/v1`.
+    #[cfg_attr(feature = "openapi", schema(inline))]
+    pub context: SignatureContext,
+    #[cfg_attr(feature = "openapi", schema(pattern = "^[0-9a-f]{32}$"))]
+    pub key_id: String,
+    #[cfg_attr(feature = "openapi", schema(pattern = "^[0-9a-f]{64}$"))]
+    pub payload_blake3: String,
+    /// Standard base64 of the 64-byte Ed25519 signature.
+    pub signature: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub enum SignatureContext {
+    #[serde(rename = "vgames/manifest/v1")]
+    Manifest,
+    #[serde(rename = "vgames/compat/v1")]
+    Compat,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(deny_unknown_fields)]
+pub struct FinalizeRequest {
+    #[cfg_attr(feature = "openapi", schema(minimum = 1, maximum = 268435456))]
+    pub manifest_size: i64,
+    #[cfg_attr(feature = "openapi", schema(pattern = "^[0-9a-f]{64}$"))]
+    pub manifest_blake3: String,
+    pub signature: SignatureEnvelope,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(deny_unknown_fields)]
+pub struct ReplaceSignature {
+    pub signature: SignatureEnvelope,
+}

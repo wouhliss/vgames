@@ -26,9 +26,7 @@ PATCH /v1/admin/settings
 PATCH /v1/admin/users/{user_id}
 POST /v1/admin/allowlist
 POST /v1/admin/jobs/{job_id}/retry
-POST /v1/admin/versions/{version_id}/finalize
 POST /v1/admin/versions/{version_id}/publish
-POST /v1/admin/versions/{version_id}/signature
 POST /v1/admin/versions/{version_id}/yank
 POST /v1/blocks/{user_id}
 POST /v1/conversations

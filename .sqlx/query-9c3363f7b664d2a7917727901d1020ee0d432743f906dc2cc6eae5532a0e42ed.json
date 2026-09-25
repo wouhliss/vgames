@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE package_versions SET signature = $2, publisher_key_id = $3 WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bytea",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9c3363f7b664d2a7917727901d1020ee0d432743f906dc2cc6eae5532a0e42ed"
+}
