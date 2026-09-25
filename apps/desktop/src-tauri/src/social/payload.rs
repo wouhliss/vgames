@@ -227,3 +227,54 @@ mod tests {
         assert_eq!(decode(&p.encode().unwrap()).unwrap(), Decoded::Known(p));
     }
 }
+
+/// No-panic properties (01-security §9): decrypted plaintext comes from other people.
+#[cfg(test)]
+mod no_panic {
+    use proptest::prelude::*;
+
+    use super::*;
+
+    fn valid() -> Vec<u8> {
+        Payload {
+            v: 1,
+            conversation_id: Uuid::from_u128(1),
+            client_message_id: Uuid::from_u128(2),
+            sent_at: OffsetDateTime::UNIX_EPOCH,
+            content: Content::InviteJoin {
+                invite_id: Uuid::from_u128(3),
+                join_secret: Some("10.0.0.1:7777".into()),
+            },
+        }
+        .encode()
+        .unwrap()
+    }
+
+    proptest! {
+        #[test]
+        fn arbitrary_bytes(bytes in proptest::collection::vec(any::<u8>(), 0..4096)) {
+            let _ = decode(&bytes);
+        }
+
+        #[test]
+        fn mutated_payloads(edits in proptest::collection::vec((any::<prop::sample::Index>(), any::<u8>()), 1..24)) {
+            let mut bytes = valid();
+            for (i, v) in edits {
+                let at = i.index(bytes.len());
+                bytes[at] = v;
+            }
+            if let Ok(Decoded::Known(p)) = decode(&bytes) {
+                // Whatever still parses as known content obeys the rules.
+                if let Content::InviteJoin { join_secret: Some(s), .. } = &p.content {
+                    prop_assert!(is_valid_join_secret(s));
+                }
+            }
+        }
+
+        #[test]
+        fn oversized_input_is_refused(extra in 0usize..64) {
+            let bytes = vec![b' '; MAX_PAYLOAD_BYTES + 1 + extra];
+            prop_assert!(decode(&bytes).is_err());
+        }
+    }
+}

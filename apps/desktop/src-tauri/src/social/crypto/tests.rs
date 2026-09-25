@@ -414,3 +414,66 @@ fn malformed_input_is_an_error_not_a_panic() {
             .is_err()
     );
 }
+
+/// No-panic properties (01-security §9) for every input that comes from the server or a peer.
+mod no_panic {
+    use proptest::prelude::*;
+
+    use super::*;
+
+    fn text() -> impl Strategy<Value = String> {
+        prop_oneof![
+            "[A-Za-z0-9+/]{0,90}",
+            proptest::collection::vec(any::<char>(), 0..100).prop_map(|c| c.into_iter().collect()),
+        ]
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(128))]
+
+        #[test]
+        fn olm_message_parser(kind in any::<u8>(), bytes in proptest::collection::vec(any::<u8>(), 0..2048)) {
+            let _ = parse_message(kind, &bytes);
+        }
+
+        #[test]
+        fn signatures_and_keys(identity in text(), signing in text(), sig in text(), key_id in text(), fallback in any::<bool>()) {
+            let keys = DeviceKeys {
+                device_id: uid(1),
+                display_name: None,
+                identity_key: identity.clone(),
+                signing_key: signing.clone(),
+                keys_signature: sig.clone(),
+                created_at: time::OffsetDateTime::UNIX_EPOCH,
+            };
+            prop_assert!(verify_device_keys(&keys, uid(1), SERVER).is_err());
+            let claimed = ClaimedKey { device_id: uid(1), key_id, public_key: identity.clone(), signature: sig, is_fallback: fallback };
+            prop_assert!(verify_one_time_key(&signing, &claimed).is_err());
+            let _ = safety_number((uid(1), &[(identity, signing)]), (uid(2), &[]));
+            let _ = key_fingerprint(&keys.identity_key);
+        }
+
+        #[test]
+        fn mutated_ciphertexts_never_panic(edits in proptest::collection::vec((any::<prop::sample::Index>(), any::<u8>()), 1..8), pre_key in any::<bool>()) {
+            let alice = Party::new(1);
+            let mut bob = Party::new(2);
+            let (otks, _) = publish(&mut bob.account, 1);
+            let mut a = alice.account.create_outbound_session(&bob.pinned(), &claimed(bob.device, &otks[0], false)).unwrap();
+            let (t, m) = a.encrypt(b"first").unwrap();
+            let (mut b, _) = bob.account.create_inbound_session(&alice.account.identity_key(), &parse_message(t, &m).unwrap()).unwrap();
+            let (t, mut m) = if pre_key { a.encrypt(b"second").unwrap() } else {
+                let (rt, rm) = b.encrypt(b"reply").unwrap();
+                a.decrypt(&parse_message(rt, &rm).unwrap()).unwrap();
+                a.encrypt(b"second").unwrap()
+            };
+            for (i, v) in edits {
+                let at = i.index(m.len());
+                m[at] = v;
+            }
+            if let Ok(msg) = parse_message(t, &m) {
+                let _ = b.decrypt(&msg);
+                let _ = bob.account.create_inbound_session(&alice.account.identity_key(), &msg);
+            }
+        }
+    }
+}

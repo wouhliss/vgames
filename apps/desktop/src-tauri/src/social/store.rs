@@ -18,7 +18,8 @@
 use rusqlite::{Connection, OptionalExtension, params};
 use uuid::Uuid;
 use vgames_proto::social::{
-    ClaimedKey, DeviceKeys, InboxEnvelope, OneTimeKeysUpload, OutgoingEnvelope,
+    ClaimedKey, DeviceKeys, InboxEnvelope, MAX_ENVELOPE_CIPHERTEXT, OneTimeKeysUpload,
+    OutgoingEnvelope,
 };
 
 use super::crypto::{
@@ -824,7 +825,14 @@ pub fn receive(
             device_id: env.sender_device_id,
         });
     }
+    // Bound the work before decoding: the server caps ciphertexts at 64 KiB (05-social §4.4).
+    if env.ciphertext.len() > MAX_ENVELOPE_CIPHERTEXT.div_ceil(3) * 4 {
+        return Err(ReceiveError::Undecryptable(CryptoError::BadMessage));
+    }
     let bytes = crypto::wire_b64_decode(&env.ciphertext).map_err(ReceiveError::Undecryptable)?;
+    if bytes.len() > MAX_ENVELOPE_CIPHERTEXT {
+        return Err(ReceiveError::Undecryptable(CryptoError::BadMessage));
+    }
     let message =
         crypto::parse_message(env.olm_message_type, &bytes).map_err(ReceiveError::Undecryptable)?;
 

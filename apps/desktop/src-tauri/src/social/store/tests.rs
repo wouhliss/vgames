@@ -1056,3 +1056,75 @@ fn receipts_are_not_stored_as_messages() {
             .is_empty()
     );
 }
+
+/// No-panic property for the whole receive path (01-security §9): envelopes come from the server.
+mod no_panic {
+    use proptest::prelude::*;
+
+    use super::*;
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(48))]
+
+        #[test]
+        fn receive_arbitrary_envelopes(
+            kind in any::<u8>(),
+            ciphertext in prop_oneof![
+                "[A-Za-z0-9+/=]{0,400}",
+                proptest::collection::vec(any::<u8>(), 0..300).prop_map(|b| crypto::wire_b64(&b)),
+                proptest::collection::vec(any::<char>(), 0..200).prop_map(|c| c.into_iter().collect::<String>()),
+            ],
+            wrong_identity in any::<bool>(),
+        ) {
+            let (ua, ub, _) = users();
+            let mut relay = Relay::default();
+            let mut alice = Launcher::new("alice", ua);
+            let mut bob = Launcher::new("bob", ub);
+            relay.register(&mut alice);
+            relay.register(&mut bob);
+            bob.learn(&relay, &[ua]);
+            let identity = if wrong_identity { "x".repeat(43) } else { relay.devices[&alice.device].1.identity_key.clone() };
+            let env = InboxEnvelope {
+                id: Uuid::now_v7(),
+                conversation_id: Uuid::now_v7(),
+                sender_user_id: ua,
+                sender_device_id: alice.device,
+                sender_identity_key: identity,
+                algorithm: "olm.v1".into(),
+                olm_message_type: kind,
+                ciphertext,
+                created_at: OffsetDateTime::UNIX_EPOCH,
+            };
+            prop_assert!(receive(&mut bob.db, &bob.keys, SERVER, ub, &env, NOW).is_err());
+        }
+    }
+}
+
+#[test]
+fn oversized_ciphertext_is_refused_before_decoding() {
+    let (ua, ub, _) = users();
+    let mut relay = Relay::default();
+    let mut alice = Launcher::new("alice", ua);
+    let mut bob = Launcher::new("bob", ub);
+    relay.register(&mut alice);
+    relay.register(&mut bob);
+    bob.learn(&relay, &[ua]);
+    let env = InboxEnvelope {
+        id: Uuid::now_v7(),
+        conversation_id: Uuid::now_v7(),
+        sender_user_id: ua,
+        sender_device_id: alice.device,
+        sender_identity_key: relay.devices[&alice.device].1.identity_key.clone(),
+        algorithm: "olm.v1".into(),
+        olm_message_type: 1,
+        ciphertext: crypto::wire_b64(&vec![
+            0u8;
+            vgames_proto::social::MAX_ENVELOPE_CIPHERTEXT + 1
+        ]),
+        created_at: OffsetDateTime::UNIX_EPOCH,
+    };
+    assert!(matches!(
+        receive(&mut bob.db, &bob.keys, SERVER, ub, &env, NOW),
+        Err(ReceiveError::Undecryptable(CryptoError::BadMessage))
+    ));
+}
