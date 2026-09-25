@@ -6,11 +6,9 @@
     clippy::indexing_slicing
 )]
 
-mod common;
-
+use crate::common::{publishing::*, *};
 use axum::http::StatusCode;
 use base64::{Engine, engine::general_purpose::STANDARD};
-use common::{publishing::*, *};
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;

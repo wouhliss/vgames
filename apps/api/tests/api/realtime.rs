@@ -6,12 +6,10 @@
     clippy::indexing_slicing
 )]
 
-mod common;
-
 use std::{net::SocketAddr, time::Duration};
 
+use crate::common::*;
 use axum::http::StatusCode;
-use common::*;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use sqlx::PgPool;
@@ -30,7 +28,7 @@ struct Instance {
 }
 
 async fn instance(pool: &PgPool) -> Instance {
-    let state = common::state(pool.clone());
+    let state = crate::common::state(pool.clone());
     realtime::start(&state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();

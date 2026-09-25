@@ -1,15 +1,13 @@
 //! Trust bundle upload and publisher keys (A1-T08), with bundles signed by test keys.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-mod common;
-
+use crate::common::*;
 use axum::{
     Router,
     body::Body,
     http::{Request, StatusCode, header},
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
-use common::*;
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;

@@ -7,8 +7,6 @@
     clippy::indexing_slicing
 )]
 
-mod common;
-
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -24,7 +22,7 @@ async fn fs_server(pool: PgPool) -> vgames_api::AppState {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     let origin = format!("http://127.0.0.1:{port}");
-    let config = common::config_with(&[("VGAMES_PUBLIC_URL", &origin)]);
+    let config = crate::common::config_with(&[("VGAMES_PUBLIC_URL", &origin)]);
     let state = vgames_api::AppState::new(config, pool).unwrap();
     tokio::spawn(vgames_api::server::serve_on(listener, state.clone()));
     state
@@ -261,7 +259,7 @@ async fn fs_backend_conforms(pool: PgPool) {
 #[tokio::test]
 #[ignore = "needs STORAGE_EMULATOR_HOST and GCS_BUCKET_* pointing at the compose emulator"]
 async fn gcs_backend_conforms() {
-    let config = common::config_with(&[
+    let config = crate::common::config_with(&[
         ("VGAMES_STORAGE_BACKEND", "gcs"),
         (
             "GCS_BUCKET_PACKAGES",

@@ -1,15 +1,13 @@
 //! A1-T02: API conventions (idempotency, rate limits).
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-mod common;
-
 use std::sync::{
     Arc,
     atomic::{AtomicU32, Ordering},
 };
 
+use crate::common::*;
 use axum::http::StatusCode;
-use common::*;
 use sqlx::PgPool;
 use uuid::Uuid;
 use vgames_api::{

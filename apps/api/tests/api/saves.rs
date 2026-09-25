@@ -6,14 +6,12 @@
     clippy::indexing_slicing
 )]
 
-mod common;
-
+use crate::common::*;
 use axum::{
     Router,
     body::Body,
     http::{Request, StatusCode},
 };
-use common::*;
 use http_body_util::BodyExt;
 use serde_json::{Value, json};
 use sqlx::PgPool;

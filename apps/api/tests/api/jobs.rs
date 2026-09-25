@@ -6,15 +6,13 @@
     clippy::indexing_slicing
 )]
 
-mod common;
-
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
     time::Duration,
 };
 
-use common::*;
+use crate::common::*;
 use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;

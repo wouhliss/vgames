@@ -1,14 +1,12 @@
 //! Packages, assets and the public catalog (A1-T09).
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-mod common;
-
+use crate::common::*;
 use axum::{
     Router,
     body::Body,
     http::{Request, StatusCode, header},
 };
-use common::*;
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;

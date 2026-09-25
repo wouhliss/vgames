@@ -1,16 +1,14 @@
 //! Metadata fetching and image downloads (A1-T10), against wiremock providers.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-mod common;
-
 use std::{collections::HashMap, num::NonZeroU32, time::Duration};
 
+use crate::common::*;
 use axum::{
     Router,
     body::Body,
     http::{Request, StatusCode, header},
 };
-use common::*;
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;

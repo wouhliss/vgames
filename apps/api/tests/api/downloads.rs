@@ -6,15 +6,13 @@
     clippy::indexing_slicing
 )]
 
-mod common;
-
 use std::sync::{Arc, Mutex};
 
+use crate::common::{publishing::*, *};
 use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
-use common::{publishing::*, *};
 use http_body_util::BodyExt;
 use serde_json::{Value, json};
 use sqlx::PgPool;

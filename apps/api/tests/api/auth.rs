@@ -6,15 +6,13 @@
     clippy::indexing_slicing
 )]
 
-mod common;
-
+use crate::common::*;
 use axum::{
     Router,
     body::Body,
     http::{Request, StatusCode},
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use common::*;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;

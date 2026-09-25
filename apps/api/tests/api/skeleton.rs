@@ -1,12 +1,10 @@
 //! A1-T01: service skeleton behaviour.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-mod common;
-
 use std::time::Duration;
 
+use crate::common::*;
 use axum::{Router, http::StatusCode, routing::get};
-use common::*;
 use sqlx::PgPool;
 
 #[sqlx::test(migrations = "./migrations")]
