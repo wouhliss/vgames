@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT pg_advisory_xact_lock_shared($1, hashtext($2))",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pg_advisory_xact_lock_shared",
+        "type_info": "Void",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "50e525020f55b38dd6a7a9b8a6a71dac8efd11fa0de3ac85cca22a95e9fdc6b4"
+}

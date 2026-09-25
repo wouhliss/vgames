@@ -1,0 +1,48 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO save_snapshots (user_id, package_id, parent_id, device_id, platform, file_count, total_size, files, label)\n           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)\n           RETURNING id, created_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "save_snapshots",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "save_snapshots",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Int4",
+        "Int8",
+        "Jsonb",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "28444f81b5ebe9b55133ad836ff12ecf2deb9ce5341c2798b57f04dc6f5b8d01"
+}

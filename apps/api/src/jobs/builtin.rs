@@ -45,6 +45,12 @@ async fn sweep_expired(ctx: JobContext) -> Result<(), JobError> {
 }
 
 /// Cloud-save retention and blob garbage collection (A1-T13).
-async fn saves_gc(_ctx: JobContext) -> Result<(), JobError> {
+async fn saves_gc(ctx: JobContext) -> Result<(), JobError> {
+    let report = crate::saves::gc(&ctx.state).await?;
+    tracing::info!(
+        snapshots = report.snapshots,
+        blobs = report.blobs,
+        "cloud saves collected"
+    );
     Ok(())
 }

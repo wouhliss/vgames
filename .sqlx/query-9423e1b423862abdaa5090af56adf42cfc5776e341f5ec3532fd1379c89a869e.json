@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE(sum(b.size), 0)::int8 AS \"usage!\" FROM save_blobs b\n           WHERE b.user_id = $1 AND b.blake3 IN (\n             SELECT sb.blake3 FROM save_snapshots s JOIN save_snapshot_blobs sb ON sb.snapshot_id = s.id\n             WHERE s.user_id = $1 AND s.package_id = $2)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "usage!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "9423e1b423862abdaa5090af56adf42cfc5776e341f5ec3532fd1379c89a869e"
+}

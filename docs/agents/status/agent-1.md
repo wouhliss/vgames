@@ -63,8 +63,15 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   (`vgames_core::verify::verify_compat_profile`, revision must grow → `409 stale_revision`, `422 compat_mismatch`,
   `422 compat_invalid`, key errors as for finalize).
 
+- A1-T13 — Cloud saves (06 §4): `GET …/head` (`404 no_saves`), `GET …/snapshots` (newest first, signed cursors),
+  `GET …/snapshots/{id}`, `POST …/blobs/prepare` (quota, missing blobs only, exact-length signed PUTs, 15 min),
+  `POST …/blobs/download-urls`, `POST …/snapshots` (Idempotency-Key; compare-and-swap on the parent →
+  `409 save_head_conflict` naming the current head in `detail` and `errors[0].message`; `409 blob_not_uploaded`;
+  `413 save_quota_exceeded`). `saves.gc`: newest 20 snapshots + head, unreferenced blobs after one day.
+  Contract commit: 404 on prepare/commit for unknown packages, quota rule in 06 §4.
+
 ## In progress
-- A1-T13 — Cloud saves
+- A1-T14 — Admin server endpoints
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_api::error::ApiError` / `ApiResult` (problem+json), `vgames_api::http::json::{Json, Validate}`
@@ -125,6 +132,17 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   `yanked_version_ids`); then `POST /v1/versions/{id}/download-urls {packs:[…]}` → `{items:[{pack_index,url,size,
   expires_at}]}` (URLs live `VGAMES_SIGNED_URL_TTL_SECONDS`, default 6 h). Report a chunk seen corrupt twice with
   `POST /v1/versions/{id}/integrity-reports {pack_index, chunk_index?, detail?}`.
+- **Cloud saves for Agent 2 (launcher `saves` module, A2 save sync) and Agent 3 (Settings → Cloud saves history):**
+  push = `POST /v1/saves/{package}/blobs/prepare {blobs:[{blake3,size}]}` → `{missing:[{blake3,url,method:"PUT",headers,
+  expires_at}]}` (send each PUT with exactly those headers; blobs the server already has are not listed) →
+  `POST /v1/saves/{package}/snapshots {parent_snapshot_id (null only for the first save), platform, label?, files:[{root,
+  path,size,blake3,mtime}]}` → `201` new head, or `409 save_head_conflict` (another device pushed; `errors[0].message`
+  is the current head id, or `none`) → conflict dialog; `409 blob_not_uploaded` → prepare and upload again;
+  `413 save_quota_exceeded`. Pull = `GET …/head` (`404 no_saves` when there is nothing yet) →
+  `POST …/blobs/download-urls {blake3:[…≤1000]}`. Send an `Idempotency-Key` on commits so a retry after a lost response
+  returns the same snapshot instead of a conflict. `device_id` comes from the session (A4-T04), not the body.
+  Paths are checked with `vgames_core::paths` rules per save location (no case collisions); up to 10,000 files per snapshot.
+- `vgames_proto::saves` holds the cloud-save DTOs (`SaveSnapshot` flattens `SaveSnapshotSummary`).
 - `Storage::sign_put_range(bucket, name, ttl, content_type, min, max)` (both backends).
 - Test harness: `apps/api/tests/common/mod.rs` (`app(pool)`, `send`, `body_json`, `json_request`) with
   `#[sqlx::test(migrations = "./migrations")]`.
@@ -135,6 +153,9 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
 
 ## Blockers / contract questions
 - None. I merge my own PRs (rebase merge) once Agent 5's CI is green.
+- Contract commit (A1-T13, in the same PR as the feature): `prepareSaveBlobs` / `commitSaveSnapshot` answer 404 for an
+  unknown package; 06 §4 now defines the quota as head + pushed + in-flight blobs, with commits trimming the oldest
+  history (never the head) to fit, so a large save that changes every session never locks a player out.
 - Follow-up: invalid path parameters (bad UUID, unknown enum) answer axum's plain-text 400 instead of problem+json;
   I will add a `Path` extractor wrapper (A1-T16 hardening at the latest).
 - Follow-up contract fix: `DELETE /v1/admin/packages/{id}` returns 428 without `If-Match` but does not list it;

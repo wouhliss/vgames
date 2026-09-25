@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM save_snapshots WHERE id IN (\n                 SELECT r.id FROM (\n                   SELECT s.id, row_number() OVER (PARTITION BY s.user_id, s.package_id ORDER BY s.id DESC) AS rn\n                   FROM save_snapshots s) r\n                 WHERE r.rn > $1\n                   AND NOT EXISTS (SELECT 1 FROM save_heads h WHERE h.snapshot_id = r.id)\n                 LIMIT $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7d98c9d074e4e0d1bf3b4fdce1867305239c2b6e9254668171f30d05682eab12"
+}

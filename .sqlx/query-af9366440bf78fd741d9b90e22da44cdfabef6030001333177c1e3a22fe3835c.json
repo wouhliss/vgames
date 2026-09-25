@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE(sum(b.size), 0)::int8 AS \"usage!\" FROM save_blobs b\n           WHERE b.user_id = $1 AND (\n             b.blake3 = ANY($3)\n             OR (b.uploaded_at IS NULL AND b.created_at > now() - make_interval(secs => $4))\n             OR b.blake3 IN (SELECT sb.blake3 FROM save_heads h\n                             JOIN save_snapshot_blobs sb ON sb.snapshot_id = h.snapshot_id\n                             WHERE h.user_id = $1 AND h.package_id = $2))",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "usage!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "ByteaArray",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "af9366440bf78fd741d9b90e22da44cdfabef6030001333177c1e3a22fe3835c"
+}

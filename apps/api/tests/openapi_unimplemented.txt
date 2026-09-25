@@ -15,9 +15,6 @@ GET /v1/devices
 GET /v1/friends
 GET /v1/inbox
 GET /v1/invites
-GET /v1/saves/{package_id}/head
-GET /v1/saves/{package_id}/snapshots
-GET /v1/saves/{package_id}/snapshots/{snapshot_id}
 GET /v1/users/{user_id}
 GET /v1/users/{user_id}/devices
 PATCH /v1/admin/settings
@@ -40,7 +37,4 @@ POST /v1/invites/{invite_id}/cancel
 POST /v1/invites/{invite_id}/decline
 POST /v1/invites/{invite_id}/status
 POST /v1/keys/claim
-POST /v1/saves/{package_id}/blobs/download-urls
-POST /v1/saves/{package_id}/blobs/prepare
-POST /v1/saves/{package_id}/snapshots
 PUT /v1/presence
