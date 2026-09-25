@@ -80,8 +80,14 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   Authorization matrix test: every contract `/v1/admin/*` operation × anonymous/user/disabled/admin/owner; it found
   and fixed a plain-text rejection on non-multipart asset uploads (now `415` problem+json).
 
+- A1-T15 — Admin web hosting: `VGAMES_ADMIN_DIST` served at `/admin/` (`/admin` → 308). Client routes fall back to
+  `index.html` (`no-store`); `assets/*` is `public, max-age=31536000, immutable`; other files `no-cache`; every response
+  carries the admin CSP (01-security §5); `.`/`..`/hidden/empty segments, backslashes and colons are refused and the
+  resolved file (after symlinks) must stay inside the canonical root. A missing directory or one without `index.html`
+  fails config validation at startup.
+
 ## In progress
-- A1-T15 — Admin web hosting
+- A1-T16 — Hardening and performance
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_api::error::ApiError` / `ApiResult` (problem+json), `vgames_api::http::json::{Json, Validate}`
@@ -152,6 +158,10 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   `POST …/blobs/download-urls {blake3:[…≤1000]}`. Send an `Idempotency-Key` on commits so a retry after a lost response
   returns the same snapshot instead of a conflict. `device_id` comes from the session (A4-T04), not the body.
   Paths are checked with `vgames_core::paths` rules per save location (no case collisions); up to 10,000 files per snapshot.
+- **Admin web hosting for Agent 3 (admin-web build):** build with Vite `base: "/admin/"` and emit hashed files into
+  `assets/` (Vite's default); everything else in `dist/` is served `no-cache`. Point `VGAMES_ADMIN_DIST` at `dist/`.
+  The CSP allows `'wasm-unsafe-eval'` and `worker-src 'self'` for the upload worker, `connect-src`/`img-src` for
+  `https://storage.googleapis.com`; no inline scripts or styles, no other origins.
 - **Admin server for Agent 3 (admin web users/allowlist/settings/jobs/audit screens):** everything under the
   `admin-server` tag now matches `openapi/openapi.yaml`; DTOs in `vgames_proto::admin` (`AdminUser`, `AdminUserPatch`,
   `AllowlistEntry`, `ServerSettings`, `ServerSettingsPatch`, `AuditEntry`) and `vgames_proto::jobs::JobPage`. Problem codes

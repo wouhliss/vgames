@@ -2,6 +2,7 @@
 //! Owner: Agent 1 (Backend & DB); `social` belongs to Agent 4.
 
 pub mod admin;
+pub mod admin_web;
 pub mod assets;
 pub mod audit;
 pub mod auth;
