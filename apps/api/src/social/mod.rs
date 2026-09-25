@@ -7,6 +7,7 @@ pub mod friends;
 pub mod invites;
 pub mod presence;
 pub mod relations;
+pub mod relay;
 
 use utoipa_axum::router::OpenApiRouter;
 use vgames_proto::realtime::kinds;
@@ -17,6 +18,7 @@ pub fn routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .merge(friends::routes())
         .merge(devices::routes())
+        .merge(relay::routes())
         .merge(presence::routes())
 }
 
@@ -37,9 +39,10 @@ async fn sweep(ctx: crate::jobs::JobContext) -> Result<(), crate::jobs::JobError
     Ok(sweep_once(&ctx.state).await?)
 }
 
-/// One `social.sweep` pass: deletes friend codes a day after they expire and claimed
-/// one-time keys after 30 days, and marks stale presence offline (API instances do the
-/// latter every 10 s too; the guarded update makes the two agree).
+/// One `social.sweep` pass: deletes friend codes a day after they expire, claimed one-time
+/// keys after 30 days and undelivered envelopes when they expire (30 days), and marks stale
+/// presence offline (API instances do the latter every 10 s too; the guarded update makes
+/// the two agree).
 pub async fn sweep_once(state: &AppState) -> crate::error::ApiResult<()> {
     sqlx::query!("DELETE FROM friend_codes WHERE expires_at < now() - interval '1 day'")
         .execute(&state.db)
@@ -50,6 +53,9 @@ pub async fn sweep_once(state: &AppState) -> crate::error::ApiResult<()> {
     )
     .execute(&state.db)
     .await?;
+    sqlx::query!("DELETE FROM message_envelopes WHERE expires_at < now()")
+        .execute(&state.db)
+        .await?;
     presence::sweep_stale(state, presence::OFFLINE_AFTER).await?;
     Ok(())
 }
