@@ -48,6 +48,7 @@ large_futures = "warn"
 
 [workspace.dependencies]
 # --- internal crates -------------------------------------------------------
+vgames-api = { path = "apps/api" }
 vgames-core = { path = "crates/vgames-core" }
 vgames-proto = { path = "crates/vgames-proto" }
 vgames-pack = { path = "crates/vgames-pack" }
