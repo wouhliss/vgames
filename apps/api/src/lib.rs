@@ -8,6 +8,7 @@ pub mod auth;
 pub mod config;
 pub mod db;
 pub mod discovery;
+pub mod downloads;
 pub mod error;
 pub mod finalize;
 pub mod http;
