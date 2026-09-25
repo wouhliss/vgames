@@ -57,17 +57,14 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   `publisher_key_not_yours`, `publisher_key_expired`, `manifest_invalid`, `manifest_mismatch`, `pack_missing`,
   `pack_size_mismatch`.
 
+- A1-T12 — Verification, publishing, downloads: `version.verify` job, publish, yank (#18); release descriptor,
+  download URLs (`410 version_yanked`), integrity reports → `pack.reverify` (#19); compat profiles:
+  `GET /v1/packages/{id}/compat` (latest revision per target) and `PUT /v1/admin/packages/{id}/compat/{target}`
+  (`vgames_core::verify::verify_compat_profile`, revision must grow → `409 stale_revision`, `422 compat_mismatch`,
+  `422 compat_invalid`, key errors as for finalize).
+
 ## In progress
-- A1-T12 — Verification, publishing, downloads. Part 1 (this PR): `version.verify` job (≤ 8 packs streamed at once
-  through `vgames_pack::verify::PackStreamVerifier` on the blocking pool, `verify_progress`, first failing
-  `pack N: chunk M` in `failure_reason`, realtime `version.state` to admins), `POST …/publish` (ready → published; an
-  older published version can be re-published to roll back), `POST …/yank` (reason; the release falls back to the
-  newest remaining published version). Migration `20260925090000_version_verify`. Next: release descriptor, download
-  URLs, integrity reports, compat profiles.
-  Part 2 (this PR): `GET /v1/packages/{id}/releases/{platform}` (descriptor with signed manifest URL, envelope rebuilt
-  from the version row, `yanked_version_ids`), `POST /v1/versions/{id}/download-urls` (≤ 500 packs, `DownloadUrls`
-  rate limit, `410 version_yanked`), `POST …/integrity-reports` (3 distinct users in 24 h → `pack.reverify` job; a
-  corrupt pack is reported to admins as `version.state` with `failure_reason: "integrity: …"`). Next: compat profiles.
+- A1-T13 — Cloud saves
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_api::error::ApiError` / `ApiResult` (problem+json), `vgames_api::http::json::{Json, Validate}`
@@ -138,6 +135,8 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
 
 ## Blockers / contract questions
 - None. I merge my own PRs (rebase merge) once Agent 5's CI is green.
+- Follow-up: invalid path parameters (bad UUID, unknown enum) answer axum's plain-text 400 instead of problem+json;
+  I will add a `Path` extractor wrapper (A1-T16 hardening at the latest).
 - Follow-up contract fix: `DELETE /v1/admin/packages/{id}` returns 428 without `If-Match` but does not list it;
   I will add it (contract + handler) in a small `contract:` PR.
 

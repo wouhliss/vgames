@@ -54,6 +54,7 @@ pub fn api_routes() -> OpenApiRouter<AppState> {
         .merge(crate::finalize::routes())
         .merge(crate::releases::routes())
         .merge(crate::downloads::routes())
+        .merge(crate::compat_profiles::routes())
         .merge(crate::social::routes())
 }
 

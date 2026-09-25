@@ -5,6 +5,7 @@ pub mod admin;
 pub mod assets;
 pub mod audit;
 pub mod auth;
+pub mod compat_profiles;
 pub mod config;
 pub mod db;
 pub mod discovery;
