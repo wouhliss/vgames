@@ -24,7 +24,11 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
     tauri_specta::Builder::<tauri::Wry>::new()
         .commands(tauri_specta::collect_commands![
             app::app_ready,
-            app::app_info
+            app::app_info,
+            crate::updater::updater_status,
+            crate::updater::updater_check,
+            crate::updater::updater_whats_new,
+            crate::updater::updater_install
         ])
         .events(tauri_specta::collect_events![
             GameStarted,
@@ -32,7 +36,8 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             InstallProgress,
             InstallFinished,
             ServerSwitched,
-            ControllerEvent
+            ControllerEvent,
+            crate::updater::UpdaterStatus
         ])
         .error_handling(tauri_specta::ErrorHandlingMode::Result)
         // Byte counts and ids that are u64 in Rust stay below 2^53.

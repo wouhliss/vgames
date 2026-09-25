@@ -14,14 +14,16 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
 - A5-T04 trust bundles, `verify_manifest`, `verify_compat_profile` — pushed to main, compat part in PR 7.
 - A5-T08 (part 1) changelog lint + PR gate — https://github.com/wouhliss/vgames/pull/9.
 - A5-T10 security gates (CODEOWNERS, ownership check, review checklist) — https://github.com/wouhliss/vgames/pull/14.
+- A5-T08 release-notes agent + release assembly — https://github.com/wouhliss/vgames/pull/16.
+- `contract:` drop fuzzing — https://github.com/wouhliss/vgames/pull/12 (merged).
 - A5-T05 as redefined: no-panic property tests (`crates/vgames-core/tests/no_panic.rs`) for manifest, envelope,
   trust bundle, key file and compat parsers (arbitrary bytes + mutated valid documents), plus the existing path and
   manifest properties. **Fuzzing was removed completely at the owner's request** (no fuzz targets, corpora,
   workflows, nightly toolchain or cargo-fuzz).
 
 ## In progress
-- A5-T06 CLI: offline ceremonies merged (https://github.com/wouhliss/vgames/pull/10); `login`, `trust publish`, `publish`, `trust re-sign` next (need A1-T08/T11
-  and Agent 2's upload library). A5-T08 release-notes agent in review. Then A5-T09 updater, A5-T07 release pipelines.
+- A5-T09 launcher updater (in review). Then A5-T07 release pipelines, A5-T06 server commands (`login`, `trust publish`,
+  `publish`, `trust re-sign`), A5-T12 runtime catalog, A5-T11 adversarial tests, A5-T13 runbooks.
 
 ## Interfaces delivered (other agents may now rely on these)
 - **Signatures, key ids, fingerprints** (A5-T03 slice 1, for Agents 1, 2, 3):
@@ -121,7 +123,19 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
   `crates/vgames-pack/tests/roundtrip.rs` (rustfmt), `packages/pack-wasm/test/smoke.mjs`, `infra/gcs/cors.json`
   (Biome); `biome.json` migrated (`preset`) and now ignores `.sqlx/`, `**/tests/vectors`, `**/snapshots`, `**/pkg`.
 
+- **Launcher updater** (A5-T09, for Agent 3): commands `updater_status() -> UpdaterStatus`, `updater_check() ->
+  UpdaterStatus` (the onboarding "launcher too old" prompt asked for this), `updater_whats_new() -> WhatsNew`,
+  `updater_install()`; event `UpdaterStatus { current_version, state: idle | checking | up_to_date | available{version,
+  date} | downloading{version, downloaded, total} | installed{version} | failed{message}, blocked: game_running |
+  downloads_active | null }`. `WhatsNew { releases: [{version, date, entries: [{type, text}]}], from_latest_notes }`,
+  newest first; a release with no entries shows "Stability and performance improvements."; render text as plain text.
+
 ## Needs from others
+- From Agent 2: regenerate `apps/desktop/src/bindings.ts` after the updater PR (I cannot build the desktop crate on
+  this machine; it registers 4 commands + the `UpdaterStatus` event). I added ~20 lines of wiring in your files
+  (`lib.rs`: module, plugin, `updater::init`; `commands/mod.rs`; `names.rs`; `capabilities/main.json`; `Cargo.toml`: semver).
+- From Agent 2: a way to pause active downloads at their next checkpoint (A2-T04/T08). `updater_install` waits until
+  every install reports `InstallPhase::Paused` or finishes; today it just waits.
 
 - **Security gates for every agent** (A5-T10): `.github/CODEOWNERS` (every file owned; security-critical paths in a
   last, checked section), `cargo xtask codeowners check` in CI, and `docs/security/review-checklist.md`, linked from the
@@ -133,9 +147,8 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
   The live-API dry run on a test tag needs `ANTHROPIC_API_KEY` in the `release` environment (humans).
 
 ## Blockers / contract questions
-- `contract:` https://github.com/wouhliss/vgames/pull/12 — drops `cargo fuzz` from 01-security §9 and the Agent 1, 2
-  and 5 task lists (owner decision, 2026-09-25), replaced by no-panic property tests. **Agents 1 and 2: do not add
-  `cargo fuzz` targets** (`apps/api/fuzz/`, `src-tauri/fuzz/`); write `proptest` no-panic properties instead.
+- Fuzzing is dropped (owner decision 2026-09-25, contract PR 12 merged). **Agents 1 and 2: do not add `cargo fuzz`
+  targets**; write `proptest` no-panic properties instead.
 - Clarifications I implemented where the docs were silent (a `contract:` PR to 02/09 will record them):
   (1) paths: a component whose NFKC form breaks a rule is refused (`‥`, `／`, fullwidth reserved names) — needed for
   "never escapes after any normalization"; (2) manifests: `files` sorted byte-wise by path (02 §4 step 2), empty files
