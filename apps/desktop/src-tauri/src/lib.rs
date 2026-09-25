@@ -15,6 +15,7 @@ pub mod events;
 pub mod logging;
 pub mod paths;
 pub mod state;
+pub mod updater;
 
 use std::sync::Mutex;
 use std::time::Duration;
@@ -70,6 +71,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_process::init())
+        // Self-update (Agent 5, `updater/`): minisign-verified, driven from Rust only.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(specta.invoke_handler())
         .setup(move |app| {
             specta.mount_events(app);
@@ -122,6 +125,7 @@ fn setup(app: &AppHandle, profile: Option<String>) -> Result<(), Box<dyn std::er
         Err(error) => tracing::warn!(%error, "cannot read the launch deep link"),
     }
 
+    updater::init(app, &state);
     app.manage(state);
     Ok(())
 }

@@ -10,7 +10,14 @@
 // name here, and grant `allow-<name-with-dashes>` in the right capability.
 
 /// Commands the main launcher window may call.
-pub const MAIN_WINDOW_COMMANDS: &[&str] = &["app_ready", "app_info"];
+pub const MAIN_WINDOW_COMMANDS: &[&str] = &[
+    "app_ready",
+    "app_info",
+    "updater_status",
+    "updater_check",
+    "updater_whats_new",
+    "updater_install",
+];
 
 /// Commands the in-game overlay window may call. Only `overlay_*` commands
 /// belong here (Agent 4 adds them).
