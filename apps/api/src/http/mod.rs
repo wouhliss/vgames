@@ -2,7 +2,7 @@
 //!
 //! Layer order, outermost first (docs/agents/agent-1-backend.md A1-T01): request id →
 //! trace → catch panic → timeout (30 s, not on `/v1/realtime`) → body limit (1 MiB) →
-//! gzip → security headers.
+//! gzip → security headers → problem+json for framework rejections (A1-T16).
 
 pub mod client_ip;
 pub mod context;
@@ -10,6 +10,8 @@ pub mod etag;
 pub mod idempotency;
 pub mod json;
 pub mod pagination;
+pub mod path;
+pub mod problems;
 pub mod query;
 pub mod ratelimit;
 pub mod security_headers;
@@ -113,7 +115,8 @@ pub fn with_layers(routes: Router<AppState>, state: AppState) -> Router {
                 .layer(middleware::from_fn_with_state(
                     state.clone(),
                     security_headers::security_headers,
-                )),
+                ))
+                .layer(middleware::from_fn(problems::normalize)),
         )
         .with_state(state)
 }

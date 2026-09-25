@@ -1,17 +1,32 @@
 //! Rate limits (docs/architecture/01-security.md §4.4), per server instance.
 //!
-//! Keyed GCRA limiters from `governor`. Unauthenticated routes are limited by client IP
-//! (middleware); authenticated requests by user (checked when the session resolves);
-//! specific actions by the handler with [`RateLimits::check`].
+//! Keyed GCRA limiters from `governor`. Every request is limited (A1-T16):
+//!
+//! - `/v1/auth/*` per IP ([`Policy::Auth`]); signed storage URLs (`/_storage/*`, fs backend)
+//!   per IP ([`Policy::Storage`]); static files (`/admin/*`, `/docs/*`) per IP
+//!   ([`Policy::Static`]);
+//! - routes that authenticate the caller (bearer or cookie in the OpenAPI document) per user
+//!   ([`Policy::User`], applied when the session resolves), and per IP when the request
+//!   carries no credentials;
+//! - every other route (discovery, trust bundle, health, docs, admin UI, realtime upgrade,
+//!   unknown paths) per IP ([`Policy::Public`]) whether or not it carries credentials, so a
+//!   junk `Authorization` header cannot switch the limit off;
+//! - failed authentication with credentials counts per IP too ([`Policy::Public`]);
+//! - specific actions in their handlers with [`RateLimits::check`].
 
 use std::{
+    collections::HashSet,
     net::IpAddr,
     num::NonZeroU32,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        OnceLock,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 use axum::{
-    extract::{Request, State},
+    extract::{MatchedPath, Request, State},
+    http::Method,
     middleware::Next,
     response::{IntoResponse, Response},
 };
@@ -39,10 +54,15 @@ pub enum Policy {
     DownloadUrls,
     /// Unauthenticated public endpoints per IP (discovery, trust bundle): 300 / min.
     Public,
+    /// Signed storage URLs served by the API (fs backend) per IP: 6,000 / min, enough for
+    /// parallel range downloads at full speed.
+    Storage,
+    /// Static files (admin UI, Swagger UI) per IP: 3,000 / min. No database work.
+    Static,
 }
 
 impl Policy {
-    pub const ALL: [Policy; 7] = [
+    pub const ALL: [Policy; 9] = [
         Policy::Auth,
         Policy::User,
         Policy::FriendRequests,
@@ -50,9 +70,11 @@ impl Policy {
         Policy::Messages,
         Policy::DownloadUrls,
         Policy::Public,
+        Policy::Storage,
+        Policy::Static,
     ];
 
-    fn quota(self) -> Quota {
+    pub fn quota(self) -> Quota {
         let n = |v: u32| NonZeroU32::new(v).unwrap_or(NonZeroU32::MIN);
         match self {
             Policy::Auth => Quota::per_minute(n(20)),
@@ -62,6 +84,8 @@ impl Policy {
             Policy::Messages => Quota::per_minute(n(120)),
             Policy::DownloadUrls => Quota::per_hour(n(2000)),
             Policy::Public => Quota::per_minute(n(300)),
+            Policy::Storage => Quota::per_minute(n(6000)),
+            Policy::Static => Quota::per_minute(n(3000)),
         }
     }
 }
@@ -79,10 +103,15 @@ impl Default for RateLimits {
 
 impl RateLimits {
     pub fn new() -> Self {
+        Self::with_quotas(Policy::quota)
+    }
+
+    /// Limits with other quotas (tests use tiny ones).
+    pub fn with_quotas(quota: impl Fn(Policy) -> Quota) -> Self {
         Self {
             limiters: Policy::ALL
                 .iter()
-                .map(|p| (*p, RateLimiter::keyed(p.quota())))
+                .map(|p| (*p, RateLimiter::keyed(quota(*p))))
                 .collect(),
             checks: AtomicU64::new(0),
         }
@@ -131,31 +160,93 @@ impl RateLimits {
     }
 }
 
-/// Middleware applied to every route: `/v1/auth/*` is limited per IP under
-/// [`Policy::Auth`]; other requests without credentials per IP under [`Policy::Public`].
-/// Requests with credentials are limited per user when the session resolves
-/// ([`Policy::User`]), so users behind one NAT do not share a budget.
-pub async fn ip_limits(State(state): State<AppState>, req: Request, next: Next) -> Response {
-    let (parts, body) = req.into_parts();
-    let path = parts.uri.path();
-    let policy = if path.starts_with("/v1/auth/") {
-        Some(Policy::Auth)
-    } else if has_credentials(&parts.headers) {
+/// `(METHOD, path template)` of every operation that authenticates its caller.
+fn authenticated_routes() -> &'static HashSet<(String, String)> {
+    static ROUTES: OnceLock<HashSet<(String, String)>> = OnceLock::new();
+    ROUTES.get_or_init(|| {
+        let doc = serde_json::to_value(crate::http::openapi()).unwrap_or_default();
+        let mut out = HashSet::new();
+        let Some(paths) = doc.get("paths").and_then(|p| p.as_object()) else {
+            return out;
+        };
+        for (path, item) in paths {
+            let Some(item) = item.as_object() else {
+                continue;
+            };
+            for (method, op) in item {
+                // No operation-level `security` means the document default (bearer or cookie).
+                let authenticated = match op.get("security").and_then(|s| s.as_array()) {
+                    None => true,
+                    Some(reqs) => reqs
+                        .iter()
+                        .any(|r| r.get("bearerAuth").is_some() || r.get("cookieAuth").is_some()),
+                };
+                if authenticated {
+                    out.insert((method.to_ascii_uppercase(), path.clone()));
+                }
+            }
+        }
+        out
+    })
+}
+
+/// The per-IP policy for a request, or `None` when the per-user limit applies instead.
+pub fn ip_policy(
+    method: &Method,
+    route: Option<&str>,
+    path: &str,
+    has_credentials: bool,
+) -> Option<Policy> {
+    if path.starts_with("/v1/auth/") {
+        return Some(Policy::Auth);
+    }
+    if path.starts_with("/_storage/") {
+        return Some(Policy::Storage);
+    }
+    if path == "/admin" || path.starts_with("/admin/") || path.starts_with("/docs") {
+        return Some(Policy::Static);
+    }
+    let authenticated = route.is_some_and(|r| {
+        authenticated_routes().contains(&(method.as_str().to_string(), r.to_string()))
+    });
+    if authenticated && has_credentials {
         None
     } else {
         Some(Policy::Public)
-    };
-    if let Some(policy) = policy {
-        let ip = client_ip(&parts, state.config.trust_proxy_headers)
-            .map_or_else(|| "unknown".to_string(), |ip: IpAddr| ip.to_string());
-        if let Err(e) = state.limits.check(policy, &format!("ip:{ip}")) {
-            return e.into_response();
-        }
+    }
+}
+
+/// Middleware applied to every route (after routing, so the matched template is known).
+pub async fn ip_limits(State(state): State<AppState>, req: Request, next: Next) -> Response {
+    let (parts, body) = req.into_parts();
+    let route = parts
+        .extensions
+        .get::<MatchedPath>()
+        .map(MatchedPath::as_str);
+    if let Some(policy) = ip_policy(
+        &parts.method,
+        route,
+        parts.uri.path(),
+        has_credentials(&parts.headers),
+    ) && let Err(e) = check_ip(&state, &parts, policy)
+    {
+        return e.into_response();
     }
     next.run(Request::from_parts(parts, body)).await
 }
 
-fn has_credentials(headers: &axum::http::HeaderMap) -> bool {
+/// Consumes one unit of `policy` for the client IP of `parts`.
+pub fn check_ip(
+    state: &AppState,
+    parts: &axum::http::request::Parts,
+    policy: Policy,
+) -> Result<(), ApiError> {
+    let ip = client_ip(parts, state.config.trust_proxy_headers)
+        .map_or_else(|| "unknown".to_string(), |ip: IpAddr| ip.to_string());
+    state.limits.check(policy, &format!("ip:{ip}"))
+}
+
+pub fn has_credentials(headers: &axum::http::HeaderMap) -> bool {
     headers.contains_key(axum::http::header::AUTHORIZATION)
         || headers
             .get(axum::http::header::COOKIE)

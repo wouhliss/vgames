@@ -4,7 +4,7 @@
 //! owner-only to change (`If-Match` required); admins may read them.
 
 use axum::{
-    extract::{Path, State},
+    extract::State,
     http::StatusCode,
     response::{IntoResponse, Response},
 };
@@ -23,6 +23,7 @@ use vgames_proto::{
     jobs::{Job, JobPage, JobState},
 };
 
+use crate::http::path::Path;
 use crate::{
     audit,
     auth::{RequestMeta, RequireAdmin, RequireOwner},

@@ -185,6 +185,132 @@ mod tests {
         assert_eq!(e.errors[0].field, "name");
     }
 
+    /// A1-T16: the JSON extractor and every request validator never panic, whatever the
+    /// body. Objects use the real schema property names so values often deserialize and
+    /// reach the validators.
+    mod no_panic {
+        use proptest::prelude::*;
+        use serde::de::DeserializeOwned;
+        use serde_json::Value;
+        use vgames_proto::{
+            admin::{AdminUserPatch, AllowlistCreate, ServerSettingsPatch},
+            auth::{AuthStartRequest, TokenRequest},
+            packages::{AdminPackageCreate, AdminPackagePatch, MetadataApply},
+            saves::{BlobDownloadUrlsRequest, CommitSnapshotRequest, PrepareBlobsRequest},
+            trust::SignedTrustBundle,
+            versions::{
+                CompatUpload, DownloadUrlsRequest, FinalizeRequest, IntegrityReport,
+                ReplaceSignature, VersionCreate, YankRequest,
+            },
+        };
+
+        use super::super::{Validate, parse_json};
+
+        fn exercise<T: DeserializeOwned + Validate>(bytes: &[u8]) {
+            if let Ok(v) = parse_json::<T>(bytes) {
+                let mut errors = Vec::new();
+                v.validate(&mut errors);
+            }
+        }
+
+        fn all(bytes: &[u8]) {
+            exercise::<AdminUserPatch>(bytes);
+            exercise::<AllowlistCreate>(bytes);
+            exercise::<ServerSettingsPatch>(bytes);
+            exercise::<AuthStartRequest>(bytes);
+            exercise::<TokenRequest>(bytes);
+            exercise::<AdminPackageCreate>(bytes);
+            exercise::<AdminPackagePatch>(bytes);
+            exercise::<MetadataApply>(bytes);
+            exercise::<BlobDownloadUrlsRequest>(bytes);
+            exercise::<CommitSnapshotRequest>(bytes);
+            exercise::<PrepareBlobsRequest>(bytes);
+            exercise::<SignedTrustBundle>(bytes);
+            exercise::<CompatUpload>(bytes);
+            exercise::<DownloadUrlsRequest>(bytes);
+            exercise::<FinalizeRequest>(bytes);
+            exercise::<IntegrityReport>(bytes);
+            exercise::<ReplaceSignature>(bytes);
+            exercise::<VersionCreate>(bytes);
+            exercise::<YankRequest>(bytes);
+        }
+
+        fn field_names() -> Vec<String> {
+            let doc = serde_json::to_value(crate::http::openapi()).unwrap_or_default();
+            let mut names: Vec<String> = doc["components"]["schemas"]
+                .as_object()
+                .into_iter()
+                .flatten()
+                .flat_map(|(_, s)| s["properties"].as_object().into_iter().flatten())
+                .map(|(k, _)| k.clone())
+                .collect();
+            names.extend(["grant_type".into(), "x".into()]);
+            names.sort();
+            names.dedup();
+            names
+        }
+
+        fn leaf() -> impl Strategy<Value = Value> {
+            prop_oneof![
+                Just(Value::Null),
+                any::<bool>().prop_map(Value::from),
+                any::<i64>().prop_map(Value::from),
+                any::<u64>().prop_map(Value::from),
+                any::<f64>().prop_map(|f| {
+                    serde_json::Number::from_f64(f).map_or(Value::Null, Value::Number)
+                }),
+                any::<String>().prop_map(Value::from),
+                "[0-9a-f]{64}".prop_map(Value::from),
+                "[0-9]{5,25}".prop_map(Value::from),
+                // Path-like strings: dots, slashes, backslashes, combining and fullwidth marks.
+                "([a-zA-Z0-9._ -]|\\.\\.|/|\\\\|\u{0301}|\u{FF0F}){0,40}".prop_map(Value::from),
+                Just(Value::from("01920000-0000-7000-8000-000000000001")),
+                Just(Value::from("2026-09-25T10:00:00Z")),
+                prop::sample::select(vec![
+                    "linux",
+                    "windows",
+                    "macos",
+                    "linux-x86_64",
+                    "open",
+                    "owner",
+                    "admin",
+                    "cover",
+                    "published",
+                    "refresh_token",
+                    "authorization_code",
+                    "desktop",
+                    "web",
+                ])
+                .prop_map(Value::from),
+            ]
+        }
+
+        fn json() -> impl Strategy<Value = Value> {
+            let names = field_names();
+            leaf().prop_recursive(4, 96, 10, move |inner| {
+                prop_oneof![
+                    prop::collection::vec(inner.clone(), 0..10).prop_map(Value::Array),
+                    prop::collection::btree_map(prop::sample::select(names.clone()), inner, 0..10)
+                        .prop_map(|m| Value::Object(m.into_iter().collect())),
+                ]
+            })
+        }
+
+        proptest! {
+            #![proptest_config(ProptestConfig::with_cases(512))]
+
+            #[test]
+            fn arbitrary_bytes(bytes in prop::collection::vec(any::<u8>(), 0..2048)) {
+                all(&bytes);
+            }
+
+            #[test]
+            fn arbitrary_json(value in json()) {
+                all(&serde_json::to_vec(&value).unwrap_or_default());
+            }
+        }
+    }
+
     #[test]
     fn malformed_json_is_distinct() {
         assert_eq!(

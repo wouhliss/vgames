@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use axum::{
-    extract::{Path, State},
+    extract::State,
     http::StatusCode,
     response::{IntoResponse, Response},
 };
@@ -19,6 +19,7 @@ use vgames_proto::{
     versions::{UploadMethod, UploadTarget, Version, VersionCreate, VersionPage, VersionState},
 };
 
+use crate::http::path::Path;
 use crate::{
     audit,
     auth::{RequestMeta, RequireAdmin},

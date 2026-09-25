@@ -1,6 +1,6 @@
 //! Server-side pack verification, publishing and yanking (A1-T12, 02-package-format §6 steps 7–8).
 
-use axum::extract::{Path, State};
+use axum::extract::State;
 use bytes::Bytes;
 use futures_util::{StreamExt, stream};
 use serde_json::{Value, json};
@@ -12,6 +12,7 @@ use vgames_proto::{
     versions::{Version, VersionState, YankRequest},
 };
 
+use crate::http::path::Path;
 use crate::{
     audit,
     auth::{RequestMeta, RequireAdmin},

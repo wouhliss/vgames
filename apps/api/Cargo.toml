@@ -55,6 +55,7 @@ ed25519-dalek.workspace = true
 hex.workspace = true
 
 [dev-dependencies]
+proptest.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 tokio-tungstenite.workspace = true
 http-body-util.workspace = true

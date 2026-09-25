@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT s.id AS session_id, s.kind, s.device_id, s.access_expires_at, s.csrf_token_hash,\n                      s.created_at, s.last_used_at, u.id AS user_id, u.role, u.disabled_at\n               FROM sessions s JOIN users u ON u.id = s.user_id\n               WHERE s.access_token_hash = $1 AND s.revoked_at IS NULL",
+  "query": "SELECT s.id AS session_id, s.kind, s.device_id, s.access_expires_at, s.csrf_token_hash,\n                  s.created_at, s.last_used_at, u.id AS user_id, u.role, u.disabled_at\n           FROM sessions s JOIN users u ON u.id = s.user_id\n           WHERE s.access_token_hash = $1 AND s.revoked_at IS NULL",
   "describe": {
     "columns": [
       {
@@ -132,5 +132,5 @@
       true
     ]
   },
-  "hash": "65bf036236d293c7a8561c06dabd9243b57e8d3ed498fe8007cf5d6e48e67424"
+  "hash": "166111ed62f3a8ccaa45692e5fd72f4c65ec4ec08ba9a2b708d2193be2ba5e01"
 }

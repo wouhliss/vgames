@@ -138,17 +138,35 @@ async fn auth_routes_are_rate_limited_per_ip() {
     assert!(body["request_id"].is_string());
 }
 
-#[tokio::test]
-async fn requests_with_credentials_skip_the_ip_limit() {
-    let app = app(lazy_pool());
+/// A valid session on an authenticated route is limited per user, not per IP: users behind
+/// one NAT do not share the 300/min public budget. Credentials on anything else (unknown
+/// routes, public routes, a bad token) do not switch the IP limit off (A1-T16).
+#[sqlx::test(migrations = "./migrations")]
+async fn only_valid_sessions_on_authenticated_routes_skip_the_ip_limit(pool: sqlx::PgPool) {
+    let app = app(pool.clone());
+    let (_, _, token) = seed_session(&pool, "user").await;
     for _ in 0..305 {
-        let req = axum::http::Request::builder()
-            .uri("/v1/nope")
+        let resp = send(&app, bearer_request("GET", "/v1/me", &token)).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+    let junk = |uri: &str| {
+        axum::http::Request::builder()
+            .uri(uri)
             .header("authorization", "Bearer vga_x")
             .body(axum::body::Body::empty())
-            .unwrap();
-        assert_eq!(send(&app, req).await.status(), StatusCode::NOT_FOUND);
+            .unwrap()
+    };
+    let mut limited = false;
+    for _ in 0..305 {
+        if send(&app, junk("/v1/nope")).await.status() == StatusCode::TOO_MANY_REQUESTS {
+            limited = true;
+            break;
+        }
     }
+    assert!(
+        limited,
+        "an unknown route with a junk token must hit the IP limit"
+    );
 }
 
 #[test]

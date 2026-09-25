@@ -112,6 +112,18 @@ impl AppState {
 }
 
 impl AppState {
+    /// Replaces the rate limiters (tests use tiny quotas). Only possible before the state
+    /// is shared; otherwise the state is returned unchanged as `Err`.
+    pub fn with_limits(self, limits: RateLimits) -> Result<Self, Self> {
+        match Arc::try_unwrap(self.0) {
+            Ok(mut inner) => {
+                inner.limits = limits;
+                Ok(Self(Arc::new(inner)))
+            }
+            Err(shared) => Err(Self(shared)),
+        }
+    }
+
     /// Replaces the metadata providers (tests point them at mock servers). Only possible
     /// before the state is shared; otherwise the state is returned unchanged as `Err`.
     pub fn with_metadata(self, providers: crate::metadata::Providers) -> Result<Self, Self> {

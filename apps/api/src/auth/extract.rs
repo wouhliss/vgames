@@ -13,7 +13,10 @@ use vgames_proto::auth::{ClientKind, Role};
 use super::tokens::{self, ACCESS_PREFIX, WEB_SESSION_PREFIX};
 use crate::{
     error::ApiError,
-    http::{client_ip::client_ip, ratelimit::Policy},
+    http::{
+        client_ip::client_ip,
+        ratelimit::{Policy, check_ip, has_credentials},
+    },
     state::AppState,
 };
 
@@ -108,77 +111,93 @@ impl FromRequestParts<AppState> for CurrentUser {
         if let Some(user) = parts.extensions.get::<CurrentUser>() {
             return Ok(user.clone());
         }
-        let cred = credential(parts)?;
-        let (token, via_cookie) = match &cred {
-            Credential::Bearer(t) => (t.as_str(), false),
-            Credential::Cookie(t) => (t.as_str(), true),
-        };
-        let row = sqlx::query!(
-            r#"SELECT s.id AS session_id, s.kind, s.device_id, s.access_expires_at, s.csrf_token_hash,
-                      s.created_at, s.last_used_at, u.id AS user_id, u.role, u.disabled_at
-               FROM sessions s JOIN users u ON u.id = s.user_id
-               WHERE s.access_token_hash = $1 AND s.revoked_at IS NULL"#,
-            tokens::digest(token)
-        )
-        .fetch_optional(&state.db)
-        .await?
-        .ok_or_else(ApiError::unauthenticated)?;
-
-        let kind = if row.kind == "web" {
-            ClientKind::Web
-        } else {
-            ClientKind::Desktop
-        };
-        if via_cookie != (kind == ClientKind::Web) {
-            return Err(ApiError::unauthenticated());
+        match resolve(parts, state).await {
+            // Requests carrying credentials skip the per-IP limit; a failed attempt counts
+            // against the IP instead of the (unknown) user, so bad tokens cannot be tried
+            // for free.
+            Err(e)
+                if e.status == axum::http::StatusCode::UNAUTHORIZED
+                    && has_credentials(&parts.headers) =>
+            {
+                check_ip(state, parts, Policy::Public)?;
+                Err(e)
+            }
+            other => other,
         }
-        let now = OffsetDateTime::now_utc();
-        if row.access_expires_at <= now
-            || (kind == ClientKind::Web && row.created_at + WEB_ABSOLUTE <= now)
-        {
-            return Err(ApiError::session_expired());
-        }
-        if row.disabled_at.is_some() {
-            revoke_all_for_user(state, row.user_id, "user_disabled").await?;
-            return Err(ApiError::forbidden_code(
-                "user_disabled",
-                "This account is disabled",
-            ));
-        }
-        if via_cookie && is_unsafe(&parts.method) {
-            check_csrf(parts, state, row.csrf_token_hash.as_deref())?;
-        }
-        state
-            .limits
-            .check(Policy::User, &format!("user:{}", row.user_id))?;
-
-        if now - row.last_used_at > Duration::seconds(60) {
-            // Slide web sessions; record activity at most once a minute.
-            sqlx::query!(
-                r#"UPDATE sessions
-                   SET last_used_at = now(),
-                       access_expires_at = CASE WHEN kind = 'web'
-                           THEN LEAST(now() + make_interval(secs => $2), created_at + make_interval(secs => $3))
-                           ELSE access_expires_at END
-                   WHERE id = $1"#,
-                row.session_id,
-                WEB_IDLE.as_seconds_f64(),
-                WEB_ABSOLUTE.as_seconds_f64()
-            )
-            .execute(&state.db)
-            .await?;
-        }
-
-        let user = CurrentUser {
-            user_id: row.user_id,
-            role: parse_role(&row.role),
-            session_id: row.session_id,
-            device_id: row.device_id,
-            kind,
-        };
-        parts.extensions.insert(user.clone());
-        Ok(user)
     }
+}
+
+async fn resolve(parts: &mut Parts, state: &AppState) -> Result<CurrentUser, ApiError> {
+    let cred = credential(parts)?;
+    let (token, via_cookie) = match &cred {
+        Credential::Bearer(t) => (t.as_str(), false),
+        Credential::Cookie(t) => (t.as_str(), true),
+    };
+    let row = sqlx::query!(
+        r#"SELECT s.id AS session_id, s.kind, s.device_id, s.access_expires_at, s.csrf_token_hash,
+                  s.created_at, s.last_used_at, u.id AS user_id, u.role, u.disabled_at
+           FROM sessions s JOIN users u ON u.id = s.user_id
+           WHERE s.access_token_hash = $1 AND s.revoked_at IS NULL"#,
+        tokens::digest(token)
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(ApiError::unauthenticated)?;
+
+    let kind = if row.kind == "web" {
+        ClientKind::Web
+    } else {
+        ClientKind::Desktop
+    };
+    if via_cookie != (kind == ClientKind::Web) {
+        return Err(ApiError::unauthenticated());
+    }
+    let now = OffsetDateTime::now_utc();
+    if row.access_expires_at <= now
+        || (kind == ClientKind::Web && row.created_at + WEB_ABSOLUTE <= now)
+    {
+        return Err(ApiError::session_expired());
+    }
+    if row.disabled_at.is_some() {
+        revoke_all_for_user(state, row.user_id, "user_disabled").await?;
+        return Err(ApiError::forbidden_code(
+            "user_disabled",
+            "This account is disabled",
+        ));
+    }
+    if via_cookie && is_unsafe(&parts.method) {
+        check_csrf(parts, state, row.csrf_token_hash.as_deref())?;
+    }
+    state
+        .limits
+        .check(Policy::User, &format!("user:{}", row.user_id))?;
+
+    if now - row.last_used_at > Duration::seconds(60) {
+        // Slide web sessions; record activity at most once a minute.
+        sqlx::query!(
+            r#"UPDATE sessions
+               SET last_used_at = now(),
+                   access_expires_at = CASE WHEN kind = 'web'
+                       THEN LEAST(now() + make_interval(secs => $2), created_at + make_interval(secs => $3))
+                       ELSE access_expires_at END
+               WHERE id = $1"#,
+            row.session_id,
+            WEB_IDLE.as_seconds_f64(),
+            WEB_ABSOLUTE.as_seconds_f64()
+        )
+        .execute(&state.db)
+        .await?;
+    }
+
+    let user = CurrentUser {
+        user_id: row.user_id,
+        role: parse_role(&row.role),
+        session_id: row.session_id,
+        device_id: row.device_id,
+        kind,
+    };
+    parts.extensions.insert(user.clone());
+    Ok(user)
 }
 
 /// Cookie-authenticated unsafe requests need a matching `X-CSRF-Token` and a same-origin `Origin`.

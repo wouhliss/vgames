@@ -155,9 +155,47 @@ pub fn finish_page<T>(
 
 #[cfg(test)]
 mod tests {
+    use proptest::prelude::*;
+
     use super::*;
 
     const KEY: [u8; 32] = [7; 32];
+
+    proptest! {
+        /// Cursors round-trip for any sort key, id and filters.
+        #[test]
+        fn cursors_round_trip(key in any::<String>(), id in any::<u128>(), q in proptest::option::of(any::<String>())) {
+            let codec = CursorCodec::new(&KEY);
+            let f = serde_json::json!({ "q": q });
+            let id = Uuid::from_u128(id);
+            let c = codec.encode(&key, id, &f).unwrap();
+            if c.len() <= MAX_CURSOR_LEN {
+                let (k, got): (String, Uuid) = codec.decode(&c, &f).unwrap();
+                prop_assert_eq!((k, got), (key, id));
+            }
+        }
+
+        /// Arbitrary input never panics and is (practically) never accepted.
+        #[test]
+        fn arbitrary_cursors_are_rejected(input in any::<String>()) {
+            let codec = CursorCodec::new(&KEY);
+            let res = codec.decode::<String, _>(&input, &serde_json::json!({}));
+            prop_assert_eq!(res.unwrap_err().code, "invalid_cursor");
+        }
+
+        /// Flipping any bit of a valid cursor invalidates it.
+        #[test]
+        fn tampered_cursors_are_rejected(key in "[a-z]{0,40}", byte in any::<prop::sample::Index>(), bit in 0u8..8) {
+            let codec = CursorCodec::new(&KEY);
+            let f = serde_json::json!({});
+            let c = codec.encode(&key, Uuid::from_u128(7), &f).unwrap();
+            let mut raw = URL_SAFE_NO_PAD.decode(&c).unwrap();
+            let i = byte.index(raw.len());
+            raw[i] ^= 1 << bit;
+            let tampered = URL_SAFE_NO_PAD.encode(raw);
+            prop_assert_eq!(codec.decode::<String, _>(&tampered, &f).unwrap_err().code, "invalid_cursor");
+        }
+    }
 
     #[derive(Serialize)]
     struct Filters<'a> {

@@ -8,7 +8,7 @@ pub mod providers;
 pub mod safe_fetch;
 
 use axum::{
-    extract::{Path, State},
+    extract::State,
     http::StatusCode,
     response::{IntoResponse, Response},
 };
@@ -29,6 +29,7 @@ use vgames_proto::{
 
 pub use providers::{Endpoints, Found, ProviderRates, Providers};
 
+use crate::http::path::Path;
 use crate::{
     assets, audit,
     auth::{RequestMeta, RequireAdmin},

@@ -8,7 +8,7 @@
 use std::{io::Cursor, time::Duration};
 
 use axum::{
-    extract::{DefaultBodyLimit, Multipart, Path, State, multipart::MultipartRejection},
+    extract::{DefaultBodyLimit, Multipart, State, multipart::MultipartRejection},
     http::{HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
 };
@@ -20,6 +20,7 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 use uuid::Uuid;
 use vgames_proto::packages::{Asset, AssetKind, AssetSource, ImageType};
 
+use crate::http::path::Path;
 use crate::{
     audit,
     auth::{CurrentUser, RequestMeta, RequireAdmin},
