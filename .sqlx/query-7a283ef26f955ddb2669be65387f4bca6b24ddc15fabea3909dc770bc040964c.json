@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM save_blobs WHERE user_id = $1 AND blake3 IN (\n                 SELECT b.blake3 FROM save_blobs b\n                 WHERE b.user_id = $1\n                   AND b.created_at < now() - make_interval(secs => $2)\n                   AND (b.uploaded_at IS NULL OR b.uploaded_at < now() - make_interval(secs => $2))\n                   AND NOT EXISTS (SELECT 1 FROM save_snapshot_blobs sb WHERE sb.user_id = b.user_id AND sb.blake3 = b.blake3)\n                 LIMIT $3)\n               RETURNING object_name",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "object_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "save_blobs",
+            "name": "object_name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Float8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "7a283ef26f955ddb2669be65387f4bca6b24ddc15fabea3909dc770bc040964c"
+}

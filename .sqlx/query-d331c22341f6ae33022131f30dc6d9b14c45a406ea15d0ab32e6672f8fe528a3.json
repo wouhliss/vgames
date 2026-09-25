@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO save_snapshot_blobs (snapshot_id, user_id, blake3)\n           SELECT $1, $2, h FROM unnest($3::bytea[]) AS h",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "ByteaArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d331c22341f6ae33022131f30dc6d9b14c45a406ea15d0ab32e6672f8fe528a3"
+}

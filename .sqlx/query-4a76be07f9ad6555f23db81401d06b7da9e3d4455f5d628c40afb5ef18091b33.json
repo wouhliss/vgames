@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO save_heads (user_id, package_id, snapshot_id) VALUES ($1, $2, $3)\n               ON CONFLICT (user_id, package_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4a76be07f9ad6555f23db81401d06b7da9e3d4455f5d628c40afb5ef18091b33"
+}

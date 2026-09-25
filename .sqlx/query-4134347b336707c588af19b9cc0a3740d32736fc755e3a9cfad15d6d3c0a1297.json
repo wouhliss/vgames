@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT b.user_id FROM save_blobs b\n               WHERE b.created_at < now() - make_interval(secs => $1)\n                 AND (b.uploaded_at IS NULL OR b.uploaded_at < now() - make_interval(secs => $1))\n                 AND NOT EXISTS (SELECT 1 FROM save_snapshot_blobs sb WHERE sb.user_id = b.user_id AND sb.blake3 = b.blake3)\n               LIMIT 100",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "save_blobs",
+            "name": "user_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "4134347b336707c588af19b9cc0a3740d32736fc755e3a9cfad15d6d3c0a1297"
+}
