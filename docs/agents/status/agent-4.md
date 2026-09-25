@@ -17,7 +17,8 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   transition, out-of-order delivery (normal and pre-key bursts), duplicates ignored (redelivered envelope and resent
   `client_message_id`), fallback key after OTK exhaustion, restart with the right/wrong keychain key, tampered
   ciphertext and substituted identity key rejected, symmetric safety numbers with re-verification after a new device,
-  changed-key blocking and trust, revoked devices dropped, no plaintext in the SQLite file.
+  changed-key blocking and trust, revoked devices dropped, no plaintext in the SQLite file; no-panic property tests
+  for the payload decoder, the Olm message parser, signature checks and the whole receive path (40 tests).
 
 ## In progress
 - A4-T03 — Server: friends, codes, blocks, profiles, presence
@@ -41,7 +42,10 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
 ## Cross-area edits (small, for the owners' review)
 - Agent 2: `apps/desktop/src-tauri/src/lib.rs` (`pub mod social;`), `db/migrations.rs` (the documented hook: one
   `Migration { name: "0002_social", … }` entry), `apps/desktop/src-tauri/Cargo.toml` (`chacha20poly1305`, `getrandom`,
-  both existing workspace dependencies).
+  both existing workspace dependencies; `proptest` as a dev-dependency).
+
+- Agent 5: E2EE code lives in `social/crypto/` (covered by the security-critical CODEOWNERS rule). `social/store.rs`
+  also decrypts and encrypts at rest; consider adding `/apps/desktop/src-tauri/src/social/store*` to that section.
 
 ## Blockers / contract questions
 - `contract:` `docs/architecture/05-social-notes.md` (new, A4-T01). Additive realtime changes in its §3
