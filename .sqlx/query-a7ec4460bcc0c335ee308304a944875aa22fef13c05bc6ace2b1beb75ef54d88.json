@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.user_id, u.status, u.updated_at, p.id AS \"package_id?\", p.title AS \"package_title?\"\n           FROM user_presence u\n           LEFT JOIN packages p ON p.id = u.package_id AND p.status = 'published' AND p.deleted_at IS NULL\n           WHERE u.user_id = ANY($1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "user_presence",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "user_presence",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "user_presence",
+            "name": "updated_at"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "package_id?",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "packages",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "package_title?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "packages",
+            "name": "title"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "a7ec4460bcc0c335ee308304a944875aa22fef13c05bc6ace2b1beb75ef54d88"
+}

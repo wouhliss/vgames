@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO friendships (user_low, user_high, state, requested_by) VALUES ($1, $2, 'pending', $3)\n                 ON CONFLICT (user_low, user_high) DO NOTHING RETURNING created_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "friendships",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "4f0afdab81dafe6ddc4847e983fc9601e65b94b64aaf87a9410581c50a468afb"
+}

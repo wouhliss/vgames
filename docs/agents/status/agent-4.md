@@ -20,8 +20,16 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   changed-key blocking and trust, revoked devices dropped, no plaintext in the SQLite file; no-panic property tests
   for the payload decoder, the Olm message parser, signature checks and the whole receive path (40 tests).
 
+- A4-T03 — Server: friends, codes, blocks, profiles, presence. `apps/api/src/social/{friends,presence,relations,events}.rs`,
+  migration `20260925120000_social_invites_presence.sql` (`user_presence.heartbeat_at`, the two invite columns of
+  05-social-notes §3), job `social.sweep` (60 s). Blocks and invisible users answer `404 not_found` exactly like
+  unknown ids; presence goes to accepted friends only; each API instance heartbeats the users with a socket on it
+  every 10 s and any instance marks rows older than 30 s offline (guarded update, published once).
+  Evidence: 13 API tests (`tests/it/social_{friends,presence}.rs`) including block symmetry, 404-not-403, limits
+  (500 / 100), rate limits, cross-instance presence and offline after disconnect; mutation-checked.
+
 ## In progress
-- A4-T03 — Server: friends, codes, blocks, profiles, presence
+- A4-T04 — Server: devices and key directory
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_proto::social` (A4-T02): social/messaging/invite DTOs, `canonical::{device_keys, one_time_key}` (the exact
@@ -40,6 +48,9 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   there (WebKitGTK is already installed in that job); the E2EE tests live in that crate.
 
 ## Cross-area edits (small, for the owners' review)
+- Agent 1 (A4-T03): `realtime/mod.rs` `start()` also starts `social::presence::start` (the presence heartbeat
+  lives with the sockets); `realtime/hub.rs` `Hub::connected_users()`; `jobs/mod.rs` one `SCHEDULES` entry
+  (`social.sweep`, 60 s, as `jobs/builtin.rs` anticipates).
 - Agent 2: `apps/desktop/src-tauri/src/lib.rs` (`pub mod social;`), `db/migrations.rs` (the documented hook: one
   `Migration { name: "0002_social", … }` entry), `apps/desktop/src-tauri/Cargo.toml` (`chacha20poly1305`, `getrandom`,
   both existing workspace dependencies; `proptest` as a dev-dependency).

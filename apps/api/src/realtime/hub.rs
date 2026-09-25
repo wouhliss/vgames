@@ -133,6 +133,15 @@ impl Hub {
         self.lock().get(&user_id).is_some_and(|l| !l.is_empty())
     }
 
+    /// Users with at least one socket on this instance (presence heartbeats).
+    pub fn connected_users(&self) -> Vec<Uuid> {
+        self.lock()
+            .iter()
+            .filter(|(_, l)| !l.is_empty())
+            .map(|(u, _)| *u)
+            .collect()
+    }
+
     /// Queues `event` on every matching local socket. Sockets whose queue is full are
     /// dropped (their task closes them with `TOO_SLOW`).
     pub fn dispatch(&self, target: &Target, event: Arc<str>) {

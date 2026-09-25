@@ -21,6 +21,8 @@ mod realtime;
 mod releases;
 mod saves;
 mod skeleton;
+mod social_friends;
+mod social_presence;
 mod storage;
 mod trust;
 mod versions;
