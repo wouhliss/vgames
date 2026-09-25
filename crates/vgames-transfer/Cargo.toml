@@ -6,9 +6,20 @@ edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 
+[features]
+default = []
+# Test support shared with other crates' tests: signed test packages, a loopback
+# storage rig with fault injection, and a mock API. Never enabled in release builds.
+testkit = ["dep:tempfile"]
+
 [dependencies]
 vgames-core.workspace = true
 vgames-pack.workspace = true
+vgames-proto.workspace = true
+uuid.workspace = true
+time.workspace = true
+hex.workspace = true
+getrandom.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 futures-util.workspace = true
@@ -20,8 +31,16 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+tempfile = { workspace = true, optional = true }
+
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_IO"] }
 
 [dev-dependencies]
+vgames-transfer = { path = ".", features = ["testkit"] }
 tempfile.workspace = true
 wiremock.workspace = true
 proptest.workspace = true
