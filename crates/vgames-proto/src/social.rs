@@ -255,6 +255,13 @@ pub struct Device {
     pub last_seen_at: Option<OffsetDateTime>,
 }
 
+/// `GET /v1/devices` response.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct DeviceList {
+    pub items: Vec<Device>,
+}
+
 /// `POST /v1/devices` body.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -283,6 +290,13 @@ pub struct DeviceKeys {
     #[serde(with = "time::serde::rfc3339")]
     #[cfg_attr(feature = "openapi", schema(value_type = String, format = DateTime))]
     pub created_at: OffsetDateTime,
+}
+
+/// `GET /v1/users/{id}/devices` response.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct DeviceKeysList {
+    pub items: Vec<DeviceKeys>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -330,6 +344,18 @@ pub struct ClaimedKey {
     pub signature: String,
     pub is_fallback: bool,
 }
+
+/// `POST /v1/keys/claim` response: one key per claimable device (others are left out).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ClaimedKeyList {
+    pub items: Vec<ClaimedKey>,
+}
+
+/// Most one-time keys a device may have unclaimed on the server (and upload at once).
+pub const MAX_UNCLAIMED_ONE_TIME_KEYS: usize = 100;
+/// Most devices per `POST /v1/keys/claim`.
+pub const MAX_CLAIM_DEVICES: usize = 64;
 
 // ---------------------------------------------------------------------------------------
 // Conversations and the ciphertext relay

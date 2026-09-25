@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE device_one_time_keys SET claimed_at = now(), claimed_by_device = $2\n             WHERE (device_id, key_id) = (\n               SELECT device_id, key_id FROM device_one_time_keys\n               WHERE device_id = $1 AND NOT is_fallback AND claimed_at IS NULL\n               ORDER BY created_at, key_id LIMIT 1 FOR UPDATE SKIP LOCKED)\n             RETURNING key_id, public_key, signature",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "key_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "device_one_time_keys",
+            "name": "key_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "public_key",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "device_one_time_keys",
+            "name": "public_key"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "signature",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "device_one_time_keys",
+            "name": "signature"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "357dfa802e926fdfe80d1e2a2ad3acd5c249485ff43b272d1d4aff1bd5c0b005"
+}

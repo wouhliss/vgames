@@ -22,15 +22,15 @@ use vgames_api::{
     social::presence,
 };
 
-type Ws =
+pub(crate) type Ws =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
-struct Instance {
-    state: AppState,
+pub(crate) struct Instance {
+    pub(crate) state: AppState,
     addr: SocketAddr,
 }
 
-async fn instance(pool: &PgPool) -> Instance {
+pub(crate) async fn instance(pool: &PgPool) -> Instance {
     let state = common::state(pool.clone());
     realtime::start(&state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -45,11 +45,11 @@ async fn instance(pool: &PgPool) -> Instance {
 }
 
 impl Instance {
-    fn app(&self) -> axum::Router {
+    pub(crate) fn app(&self) -> axum::Router {
         vgames_api::http::router(self.state.clone())
     }
 
-    async fn connect(&self, token: &str) -> Ws {
+    pub(crate) async fn connect(&self, token: &str) -> Ws {
         let resp = send(
             &self.app(),
             bearer_request("POST", "/v1/realtime/ticket", token),
@@ -74,7 +74,7 @@ impl Instance {
 }
 
 /// Next text frame as JSON (skips pings).
-async fn next_event(ws: &mut Ws) -> Value {
+pub(crate) async fn next_event(ws: &mut Ws) -> Value {
     loop {
         let msg = tokio::time::timeout(Duration::from_secs(10), ws.next())
             .await
@@ -88,7 +88,7 @@ async fn next_event(ws: &mut Ws) -> Value {
 }
 
 /// Asserts that `ws` received nothing before a marker event published now.
-async fn assert_quiet(state: &AppState, ws: &mut Ws, user: Uuid) {
+pub(crate) async fn assert_quiet(state: &AppState, ws: &mut Ws, user: Uuid) {
     bus::publish(&state.db, &Target::users(&[user]), "test.marker", json!({}))
         .await
         .unwrap();
@@ -96,7 +96,7 @@ async fn assert_quiet(state: &AppState, ws: &mut Ws, user: Uuid) {
     assert_eq!(ev["type"], "test.marker", "unexpected event {ev}");
 }
 
-async fn befriend(pool: &PgPool, a: Uuid, b: Uuid, state: &str) {
+pub(crate) async fn befriend(pool: &PgPool, a: Uuid, b: Uuid, state: &str) {
     let (low, high) = if a < b { (a, b) } else { (b, a) };
     sqlx::query(
         "INSERT INTO friendships (user_low, user_high, state, requested_by, accepted_at)

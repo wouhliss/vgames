@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM device_one_time_keys\n         WHERE NOT is_fallback AND claimed_at < now() - interval '30 days'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "9ad2370266621927aafc9bb3c0d8f2e0647ce805430f39ff247fe498f071838a"
+}

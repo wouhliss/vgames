@@ -171,6 +171,42 @@ pub async fn outgoing_pending_count(conn: &mut PgConnection, user: Uuid) -> ApiR
     .await?)
 }
 
+/// `true` when `a` may exchange keys and messages with `b`: the same user, or accepted
+/// friends or current conversation co-members, with no block either way.
+pub async fn may_message(conn: &mut PgConnection, a: Uuid, b: Uuid) -> ApiResult<bool> {
+    if a == b {
+        return Ok(true);
+    }
+    if !active_user(conn, b).await? || blocked_either(conn, a, b).await? {
+        return Ok(false);
+    }
+    Ok(matches!(
+        friendship(conn, a, b, false).await?,
+        Friendship::Accepted { .. }
+    ) || share_conversation(conn, a, b).await?)
+}
+
+/// Everyone who follows `user`'s devices: the user (their other devices), accepted friends
+/// and current conversation co-members, without anyone on either side of a block.
+pub async fn contacts(conn: &mut PgConnection, user: Uuid) -> ApiResult<Vec<Uuid>> {
+    Ok(sqlx::query_scalar!(
+        r#"SELECT DISTINCT c.id AS "id!" FROM (
+             SELECT $1::uuid AS id
+             UNION SELECT CASE WHEN user_low = $1 THEN user_high ELSE user_low END
+               FROM friendships WHERE (user_low = $1 OR user_high = $1) AND state = 'accepted'
+             UNION SELECT m2.user_id FROM conversation_members m1
+               JOIN conversation_members m2 ON m2.conversation_id = m1.conversation_id
+               WHERE m1.user_id = $1 AND m1.left_at IS NULL AND m2.left_at IS NULL
+           ) c
+           WHERE c.id = $1 OR NOT EXISTS (
+             SELECT 1 FROM user_blocks
+             WHERE (blocker_id = $1 AND blocked_id = c.id) OR (blocker_id = c.id AND blocked_id = $1))"#,
+        user
+    )
+    .fetch_all(&mut *conn)
+    .await?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
