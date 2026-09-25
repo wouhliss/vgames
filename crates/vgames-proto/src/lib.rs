@@ -18,6 +18,7 @@ pub mod jobs;
 pub mod packages;
 pub mod realtime;
 pub mod saves;
+pub mod social;
 pub mod trust;
 pub mod versions;
 

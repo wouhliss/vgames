@@ -1,6 +1,6 @@
 //! Realtime WebSocket protocol (docs/architecture/03-api.md §6).
 //!
-//! Owner: Agent 4 (extends this module with typed social events). Agent 1 created the
+//! Owner: Agent 4 (typed social events below). Agent 1 created the
 //! envelope and ticket types the gateway needs (A1-T05).
 
 use serde::{Deserialize, Serialize};
@@ -60,4 +60,75 @@ pub mod close {
     pub const TOO_SLOW: u16 = 4002;
     /// A frame that is not a valid envelope.
     pub const PROTOCOL: u16 = 4003;
+}
+
+// ---------------------------------------------------------------------------------------
+// Social events (Agent 4, 05-social-notes §4)
+// ---------------------------------------------------------------------------------------
+
+/// Realtime event type names used by the social features.
+pub mod kinds {
+    pub const PRESENCE_CHANGED: &str = "presence.changed";
+    pub const FRIEND_REQUEST: &str = "friend.request";
+    pub const FRIEND_ACCEPTED: &str = "friend.accepted";
+    pub const FRIEND_REMOVED: &str = "friend.removed";
+    pub const INBOX_NEW: &str = "inbox.new";
+    pub const INVITE_CREATED: &str = "invite.created";
+    pub const INVITE_UPDATED: &str = "invite.updated";
+    pub const DEVICE_ADDED: &str = "device.added";
+    pub const DEVICE_REVOKED: &str = "device.revoked";
+    pub const TYPING: &str = "typing";
+    /// Client → server.
+    pub const PRESENCE_SET: &str = "presence.set";
+}
+
+/// `presence.changed` data.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PresenceChanged {
+    pub user_id: Uuid,
+    pub status: crate::social::PresenceStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package_title: Option<String>,
+}
+
+/// `friend.request` / `friend.accepted` / `friend.removed` data.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FriendEvent {
+    pub user_id: Uuid,
+}
+
+/// `inbox.new` data.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InboxNew {
+    pub conversation_id: Uuid,
+    pub count: i64,
+}
+
+/// `invite.created` / `invite.updated` data.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct InviteEvent {
+    pub invite: crate::social::Invite,
+}
+
+/// `device.added` / `device.revoked` data.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeviceEvent {
+    pub user_id: Uuid,
+    pub device_id: Uuid,
+}
+
+/// Client → server `typing` data.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TypingStart {
+    pub conversation_id: Uuid,
+}
+
+/// Server → client `typing` data.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Typing {
+    pub conversation_id: Uuid,
+    pub user_id: Uuid,
 }
