@@ -45,6 +45,12 @@ export const routes: RouteObject[] = [
             }),
           },
           {
+            path: "package/:packageId",
+            lazy: async () => ({
+              Component: (await import("../routes/package/PackagePage")).PackagePage,
+            }),
+          },
+          {
             path: "friends",
             lazy: async () => ({
               Component: (await import("../routes/friends/FriendsPage")).FriendsPage,

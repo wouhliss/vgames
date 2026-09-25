@@ -2,14 +2,23 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { type RenderOptions, render } from "@testing-library/react";
 import type { ReactElement, ReactNode } from "react";
 import { ToastProvider } from "../components/Toast";
-import { createQueryClient } from "../ipc/query";
+import { createQueryClient, useIpcInvalidation } from "../ipc/query";
 import { NavProvider } from "../nav/NavProvider";
 
+function IpcInvalidation(): null {
+  useIpcInvalidation();
+  return null;
+}
+
+/** The same providers as `App`, including Rust-event-driven query invalidation. */
 export function Providers({ children }: { children: ReactNode }) {
   return (
     <QueryClientProvider client={createQueryClient()}>
       <NavProvider>
-        <ToastProvider>{children}</ToastProvider>
+        <ToastProvider>
+          <IpcInvalidation />
+          {children}
+        </ToastProvider>
       </NavProvider>
     </QueryClientProvider>
   );

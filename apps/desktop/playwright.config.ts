@@ -22,6 +22,15 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
+      testIgnore: /\.perf\.spec\.ts$/,
+      use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 } },
+    },
+    {
+      // Frame-time measurements run alone, after every other test, so parallel workers (garbage
+      // collection in the memory test, page loads) cannot steal CPU from the measured frames.
+      name: "perf",
+      testMatch: /\.perf\.spec\.ts$/,
+      dependencies: ["chromium"],
       use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 } },
     },
   ],

@@ -1,6 +1,13 @@
 // Tabs (WAI-ARIA APG, automatic activation). Left/Right/Home/End move between tabs; LB/RB on a
 // controller (or Ctrl+PageUp/PageDown) switch tabs from anywhere inside the tab set.
-import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef } from "react";
+import {
+  type DragEvent,
+  type KeyboardEvent,
+  type ReactNode,
+  useEffect,
+  useId,
+  useRef,
+} from "react";
 import { focusElement } from "../nav/focus";
 import { useOptionalNav } from "../nav/NavProvider";
 import { Glyph } from "./Glyph";
@@ -9,6 +16,15 @@ import styles from "./Tabs.module.css";
 export interface TabItem<V extends string> {
   value: V;
   label: ReactNode;
+  /** Drag-and-drop target handlers (e.g. dropping a package on a collection tab). */
+  drop?: {
+    onDragOver: (e: DragEvent<HTMLButtonElement>) => void;
+    onDragLeave?: (e: DragEvent<HTMLButtonElement>) => void;
+    onDrop: (e: DragEvent<HTMLButtonElement>) => void;
+    active?: boolean;
+  };
+  /** Makes the tab draggable (e.g. to reorder collections). */
+  onDragStart?: (e: DragEvent<HTMLButtonElement>) => void;
 }
 
 export interface TabsProps<V extends string> {
@@ -91,6 +107,12 @@ export function Tabs<V extends string>({ label, items, value, onChange, children
                 aria-controls={`${id}-panel`}
                 tabIndex={selected ? 0 : -1}
                 className={styles.tab}
+                data-drop-active={item.drop?.active ? "true" : undefined}
+                draggable={item.onDragStart ? true : undefined}
+                onDragStart={item.onDragStart}
+                onDragOver={item.drop?.onDragOver}
+                onDragLeave={item.drop?.onDragLeave}
+                onDrop={item.drop?.onDrop}
                 onClick={() => select(i, false)}
               >
                 {item.label}

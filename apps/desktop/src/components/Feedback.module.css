@@ -25,6 +25,18 @@
   font-weight: var(--weight-medium);
   line-height: 1.5;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.badge svg {
+  flex: none;
+}
+
+.badgeText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .neutral {
