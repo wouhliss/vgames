@@ -83,7 +83,7 @@ pub async fn load(state: &AppState, ids: &[Uuid]) -> ApiResult<Vec<Version>> {
     let rows = sqlx::query!(
         r#"SELECT v.id, v.package_id, v.platform, v.sequence, v.version_label, v.state, v.failure_reason,
                   v.total_size, v.file_count, v.chunk_count, v.pack_count, v.publisher_key_id,
-                  v.created_at, v.created_by, v.finalized_at, v.verified_at, v.published_at, v.yanked_at,
+                  v.created_at, v.created_by, v.finalized_at, v.verified_at, v.published_at, v.yanked_at, v.verify_progress,
                   EXISTS (SELECT 1 FROM package_releases r WHERE r.version_id = v.id) AS "is_current!"
            FROM package_versions v WHERE v.id = ANY($1) ORDER BY v.id DESC"#,
         ids
@@ -110,7 +110,7 @@ pub async fn load(state: &AppState, ids: &[Uuid]) -> ApiResult<Vec<Version>> {
                 chunk_count: r.chunk_count,
                 pack_count: r.pack_count,
                 publisher_key_id: r.publisher_key_id,
-                verify_progress: None,
+                verify_progress: r.verify_progress,
                 created_at: r.created_at,
                 created_by: users.get(&r.created_by)?.clone(),
                 finalized_at: r.finalized_at,

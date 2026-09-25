@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE package_versions SET state = $2, failure_reason = $3, verified_at = now(),\n             verify_progress = CASE WHEN $2 = 'ready' THEN 1 ELSE verify_progress END\n           WHERE id = $1 AND state = 'verifying'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f79e56d226773ff0b8028e8899c3382a6feedae390370c5659ca135f8fc802d9"
+}

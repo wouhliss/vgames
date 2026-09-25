@@ -138,7 +138,11 @@ fn verify_error(e: VerifyError) -> ApiError {
 }
 
 /// Reads the uploaded manifest, refusing more than `expected_size` bytes.
-async fn read_manifest(state: &AppState, name: &str, expected_size: u64) -> ApiResult<Vec<u8>> {
+pub(crate) async fn read_manifest(
+    state: &AppState,
+    name: &str,
+    expected_size: u64,
+) -> ApiResult<Vec<u8>> {
     let meta = state
         .storage
         .head(BucketKind::Packages, name)

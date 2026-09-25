@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 vgames-core.workspace = true
+vgames-pack.workspace = true
 vgames-proto = { workspace = true, features = ["openapi"] }
 tokio.workspace = true
 tokio-util = { workspace = true, features = ["io"] }
@@ -61,7 +62,6 @@ serde_yaml_ng.workspace = true
 wiremock.workspace = true
 insta.workspace = true
 tempfile.workspace = true
-vgames-pack.workspace = true
 
 [lints]
 workspace = true

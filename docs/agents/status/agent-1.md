@@ -58,7 +58,12 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   `pack_size_mismatch`.
 
 ## In progress
-- A1-T12 — Verification, publishing, downloads
+- A1-T12 — Verification, publishing, downloads. Part 1 (this PR): `version.verify` job (≤ 8 packs streamed at once
+  through `vgames_pack::verify::PackStreamVerifier` on the blocking pool, `verify_progress`, first failing
+  `pack N: chunk M` in `failure_reason`, realtime `version.state` to admins), `POST …/publish` (ready → published; an
+  older published version can be re-published to roll back), `POST …/yank` (reason; the release falls back to the
+  newest remaining published version). Migration `20260925090000_version_verify`. Next: release descriptor, download
+  URLs, integrity reports, compat profiles.
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_api::error::ApiError` / `ApiResult` (problem+json), `vgames_api::http::json::{Json, Validate}`

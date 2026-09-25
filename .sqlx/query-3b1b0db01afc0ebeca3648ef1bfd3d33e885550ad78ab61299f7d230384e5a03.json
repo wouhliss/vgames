@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE package_versions SET state = 'published', published_at = COALESCE(published_at, now()) WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3b1b0db01afc0ebeca3648ef1bfd3d33e885550ad78ab61299f7d230384e5a03"
+}

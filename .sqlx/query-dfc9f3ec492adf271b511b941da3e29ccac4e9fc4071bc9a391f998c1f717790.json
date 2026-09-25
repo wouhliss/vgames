@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE package_versions SET state = 'yanked', yanked_at = now(), yank_reason = $2 WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "dfc9f3ec492adf271b511b941da3e29ccac4e9fc4071bc9a391f998c1f717790"
+}

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT v.id, v.package_id, v.platform, v.sequence, v.version_label, v.state, v.failure_reason,\n                  v.total_size, v.file_count, v.chunk_count, v.pack_count, v.publisher_key_id,\n                  v.created_at, v.created_by, v.finalized_at, v.verified_at, v.published_at, v.yanked_at,\n                  EXISTS (SELECT 1 FROM package_releases r WHERE r.version_id = v.id) AS \"is_current!\"\n           FROM package_versions v WHERE v.id = ANY($1) ORDER BY v.id DESC",
+  "query": "SELECT v.id, v.package_id, v.platform, v.sequence, v.version_label, v.state, v.failure_reason,\n                  v.total_size, v.file_count, v.chunk_count, v.pack_count, v.publisher_key_id,\n                  v.created_at, v.created_by, v.finalized_at, v.verified_at, v.published_at, v.yanked_at, v.verify_progress,\n                  EXISTS (SELECT 1 FROM package_releases r WHERE r.version_id = v.id) AS \"is_current!\"\n           FROM package_versions v WHERE v.id = ANY($1) ORDER BY v.id DESC",
   "describe": {
     "columns": [
       {
@@ -203,6 +203,17 @@
       },
       {
         "ordinal": 18,
+        "name": "verify_progress",
+        "type_info": "Float4",
+        "origin": {
+          "Table": {
+            "table": "package_versions",
+            "name": "verify_progress"
+          }
+        }
+      },
+      {
+        "ordinal": 19,
         "name": "is_current!",
         "type_info": "Bool",
         "origin": "Expression"
@@ -232,8 +243,9 @@
       true,
       true,
       true,
+      true,
       null
     ]
   },
-  "hash": "40c9abac565f5778a5f0dd7919c74af923cdd4c8f733f56a4db723f41b7d4b5c"
+  "hash": "e229455c7894bcd5a62abbc5cf2c0b6ca96e19cc19b2e185ddc1677b437ff623"
 }
