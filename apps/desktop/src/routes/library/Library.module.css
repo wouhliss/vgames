@@ -6,12 +6,13 @@
 }
 
 .search {
-  flex: 1 1 240px;
+  flex: 1 1 200px;
   max-width: 420px;
 }
 
 .sort {
-  flex: 0 1 200px;
+  flex: 0 1 180px;
+  min-width: 0;
 }
 
 .viewToggle {
@@ -85,7 +86,7 @@
   flex-direction: column;
   gap: var(--space-1);
   min-width: 0;
-  contain: layout paint;
+  contain: layout style;
 }
 
 .coverButton {
@@ -192,7 +193,7 @@
   height: 56px;
   padding: 0 var(--space-2);
   border-bottom: 1px solid var(--color-border);
-  contain: layout paint;
+  contain: layout style;
 }
 
 .rowMain {
