@@ -417,6 +417,7 @@ paths:
               schema: { $ref: "#/components/schemas/SaveSnapshot" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
         "413": { $ref: "#/components/responses/PayloadTooLarge" }
   /v1/saves/{package_id}/snapshots/{snapshot_id}:
@@ -469,6 +470,7 @@ paths:
                     items: { $ref: "#/components/schemas/BlobUploadTarget" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
         "413": { $ref: "#/components/responses/PayloadTooLarge" }
   /v1/saves/{package_id}/blobs/download-urls:
     post:
