@@ -14,7 +14,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use vgames_core::Envelope;
@@ -201,8 +201,23 @@ fn killed_at_random_points_resumes_to_the_same_tree() {
         // One or two kills before the parent finishes the install.
         let kills = 1 + (i % 5 == 4) as usize;
         for _ in 0..kills {
+            let bytes_before = rig.pack_bytes();
+            let kill_after_bytes = bytes_before + (1 + rng.next() % 16) * MIB;
             let mut child = spawn_child(&job_dir);
-            std::thread::sleep(Duration::from_millis(rng.next() % 450));
+            // Process startup varies widely across platforms. Wait until this
+            // child has actually requested pack bytes, then vary the kill
+            // point within the transfer rather than often killing after a
+            // fast child has already completed (especially on macOS).
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while rig.pack_bytes() < kill_after_bytes && child.try_wait().unwrap().is_none() {
+                if Instant::now() >= deadline {
+                    child.kill().ok();
+                    child.wait().unwrap();
+                    panic!("iteration {i}: child did not start downloading");
+                }
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            std::thread::sleep(Duration::from_millis(rng.next() % 8));
             let finished = child.try_wait().unwrap().is_some();
             child.kill().ok();
             child.wait().unwrap();
