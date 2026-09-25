@@ -1,6 +1,7 @@
 //! Social features: friends, devices and keys, messaging, invites, presence
 //! (docs/architecture/05-social.md, 05-social-notes.md). Owner: Agent 4.
 
+pub mod devices;
 pub mod events;
 pub mod friends;
 pub mod invites;
@@ -15,6 +16,7 @@ use crate::{realtime::hub, state::AppState};
 pub fn routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .merge(friends::routes())
+        .merge(devices::routes())
         .merge(presence::routes())
 }
 
@@ -35,13 +37,19 @@ async fn sweep(ctx: crate::jobs::JobContext) -> Result<(), crate::jobs::JobError
     Ok(sweep_once(&ctx.state).await?)
 }
 
-/// One `social.sweep` pass: deletes friend codes a day after they expire and marks stale
-/// presence offline (API instances do the latter every 10 s too; the guarded update makes
-/// the two agree).
+/// One `social.sweep` pass: deletes friend codes a day after they expire and claimed
+/// one-time keys after 30 days, and marks stale presence offline (API instances do the
+/// latter every 10 s too; the guarded update makes the two agree).
 pub async fn sweep_once(state: &AppState) -> crate::error::ApiResult<()> {
     sqlx::query!("DELETE FROM friend_codes WHERE expires_at < now() - interval '1 day'")
         .execute(&state.db)
         .await?;
+    sqlx::query!(
+        "DELETE FROM device_one_time_keys
+         WHERE NOT is_fallback AND claimed_at < now() - interval '30 days'"
+    )
+    .execute(&state.db)
+    .await?;
     presence::sweep_stale(state, presence::OFFLINE_AFTER).await?;
     Ok(())
 }

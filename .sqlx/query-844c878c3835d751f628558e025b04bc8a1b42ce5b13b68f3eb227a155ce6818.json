@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM device_one_time_keys WHERE device_id = $1 AND is_fallback AND key_id <> $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "844c878c3835d751f628558e025b04bc8a1b42ce5b13b68f3eb227a155ce6818"
+}

@@ -1,0 +1,43 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO device_one_time_keys (device_id, key_id, public_key, signature, is_fallback)\n               VALUES ($1, $2, $3, $4, true)\n               ON CONFLICT (device_id, key_id) DO UPDATE SET key_id = excluded.key_id\n               RETURNING public_key, is_fallback",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "public_key",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "device_one_time_keys",
+            "name": "public_key"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "is_fallback",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "device_one_time_keys",
+            "name": "is_fallback"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "d3a2e601fac98a3b96759ef25a61ae6218b2deb599aff33fefd9c18b31d096ec"
+}

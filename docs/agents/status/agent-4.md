@@ -28,10 +28,21 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   Evidence: 13 API tests (`tests/it/social_{friends,presence}.rs`) including block symmetry, 404-not-403, limits
   (500 / 100), rate limits, cross-instance presence and offline after disconnect; mutation-checked.
 
+- A4-T04 — Server: devices and key directory. `apps/api/src/social/devices.rs`: `POST /v1/devices` (desktop sessions
+  only; strict Ed25519 self-signature over `canonical::device_keys` bound to user and server; binds the session;
+  signing in again with the same account re-binds; keys of revoked or other users' devices refused), own list with
+  key counts, revocation (deletes keys, revokes bound sessions, `device.revoked` to contacts), signed OTK/fallback
+  upload (each signature checked, fallback flag signed, max 100 unclaimed, only by the device itself), atomic claims
+  (`FOR UPDATE SKIP LOCKED`, fallback when exhausted, own devices / accepted friends / conversation co-members only),
+  `GET /v1/users/{id}/devices`. `social.sweep` forgets claimed keys after 30 days.
+  Evidence: 6 API tests (`tests/it/social_devices.rs`) incl. 100 parallel claims → 100 distinct keys and every bad
+  signature case; mutation-checked (locking, signature check, relationship check).
+
 ## In progress
-- A4-T04 — Server: devices and key directory
+- A4-T05 — Server: conversations and message relay
 
 ## Interfaces delivered (other agents may now rely on these)
+- `vgames_proto::social::{DeviceList, DeviceKeysList, ClaimedKeyList, MAX_UNCLAIMED_ONE_TIME_KEYS, MAX_CLAIM_DEVICES}` (A4-T04).
 - `vgames_proto::social` (A4-T02): social/messaging/invite DTOs, `canonical::{device_keys, one_time_key}` (the exact
   signed strings; server and launcher share them), `normalize_friend_code`, `is_valid_join_secret`.
   `vgames_proto::realtime::{kinds, PresenceChanged, FriendEvent, InboxNew, InviteEvent, DeviceEvent, Typing, TypingStart}`.
@@ -46,6 +57,9 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
 - From Agent 3: a Vite entry for the overlay window (`apps/desktop/src/overlay/`, A4-T10).
 - From Agent 5 (CI): the desktop job only runs clippy. Please also run `cargo test -p vgames-desktop --locked`
   there (WebKitGTK is already installed in that job); the E2EE tests live in that crate.
+
+- For Agent 2: `vgames-transfer` `tests/download.rs::protocol_violations_are_retried_once_on_a_fresh_connection`
+  failed once locally under a full `cargo test` run (line 211) and passed 3/3 alone; it looks timing-sensitive.
 
 ## Cross-area edits (small, for the owners' review)
 - Agent 1 (A4-T03): `realtime/mod.rs` `start()` also starts `social::presence::start` (the presence heartbeat
