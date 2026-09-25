@@ -2,3 +2,4 @@ packages:
   - apps/desktop
   - apps/admin-web
   - packages/*
+  - scripts/release-notes

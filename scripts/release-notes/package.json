@@ -1,0 +1,20 @@
+{
+  "name": "@vgames/release-notes",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Release-notes agent: curates agent-written changelog fragments into the launcher's What's new (08-release §3.4).",
+  "scripts": {
+    "start": "node --experimental-strip-types src/main.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.4",
+    "vitest": "^5.0.1"
+  }
+}

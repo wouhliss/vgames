@@ -43,6 +43,12 @@ impl Audience {
             _ => None,
         }
     }
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::User => "user",
+            Self::Internal => "internal",
+        }
+    }
 }
 
 impl Component {
@@ -52,6 +58,13 @@ impl Component {
             "admin" => Some(Self::Admin),
             "server" => Some(Self::Server),
             _ => None,
+        }
+    }
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Launcher => "launcher",
+            Self::Admin => "admin",
+            Self::Server => "server",
         }
     }
 }
