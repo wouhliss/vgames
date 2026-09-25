@@ -1,7 +1,7 @@
 //! Packages, assets and the public catalog (A1-T09).
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-mod common;
+use crate::common;
 
 use axum::{
     Router,
