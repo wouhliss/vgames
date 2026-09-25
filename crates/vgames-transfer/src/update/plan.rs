@@ -58,12 +58,25 @@ pub enum PlanError {
     Layout(#[from] TableError),
     #[error("the update size overflows the supported range")]
     Size,
+    #[error("a damaged-file index is outside the signed manifest")]
+    InvalidFileIndex,
 }
 
 impl UpdatePlan {
     /// Both releases must have passed `verify_manifest` under current trust.
     /// `allow_older` represents an explicit user choice or confirmed yank.
     pub fn new(old: &Release, new: &Release, allow_older: bool) -> Result<Self, PlanError> {
+        Self::new_with_damaged(old, new, allow_older, &[])
+    }
+
+    /// Also rebuilds old files reported damaged by [`super::verify::verify_install`].
+    /// Chunks touching damaged files are never offered as local reuse sources.
+    pub fn new_with_damaged(
+        old: &Release,
+        new: &Release,
+        allow_older: bool,
+        damaged_old: &[u32],
+    ) -> Result<Self, PlanError> {
         let old = old.manifest();
         let new = new.manifest();
         if old.server_id != new.server_id
@@ -75,10 +88,25 @@ impl UpdatePlan {
         if new.sequence <= old.sequence && !allow_older {
             return Err(PlanError::Rollback);
         }
-        Self::from_manifests(old, new)
+        Self::from_manifests(old, new, damaged_old)
     }
 
-    fn from_manifests(old: &Manifest, new: &Manifest) -> Result<Self, PlanError> {
+    /// Repair the currently installed release without changing its sequence.
+    pub fn repair(release: &Release, damaged_files: &[u32]) -> Result<Self, PlanError> {
+        Self::from_manifests(release.manifest(), release.manifest(), damaged_files)
+    }
+
+    fn from_manifests(
+        old: &Manifest,
+        new: &Manifest,
+        damaged_old: &[u32],
+    ) -> Result<Self, PlanError> {
+        let mut damaged = vec![false; old.files.len()];
+        for &index in damaged_old {
+            *damaged
+                .get_mut(index as usize)
+                .ok_or(PlanError::InvalidFileIndex)? = true;
+        }
         let old_paths: BTreeMap<&str, (u32, &vgames_core::manifest::File)> = old
             .files
             .iter()
@@ -99,6 +127,7 @@ impl UpdatePlan {
             let new_index = u32::try_from(new_index).map_err(|_| PlanError::Size)?;
             let old_match = old_paths.get(file.path.as_str()).copied();
             if let Some((old_index, previous)) = old_match
+                && !damaged.get(old_index as usize).copied().unwrap_or(true)
                 && previous.size == file.size
                 && previous.blake3 == file.blake3
                 && previous.executable == file.executable
@@ -127,10 +156,19 @@ impl UpdatePlan {
             .collect();
 
         let mut old_hashes: HashMap<([u8; 32], u64), u32> = HashMap::new();
+        let old_table = ChunkTable::new(old)?;
         for (index, chunk) in old.chunks.iter().enumerate() {
+            let index = u32::try_from(index).map_err(|_| PlanError::Size)?;
+            if old_table
+                .extents(index)
+                .iter()
+                .any(|extent| damaged.get(extent.file as usize).copied().unwrap_or(true))
+            {
+                continue;
+            }
             old_hashes
                 .entry((*chunk.blake3.as_bytes(), chunk.size))
-                .or_insert(index as u32);
+                .or_insert(index);
         }
         let table = ChunkTable::new(new)?;
         let mut needed_chunks = Vec::new();
@@ -272,5 +310,32 @@ mod tests {
             Err(PlanError::Rollback)
         ));
         assert!(UpdatePlan::new(&new.release(), &old.release(), true).is_ok());
+    }
+
+    #[test]
+    fn repair_rebuilds_only_damaged_file_and_never_reuses_its_chunk() {
+        let package = TestPackage::build(
+            &[
+                FileSpec::random("a.bin", 4 * 1024 * 1024, 1),
+                FileSpec::random("b.bin", 4 * 1024 * 1024, 2),
+            ],
+            &[],
+            Compression::None,
+        );
+        let plan = UpdatePlan::repair(&package.release(), &[1]).unwrap();
+        assert_eq!(plan.kept_files.len(), 1);
+        assert_eq!(plan.build_files, [1]);
+        assert_eq!(
+            plan.needed_chunks,
+            [NeededChunk {
+                new_chunk: 1,
+                source: Source::Remote
+            }]
+        );
+        assert_eq!(plan.remote_bytes, 4 * 1024 * 1024);
+        assert!(matches!(
+            UpdatePlan::repair(&package.release(), &[2]),
+            Err(PlanError::InvalidFileIndex)
+        ));
     }
 }
