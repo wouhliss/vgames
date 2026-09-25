@@ -4,10 +4,12 @@
 //! - `changelog check --base <rev>`   the PR gate: lint, and require a new fragment in this PR
 //! - `changelog lint-text --type T`   lint one player-facing text from stdin (release-notes guard)
 //! - `casefold <CaseFolding.txt>`     regenerate vgames-core's Unicode simple case folding table
+//! - `codeowners check`             every tracked file has an owner; security paths stay with security
 //! - `openapi check`                  fail if the API's generated spec drifts from openapi/openapi.yaml
 
 mod casefold;
 mod changelog;
+mod codeowners;
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
@@ -31,6 +33,11 @@ enum Cmd {
         #[command(subcommand)]
         command: ChangelogCmd,
     },
+    /// .github/CODEOWNERS checks.
+    Codeowners {
+        #[command(subcommand)]
+        command: CodeownersCmd,
+    },
     /// OpenAPI contract checks.
     Openapi {
         #[command(subcommand)]
@@ -41,6 +48,12 @@ enum Cmd {
         /// Path to CaseFolding.txt (https://www.unicode.org/Public/UCD/latest/ucd/CaseFolding.txt).
         input: PathBuf,
     },
+}
+
+#[derive(Subcommand)]
+enum CodeownersCmd {
+    /// Every tracked file matches a rule; security-critical paths resolve to the security section.
+    Check,
 }
 
 #[derive(Subcommand)]
@@ -207,6 +220,9 @@ fn main() -> ExitCode {
             }
             Ok(errors.is_empty())
         })(),
+        Cmd::Codeowners {
+            command: CodeownersCmd::Check,
+        } => codeowners::check(&root),
         Cmd::Casefold { input } => casefold::generate(&input, &root).map(|()| true),
         Cmd::Openapi {
             command: OpenapiCmd::Check,

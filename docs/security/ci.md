@@ -9,7 +9,7 @@ the GitHub settings below; agents cannot.
 |---|---|
 | `Rust (fmt, clippy, tests)` | `cargo fmt --check`, `cargo clippy --all-targets -D warnings`, `cargo test` (default members) against a Postgres 18 service (`#[sqlx::test]` creates one database per test) |
 | `SQLx offline data and migrations` | Migrations apply to an empty database; the upgrade path from the base revision works and no merged migration was edited (checksum mismatch fails); `cargo sqlx prepare --workspace --check` (committed `.sqlx/` matches the queries) |
-| `Changelog fragments` | PRs: `cargo xtask changelog check --base <base>` — every fragment is valid (08-release §3.2), the PR adds at least one, and a warning when `apps/desktop/**` changed without an `audience: user` launcher fragment. Pushes: `cargo xtask changelog lint` |
+| `Changelog fragments` | Also `cargo xtask codeowners check` (every tracked file has a code owner; security-critical paths resolve to the security section of `.github/CODEOWNERS`). PRs: `cargo xtask changelog check --base <base>` — every fragment is valid (08-release §3.2), the PR adds at least one, and a warning when `apps/desktop/**` changed without an `audience: user` launcher fragment. Pushes: `cargo xtask changelog lint` |
 | `WASM (vgames-core, pack-wasm)` | `vgames-core --features wasm` builds and passes clippy on `wasm32-unknown-unknown`; the `@vgames/pack-wasm` package builds and its Node smoke test passes |
 | `TypeScript (Biome, typecheck, Vitest, OpenAPI lint)` | `pnpm install --frozen-lockfile`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `redocly lint` of `openapi/openapi.yaml` |
 | `Launcher UI end-to-end (mock mode)` | Playwright suite of `apps/desktop` against the mock backend (Chromium) |

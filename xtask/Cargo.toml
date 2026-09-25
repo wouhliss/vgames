@@ -13,6 +13,7 @@ serde.workspace = true
 serde_json.workspace = true
 semver.workspace = true
 regex.workspace = true
+globset.workspace = true
 
 [lints]
 workspace = true

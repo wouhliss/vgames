@@ -19,8 +19,8 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
   workflows, nightly toolchain or cargo-fuzz).
 
 ## In progress
-- A5-T06 CLI: offline ceremonies in review; `login`, `trust publish`, `publish`, `trust re-sign` next (need A1-T08/T11
-  and Agent 2's upload library). Then A5-T10 security gates, A5-T09 updater, A5-T08 release notes.
+- A5-T06 CLI: offline ceremonies merged (https://github.com/wouhliss/vgames/pull/10); `login`, `trust publish`, `publish`, `trust re-sign` next (need A1-T08/T11
+  and Agent 2's upload library). A5-T10 security gates in review. Then A5-T09 updater, A5-T08 release notes.
 
 ## Interfaces delivered (other agents may now rely on these)
 - **Signatures, key ids, fingerprints** (A5-T03 slice 1, for Agents 1, 2, 3):
@@ -121,6 +121,10 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
   (Biome); `biome.json` migrated (`preset`) and now ignores `.sqlx/`, `**/tests/vectors`, `**/snapshots`, `**/pkg`.
 
 ## Needs from others
+
+- **Security gates for every agent** (A5-T10): `.github/CODEOWNERS` (every file owned; security-critical paths in a
+  last, checked section), `cargo xtask codeowners check` in CI, and `docs/security/review-checklist.md`, linked from the
+  PR template's security section. PRs touching a security-critical path go through that checklist.
 
 ## Blockers / contract questions
 - `contract:` https://github.com/wouhliss/vgames/pull/12 — drops `cargo fuzz` from 01-security §9 and the Agent 1, 2
