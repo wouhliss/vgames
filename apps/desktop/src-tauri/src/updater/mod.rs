@@ -1,10 +1,11 @@
 //! Launcher self-update (A5-T09, 08-release §2). Owner: Agent 5.
 //!
 //! - `tauri-plugin-updater` verifies the minisign signature of every artifact
-//!   against the public key compiled into the launcher (`tauri.conf.json`);
-//!   nothing unsigned is installed.
-//! - Only a strictly greater version is offered ([`policy::is_update`]), and the
-//!   download URL must be HTTPS ([`policy::require_https`]).
+//!   against the public key compiled into the launcher (`tauri.conf.json`), and
+//!   `requireSignedVersion` binds the signature to the announced version; nothing
+//!   unsigned is installed ([`remote`]).
+//! - Only a strictly greater version is offered ([`policy::is_update`]), and every
+//!   URL, redirects included, must be HTTPS ([`remote::Transport`]).
 //! - Checks start once the UI is interactive (`app_ready`), then every 6 hours,
 //!   and wait while a game runs or a download is active. Installing waits for
 //!   downloads to reach a checkpoint and is refused while a game runs.
@@ -15,6 +16,9 @@
 //! `updater_whats_new`, `updater_install` and the `UpdaterStatus` event.
 
 pub mod policy;
+pub mod remote;
+#[cfg(test)]
+mod tests;
 
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -29,19 +33,15 @@ use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 use url::Url;
 
-use crate::error::{CommandError, CommandResult, ErrorCode};
+use crate::error::{CommandError, CommandResult, DisplayChain, ErrorCode};
 use crate::events::{AppEvent, InstallPhase, PackageRef};
 use crate::state::AppState;
 
 use self::policy::{Activity, Blocked, WhatsNew};
+use self::remote::{Transport, UpdateError};
 
 /// Between two automatic checks.
 const CHECK_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
-/// Every network request of the updater.
-const HTTP_TIMEOUT: Duration = Duration::from_secs(30);
-/// Cumulative player changelog published with every release (08-release §3.3).
-const CHANGELOG_URL: &str =
-    "https://github.com/wouhliss/vgames/releases/latest/download/changelog-user.json";
 /// Progress events to the UI, at most 4 per second.
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
 
@@ -102,6 +102,10 @@ fn current_version() -> Version {
 
 fn key(p: &PackageRef) -> (uuid::Uuid, uuid::Uuid) {
     (p.server_id, p.package_id)
+}
+
+fn url(s: &str) -> Result<Url, UpdateError> {
+    Url::parse(s).map_err(|_| policy::PolicyError::NotHttps(s.to_owned()).into())
 }
 
 impl Updater {
@@ -193,8 +197,7 @@ fn spawn_activity_tracker(app: AppHandle, updater: Updater, state: &AppState) {
                 }
                 Ok(AppEvent::InstallProgress(e)) => {
                     let paused = e.phase == InstallPhase::Paused;
-                    updater.with(|i| i.activity.install_progress(key(&e.package), paused));
-                    true
+                    updater.with(|i| i.activity.install_progress(key(&e.package), paused))
                 }
                 Ok(AppEvent::InstallFinished(e)) => {
                     updater.with(|i| i.activity.install_finished(key(&e.package)));
@@ -223,7 +226,7 @@ fn spawn_scheduler(app: AppHandle, updater: Updater, state: &AppState) {
     let shutdown = state.shutdown.child_token();
     tauri::async_runtime::spawn(async move {
         tokio::select! {
-            () = ready.notified() => {}
+            () = ready.cancelled() => {}
             () = shutdown.cancelled() => return,
         }
         loop {
@@ -249,29 +252,14 @@ async fn check(app: &AppHandle, updater: &Updater) -> UpdaterStatus {
         return updater.status();
     }
     updater.set(app, UpdaterState::Checking);
-    let result = async {
-        let built = app
-            .updater_builder()
-            // Strictly greater only: never a downgrade, never a re-install.
-            .version_comparator(|current, remote| policy::is_update(&current, &remote.version))
-            .timeout(HTTP_TIMEOUT)
-            .build()?;
-        built.check().await
-    }
-    .await;
+    let result = match url(remote::LATEST_URL) {
+        Ok(endpoint) => {
+            remote::find_update(app.updater_builder(), &endpoint, Transport::for_build()).await
+        }
+        Err(e) => Err(e),
+    };
     match result {
         Ok(Some(update)) => {
-            if let Err(error) = policy::require_https(&update.download_url, cfg!(debug_assertions))
-            {
-                tracing::warn!(%error, "refusing an update served over plain HTTP");
-                updater.set(
-                    app,
-                    UpdaterState::Failed {
-                        message: "The update is not served securely.".into(),
-                    },
-                );
-                return updater.status();
-            }
             let state = UpdaterState::Available {
                 version: update.version.clone(),
                 date: update.date.map(|d| d.date().to_string()),
@@ -285,49 +273,21 @@ async fn check(app: &AppHandle, updater: &Updater) -> UpdaterStatus {
         }
         Ok(None) => updater.set(app, UpdaterState::UpToDate),
         Err(error) => {
-            tracing::warn!(error = %crate::error::DisplayChain(&error), "update check failed");
+            tracing::warn!(error = %DisplayChain(&error), "update check failed");
+            let message = if error.is_integrity() {
+                "The update server sent an update that failed security checks."
+            } else {
+                "Could not check for updates."
+            };
             updater.set(
                 app,
                 UpdaterState::Failed {
-                    message: "Could not check for updates.".into(),
+                    message: message.into(),
                 },
             );
         }
     }
     updater.status()
-}
-
-/// Downloads `changelog-user.json` with the size cap. `None` on any problem.
-async fn fetch_changelog() -> Option<Vec<policy::ReleaseNotes>> {
-    let url = Url::parse(CHANGELOG_URL).ok()?;
-    policy::require_https(&url, false).ok()?;
-    let client = reqwest::Client::builder()
-        .timeout(HTTP_TIMEOUT)
-        .https_only(true)
-        .build()
-        .ok()?;
-    let mut response = client.get(url).send().await.ok()?.error_for_status().ok()?;
-    if response
-        .content_length()
-        .is_some_and(|n| n > policy::MAX_CHANGELOG_BYTES as u64)
-    {
-        return None;
-    }
-    let mut body = Vec::new();
-    while let Some(chunk) = response.chunk().await.ok()? {
-        if body.len() + chunk.len() > policy::MAX_CHANGELOG_BYTES {
-            tracing::warn!("changelog larger than 1 MiB; using the update notes instead");
-            return None;
-        }
-        body.extend_from_slice(&chunk);
-    }
-    match policy::parse_changelog(&body) {
-        Ok(releases) => Some(releases),
-        Err(error) => {
-            tracing::warn!(%error, "invalid changelog; using the update notes instead");
-            None
-        }
-    }
 }
 
 fn error(code: ErrorCode, message: &str) -> CommandError {
@@ -341,22 +301,47 @@ pub fn updater_status(updater: State<'_, Updater>) -> UpdaterStatus {
     updater.status()
 }
 
-/// Checks for an update now (onboarding's "launcher too old" prompt, Settings).
-/// Refused while a game runs.
+/// Result of a check the user asked for (onboarding's "launcher too old" prompt,
+/// Settings). The banner follows [`UpdaterStatus`] events as usual.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum UpdateCheck {
+    UpToDate,
+    Available { version: String },
+    Failed { detail: String },
+}
+
+impl UpdateCheck {
+    fn from_state(state: &UpdaterState) -> Self {
+        match state {
+            UpdaterState::UpToDate => Self::UpToDate,
+            UpdaterState::Available { version, .. }
+            | UpdaterState::Downloading { version, .. }
+            | UpdaterState::Installed { version } => Self::Available {
+                version: version.clone(),
+            },
+            UpdaterState::Failed { message } => Self::Failed {
+                detail: message.clone(),
+            },
+            UpdaterState::Idle | UpdaterState::Checking => Self::Failed {
+                detail: "Could not check for updates.".into(),
+            },
+        }
+    }
+}
+
+/// Checks for an update now. Refused while a game runs.
 #[tauri::command]
 #[specta::specta]
-pub async fn updater_check(
-    app: AppHandle,
-    updater: State<'_, Updater>,
-) -> CommandResult<UpdaterStatus> {
-    let updater = updater.inner().clone();
+pub async fn updater_check(app: AppHandle) -> UpdateCheck {
+    // Owned arguments only, so the command can return a plain value.
+    let updater = app.state::<Updater>().inner().clone();
     if updater.blocked() == Some(Blocked::GameRunning) {
-        return Err(error(
-            ErrorCode::Conflict,
-            "Close the game to check for updates.",
-        ));
+        return UpdateCheck::Failed {
+            detail: "Close the game to check for updates.".into(),
+        };
     }
-    Ok(check(&app, &updater).await)
+    UpdateCheck::from_state(&check(&app, &updater).await.state)
 }
 
 /// What changed between the installed version and the available update.
@@ -376,7 +361,15 @@ pub async fn updater_whats_new(updater: State<'_, Updater>) -> CommandResult<Wha
     };
     let new = Version::parse(&version)
         .map_err(|_| error(ErrorCode::Integrity, "The update has an invalid version."))?;
-    let changelog = fetch_changelog().await;
+    let changelog = match url(remote::CHANGELOG_URL) {
+        Ok(u) => remote::fetch_changelog(&u, Transport::for_build()).await,
+        Err(e) => Err(e),
+    };
+    let changelog = changelog
+        .inspect_err(|e| {
+            tracing::warn!(error = %DisplayChain(e), "changelog unavailable; using the update notes");
+        })
+        .ok();
     let whats_new = policy::whats_new(
         changelog.as_deref(),
         notes.as_deref(),
@@ -387,8 +380,9 @@ pub async fn updater_whats_new(updater: State<'_, Updater>) -> CommandResult<Wha
     Ok(whats_new)
 }
 
-/// Downloads, verifies (minisign) and installs the available update, then
-/// restarts. Waits for downloads to reach a checkpoint; refused while a game runs.
+/// Downloads, verifies (minisign + signed version) and installs the available
+/// update, then restarts. Waits for downloads to reach a checkpoint; refused
+/// while a game runs.
 #[tauri::command]
 #[specta::specta]
 pub async fn updater_install(
@@ -409,12 +403,6 @@ pub async fn updater_install(
     if !updater.wait_until_idle(&shutdown).await {
         return Err(error(ErrorCode::Conflict, "The launcher is closing."));
     }
-    if updater.blocked().is_some() {
-        return Err(error(
-            ErrorCode::Conflict,
-            "Close the game to install the update.",
-        ));
-    }
     let Some(update) = updater.with(|i| i.pending.take()) else {
         return Err(error(ErrorCode::NotFound, "No update is available."));
     };
@@ -428,30 +416,37 @@ pub async fn updater_install(
         },
     );
 
-    let progress_app = app.clone();
-    let progress_updater = updater.clone();
-    let progress_version = version.clone();
-    let mut downloaded: u64 = 0;
     let mut last_emit = Instant::now();
-    let result = update
-        .download_and_install(
-            move |chunk, total| {
-                downloaded = downloaded.saturating_add(chunk as u64);
-                if last_emit.elapsed() >= PROGRESS_INTERVAL {
-                    last_emit = Instant::now();
-                    progress_updater.set(
-                        &progress_app,
-                        UpdaterState::Downloading {
-                            version: progress_version.clone(),
-                            downloaded,
-                            total,
-                        },
-                    );
+    let downloaded = remote::download_verified(&update, |downloaded, total| {
+        if last_emit.elapsed() >= PROGRESS_INTERVAL {
+            last_emit = Instant::now();
+            updater.set(
+                &app,
+                UpdaterState::Downloading {
+                    version: version.clone(),
+                    downloaded,
+                    total,
+                },
+            );
+        }
+    })
+    .await;
+    // A game may have started while downloading: never replace files under it.
+    let result = match downloaded {
+        Ok(_) if updater.blocked() == Some(Blocked::GameRunning) => Err(None),
+        Ok(bytes) => {
+            let installing = update.clone();
+            match tauri::async_runtime::spawn_blocking(move || installing.install(bytes)).await {
+                Ok(Ok(())) => Ok(()),
+                Ok(Err(e)) => Err(Some(UpdateError::from(e))),
+                Err(e) => {
+                    tracing::error!(error = %e, "the install task failed");
+                    Err(None)
                 }
-            },
-            || tracing::info!("update downloaded and verified"),
-        )
-        .await;
+            }
+        }
+        Err(e) => Err(Some(e)),
+    };
     match result {
         Ok(()) => {
             tracing::info!(%version, "launcher update installed; restarting");
@@ -459,19 +454,31 @@ pub async fn updater_install(
             app.restart();
         }
         Err(e) => {
-            // A signature mismatch lands here: nothing was installed.
-            tracing::error!(error = %crate::error::DisplayChain(&e), "update install failed");
-            updater.with(|i| i.pending = Some(update));
+            let integrity = e.as_ref().is_some_and(UpdateError::is_integrity);
+            if let Some(e) = &e {
+                tracing::error!(error = %DisplayChain(e), integrity, "update install failed");
+            }
+            // An update that failed verification is dropped; anything else can be retried.
+            if !integrity {
+                updater.with(|i| i.pending = Some(update));
+            }
+            let (message, code) = if integrity {
+                (
+                    "The update failed security checks and was not installed.",
+                    ErrorCode::Integrity,
+                )
+            } else if updater.blocked() == Some(Blocked::GameRunning) {
+                ("Close the game to install the update.", ErrorCode::Conflict)
+            } else {
+                ("The update could not be installed.", ErrorCode::Internal)
+            };
             updater.set(
                 &app,
                 UpdaterState::Failed {
-                    message: "The update could not be installed.".into(),
+                    message: message.into(),
                 },
             );
-            Err(error(
-                ErrorCode::Integrity,
-                "The update could not be verified or installed.",
-            ))
+            Err(error(code, message))
         }
     }
 }

@@ -2,9 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
   "description": "Main launcher window. Deliberately minimal: every feature goes through vgames' own typed commands (src/commands), which validate input in Rust. Do not add fs, shell, http or dialog permissions here \u2014 implement a command instead. The allow-* list must match MAIN_WINDOW_COMMANDS in src/commands/names.rs (a test checks it).",
-  "windows": [
-    "main"
-  ],
+  "windows": ["main"],
   "permissions": [
     "core:default",
     "allow-app-ready",

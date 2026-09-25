@@ -223,8 +223,10 @@ impl Activity {
     pub fn game_stopped(&mut self, package: (Uuid, Uuid)) {
         self.games.remove(&package);
     }
-    pub fn install_progress(&mut self, package: (Uuid, Uuid), paused: bool) {
-        self.installs.insert(package, paused);
+    /// `true` when this changed the install's state (progress events arrive
+    /// several times per second; only changes are worth a status event).
+    pub fn install_progress(&mut self, package: (Uuid, Uuid), paused: bool) -> bool {
+        self.installs.insert(package, paused) != Some(paused)
     }
     pub fn install_finished(&mut self, package: (Uuid, Uuid)) {
         self.installs.remove(&package);
@@ -340,9 +342,10 @@ mod tests {
         let p = (Uuid::from_u128(1), Uuid::from_u128(2));
         let mut a = Activity::default();
         assert_eq!(a.blocked(), None);
-        a.install_progress(p, false);
+        assert!(a.install_progress(p, false));
+        assert!(!a.install_progress(p, false), "same state: no status event");
         assert_eq!(a.blocked(), Some(Blocked::DownloadsActive));
-        a.install_progress(p, true);
+        assert!(a.install_progress(p, true));
         assert_eq!(a.blocked(), None, "a paused download is at a checkpoint");
         a.game_started(p);
         assert_eq!(a.blocked(), Some(Blocked::GameRunning));

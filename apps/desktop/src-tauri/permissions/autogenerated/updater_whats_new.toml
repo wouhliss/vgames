@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-updater-whats-new"
+description = "Enables the updater_whats_new command without any pre-configured scope."
+commands.allow = ["updater_whats_new"]
+
+[[permission]]
+identifier = "deny-updater-whats-new"
+description = "Denies the updater_whats_new command without any pre-configured scope."
+commands.deny = ["updater_whats_new"]

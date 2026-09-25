@@ -121,14 +121,6 @@ export type AuthOutcome =
   | { kind: "failed"; error: AuthError };
 
 // ------------------------------------------------------------------------------------------------
-// Launcher updates (Agent 5, A5-T09)
-
-export type UpdateCheck =
-  | { kind: "up_to_date" }
-  | { kind: "available"; version: string }
-  | { kind: "failed"; detail: string };
-
-// ------------------------------------------------------------------------------------------------
 // Libraries (A2-T08)
 
 export type Library = {
@@ -259,11 +251,6 @@ export const pendingCommands = {
   /** Revokes this device's session on the server and deletes its tokens from the keychain. */
   async authSignOut(serverId: string): Promise<Result<null, AppError>> {
     return call("auth_sign_out", { serverId });
-  },
-
-  /** Checks the release feed now (Agent 5). The update banner then appears through its own event. */
-  async updaterCheck(): Promise<UpdateCheck> {
-    return await TAURI_INVOKE("updater_check");
   },
 
   async librariesList(): Promise<Result<Library[], AppError>> {
