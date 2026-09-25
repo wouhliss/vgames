@@ -22,8 +22,8 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
   workflows, nightly toolchain or cargo-fuzz).
 
 ## In progress
-- A5-T09 launcher updater (in review). Then A5-T07 release pipelines, A5-T06 server commands (`login`, `trust publish`,
-  `publish`, `trust re-sign`), A5-T12 runtime catalog, A5-T11 adversarial tests, A5-T13 runbooks.
+- A5-T09 launcher updater (in review, supersedes PR 17). Then A5-T07 release pipelines, A5-T06 server commands
+  (`login`, `trust publish`, `publish`, `trust re-sign`), A5-T12 runtime catalog, A5-T11 adversarial tests, A5-T13 runbooks.
 
 ## Interfaces delivered (other agents may now rely on these)
 - **Signatures, key ids, fingerprints** (A5-T03 slice 1, for Agents 1, 2, 3):
@@ -124,16 +124,21 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
   (Biome); `biome.json` migrated (`preset`) and now ignores `.sqlx/`, `**/tests/vectors`, `**/snapshots`, `**/pkg`.
 
 - **Launcher updater** (A5-T09, for Agent 3): commands `updater_status() -> UpdaterStatus`, `updater_check() ->
-  UpdaterStatus` (the onboarding "launcher too old" prompt asked for this), `updater_whats_new() -> WhatsNew`,
+  UpdateCheck` (exactly the `up_to_date | available{version} | failed{detail}` shape the onboarding "launcher too old"
+  prompt uses; I deleted the delivered stub from `src/ipc/contract.ts`), `updater_whats_new() -> WhatsNew`,
   `updater_install()`; event `UpdaterStatus { current_version, state: idle | checking | up_to_date | available{version,
   date} | downloading{version, downloaded, total} | installed{version} | failed{message}, blocked: game_running |
   downloads_active | null }`. `WhatsNew { releases: [{version, date, entries: [{type, text}]}], from_latest_notes }`,
   newest first; a release with no entries shows "Stability and performance improvements."; render text as plain text.
+  `bindings.ts` is regenerated.
+- **`AppState::ui_ready` is now a `CancellationToken` latch** (was `Arc<Notify>`), for Agent 2: `app_ready` calls
+  `ui_ready.cancel()`, waiters use `ui_ready.cancelled().await`. With `Notify::notify_one` only one of the two waiters
+  (window-show fallback, updater scheduler) woke up, so the first update check never ran.
 
 ## Needs from others
-- From Agent 2: regenerate `apps/desktop/src/bindings.ts` after the updater PR (I cannot build the desktop crate on
-  this machine; it registers 4 commands + the `UpdaterStatus` event). I added ~20 lines of wiring in your files
-  (`lib.rs`: module, plugin, `updater::init`; `commands/mod.rs`; `names.rs`; `capabilities/main.json`; `Cargo.toml`: semver).
+- For Agent 2 (FYI): the updater adds ~25 lines of wiring in your files (`lib.rs`: module, plugin, `updater::init`;
+  `commands/mod.rs`; `names.rs`; `capabilities/main.json`; `Cargo.toml`: semver + test dev-deps; `state.rs`/`app.rs`:
+  the `ui_ready` latch above).
 - From Agent 2: a way to pause active downloads at their next checkpoint (A2-T04/T08). `updater_install` waits until
   every install reports `InstallPhase::Paused` or finishes; today it just waits.
 

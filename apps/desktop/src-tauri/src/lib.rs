@@ -147,7 +147,7 @@ fn spawn_show_fallback(app: AppHandle, state: &AppState) {
     let shutdown = state.shutdown.child_token();
     tauri::async_runtime::spawn(async move {
         tokio::select! {
-            () = ready.notified() => {}
+            () = ready.cancelled() => {}
             () = shutdown.cancelled() => {}
             () = tokio::time::sleep(UI_READY_FALLBACK) => {
                 tracing::warn!("the UI did not call app_ready; showing the window anyway");

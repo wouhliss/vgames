@@ -14,6 +14,18 @@ export const commands = {
 	 */
 	appReady: () => typedError<null, CommandError>(__TAURI_INVOKE("app_ready")),
 	appInfo: () => __TAURI_INVOKE<AppInfo>("app_info"),
+	/**  Current updater status. */
+	updaterStatus: () => __TAURI_INVOKE<UpdaterStatus>("updater_status"),
+	/**  Checks for an update now. Refused while a game runs. */
+	updaterCheck: () => __TAURI_INVOKE<UpdateCheck>("updater_check"),
+	/**  What changed between the installed version and the available update. */
+	updaterWhatsNew: () => typedError<WhatsNew, CommandError>(__TAURI_INVOKE("updater_whats_new")),
+	/**
+	 *  Downloads, verifies (minisign + signed version) and installs the available
+	 *  update, then restarts. Waits for downloads to reach a checkpoint; refused
+	 *  while a game runs.
+	 */
+	updaterInstall: () => typedError<null, CommandError>(__TAURI_INVOKE("updater_install")),
 };
 
 /** Events */
@@ -24,6 +36,7 @@ export const events = {
 	installFinished: makeEvent<InstallFinished>("install-finished"),
 	installProgress: makeEvent<InstallProgress>("install-progress"),
 	serverSwitched: makeEvent<ServerSwitched>("server-switched"),
+	updaterStatus: makeEvent<UpdaterStatus>("updater-status"),
 };
 
 /* Types */
@@ -38,6 +51,18 @@ export type AppInfo = {
 	/**  `x86_64` or `aarch64`. */
 	arch: string,
 };
+
+/**  Why an update check or install must wait. */
+export type Blocked = "game_running" | "downloads_active";
+
+export type ChangeEntry = {
+	type: ChangeType,
+	/**  Plain text; the UI renders it as text, never as HTML or Markdown. */
+	text: string,
+};
+
+/**  Kind of a player-facing change, in the order the dialog groups them. */
+export type ChangeType = "added" | "changed" | "fixed" | "removed" | "security";
 
 /**  Error payload of every command. */
 export type CommandError = {
@@ -135,12 +160,48 @@ export type PackageRef = {
 	package_id: string,
 };
 
+export type ReleaseNotes = {
+	version: string,
+	date: string,
+	entries: ChangeEntry[],
+};
+
 /**
  *  The active server changed (`None`: no server is active). Realtime
  *  connections to the previous server must be dropped.
  */
 export type ServerSwitched = {
 	server_id: string | null,
+};
+
+/**
+ *  Result of a check the user asked for (onboarding's "launcher too old" prompt,
+ *  Settings). The banner follows [`UpdaterStatus`] events as usual.
+ */
+export type UpdateCheck = { kind: "up_to_date" } | { kind: "available"; version: string } | { kind: "failed"; detail: string };
+
+/**  Where the updater is. */
+export type UpdaterState = { kind: "idle" } | { kind: "checking" } | { kind: "up_to_date" } | { kind: "available"; version: string; date: string | null } | { kind: "downloading"; version: string; downloaded: number; total: number | null } | 
+/**  Installed; the launcher restarts. */
+{ kind: "installed"; version: string } | { kind: "failed"; message: string };
+
+/**  Current updater status. Also emitted as an event whenever it changes. */
+export type UpdaterStatus = {
+	current_version: string,
+	state: UpdaterState,
+	/**  Why checks and installs are waiting, if they are. */
+	blocked: Blocked | null,
+};
+
+/**  What the "What's new" dialog shows. */
+export type WhatsNew = {
+	/**
+	 *  Releases in `(installed, new]`, newest first. A release with no entries
+	 *  is shown as [`GENERIC_NOTE`].
+	 */
+	releases: ReleaseNotes[],
+	/**  True when the changelog could not be used and `notes` from `latest.json` are shown. */
+	from_latest_notes: boolean,
 };
 
 /* Tauri Specta runtime */

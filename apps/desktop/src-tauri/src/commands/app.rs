@@ -19,7 +19,7 @@ pub fn app_ready(window: WebviewWindow, state: State<'_, AppState>) -> CommandRe
             "Only the main window can do this.",
         ));
     }
-    state.ui_ready.notify_one();
+    state.ui_ready.cancel();
     show_main_window(&window);
     Ok(())
 }

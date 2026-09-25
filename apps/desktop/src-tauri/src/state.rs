@@ -2,9 +2,6 @@
 //! command. Every member is a cheap handle, so background tasks clone what they
 //! need instead of holding the whole state.
 
-use std::sync::Arc;
-
-use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
 use crate::db::Db;
@@ -19,8 +16,10 @@ pub struct AppState {
     pub bus: EventBus,
     /// Root of every task's cancellation token; cancelled on exit.
     pub shutdown: CancellationToken,
-    /// Signalled once the UI has rendered and called `app_ready`.
-    pub ui_ready: Arc<Notify>,
+    /// Cancelled (used as a one-shot latch) once the UI has rendered and called
+    /// `app_ready`. Any number of tasks may wait on `ui_ready.cancelled()`, before
+    /// or after it fires.
+    pub ui_ready: CancellationToken,
 }
 
 impl AppState {
@@ -30,7 +29,7 @@ impl AppState {
             db,
             bus: EventBus::new(),
             shutdown: CancellationToken::new(),
-            ui_ready: Arc::new(Notify::new()),
+            ui_ready: CancellationToken::new(),
         }
     }
 }
