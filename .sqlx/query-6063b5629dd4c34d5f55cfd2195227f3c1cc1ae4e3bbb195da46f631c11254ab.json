@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE user_presence SET status = 'offline', package_id = NULL, updated_at = now()\n           WHERE status <> 'offline' AND heartbeat_at < now() - make_interval(secs => $1)\n           RETURNING user_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "user_presence",
+            "name": "user_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "6063b5629dd4c34d5f55cfd2195227f3c1cc1ae4e3bbb195da46f631c11254ab"
+}

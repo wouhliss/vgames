@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE friend_codes SET used_at = now() WHERE code = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7cbcb9efc5b398a5ccb6bb37ae4b87c63060ac1cf78e71e1a2d5b43147190b33"
+}

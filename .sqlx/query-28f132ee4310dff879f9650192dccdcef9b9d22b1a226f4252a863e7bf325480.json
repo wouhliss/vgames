@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users SET last_seen_at = now()\n         WHERE id = ANY($1) AND (last_seen_at IS NULL OR last_seen_at < now() - interval '1 minute')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "28f132ee4310dff879f9650192dccdcef9b9d22b1a226f4252a863e7bf325480"
+}

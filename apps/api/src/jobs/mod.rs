@@ -81,6 +81,10 @@ pub const SCHEDULES: &[Schedule] = &[
         kind: "saves.gc",
         period: Duration::from_secs(86_400),
     },
+    Schedule {
+        kind: crate::social::SWEEP_JOB,
+        period: Duration::from_secs(60),
+    },
 ];
 
 #[derive(Clone, Default)]

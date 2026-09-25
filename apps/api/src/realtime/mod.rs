@@ -47,8 +47,10 @@ pub fn routes() -> OpenApiRouter<AppState> {
         .routes(routes!(connect))
 }
 
-/// Starts the `LISTEN` task that feeds this instance's sockets.
+/// Starts the `LISTEN` task that feeds this instance's sockets, and the presence monitor
+/// that keeps this instance's users online (Agent 4, 05-social-notes §2.4).
 pub fn start(state: &AppState) -> tokio::task::JoinHandle<()> {
+    crate::social::presence::start(state);
     tokio::spawn(bus::listen(state.clone()))
 }
 

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM friendships WHERE user_low = $1 AND user_high = $2 AND state = 'pending' AND requested_by = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6e5c4133ca862fac9bc4b73fb4f276da21243e811a9dd0d89bdc76aaebbd4950"
+}

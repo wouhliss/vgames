@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT CASE WHEN user_low = $1 THEN user_high ELSE user_low END AS \"id!\"\n           FROM friendships WHERE (user_low = $1 OR user_high = $1) AND state = 'accepted'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "8817028d592f6663b9a649483aad2a8349e200c36c2bd1987ce2682987f9f0d1"
+}

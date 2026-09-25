@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO user_presence (user_id, status, package_id, instance_id, updated_at, heartbeat_at)\n           VALUES ($1, $2, $3, $4, now(), now())\n           ON CONFLICT (user_id) DO UPDATE SET\n             status = excluded.status, package_id = excluded.package_id,\n             instance_id = excluded.instance_id, heartbeat_at = now(),\n             updated_at = CASE WHEN $5 THEN now() ELSE user_presence.updated_at END",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Uuid",
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cad97763c8098f9952b07e26ff96350ff74109cd77d37ecaea9399dfac82a430"
+}

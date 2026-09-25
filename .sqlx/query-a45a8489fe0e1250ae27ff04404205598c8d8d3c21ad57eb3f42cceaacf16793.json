@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE user_presence SET heartbeat_at = now(), instance_id = $2\n         WHERE user_id = ANY($1) AND status <> 'offline'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a45a8489fe0e1250ae27ff04404205598c8d8d3c21ad57eb3f42cceaacf16793"
+}
