@@ -75,6 +75,33 @@ cargo xtask updater verify --latest latest.json --dir .          # minisign + si
 gh attestation verify vgames_X.Y.Z_x64-setup.exe --repo wouhliss/vgames
 ```
 
+## Releasing the server image
+
+Workflow: [`release-api.yml`](../../.github/workflows/release-api.yml), tag `api-vX.Y.Z` (= the workspace
+version). [`apps/api/Dockerfile`](../../apps/api/Dockerfile) builds the admin web and the API from source
+into a distroless, non-root image (base images pinned by digest; runs with `--read-only`). The workflow builds
+amd64 and arm64 natively without caches, pushes by digest, creates `ghcr.io/<owner>/vgames-api:X.Y.Z`,
+signs it with cosign **keyless** (GitHub OIDC, no key to keep), and attaches a CycloneDX SBOM attestation and
+build provenance. Verify before deploying:
+
+```sh
+cosign verify ghcr.io/wouhliss/vgames-api:X.Y.Z \
+  --certificate-identity-regexp '^https://github.com/wouhliss/vgames/\.github/workflows/release-api\.yml@refs/tags/api-v' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+gh attestation verify oci://ghcr.io/wouhliss/vgames-api:X.Y.Z --repo wouhliss/vgames
+```
+
+Deploy by digest (`ghcr.io/…/vgames-api@sha256:…`), not by tag.
+
+## Scheduled workflows
+
+| Workflow | When | What |
+|---|---|---|
+| [`e2e.yml`](../../.github/workflows/e2e.yml) | nightly, manual | The `vgames` CLI key pipeline against a real API (`scripts/e2e/key-pipeline.sh`), and the admin Playwright suite against the API serving the built admin web |
+| [`desktop-matrix.yml`](../../.github/workflows/desktop-matrix.yml) | nightly, PRs touching the launcher crates | Unsigned builds and Rust tests on Windows, Linux and macOS |
+| [`soak.yml`](../../.github/workflows/soak.yml) | weekly, manual | 24 h launcher leak test on a dedicated self-hosted runner (labels `self-hosted, linux, vgames-soak`); skipped until the repository variable `VGAMES_SOAK_RUNNER=true` |
+| [Dependabot](../../.github/dependabot.yml) | weekly | Grouped updates; cryptography crates in their own PR; nothing is auto-merged |
+
 ## Dry run on a fork (A5-T07 acceptance)
 
 1. Fork, then in the fork: create the `release` environment with a reviewer, generate a **test** updater key
