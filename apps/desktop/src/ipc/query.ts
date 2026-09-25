@@ -36,6 +36,9 @@ export const queryKeys = {
   libraries: ["libraries_list"] as const,
   installs: ["installs_list"] as const,
   collections: ["collections_list"] as const,
+  catalog: ["catalog_list"] as const,
+  genres: ["catalog_genres"] as const,
+  details: (packageId: string) => ["package_details", packageId] as const,
 };
 
 export function createQueryClient(): QueryClient {

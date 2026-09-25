@@ -1,0 +1,120 @@
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.search {
+  flex: 1 1 220px;
+  max-width: 420px;
+}
+
+.filter {
+  flex: 0 1 200px;
+  min-width: 0;
+}
+
+.virtual {
+  position: relative;
+  width: 100%;
+}
+
+.virtualRow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+}
+
+.row {
+  display: grid;
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  border-radius: var(--radius-lg);
+  color: var(--color-text);
+  text-decoration: none;
+  contain: layout style;
+}
+
+.cover {
+  display: block;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  margin-bottom: var(--space-1);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-raised);
+  object-fit: cover;
+  transition: filter var(--motion-fast) var(--ease-out);
+}
+
+.card:hover .cover {
+  filter: brightness(1.12);
+}
+
+.placeholder {
+  display: grid;
+  place-items: center;
+  color: rgb(255 255 255 / 85%);
+  font-size: var(--text-3xl);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.04em;
+}
+
+.cardTitle,
+.cardMeta {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cardTitle {
+  font-weight: var(--weight-medium);
+}
+
+.cardMeta {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.badges {
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-2);
+  right: var(--space-2);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  pointer-events: none;
+}
+
+.badges > * {
+  box-shadow: var(--shadow-raised);
+}
+
+.loader {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--color-text-muted);
+}
+
+.retry {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  cursor: pointer;
+}

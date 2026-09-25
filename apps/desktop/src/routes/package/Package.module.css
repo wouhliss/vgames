@@ -1,0 +1,244 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-4) var(--space-6) var(--space-8);
+}
+
+.hero {
+  display: block;
+  width: 100%;
+  height: clamp(160px, 28vh, 280px);
+  border-radius: var(--radius-lg);
+  object-fit: cover;
+  background: var(--color-surface-raised);
+}
+
+.heroPlaceholder {
+  display: grid;
+  place-items: center;
+  color: rgb(255 255 255 / 80%);
+  font-size: 4rem;
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.06em;
+}
+
+.headline {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 72ch;
+}
+
+.summary {
+  color: var(--color-text-muted);
+  font-size: var(--text-lg);
+}
+
+.badgeRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.badgeRow:empty {
+  display: none;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.installedActions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
+  gap: var(--space-8);
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  min-width: 0;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 72ch;
+}
+
+.section h2,
+.aside h2 {
+  font-size: var(--text-xl);
+}
+
+.muted {
+  color: var(--color-text-muted);
+}
+
+.hint {
+  color: var(--color-text-subtle);
+  font-size: var(--text-sm);
+}
+
+.compatRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.notes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border-left: 3px solid var(--color-border-strong);
+  background: var(--color-surface);
+}
+
+.notes h3 {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.noticeStack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.shots {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.thumb {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--color-surface-raised);
+  cursor: zoom-in;
+}
+
+.thumb img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+}
+
+.aside {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+
+.facts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.facts dt {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Install dialog */
+.dialogStack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.planFacts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+}
+
+.planFacts > div {
+  display: contents;
+}
+
+.planFacts dt {
+  color: var(--color-text-muted);
+}
+
+.planFacts dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Screenshot viewer */
+.lightbox {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.lightboxFigure {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  min-width: 0;
+}
+
+.lightboxImage {
+  display: block;
+  width: 100%;
+  max-height: 70vh;
+  height: auto;
+  border-radius: var(--radius-md);
+  object-fit: contain;
+  background: var(--color-bg);
+}
+
+.lightboxCaption {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
