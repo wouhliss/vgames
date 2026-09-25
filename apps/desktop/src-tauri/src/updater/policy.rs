@@ -337,6 +337,55 @@ mod tests {
         assert!(parse_changelog(b"not json").is_err());
     }
 
+    /// The valid changelog with random byte edits, which reach deeper than random bytes.
+    fn mutated_changelog() -> impl proptest::strategy::Strategy<Value = Vec<u8>> {
+        use proptest::prelude::*;
+        let base = changelog();
+        prop::collection::vec((any::<prop::sample::Index>(), any::<u8>(), 0u8..3), 1..8).prop_map(
+            move |edits| {
+                let mut b = base.clone();
+                for (at, byte, op) in edits {
+                    if b.is_empty() {
+                        b.push(byte);
+                        continue;
+                    }
+                    let i = at.index(b.len());
+                    match op {
+                        0 => b[i] = byte,
+                        1 => b.insert(i, byte),
+                        _ => {
+                            b.remove(i);
+                        }
+                    }
+                }
+                b
+            },
+        )
+    }
+
+    proptest::proptest! {
+        #![proptest_config(proptest::prelude::ProptestConfig { cases: 2000, ..Default::default() })]
+
+        /// The changelog comes from the network: parsing and selecting never panic,
+        /// and whatever is accepted is plain text within the limits.
+        #[test]
+        fn changelog_parsing_never_panics(
+            bytes in proptest::prop_oneof![
+                proptest::collection::vec(proptest::prelude::any::<u8>(), 0..1024),
+                mutated_changelog(),
+            ],
+            installed in 0u64..8,
+        ) {
+            if let Ok(releases) = parse_changelog(&bytes) {
+                for entry in releases.iter().flat_map(|r| &r.entries) {
+                    proptest::prop_assert!(plain_text(&entry.text));
+                }
+                let w = whats_new(Some(&releases), None, &Version::new(0, installed, 0), &v("0.6.0"));
+                proptest::prop_assert!(!w.releases.is_empty());
+            }
+        }
+    }
+
     #[test]
     fn activity_gates_checks_and_installs() {
         let p = (Uuid::from_u128(1), Uuid::from_u128(2));

@@ -68,6 +68,7 @@ tempfile.workspace = true
 tauri = { workspace = true, features = ["test"] }
 wiremock.workspace = true
 minisign.workspace = true
+proptest.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 # Virtual Xbox 360 pad through ViGEmBus (retired upstream, still the de-facto
