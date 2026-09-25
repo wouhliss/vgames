@@ -7,9 +7,10 @@
   Now on `vgames_core::{layout, paths}` (interim copies deleted); pack-wasm re-exports core's key-file/signing API.
 - A2-T04 Download engine (`vgames-transfer::{download, install}`): see Interfaces and Measurements.
 - A2-T04 CI follow-up ([PR #38](https://github.com/wouhliss/vgames/pull/38)): crash-resume tests wait for pack bytes before killing child processes on fast macOS runners; Windows Tauri test binaries embed the Common Controls v6 manifest, and generated bindings compare equal across CRLF/LF checkouts.
+- A2-T05 Upload engine (`vgames-transfer::upload`): direct pack streams to GCS-style resumable sessions, private resume records, adaptive 4–16 workers, progress events, and end-to-end publishing API. The protocol is tested with a wiremock simulator and Agent 1's real fs storage backend; a separate process is killed after a randomly selected 256 KiB-aligned confirmed offset and the next process resumes; changing a file during streaming aborts with a clear error.
 
 ## In progress
-- None. Next: A2-T05 upload engine (`vgames-transfer::upload`).
+- Next: A2-T06 update, verify, repair, move, and uninstall.
 
 ## Interfaces delivered (other agents may now rely on these)
 - **Event bus** (A2-T01, for Agents 3, 4, 5): `vgames_desktop_lib::events::{EventBus, AppEvent}`,
@@ -64,6 +65,7 @@
   - `vgames_transfer::http::{transfer_client (HTTP/1.1 only, no content decoding), redact_url}`.
   - Test support for other crates' tests: feature `testkit` (`TestPackage` signed packages, `Rig` loopback
     storage with fault injection, `MockApi`).
+- **Upload engine (A2-T05, for Agent 5's CLI):** `vgames_transfer::upload::{run, UploadApi, UploadOptions, UploadControl}` streams `PackSource` packs through resumable sessions. `vgames_transfer::upload::publish::{create_version, run, PublishApi, PublishRequest, PublishOptions, PublishControl}` creates a version with a caller-persisted idempotency key, then resumes an existing version through signing, manifest upload, verification and publication. The caller must persist the returned `Version` before `publish::run` and place the private resume record in app data, outside the source tree.
 
 ## Measurements
 - A2-T01 idle, Linux (WSLg, debug build, Vite dev server, software GL), 60 s window
@@ -96,3 +98,4 @@
 ## Blockers / contract questions
 - Pre-existing Biome failures on `main` outside my area: `biome.json` (deprecated `recommended`, format)
   and `infra/gcs/cors.json` (format). Owners: Agent 5 / architect.
+- A2-T04 follow-up: directory components can be swapped for symlinks between validation and later file access; a directory-handle based path traversal is needed to close this local race across platforms. The non-racy uninstall traversal and atomic-write symlink cases are fixed with regressions.
