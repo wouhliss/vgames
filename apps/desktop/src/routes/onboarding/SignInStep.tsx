@@ -140,7 +140,7 @@ export function SignInStep({
       ) : (
         <div className={styles.waiting} role="status">
           <Spinner label={t("onboarding.signIn.waitingTitle")} />
-          <span className={styles.muted}>{t("onboarding.signIn.waitingText")}</span>
+          <span className={styles.muted}>{t("onboarding.signIn.waitingStatus")}</span>
         </div>
       )}
       <div className={`${styles.actions} ${styles.actionsStart}`}>

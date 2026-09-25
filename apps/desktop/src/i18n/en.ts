@@ -432,6 +432,7 @@ export const en = {
       action: "Sign in with Discord",
       waitingTitle: "Finish signing in in your browser",
       waitingText: "Approve vgames in Discord. This screen continues by itself when you're done.",
+      waitingStatus: "Waiting for Discord…",
       reopen: "Open browser again",
       pasteToggle: "Paste a code instead",
       pasteHelp: "If your browser showed a sign-in code, paste it here.",

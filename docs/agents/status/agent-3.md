@@ -51,14 +51,21 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   focus (they were `visibility: hidden` when focused), dialogs start focus in their body (not on
   Close), menu typeahead accepts spaces, and a failed background refresh keeps the last good list.
 
+- Preview fixes (after the screenshot review): library focus rings are no longer clipped (`contain: paint`
+  removed; the controller e2e test now fails if any ancestor clips the focused button), the Discord waiting
+  screen no longer repeats its text, and the library toolbar fits a 960 px window.
+
 ## In progress
-- A3-T05 — Browse and package details (next)
+- A3-T05 — Browse and package details
 
 ## Interfaces delivered (other agents may now rely on these)
 - `apps/desktop/src/ipc/contract/`: the command/event surface the UI is built against, in exact
   tauri-specta output shape, one file per domain (`core.ts`: app, servers, auth, libraries;
   `library.ts`: installs, collections, favorites, launch, install actions). Each entry is deleted
   once the same name exists in `src/bindings.ts` (generated entries already win).
+- **For Agent 4 (A4-T10):** `apps/desktop/overlay.html` is the overlay window's page; `vite.config.ts` adds it as
+  a second build input (`dist/overlay.html`) as soon as `apps/desktop/src/overlay/main.tsx` exists. Point the
+  overlay window's URL at `overlay.html`.
 - Mock mode: `pnpm --filter @vgames/desktop dev:mock` runs the UI in a browser against
   `src/mocks/` (`?mock=fresh|ready|empty|huge|no-library|debug`; `ready` has 40 installed packages
   with one library offline, `huge` has 5,000). E2E: `pnpm --filter @vgames/desktop e2e`

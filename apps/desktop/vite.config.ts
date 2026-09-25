@@ -1,5 +1,14 @@
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
+
+const root = (path: string) => fileURLToPath(new URL(path, import.meta.url));
+
+// Pages: the main window, plus the overlay window (Agent 4, A4-T10: macOS panel and fallback
+// window) once its entry module exists.
+const input: Record<string, string> = { main: root("./index.html") };
+if (existsSync(root("./src/overlay/main.tsx"))) input.overlay = root("./overlay.html");
 
 // Tauri expects a fixed dev port and must see Rust-side errors in the terminal.
 //
@@ -21,5 +30,6 @@ export default defineConfig({
     sourcemap: false,
     // Keep the bundle small: the launcher must stay light (docs/architecture/00-overview.md).
     chunkSizeWarningLimit: 400,
+    rolldownOptions: { input },
   },
 });

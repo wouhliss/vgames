@@ -76,6 +76,22 @@ test("works with a controller only: move through tiles, play, open the menu", as
   // Down reaches Play under the cover; A launches.
   await pad(page, "down");
   expect(await focusedName(page)).toMatch(/^Play /);
+  // Nothing around the focused button may clip its focus ring (paint containment, overflow).
+  const clipper = await page.evaluate(() => {
+    let el = document.activeElement?.parentElement ?? null;
+    while (el && el.id !== "main-content") {
+      const style = getComputedStyle(el);
+      if (
+        style.contain.includes("paint") ||
+        style.contain.includes("strict") ||
+        style.overflow !== "visible"
+      )
+        return el.className || el.tagName;
+      el = el.parentElement;
+    }
+    return null;
+  });
+  expect(clipper).toBeNull();
   await pad(page, "accept");
   await expect(page.getByRole("button", { name: /^Stop / }).first()).toBeVisible();
   // Y opens the context menu; B closes it and focus returns.
