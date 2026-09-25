@@ -15,6 +15,7 @@
 //! - [`layout`] — the single chunk/pack layout function (02 §4).
 //! - [`manifest`] — `vgames.manifest/1` types and `parse_and_validate` (02 §5).
 //! - [`paths`] — package path safety rules (02 §3), exact Unicode simple case folding.
+//! - [`runtimes`] — the signed `vgames.runtimes/1` runtime catalog (09-compatibility §5), `verify_catalog`.
 //! - [`sign`]  — domain-separated Ed25519 signatures, key ids, `VG1-…` fingerprints,
 //!   `vgames.sig/1` envelopes.
 //! - [`trust`] — `vgames.trust/1` bundles, `verify_bundle`, root rotation, `TrustState`.
@@ -32,6 +33,7 @@ pub mod keyfile;
 pub mod layout;
 pub mod manifest;
 pub mod paths;
+pub mod runtimes;
 pub mod sign;
 pub mod trust;
 pub mod verify;

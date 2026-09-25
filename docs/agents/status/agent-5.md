@@ -27,13 +27,16 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
 
 - A5-T07 part 1: `release-desktop.yml`, `desktop-matrix.yml`, `cargo xtask updater sign | manifest | verify`, actionlint
   in CI, `docs/security/release.md` — https://github.com/wouhliss/vgames/pull/30.
+- A5-T07 part 2: `apps/api/Dockerfile` (distroless, non-root, `--read-only`), `release-api.yml` (multi-arch, cosign
+  keyless, SBOM + provenance), nightly `e2e.yml` (CLI key pipeline + admin Playwright against the real API), `soak.yml`,
+  Dependabot — https://github.com/wouhliss/vgames/pull/33. The fork dry run (acceptance) needs humans.
 
 ## In progress
-- A5-T07 part 2 (in review): `apps/api/Dockerfile` (built and run locally: 93.7 MB, distroless, non-root, `--read-only`),
-  `release-api.yml` (multi-arch, cosign keyless, SBOM + provenance), `e2e.yml` (nightly: CLI key pipeline against a real
-  API — `scripts/e2e/key-pipeline.sh`, passing locally — and the admin Playwright suite against the real stack),
-  `soak.yml` (self-hosted skeleton), Dependabot. Then `vgames publish` (A5-T06, on Agent 2's A2-T05), A5-T12 runtime
-  catalog, A5-T11 adversarial tests, A5-T13 runbooks. The fork dry run of the release (A5-T07 acceptance) needs humans.
+- A5-T12 part 1 (this change): `vgames_core::runtimes` (catalog types, rules, `verify_catalog`), test vectors for
+  Agent 2, `cargo xtask runtimes build | sign | verify`, `runtimes/catalog.toml` (no entries yet). Next: `runtimes.yml`
+  (upstream watcher that opens PRs), `release-runtimes.yml`, D3DMetal intake. Then `vgames publish` (A5-T06, on
+  Agent 2's A2-T05), A5-T11 adversarial tests, A5-T13 runbooks. The fork dry run of the release (A5-T07 acceptance)
+  needs humans.
 
 ## Interfaces delivered (other agents may now rely on these)
 - **Signatures, key ids, fingerprints** (A5-T03 slice 1, for Agents 1, 2, 3):
@@ -155,6 +158,21 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
 - Formatting-only fixes I made so `main` is green (please pull before editing): `apps/api/src/storage/mod.rs`,
   `crates/vgames-pack/tests/roundtrip.rs` (rustfmt), `packages/pack-wasm/test/smoke.mjs`, `infra/gcs/cors.json`
   (Biome); `biome.json` migrated (`preset`) and now ignores `.sqlx/`, `**/tests/vectors`, `**/snapshots`, `**/pkg`.
+
+- **Runtime catalog** (A5-T12, for Agent 2's runtime manager A2-T16/T17):
+  - `vgames_core::runtimes::verify_catalog(bytes, minisig_text, public_key, last_seen_version) -> Result<VerifiedCatalog
+    { catalog, newer }, RuntimesError>`: minisign signature over the exact bytes first (prehashed only), then the
+    `vgames.runtimes/1` rules, then rollback (`RuntimesError::Rollback { got, seen }`; equal version = refresh,
+    `newer == false`). Persist the highest accepted version. `public_key` is the `.pub` file or its base64 line.
+  - `Catalog { format, version, generated_at, commercial, runtimes: Vec<Runtime> }`, `Runtime { id: RuntimeId, version,
+    os, arch, url, sha256, size, archive, license, min_launcher_version, rosetta_required, macos_max_supported,
+    redistribution }`. Every `url` is a plain `https://github.com/<owner>/<repo>/releases/download/<tag>/<file>`; check
+    `size` while downloading and `sha256` **before** extracting (09 §5).
+  - Test vectors: `crates/vgames-core/tests/vectors/runtimes/` (valid v2, older v1 = rollback, tampered catalog, wrong
+    key, the pinned archive and a tampered copy; README lists the expected outcome of each). Use them in your tests.
+  - The real public key will be `runtimes/runtime-catalog.pub` (created by humans, `docs/security/release.md`); compile it
+    in at build time and keep the runtime manager off in builds without it. Publication: the `runtimes` GitHub release
+    (`runtimes.json` + `runtimes.json.minisig`), from `release-runtimes.yml` (next PR).
 
 - **Launcher updater** (A5-T09, for Agent 3): commands `updater_status() -> UpdaterStatus`, `updater_check() ->
   UpdateCheck` (exactly the `up_to_date | available{version} | failed{detail}` shape the onboarding "launcher too old"

@@ -69,20 +69,21 @@ fn minisign_text(value: &str) -> Result<String> {
     String::from_utf8(bytes).context("the decoded value is not text")
 }
 
-/// The secret key from `TAURI_SIGNING_PRIVATE_KEY` (content or file path).
-fn load_secret_key(value: &str, password: Option<&str>) -> Result<minisign::SecretKey> {
+/// A minisign secret key from an environment value: its content (text, or base64 of
+/// the text as Tauri stores it) or a file path.
+pub(crate) fn load_secret_key(value: &str, password: Option<&str>) -> Result<minisign::SecretKey> {
     let text = match Path::new(value.trim()).is_file() {
         true => std::fs::read_to_string(value.trim()).context("reading the signing key file")?,
         false => value.to_owned(),
     };
-    let text = minisign_text(&text).context("TAURI_SIGNING_PRIVATE_KEY")?;
+    let text = minisign_text(&text).context("signing key")?;
     let boxed = || minisign::SecretKeyBox::from_string(&text).context("not a minisign secret key");
     // Tauri keys are encrypted, with an empty password when none was chosen.
     match boxed()?.into_unencrypted_secret_key() {
         Ok(key) => Ok(key),
         Err(_) => boxed()?
             .into_secret_key(Some(password.unwrap_or_default().to_owned()))
-            .context("cannot decrypt the signing key (wrong TAURI_SIGNING_PRIVATE_KEY_PASSWORD?)"),
+            .context("cannot decrypt the signing key (wrong password?)"),
     }
 }
 

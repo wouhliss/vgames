@@ -92,6 +92,8 @@ vodozemac = "0.11"
 # (01-security §2). Tooling and tests only; the launcher verifies with the updater
 # plugin's `minisign-verify`.
 minisign = "0.9"
+# Verification only (runtime catalog in vgames-core, WASM-compatible, no dependencies).
+minisign-verify = "0.2"
 
 # --- HTTP server (apps/api) -------------------------------------------------
 axum = { version = "0.8", features = ["ws", "macros"] }

@@ -93,6 +93,32 @@ gh attestation verify oci://ghcr.io/wouhliss/vgames-api:X.Y.Z --repo wouhliss/vg
 
 Deploy by digest (`ghcr.io/…/vgames-api@sha256:…`), not by tag.
 
+## Runtime catalog
+
+[`runtimes/catalog.toml`](../../runtimes/catalog.toml) pins every compatibility runtime (09-compatibility §5).
+`cargo xtask runtimes build` turns it into `runtimes.json` (`vgames.runtimes/1`) with the launcher's own
+parser (`vgames_core::runtimes`), one version above the last published catalog, and refuses non-commercial
+entries (D3DMetal) unless `commercial = false`. The launcher accepts only a catalog signed with the
+**runtime-catalog key** (minisign, separate from the updater key) and never one older than it has seen.
+
+**Key (humans, once, on an offline machine):**
+
+```sh
+minisign -G -p runtime-catalog.pub -s runtime-catalog.key     # choose a password
+```
+
+Commit `runtime-catalog.pub` as `runtimes/runtime-catalog.pub` through a normal PR (the launcher compiles it in).
+Store the content of `runtime-catalog.key` as the secret `VGAMES_RUNTIME_CATALOG_KEY` and its password as
+`VGAMES_RUNTIME_CATALOG_KEY_PASSWORD`, in the `release` environment only, and keep two offline copies.
+
+**Build, sign and check by hand** (what the release workflow does):
+
+```sh
+cargo xtask runtimes build --previous last/runtimes.json --out runtimes.json
+cargo xtask runtimes sign runtimes.json                        # reads the two variables above; writes runtimes.json.minisig
+cargo xtask runtimes verify --last-version <published version> runtimes.json
+```
+
 ## Scheduled workflows
 
 | Workflow | When | What |
