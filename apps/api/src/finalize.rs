@@ -79,7 +79,7 @@ fn unprocessable(code: &'static str, title: &'static str, detail: impl Into<Stri
 }
 
 /// Parses the wire envelope with `vgames-core`'s strict rules.
-fn parse_envelope(env: &SignatureEnvelope) -> ApiResult<Envelope> {
+pub(crate) fn parse_envelope(env: &SignatureEnvelope) -> ApiResult<Envelope> {
     let bytes = serde_json::to_vec(env).map_err(ApiError::internal_from)?;
     Envelope::parse(&bytes).map_err(|e| {
         unprocessable(
@@ -90,7 +90,7 @@ fn parse_envelope(env: &SignatureEnvelope) -> ApiResult<Envelope> {
     })
 }
 
-fn verify_error(e: VerifyError) -> ApiError {
+pub(crate) fn verify_error(e: VerifyError) -> ApiError {
     let detail = e.to_string();
     match e {
         VerifyError::UnknownKey(_)

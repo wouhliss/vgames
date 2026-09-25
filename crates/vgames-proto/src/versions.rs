@@ -292,3 +292,63 @@ pub struct IntegrityReport {
     #[cfg_attr(feature = "openapi", schema(max_length = 1000))]
     pub detail: Option<String>,
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum CompatTarget {
+    Linux,
+    Macos,
+}
+
+impl CompatTarget {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            CompatTarget::Linux => "linux",
+            CompatTarget::Macos => "macos",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum CompatStatus {
+    Verified,
+    Playable,
+    Unsupported,
+    Untested,
+}
+
+/// A stored `vgames.compat/1` profile revision (docs/architecture/09-compatibility.md §4).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SignedCompatProfile {
+    #[cfg_attr(feature = "openapi", schema(inline))]
+    pub target: CompatTarget,
+    #[cfg_attr(feature = "openapi", schema(minimum = 1))]
+    pub revision: i64,
+    #[cfg_attr(feature = "openapi", schema(inline))]
+    pub status: CompatStatus,
+    /// Standard base64 of the exact document bytes.
+    pub document: String,
+    pub signature: SignatureEnvelope,
+    #[serde(with = "time::serde::rfc3339")]
+    #[cfg_attr(feature = "openapi", schema(value_type = String, format = DateTime))]
+    pub created_at: OffsetDateTime,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct CompatProfileList {
+    pub items: Vec<SignedCompatProfile>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(deny_unknown_fields)]
+pub struct CompatUpload {
+    /// Standard base64 of the exact document bytes (≤ 64 KiB).
+    pub document: String,
+    pub signature: SignatureEnvelope,
+}
