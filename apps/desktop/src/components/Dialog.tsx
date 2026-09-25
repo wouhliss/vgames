@@ -27,7 +27,7 @@ export interface DialogProps {
   size?: "sm" | "md" | "lg" | "xl" | undefined;
   /** When false, Escape, the backdrop and the close button do nothing (e.g. while saving). */
   dismissible?: boolean | undefined;
-  /** Element to focus on open. Defaults to the first element with [data-autofocus], then the first tabbable one. */
+  /** Element to focus on open. Defaults to [data-autofocus], then the first tabbable element of the body, then of the footer. */
   initialFocus?: RefObject<HTMLElement | null> | undefined;
   role?: "dialog" | "alertdialog" | undefined;
 }
@@ -52,6 +52,8 @@ function OpenDialog({
   const descId = useId();
   const layer = useRef<HTMLDivElement>(null);
   const panel = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const footerRef = useRef<HTMLDivElement>(null);
   const nav = useOptionalNav();
   const pushScope = nav?.pushScope;
 
@@ -63,9 +65,13 @@ function OpenDialog({
     if (!layerEl || !panelEl) return;
     const popLayer = pushLayer(layerEl);
     const popScope = pushScope?.(panelEl);
+    // Start in the content, not on the header's close button (Space or A there would close the
+    // dialog by accident): an explicit target, then the body, then the footer.
     const target =
       initialFocus?.current ??
       panelEl.querySelector<HTMLElement>("[data-autofocus]") ??
+      (bodyRef.current ? tabbable(bodyRef.current)[0] : undefined) ??
+      (footerRef.current ? tabbable(footerRef.current)[0] : undefined) ??
       tabbable(panelEl)[0] ??
       panelEl;
     focusElement(target);
@@ -147,8 +153,16 @@ function OpenDialog({
             <IconButton icon="close" label={t("common.close")} onClick={onClose} tooltip={false} />
           ) : null}
         </div>
-        {children ? <div className={styles.body}>{children}</div> : null}
-        {footer ? <div className={styles.footer}>{footer}</div> : null}
+        {children ? (
+          <div ref={bodyRef} className={styles.body}>
+            {children}
+          </div>
+        ) : null}
+        {footer ? (
+          <div ref={footerRef} className={styles.footer}>
+            {footer}
+          </div>
+        ) : null}
       </div>
     </div>,
     document.body,

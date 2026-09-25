@@ -63,17 +63,26 @@ function MenuPopup({ id, label, entries, anchor, focusLast, onClose, triggerRef 
     Array.from(ref.current?.querySelectorAll<HTMLElement>("[role='menuitem']") ?? []);
   const enabledItems = () => items().filter((el) => el.getAttribute("aria-disabled") !== "true");
 
-  // Position and initial focus are computed once per opening.
+  // Position is computed once per opening, before the first paint.
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs once when the popup mounts.
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
     setPosition(placeBelow(anchor, { width: el.offsetWidth, height: el.scrollHeight }, false));
+    return pushScope?.(el);
+  }, []);
+
+  // Initial focus once the popup is positioned: while it is still `visibility: hidden`, browsers
+  // refuse to focus anything inside it.
+  const placed = position !== null;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once, when the popup becomes visible.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!placed || !el) return;
     const list = enabledItems();
     const first = focusLast ? list[list.length - 1] : list[0];
     focusElement(first ?? el);
-    return pushScope?.(el);
-  }, []);
+  }, [placed]);
 
   const move = (delta: 1 | -1 | "first" | "last") => {
     const list = enabledItems();
@@ -122,10 +131,11 @@ function MenuPopup({ id, label, entries, anchor, focusLast, onClose, triggerRef 
     }
     if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
       const now = Date.now();
-      const text =
-        now - typeahead.current.at < 700
-          ? typeahead.current.text + e.key.toLowerCase()
-          : e.key.toLowerCase();
+      const typing = now - typeahead.current.at < 700;
+      // Space activates the focused item, unless it continues a typed search ("add to…").
+      if (e.key === " " && !typing) return;
+      e.preventDefault();
+      const text = typing ? typeahead.current.text + e.key.toLowerCase() : e.key.toLowerCase();
       typeahead.current = { text, at: now };
       const match = enabledItems().find((el) =>
         el.textContent?.trim().toLowerCase().startsWith(text),

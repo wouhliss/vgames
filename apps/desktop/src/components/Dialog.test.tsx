@@ -45,12 +45,16 @@ describe("Dialog", () => {
     await user.click(screen.getByRole("button", { name: "Open" }));
     const close = screen.getByRole("button", { name: "Close" });
     const save = screen.getByRole("button", { name: "Save" });
-    expect(close).toHaveFocus();
-    await user.tab();
-    expect(screen.getByRole("textbox", { name: "Name" })).toHaveFocus();
+    const name = screen.getByRole("textbox", { name: "Name" });
+    // Focus starts in the content, not on the close button.
+    expect(name).toHaveFocus();
     await user.tab();
     expect(save).toHaveFocus();
     await user.tab();
+    expect(close).toHaveFocus();
+    await user.tab();
+    expect(name).toHaveFocus();
+    await user.tab({ shift: true });
     expect(close).toHaveFocus();
     await user.tab({ shift: true });
     expect(save).toHaveFocus();
