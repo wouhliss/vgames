@@ -391,6 +391,10 @@ fn every_command_has_help_examples() {
         &["trust", "build", "--help"],
         &["trust", "sign", "--help"],
         &["trust", "verify", "--help"],
+        &["trust", "publish", "--help"],
+        &["trust", "re-sign", "--help"],
+        &["login", "--help"],
+        &["logout", "--help"],
     ] {
         let out = ok(d.path(), cmd);
         assert!(out.contains("Examples:"), "{cmd:?}");
