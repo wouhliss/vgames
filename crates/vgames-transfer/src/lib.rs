@@ -19,3 +19,4 @@ pub mod install;
 pub mod sys;
 #[cfg(feature = "testkit")]
 pub mod testkit;
+pub mod upload;

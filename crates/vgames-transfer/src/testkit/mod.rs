@@ -14,6 +14,7 @@
 pub mod api;
 pub mod package;
 pub mod rig;
+pub mod upload;
 
 pub use api::MockApi;
 pub use package::{
@@ -21,3 +22,4 @@ pub use package::{
     random_files, read_tree, trust_state, write_tree,
 };
 pub use rig::{Fault, Links, Rig};
+pub use upload::{MockPublishApi, UploadFault, UploadRig};

@@ -6,9 +6,11 @@
 - A2-T03 `vgames-pack` planner, pack streams, verifier, WASM (commit on `main`, "feat(pack): …").
   Now on `vgames_core::{layout, paths}` (interim copies deleted); pack-wasm re-exports core's key-file/signing API.
 - A2-T04 Download engine (`vgames-transfer::{download, install}`): see Interfaces and Measurements.
+  https://github.com/wouhliss/vgames/pull/25
+- A2-T05 Upload engine and publish flow (`vgames-transfer::upload`): see Interfaces.
 
 ## In progress
-- None. Next: A2-T05 upload engine (`vgames-transfer::upload`).
+- None. Next: A2-T06 update, verify, repair, move, uninstall.
 
 ## Interfaces delivered (other agents may now rely on these)
 - **Event bus** (A2-T01, for Agents 3, 4, 5): `vgames_desktop_lib::events::{EventBus, AppEvent}`,
@@ -63,6 +65,21 @@
   - `vgames_transfer::http::{transfer_client (HTTP/1.1 only, no content decoding), redact_url}`.
   - Test support for other crates' tests: feature `testkit` (`TestPackage` signed packages, `Rig` loopback
     storage with fault injection, `MockApi`).
+- **Publish library** (A2-T05, for Agent 5's CLI `vgames publish` and my A2-T13 admin mode):
+  - `vgames_transfer::upload::plan_folder(root, Compression, threads) -> PlannedFolder` (blocking; refuses symlinks,
+    special files and unsafe paths with `UploadError::InvalidTree(rejected)` for the plan preview).
+  - `upload::publish(PublishRequest { package_id, version_label, platform, folder, execution, resume_file, publish },
+    &dyn ManifestSigner, Arc<impl PublishApi>, &UploadOptions, &UploadControl) -> PublishReport`: create version (or
+    resume the one in `resume_file`) → packs into GCS resumable sessions (16 MiB pieces, 4–16 packs in parallel,
+    AIMD) → manifest → **local signature** (`SecretKey` implements `ManifestSigner`; decrypt the key file yourself
+    and drop the key after) → manifest PUT → finalize → poll verification → optional publish.
+    `UploadControl::{cancel, progress}` (phase, bytes, rate, ETA, parallel packs, verify progress).
+  - **Agent 5:** implement `PublishApi` (7 methods, one per admin endpoint of 02 §6; map problem+json to
+    `RemoteError { retryable, code, message }`, retryable = network/5xx/429) in the CLI's API client.
+    `UploadError::remote_code()` gives the API code (`publisher_key_untrusted`, `publisher_key_not_yours`, …).
+    The resume file holds signed session URIs: it is written `0600`; keep it in the user's app/config dir.
+  - Test support: `testkit::{UploadRig (GCS/fs-backend resumable protocol with faults), MockPublishApi (finalize
+    verifies like the server: size + hash, `verify_manifest` server mode, packs present, `PackStreamVerifier`)}`.
 
 ## Measurements
 - A2-T01 idle, Linux (WSLg, debug build, Vite dev server, software GL), 60 s window
@@ -85,6 +102,9 @@
   `cargo update` it back to 1.7** until upstream restores thread exit.
 
 ## Needs from others
+- From Agent 1 (FYI, not blocking): A2-T05 is tested against a simulator of the `fs` backend protocol
+  (`apps/api/src/storage/fs.rs`), because the API cannot run in my sandbox (no Postgres 18). The end-to-end
+  publish against a real local API is part of A2-T13.
 - From Agent 3: call `commands.appReady()` once the first screen has rendered (until then the window shows
   after a 15 s fallback).
 - From Agent 5 (manifest format): `vgames-pack` writes compact JSON in the 02 §5 field order, with
