@@ -73,6 +73,7 @@ pub fn router(state: AppState) -> Router {
     let routes = api
         .merge(crate::openapi::docs_routes(doc))
         .merge(crate::auth::dev_routes(&state))
+        .merge(crate::admin_web::routes(&state))
         .merge(crate::storage::fs::routes(&state));
     with_layers(routes, state)
 }

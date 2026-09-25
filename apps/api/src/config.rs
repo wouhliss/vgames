@@ -359,7 +359,13 @@ impl Config {
             })
         });
         let trust_proxy_headers = r.flag("VGAMES_TRUST_PROXY_HEADERS").unwrap_or(false);
-        let admin_dist = r.optional("VGAMES_ADMIN_DIST").map(PathBuf::from);
+        let admin_dist = match r.optional("VGAMES_ADMIN_DIST") {
+            Some(raw) => {
+                let res = check_admin_dist(&raw);
+                r.check("VGAMES_ADMIN_DIST", res)
+            }
+            None => None,
+        };
 
         if !r.errors.is_empty() {
             return Err(ConfigErrors(r.errors));
@@ -494,6 +500,16 @@ fn parse_public_url(v: &str) -> Result<Url, String> {
         return Err("must be an origin without path, query or fragment".into());
     }
     Ok(url)
+}
+
+/// The built admin UI: an existing directory with `index.html`, returned canonicalized so
+/// served paths can be checked against it after resolving symlinks.
+fn check_admin_dist(v: &str) -> Result<PathBuf, String> {
+    let root = std::fs::canonicalize(v).map_err(|e| format!("cannot open {v}: {e}"))?;
+    if !root.join("index.html").is_file() {
+        return Err("must be the built admin UI directory (with index.html)".into());
+    }
+    Ok(root)
 }
 
 fn is_local_host(url: &Url) -> bool {
