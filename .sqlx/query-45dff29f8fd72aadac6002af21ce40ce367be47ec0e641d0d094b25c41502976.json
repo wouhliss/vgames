@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT sb.blake3 FROM save_snapshot_blobs sb JOIN save_snapshots s ON s.id = sb.snapshot_id\n           WHERE s.user_id = $1 AND s.package_id = $2 AND sb.blake3 = ANY($3)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "blake3",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "save_snapshot_blobs",
+            "name": "blake3"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "ByteaArray"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "45dff29f8fd72aadac6002af21ce40ce367be47ec0e641d0d094b25c41502976"
+}

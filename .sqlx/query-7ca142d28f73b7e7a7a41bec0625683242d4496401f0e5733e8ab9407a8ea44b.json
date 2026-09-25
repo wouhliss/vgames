@@ -1,0 +1,60 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT blake3, size, object_name, uploaded_at IS NOT NULL AS \"uploaded!\" FROM save_blobs\n           WHERE user_id = $1 AND blake3 = ANY($2) FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "blake3",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "save_blobs",
+            "name": "blake3"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "size",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "save_blobs",
+            "name": "size"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "object_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "save_blobs",
+            "name": "object_name"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "uploaded!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "ByteaArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "7ca142d28f73b7e7a7a41bec0625683242d4496401f0e5733e8ab9407a8ea44b"
+}

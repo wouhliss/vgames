@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM save_snapshots s USING (\n             SELECT id, row_number() OVER (PARTITION BY user_id, package_id ORDER BY id DESC) AS rank\n             FROM save_snapshots) ranked\n           WHERE s.id = ranked.id AND ranked.rank > $1\n             AND NOT EXISTS (SELECT 1 FROM save_heads h WHERE h.snapshot_id = s.id)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9cf9b4c546b4997dd492d3de0498936a00490ea70b1c989e1344db154bc030cc"
+}

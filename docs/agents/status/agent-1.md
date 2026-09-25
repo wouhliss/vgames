@@ -64,7 +64,12 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   `422 compat_invalid`, key errors as for finalize).
 
 ## In progress
-- A1-T13 — Cloud saves
+- A1-T13 — Cloud saves (this PR): head, snapshots list/get, `blobs/prepare` (quota over distinct blobs referenced by
+  the package's snapshots, exact-length PUT URLs, only for blobs not yet uploaded), `blobs/download-urls` (only blobs
+  of the caller's snapshots of that package), commit (Idempotency-Key; blobs confirmed via `head` on first reference
+  → `409 blob_not_uploaded`; CAS on the parent → `409 save_head_conflict` with the current head id in `detail`;
+  `413 save_quota_exceeded`), `saves.gc` (keeps the head + 20 latest snapshots, deletes unreferenced blobs older than
+  a day with their objects).
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_api::error::ApiError` / `ApiResult` (problem+json), `vgames_api::http::json::{Json, Validate}`
@@ -125,6 +130,9 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   `yanked_version_ids`); then `POST /v1/versions/{id}/download-urls {packs:[…]}` → `{items:[{pack_index,url,size,
   expires_at}]}` (URLs live `VGAMES_SIGNED_URL_TTL_SECONDS`, default 6 h). Report a chunk seen corrupt twice with
   `POST /v1/versions/{id}/integrity-reports {pack_index, chunk_index?, detail?}`.
+- **Cloud saves for Agent 2 (launcher `saves` module):** 06-cloud-saves §3 as written. `parent_snapshot_id` must be
+  sent (use `null` only when `GET …/head` is 404). On `409 save_head_conflict`, `detail` is the current head id; on
+  `409 blob_not_uploaded`, `errors[].message` lists the missing BLAKE3s.
 - `Storage::sign_put_range(bucket, name, ttl, content_type, min, max)` (both backends).
 - Test harness: `apps/api/tests/common/mod.rs` (`app(pool)`, `send`, `body_json`, `json_request`) with
   `#[sqlx::test(migrations = "./migrations")]`.

@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE save_heads SET snapshot_id = $3, updated_at = now() WHERE user_id = $1 AND package_id = $2 AND snapshot_id = $4",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d7923cd3c164f7d8e20fc227ee76839fd9b1116b2f05a59c8094f9987e9bc915"
+}

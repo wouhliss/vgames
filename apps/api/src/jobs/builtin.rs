@@ -5,7 +5,7 @@ use super::{JobContext, JobError, JobHandler, handler};
 pub fn handlers() -> Vec<(&'static str, JobHandler)> {
     vec![
         ("sweep.expired", handler(sweep_expired)),
-        ("saves.gc", handler(saves_gc)),
+        ("saves.gc", handler(crate::saves::gc)),
     ]
 }
 
@@ -41,10 +41,5 @@ async fn sweep_expired(ctx: JobContext) -> Result<(), JobError> {
     )
     .execute(db)
     .await?;
-    Ok(())
-}
-
-/// Cloud-save retention and blob garbage collection (A1-T13).
-async fn saves_gc(_ctx: JobContext) -> Result<(), JobError> {
     Ok(())
 }

@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE(sum(b.size), 0)::bigint AS \"n!\" FROM save_blobs b\n           WHERE b.user_id = $1 AND EXISTS (\n             SELECT 1 FROM save_snapshot_blobs sb JOIN save_snapshots s ON s.id = sb.snapshot_id\n             WHERE sb.user_id = b.user_id AND sb.blake3 = b.blake3 AND s.package_id = $2)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "n!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "67139c3a6dee686926844519dd01501c5f675abb032833dc61483e40bddb9155"
+}

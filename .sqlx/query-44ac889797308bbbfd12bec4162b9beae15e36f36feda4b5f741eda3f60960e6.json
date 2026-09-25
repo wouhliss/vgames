@@ -1,0 +1,50 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT user_id, blake3, object_name FROM save_blobs b\n           WHERE b.created_at < now() - interval '1 day'\n             AND NOT EXISTS (SELECT 1 FROM save_snapshot_blobs sb WHERE sb.user_id = b.user_id AND sb.blake3 = b.blake3)\n           LIMIT 10000",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "save_blobs",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "blake3",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "save_blobs",
+            "name": "blake3"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "object_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "save_blobs",
+            "name": "object_name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "44ac889797308bbbfd12bec4162b9beae15e36f36feda4b5f741eda3f60960e6"
+}
