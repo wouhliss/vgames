@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 pub const ZSTD_LEVEL: i32 = 3;
 
 /// zstd's worst-case expansion bound accepted by the manifest validator.
-pub const MAX_STORED_OVERHEAD: u64 = 64 * 1024;
+pub use vgames_core::layout::MAX_STORED_OVERHEAD;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

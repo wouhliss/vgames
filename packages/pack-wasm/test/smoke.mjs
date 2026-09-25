@@ -2,7 +2,14 @@
 // Run after `pnpm --filter @vgames/pack-wasm build` with `pnpm --filter @vgames/pack-wasm smoke`.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { Blake3Hasher, initSync, WasmPacker } from "../pkg/vgames_pack.js";
+import {
+  Blake3Hasher,
+  fingerprint,
+  initSync,
+  keyfileInfo,
+  UnlockedKey,
+  WasmPacker,
+} from "../pkg/vgames_pack.js";
 
 initSync({ module: readFileSync(new URL("../pkg/vgames_pack_bg.wasm", import.meta.url)) });
 
@@ -59,4 +66,8 @@ const hasher = new Blake3Hasher();
 hasher.update(contents[1]);
 assert.equal(manifest.files.find((f) => f.path === "Game/readme.txt").blake3, hasher.finalizeHex());
 assert.throws(() => WasmPacker.plan([{ path: "CON", size: 1, mtime_ms: 0 }], []), /reserved/);
+// vgames-core's key-file and signing exports ship in the same module.
+assert.equal(typeof UnlockedKey.unlock, "function");
+assert.throws(() => keyfileInfo(new Uint8Array([1, 2, 3])));
+assert.match(fingerprint("11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo="), /^VG1-/);
 console.log("pack-wasm smoke test passed");

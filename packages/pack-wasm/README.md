@@ -10,4 +10,6 @@ pnpm --filter @vgames/pack-wasm build
 ```
 
 The output in `pkg/` is generated and git-ignored. API and usage: see the module docs in
-`crates/vgames-pack/src/wasm.rs` (`WasmPacker`, `Blake3Hasher`).
+`crates/vgames-pack/src/wasm.rs` (`WasmPacker`, `Blake3Hasher`) and, re-exported from `vgames-core`,
+`keyfileInfo`, `fingerprint` and `UnlockedKey` (decrypt a publisher key file and sign the manifest digest
+inside the worker; call `free()` when done).

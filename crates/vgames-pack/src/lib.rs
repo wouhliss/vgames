@@ -21,9 +21,7 @@
 
 pub mod encode;
 pub mod hash;
-pub mod layout;
 pub mod manifest;
-pub mod paths;
 pub mod plan;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod scan;
@@ -33,7 +31,10 @@ pub mod verify;
 pub mod wasm;
 
 pub use encode::{Compression, Encoding};
-pub use layout::{CHUNK_SIZE, PACK_SIZE};
 pub use plan::{Packing, Plan, SourceFile};
 pub use source::{HashCollector, Hashes, PackSource, SourceReader};
 pub use verify::{PackExpectation, PackStreamVerifier};
+pub use vgames_core::layout::{CHUNK_SIZE, PACK_SIZE};
+/// The single chunk/pack layout function and path rules live in `vgames-core`
+/// (re-exported so packer callers need one import path).
+pub use vgames_core::{layout, paths};
