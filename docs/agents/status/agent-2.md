@@ -6,6 +6,7 @@
 - A2-T03 `vgames-pack` planner, pack streams, verifier, WASM (commit on `main`, "feat(pack): …").
   Now on `vgames_core::{layout, paths}` (interim copies deleted); pack-wasm re-exports core's key-file/signing API.
 - A2-T04 Download engine (`vgames-transfer::{download, install}`): see Interfaces and Measurements.
+- A2-T04 CI follow-up ([PR #38](https://github.com/wouhliss/vgames/pull/38)): crash-resume tests wait for pack bytes before killing child processes on fast macOS runners; Windows Tauri test binaries embed the Common Controls v6 manifest.
 
 ## In progress
 - None. Next: A2-T05 upload engine (`vgames-transfer::upload`).
