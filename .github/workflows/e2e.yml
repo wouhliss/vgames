@@ -1,0 +1,154 @@
+# Nightly end-to-end tests against the real stack (08-release §1). Owner: Agent 5.
+#
+# - key-pipeline: `vgames` CLI against a running API (Postgres 18, fs storage, fake Discord):
+#   root and publisher keys, login, bundle v1, bundle v2 revoking a key, replay refused,
+#   re-sign (scripts/e2e/key-pipeline.sh). `vgames publish` joins it with Agent 2's upload
+#   library, completing the pack → upload → verify → download round trip.
+# - admin-web: the admin Playwright suite against the API serving the built admin web
+#   (ADMIN_E2E_BASE_URL), instead of the mocks used on PRs.
+#
+# No secrets: the fake Discord login is a debug-build feature bound to localhost, and the
+# server secret and storage signing key are random per run.
+
+name: E2E
+
+on:
+  schedule:
+    - cron: "41 3 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  SQLX_OFFLINE: "true"
+  # The API under test (debug build: the fake Discord login only exists there).
+  VGAMES_BIND_ADDR: 127.0.0.1:8080
+  VGAMES_PUBLIC_URL: http://localhost:8080
+  VGAMES_SERVER_NAME: e2e
+  VGAMES_SERVER_ID: 01920000-0000-7000-8000-0000000000e2
+  DATABASE_URL: postgres://vgames:vgames-e2e-only@localhost:5432/vgames
+  DATABASE_MIGRATION_URL: postgres://vgames:vgames-e2e-only@localhost:5432/vgames
+  VGAMES_LOG: info
+  VGAMES_LOG_FORMAT: json
+  VGAMES_DEV_FAKE_DISCORD: "true"
+  VGAMES_BOOTSTRAP_OWNER_DISCORD_ID: "100000000000000001"
+  VGAMES_STORAGE_BACKEND: fs
+  VGAMES_METADATA_STEAM_ENABLED: "false"
+
+jobs:
+  key-pipeline:
+    name: Key pipeline (CLI ↔ API)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:18.6-alpine
+        env:
+          POSTGRES_USER: vgames
+          POSTGRES_PASSWORD: vgames-e2e-only
+          POSTGRES_DB: vgames
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U vgames -d vgames"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install toolchain (rust-toolchain.toml)
+        run: rustup toolchain install && rustup show active-toolchain
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: e2e
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo build --locked -p vgames-api -p vgames-cli
+      - name: Keys (test-only passphrases)
+        run: |
+          key=$(VGAMES_BIN=target/debug/vgames scripts/e2e/key-pipeline.sh init "$RUNNER_TEMP/keys")
+          echo "VGAMES_ROOT_PUBLIC_KEY=$key" >> "$GITHUB_ENV"
+      - name: Start the API
+        run: |
+          export VGAMES_FS_STORAGE_ROOT="$RUNNER_TEMP/objects"
+          VGAMES_SERVER_SECRET=$(openssl rand -base64 32) VGAMES_FS_URL_SIGNING_KEY=$(openssl rand -base64 32)
+          export VGAMES_SERVER_SECRET VGAMES_FS_URL_SIGNING_KEY
+          target/debug/vgames-api --migrate
+          nohup target/debug/vgames-api > "$RUNNER_TEMP/api.log" 2>&1 &
+          for _ in $(seq 1 60); do curl -sf http://127.0.0.1:8080/v1/health > /dev/null && exit 0; sleep 1; done
+          cat "$RUNNER_TEMP/api.log"; exit 1
+      - name: Key pipeline
+        run: VGAMES_BIN=target/debug/vgames scripts/e2e/key-pipeline.sh run "$RUNNER_TEMP/keys" http://localhost:8080
+      - if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: key-pipeline-api-log
+          path: ${{ runner.temp }}/api.log
+          retention-days: 7
+
+  admin-web:
+    name: Admin web (Playwright, real API)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:18.6-alpine
+        env:
+          POSTGRES_USER: vgames
+          POSTGRES_PASSWORD: vgames-e2e-only
+          POSTGRES_DB: vgames
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U vgames -d vgames"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install toolchain (rust-toolchain.toml)
+        run: rustup toolchain install && rustup show active-toolchain
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: e2e
+          save-if: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @vgames/admin-web build
+      - run: pnpm --filter @vgames/admin-web exec playwright install --with-deps chromium
+      - run: cargo build --locked -p vgames-api -p vgames-cli
+      - name: Start the API serving the admin web
+        run: |
+          key=$(VGAMES_BIN=target/debug/vgames scripts/e2e/key-pipeline.sh init "$RUNNER_TEMP/keys")
+          export VGAMES_ROOT_PUBLIC_KEY="$key" VGAMES_FS_STORAGE_ROOT="$RUNNER_TEMP/objects" \
+            VGAMES_ADMIN_DIST="$GITHUB_WORKSPACE/apps/admin-web/dist"
+          VGAMES_SERVER_SECRET=$(openssl rand -base64 32) VGAMES_FS_URL_SIGNING_KEY=$(openssl rand -base64 32)
+          export VGAMES_SERVER_SECRET VGAMES_FS_URL_SIGNING_KEY
+          target/debug/vgames-api --migrate
+          nohup target/debug/vgames-api > "$RUNNER_TEMP/api.log" 2>&1 &
+          for _ in $(seq 1 60); do curl -sf http://127.0.0.1:8080/v1/health > /dev/null && exit 0; sleep 1; done
+          cat "$RUNNER_TEMP/api.log"; exit 1
+      - name: Admin Playwright suite
+        run: pnpm --filter @vgames/admin-web e2e
+        env:
+          CI: "true"
+          ADMIN_E2E_BASE_URL: http://localhost:8080
+      - if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: admin-e2e-report
+          path: |
+            apps/admin-web/playwright-report
+            ${{ runner.temp }}/api.log
+          retention-days: 7

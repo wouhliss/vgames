@@ -91,3 +91,5 @@
 /Cargo.lock                                 @wouhliss   # team: security
 /pnpm-lock.yaml                             @wouhliss   # team: security
 /rust-toolchain.toml                        @wouhliss   # team: security
+/apps/api/Dockerfile                        @wouhliss   # team: security (release image)
+/.dockerignore                              @wouhliss   # team: security (keeps keys out of images)

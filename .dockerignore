@@ -1,0 +1,17 @@
+# Build context for apps/api/Dockerfile (repository root). Keep secrets and build
+# outputs out of the image and out of the context sent to the builder.
+.git
+**/target
+**/node_modules
+**/dist
+**/pkg
+.data
+.env
+.env.*
+*.vgkey
+*.key
+*.pem
+secrets
+apps/desktop/src-tauri/gen
+**/playwright-report
+**/test-results

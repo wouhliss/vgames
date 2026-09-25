@@ -25,11 +25,15 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
 
 - A5-T06 part 2: `vgames login | logout`, `trust publish`, `trust re-sign` — https://github.com/wouhliss/vgames/pull/27.
 
+- A5-T07 part 1: `release-desktop.yml`, `desktop-matrix.yml`, `cargo xtask updater sign | manifest | verify`, actionlint
+  in CI, `docs/security/release.md` — https://github.com/wouhliss/vgames/pull/30.
+
 ## In progress
-- A5-T07 part 1 (in review): `release-desktop.yml`, `desktop-matrix.yml`, `cargo xtask updater sign | manifest |
-  verify`, actionlint in CI, `docs/security/release.md`. Next: part 2 (`release-api.yml` + `apps/api/Dockerfile`,
-  `e2e.yml`, `soak.yml`, Dependabot), then `vgames publish` (A5-T06, on Agent 2's A2-T05), A5-T12 runtime catalog,
-  A5-T11 adversarial tests, A5-T13 runbooks.
+- A5-T07 part 2 (in review): `apps/api/Dockerfile` (built and run locally: 93.7 MB, distroless, non-root, `--read-only`),
+  `release-api.yml` (multi-arch, cosign keyless, SBOM + provenance), `e2e.yml` (nightly: CLI key pipeline against a real
+  API — `scripts/e2e/key-pipeline.sh`, passing locally — and the admin Playwright suite against the real stack),
+  `soak.yml` (self-hosted skeleton), Dependabot. Then `vgames publish` (A5-T06, on Agent 2's A2-T05), A5-T12 runtime
+  catalog, A5-T11 adversarial tests, A5-T13 runbooks. The fork dry run of the release (A5-T07 acceptance) needs humans.
 
 ## Interfaces delivered (other agents may now rely on these)
 - **Signatures, key ids, fingerprints** (A5-T03 slice 1, for Agents 1, 2, 3):
@@ -173,6 +177,16 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
 - From Agent 2: the upload library (A2-T05) for `vgames publish` (A5-T06) and the end-to-end key-pipeline script.
   It is finished on branch `claude/optimistic-fermat-gwfhvh` (commit 822ac49) but has no PR yet (the session hit its
   usage limit on 2026-09-25): please open and merge it when you resume.
+- **From Agent 2 (found by the new desktop matrix on its first run, PR 30):** two `crates/vgames-transfer` tests are
+  OS/timing-dependent. (1) macOS arm64: `tests/resilience.rs::killed_at_random_points_resumes_to_the_same_tree` — every
+  resumed tree was byte-identical, but its own coverage assertion failed ("8 kills landed mid-run" < 25): on the faster
+  runner most children finish before the random 0–450 ms kill; scale the kill point to the run (e.g. kill once the
+  journal shows progress). (2) Linux x64: `tests/download.rs::protocol_violations_are_retried_once_on_a_fresh_connection`
+  failed once with `Integrity { chunk: 15, detail: "Content-Length 2097152 instead of 4194304" }`; it passes in the CI
+  Rust job and 6/6 locally with the matrix's exact command, so it is intermittent. (3) Windows x64: the
+  `vgames-desktop` unit-test binary does not start (`0xc0000139 STATUS_ENTRYPOINT_NOT_FOUND`): Tauri test executables
+  need the Common Controls v6 app manifest (the dialog stack imports `TaskDialogIndirect`); embed it for test targets in
+  `apps/desktop/src-tauri/build.rs`. The matrix is not a required check, but it stays red until these are fixed.
 - **From Agent 3 (CI flake, blocks every PR):** `apps/desktop/e2e/library.perf.spec.ts` asserts `dropped === 0` on shared
   CI runners. It failed with 1 dropped frame (p95 33.3 ms, max 50.1 ms, 0 long tasks) on PR 27 and passed on the re-run,
   and PR 28 needed a re-run too. The virtualization property it guards is intact; the frame count is scheduler noise on

@@ -1,0 +1,4 @@
+# actionlint configuration (CI job "Workflows (actionlint)").
+self-hosted-runner:
+  # soak.yml: the dedicated desktop soak machine (infra/README.md).
+  labels: [vgames-soak]

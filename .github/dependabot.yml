@@ -1,0 +1,67 @@
+# Dependency updates (A5-T07). Owner: Agent 5.
+# Weekly and grouped, so the queue stays reviewable. Nothing is ever auto-merged, and
+# cryptography crates come in their own PR, labelled for security review (the
+# `security-critical` CODEOWNERS section and docs/security/review-checklist.md apply).
+# Actions and base images are pinned by SHA/digest: Dependabot updates the pins.
+
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule: { interval: weekly, day: monday, time: "05:00", timezone: Etc/UTC }
+    open-pull-requests-limit: 10
+    labels: [dependencies, rust]
+    commit-message: { prefix: "chore(deps)" }
+    groups:
+      crypto:
+        # First match wins: these never ride along with other updates.
+        patterns:
+          - ed25519-dalek
+          - curve25519-dalek
+          - blake3
+          - blake2
+          - sha2
+          - hmac
+          - argon2
+          - chacha20poly1305
+          - getrandom
+          - zeroize
+          - vodozemac
+          - minisign
+          - minisign-verify
+          - scrypt
+          - rustls*
+          - ring
+          - aws-lc*
+          - tauri-plugin-updater
+      rust-minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      # tauri-specta is an `=` pinned release candidate: move it deliberately (bindings change).
+      - dependency-name: tauri-specta
+      - dependency-name: specta
+      - dependency-name: specta-typescript
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly, day: monday, time: "05:00", timezone: Etc/UTC }
+    open-pull-requests-limit: 10
+    labels: [dependencies, javascript]
+    commit-message: { prefix: "chore(deps)" }
+    groups:
+      anthropic:
+        patterns: ["@anthropic-ai/*"]
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly, day: monday, time: "05:00", timezone: Etc/UTC }
+    labels: [dependencies, ci]
+    commit-message: { prefix: "ci(deps)" }
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: docker
+    directory: /apps/api
+    schedule: { interval: weekly, day: monday, time: "05:00", timezone: Etc/UTC }
+    labels: [dependencies, docker]
+    commit-message: { prefix: "chore(deps)" }

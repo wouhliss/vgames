@@ -1,0 +1,64 @@
+# 24 h launcher leak test (08-release §1). Owner: Agent 5 (workflow); the soak scripts
+# belong to Agent 2 (apps/desktop/perf/, A2-T14) and Agent 4 (social soak, A4-T12).
+#
+# Runs on a self-hosted runner with a desktop session (labels: self-hosted, linux,
+# vgames-soak), which humans provide (infra/README.md). Until the repository variable
+# VGAMES_SOAK_RUNNER is "true" the job is skipped instead of waiting for a runner forever.
+# The runner must be dedicated: this workflow never runs code from pull requests.
+
+name: Soak
+
+on:
+  schedule:
+    - cron: "7 1 * * 6"
+  workflow_dispatch:
+    inputs:
+      hours:
+        description: Duration in hours
+        default: "24"
+        required: true
+
+permissions: {}
+
+concurrency:
+  group: soak
+  cancel-in-progress: false
+
+jobs:
+  soak:
+    name: Launcher soak (RSS, handles, threads)
+    if: vars.VGAMES_SOAK_RUNNER == 'true'
+    runs-on: [self-hosted, linux, vgames-soak]
+    timeout-minutes: 1560
+    permissions:
+      contents: read
+    env:
+      HOURS: ${{ inputs.hours || '24' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate the duration
+        run: |
+          if ! [[ "$HOURS" =~ ^[0-9]{1,2}$ ]] || [ "$HOURS" -lt 1 ] || [ "$HOURS" -gt 25 ]; then
+            echo "::error::hours must be 1-25"; exit 1
+          fi
+      - name: Build the launcher (release)
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --filter @vgames/desktop build
+          cargo build --locked --release -p vgames-desktop
+      - name: Soak
+        run: |
+          script=apps/desktop/perf/soak.py
+          if [ ! -f "$script" ]; then
+            echo "::error::$script does not exist yet (A2-T14); nothing to run"; exit 1
+          fi
+          python3 "$script" --binary target/release/vgames-desktop --hours "$HOURS" --out "$RUNNER_TEMP/soak"
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: soak-results
+          path: ${{ runner.temp }}/soak
+          if-no-files-found: ignore
+          retention-days: 30
