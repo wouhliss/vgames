@@ -38,8 +38,18 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   Evidence: 6 API tests (`tests/it/social_devices.rs`) incl. 100 parallel claims → 100 distinct keys and every bad
   signature case; mutation-checked (locking, signature check, relationship check).
 
+- A4-T05 — Server: conversations and message relay. `apps/api/src/social/relay.rs`, migration
+  `20260925130000_social_relay.sql` (`conversations.last_message_at`): direct get-or-create (friends, no block),
+  parties (creator + 1–15 friends), activity-ordered list; sends need a device and membership, each envelope goes to
+  an active device of a member or the sender (block either way → not addressable; a DM with a block → 404), ≤ 64 ×
+  64 KiB (413), 120/min per device, idempotent per (sender device, client_message_id, recipient), `unknown_devices`;
+  per-device inbox (oldest first, cursor), ack deletes only the caller's envelopes, `inbox.new` per recipient,
+  expiry in `social.sweep`. `olm_message_type` now documents its `[0, 1]` enum in the generated OpenAPI.
+  Evidence: 7 API tests (`tests/it/social_relay.rs`) incl. a real vodozemac session through the relay and a scan of
+  every column of every table for the plaintext; mutation-checked (ack scope, membership, blocks).
+
 ## In progress
-- A4-T05 — Server: conversations and message relay
+- A4-T06 — Server: invite state machine
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_proto::social::{DeviceList, DeviceKeysList, ClaimedKeyList, MAX_UNCLAIMED_ONE_TIME_KEYS, MAX_CLAIM_DEVICES}` (A4-T04).

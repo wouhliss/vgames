@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT recipient_device_id FROM message_envelopes WHERE sender_device_id = $1 AND client_message_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "recipient_device_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "message_envelopes",
+            "name": "recipient_device_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "bc0bfc7c5442fbe35c254f7967abd5379980ac59fca096b02721ded81574f393"
+}

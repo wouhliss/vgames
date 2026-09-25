@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.id, coalesce(c.last_message_at, c.created_at) AS \"active!\"\n           FROM conversations c\n           JOIN conversation_members m ON m.conversation_id = c.id AND m.user_id = $1 AND m.left_at IS NULL\n           WHERE $2::timestamptz IS NULL OR (coalesce(c.last_message_at, c.created_at), c.id) < ($2, $3)\n           ORDER BY coalesce(c.last_message_at, c.created_at) DESC, c.id DESC\n           LIMIT $4",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "conversations",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "active!",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "0a0d5e08d92e194c77c5b0baf9eadd96cbd856cf33509de071d294d31587900b"
+}

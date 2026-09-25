@@ -23,25 +23,25 @@ use vgames_proto::social::canonical;
 const SERVER_ID: &str = "01920000-0000-7000-8000-00000000abcd";
 const B64: base64::engine::GeneralPurpose = base64::engine::general_purpose::STANDARD_NO_PAD;
 
-fn server_id() -> Uuid {
+pub(crate) fn server_id() -> Uuid {
     SERVER_ID.parse().unwrap()
 }
 
-fn random32() -> [u8; 32] {
+pub(crate) fn random32() -> [u8; 32] {
     let mut b = [0u8; 32];
     getrandom::fill(&mut b).unwrap();
     b
 }
 
 /// A launcher's Olm account as far as the server can tell: an identity key and a signing key.
-struct Account {
-    signing: SigningKey,
-    identity: String,
+pub(crate) struct Account {
+    pub(crate) signing: SigningKey,
+    pub(crate) identity: String,
     next_key: u64,
 }
 
 impl Account {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             signing: SigningKey::from_bytes(&random32()),
             identity: B64.encode(random32()),
@@ -57,7 +57,7 @@ impl Account {
         B64.encode(self.signing.sign(message.as_bytes()).to_bytes())
     }
 
-    fn register_body(&self, user: Uuid) -> Value {
+    pub(crate) fn register_body(&self, user: Uuid) -> Value {
         let message =
             canonical::device_keys(&self.identity, server_id(), &self.signing_key(), user);
         json!({
@@ -67,7 +67,7 @@ impl Account {
         })
     }
 
-    fn otk(&mut self, fallback: bool) -> Value {
+    pub(crate) fn otk(&mut self, fallback: bool) -> Value {
         let key_id = B64.encode(self.next_key.to_be_bytes());
         self.next_key += 1;
         let key = B64.encode(random32());
@@ -75,13 +75,13 @@ impl Account {
         json!({"key_id": key_id, "public_key": key, "signature": signature})
     }
 
-    fn otks(&mut self, n: usize) -> Vec<Value> {
+    pub(crate) fn otks(&mut self, n: usize) -> Vec<Value> {
         (0..n).map(|_| self.otk(false)).collect()
     }
 }
 
 /// Another desktop session for an existing user.
-async fn session_for(pool: &PgPool, user: Uuid) -> String {
+pub(crate) async fn session_for(pool: &PgPool, user: Uuid) -> String {
     let token = format!(
         "vga_{}",
         base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(random32())
@@ -99,27 +99,32 @@ async fn session_for(pool: &PgPool, user: Uuid) -> String {
     token
 }
 
-struct Launcher {
-    user: Uuid,
-    token: String,
-    account: Account,
-    device: Uuid,
+pub(crate) struct Launcher {
+    pub(crate) user: Uuid,
+    pub(crate) token: String,
+    pub(crate) account: Account,
+    pub(crate) device: Uuid,
 }
 
-async fn post(app: &Router, uri: &str, token: &str, body: &Value) -> (StatusCode, Value) {
+pub(crate) async fn post(
+    app: &Router,
+    uri: &str,
+    token: &str,
+    body: &Value,
+) -> (StatusCode, Value) {
     let resp = send(app, json_req("POST", uri, token, body)).await;
     let status = resp.status();
     (status, body_json(resp).await)
 }
 
-async fn get(app: &Router, uri: &str, token: &str) -> (StatusCode, Value) {
+pub(crate) async fn get(app: &Router, uri: &str, token: &str) -> (StatusCode, Value) {
     let resp = send(app, bearer_request("GET", uri, token)).await;
     let status = resp.status();
     (status, body_json(resp).await)
 }
 
 /// A new user with a registered device.
-async fn launcher(pool: &PgPool, app: &Router) -> Launcher {
+pub(crate) async fn launcher(pool: &PgPool, app: &Router) -> Launcher {
     let (user, _, token) = seed_session(pool, "user").await;
     let account = Account::new();
     let (s, dev) = post(app, "/v1/devices", &token, &account.register_body(user)).await;
@@ -132,7 +137,7 @@ async fn launcher(pool: &PgPool, app: &Router) -> Launcher {
     }
 }
 
-async fn upload(app: &Router, l: &Launcher, body: &Value) -> (StatusCode, Value) {
+pub(crate) async fn upload(app: &Router, l: &Launcher, body: &Value) -> (StatusCode, Value) {
     post(
         app,
         &format!("/v1/devices/{}/one-time-keys", l.device),
@@ -142,7 +147,7 @@ async fn upload(app: &Router, l: &Launcher, body: &Value) -> (StatusCode, Value)
     .await
 }
 
-async fn claim(app: &Router, l: &Launcher, devices: &[Uuid]) -> Vec<Value> {
+pub(crate) async fn claim(app: &Router, l: &Launcher, devices: &[Uuid]) -> Vec<Value> {
     let (s, b) = post(
         app,
         "/v1/keys/claim",
