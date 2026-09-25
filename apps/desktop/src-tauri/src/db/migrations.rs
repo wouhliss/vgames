@@ -29,6 +29,10 @@ pub const MIGRATIONS: &[Migration] = &[
         sql: include_str!("migrations/0001_init.sql"),
     },
     // Append new migrations (core or social) below this line.
+    Migration {
+        name: "0002_social",
+        sql: include_str!("../social/migrations/0002_social.sql"),
+    },
 ];
 
 fn checksum(sql: &str) -> String {

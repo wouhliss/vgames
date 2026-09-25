@@ -1,6 +1,6 @@
 //! End-to-end encryption primitives (05-social §4), wrapping **vodozemac 0.11** Olm.
 //!
-//! Everything here is pure: no I/O, no clock, no database. The engine (`social::engine`)
+//! Everything here is pure: no I/O, no clock, no database. The store (`social::store`)
 //! loads pickles, calls these functions and stores the results in one transaction.
 //!
 //! - [`OlmAccount`]: a device's identity (Curve25519) and signing (Ed25519) keys, its
@@ -81,10 +81,6 @@ impl std::fmt::Debug for SecretKey32 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("SecretKey32(…)")
     }
-}
-
-fn b64(bytes: &[u8]) -> String {
-    base64::engine::general_purpose::STANDARD_NO_PAD.encode(bytes)
 }
 
 fn curve_key(s: &str) -> Result<Curve25519PublicKey, CryptoError> {
@@ -435,8 +431,9 @@ pub fn safety_number(
     hasher.update(&user_fingerprint(high.0, high.1)?);
     let mut out = [0u8; 60];
     hasher.finalize_xof().fill(&mut out);
-    let groups = out
-        .chunks_exact(5)
+    let (chunks, _) = out.as_chunks::<5>();
+    let groups = chunks
+        .iter()
         .map(|c| {
             let mut v = 0u64;
             for byte in c {
@@ -519,11 +516,6 @@ pub fn wire_b64_decode(s: &str) -> Result<Vec<u8>, CryptoError> {
     base64::engine::general_purpose::STANDARD
         .decode(s)
         .map_err(|_| CryptoError::BadMessage)
-}
-
-#[doc(hidden)]
-pub fn unpadded_b64(bytes: &[u8]) -> String {
-    b64(bytes)
 }
 
 #[cfg(test)]
