@@ -277,7 +277,7 @@ jobs:
       - name: clippy (vgames-desktop)
         run: cargo clippy -p vgames-desktop --all-targets --locked -- -D warnings
       - name: updater tests (vgames-desktop)
-        run: cargo test -p vgames-desktop --lib --locked updater::
+        run: "cargo test -p vgames-desktop --lib --locked updater::"
 
   supply-chain:
     name: Supply chain (cargo-deny, cargo-audit, pnpm audit)
