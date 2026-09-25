@@ -10,6 +10,7 @@
 mod casefold;
 mod changelog;
 mod codeowners;
+mod release;
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
@@ -78,6 +79,26 @@ enum ChangelogCmd {
     LintText {
         #[arg(long = "type", default_value = "added")]
         kind: String,
+    },
+    /// Print every fragment as JSON (input of the release-notes agent).
+    Export,
+    /// Release assembly (08-release §3.3): CHANGELOG.md, changelog-user.json,
+    /// latest.json notes; deletes the consumed fragments.
+    Release {
+        /// Semver of the release, e.g. 0.4.0.
+        version: String,
+        /// The release-notes agent's validated output (scripts/release-notes).
+        #[arg(long)]
+        notes: PathBuf,
+        /// Release date, YYYY-MM-DD.
+        #[arg(long)]
+        date: String,
+        /// The previous release's changelog-user.json (it is cumulative).
+        #[arg(long)]
+        previous_user_json: Option<PathBuf>,
+        /// Where to write changelog-user.json and latest-notes.txt.
+        #[arg(long, default_value = "dist")]
+        out_dir: PathBuf,
     },
 }
 
@@ -223,6 +244,57 @@ fn main() -> ExitCode {
         Cmd::Codeowners {
             command: CodeownersCmd::Check,
         } => codeowners::check(&root),
+        Cmd::Changelog {
+            command: ChangelogCmd::Export,
+        } => lint_all(&root).and_then(|(fragments, failures)| {
+            if failures > 0 {
+                anyhow::bail!("fix the invalid fragments first");
+            }
+            let list: Vec<serde_json::Value> = fragments
+                .iter()
+                .map(|f| {
+                    serde_json::json!({
+                        "slug": f.slug,
+                        "audience": f.audience.as_str(),
+                        "component": f.component.as_str(),
+                        "type": f.kind.as_str(),
+                        "text": f.text,
+                    })
+                })
+                .collect();
+            println!("{}", serde_json::to_string_pretty(&list)?);
+            Ok(true)
+        }),
+        Cmd::Changelog {
+            command:
+                ChangelogCmd::Release {
+                    version,
+                    notes,
+                    date,
+                    previous_user_json,
+                    out_dir,
+                },
+        } => lint_all(&root).and_then(|(fragments, failures)| {
+            if failures > 0 {
+                anyhow::bail!("fix the invalid fragments first");
+            }
+            let named: Vec<(String, Fragment)> = fragments
+                .into_iter()
+                .map(|f| (format!("{}.md", f.slug), f))
+                .collect();
+            release::run(
+                &root,
+                &named,
+                &release::ReleaseArgs {
+                    version: &version,
+                    date: &date,
+                    notes: &notes,
+                    previous_user_json: previous_user_json.as_deref(),
+                    out_dir: &out_dir,
+                },
+            )
+            .map(|()| true)
+        }),
         Cmd::Casefold { input } => casefold::generate(&input, &root).map(|()| true),
         Cmd::Openapi {
             command: OpenapiCmd::Check,
