@@ -23,10 +23,13 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
 - A5-T09 launcher updater — https://github.com/wouhliss/vgames/pull/22 (supersedes PR 17): tested against a local
   update server with throwaway minisign keys; `requireSignedVersion` on.
 
+- A5-T06 part 2: `vgames login | logout`, `trust publish`, `trust re-sign` — https://github.com/wouhliss/vgames/pull/27.
+
 ## In progress
-- A5-T06 part 2: `vgames login | logout`, `trust publish`, `trust re-sign` (in review). `vgames publish` waits for
-  Agent 2's upload library (A2-T05). Then A5-T07 release pipelines, A5-T12 runtime catalog, A5-T11 adversarial tests,
-  A5-T13 runbooks.
+- A5-T07 part 1 (in review): `release-desktop.yml`, `desktop-matrix.yml`, `cargo xtask updater sign | manifest |
+  verify`, actionlint in CI, `docs/security/release.md`. Next: part 2 (`release-api.yml` + `apps/api/Dockerfile`,
+  `e2e.yml`, `soak.yml`, Dependabot), then `vgames publish` (A5-T06, on Agent 2's A2-T05), A5-T12 runtime catalog,
+  A5-T11 adversarial tests, A5-T13 runbooks.
 
 ## Interfaces delivered (other agents may now rely on these)
 - **Signatures, key ids, fingerprints** (A5-T03 slice 1, for Agents 1, 2, 3):
@@ -124,6 +127,17 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
   - Smoke-tested against the real API (fake Discord, fs storage): login, bundle v1, bundle v2 revoking the key,
     replay refused, re-sign dry run over the admin listings.
 
+- **Release pipeline** (A5-T07 part 1, for everyone): a `desktop-v*` tag builds a **draft** release in the `release`
+  environment (human approval): OS-signed installers, updater artifacts signed for exactly that version
+  (`cargo xtask updater sign`; the launcher's `requireSignedVersion` refuses anything else), `latest.json`
+  (`cargo xtask updater manifest`, every artifact verified), the agent-written `changelog-user.json`, SBOMs, checksums
+  and provenance. Procedure, secret names and the fork dry run: `docs/security/release.md`.
+  - **Agents 2 and 4 (overlay):** the release job stages the Authenticode-signed overlay binaries in
+    `apps/desktop/src-tauri/resources/overlay/` (`vgames_overlay64.dll`, `vgames_overlay32.dll`, `vgames-inject32.exe`
+    when that bin exists, `libvgames_overlay.so`, `crates/vgames-overlay/layers/*.json`). Add them to
+    `tauri.conf.json` `bundle.resources` when the overlay ships (Agent 2 owns the config).
+  - `desktop-matrix.yml` runs the launcher crates' tests on Windows and macOS too (PRs touching them + nightly):
+    **Agents 2 and 4**, expect OS-specific failures there to be reported as real bugs.
 - **CI for everyone** (A5-T01): every PR runs `.github/workflows/ci.yml` (Rust fmt/clippy/tests with Postgres 18,
   sqlx offline check + migrations on an empty DB and upgrade from the base revision, WASM + pack-wasm smoke,
   Biome/typecheck/Vitest/OpenAPI lint, launcher Playwright (mock), desktop clippy with WebKitGTK, cargo-deny,
@@ -157,6 +171,13 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
 - From Agent 2: a way to pause active downloads at their next checkpoint (A2-T04/T08). `updater_install` waits until
   every install reports `InstallPhase::Paused` or finishes; today it just waits.
 - From Agent 2: the upload library (A2-T05) for `vgames publish` (A5-T06) and the end-to-end key-pipeline script.
+  It is finished on branch `claude/optimistic-fermat-gwfhvh` (commit 822ac49) but has no PR yet (the session hit its
+  usage limit on 2026-09-25): please open and merge it when you resume.
+- **From Agent 3 (CI flake, blocks every PR):** `apps/desktop/e2e/library.perf.spec.ts` asserts `dropped === 0` on shared
+  CI runners. It failed with 1 dropped frame (p95 33.3 ms, max 50.1 ms, 0 long tasks) on PR 27 and passed on the re-run,
+  and PR 28 needed a re-run too. The virtualization property it guards is intact; the frame count is scheduler noise on
+  a shared CI VM. Please make the budget robust (e.g. `dropped <= 2` with `longTasks == []` and p95 under a threshold),
+  keeping the test required. I did not change it (your area; never weaken a check without the owner).
 - **From Agent 1 (security finding, sign-in):** the desktop callback answers `302 Location: vgames://…` with the
   paste-code page as the **body**. Browsers never render a 302 body, so when the deep link cannot reach the launcher
   (not installed, scheme not registered) or the sign-in comes from the CLI, the code is never shown and the paste

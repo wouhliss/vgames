@@ -1,0 +1,379 @@
+# Launcher release (08-release §1–§3). Owner: Agent 5.
+#
+# Trigger: push a tag `desktop-vX.Y.Z` equal to the workspace version. Every job that
+# reads a secret runs in the protected `release` environment (required reviewers,
+# deployments limited to `desktop-v*` tags): nothing is signed or published until a
+# human approves the run. Secret names and the key procedures: docs/security/release.md.
+#
+# Output: a DRAFT GitHub release with OS-signed installers, updater artifacts signed
+# for exactly this version (the launcher sets requireSignedVersion), latest.json,
+# changelog-user.json, the release-notes agent's output, CycloneDX SBOMs, SHA256SUMS
+# and build provenance. Launchers see nothing until a human publishes the draft
+# (their endpoint is releases/latest). The changelog commit (CHANGELOG.md + consumed
+# fragments deleted) is attached as release-changelog.patch and merged as a PR.
+#
+# Rules: actions pinned by SHA; no caches (a release never restores state another
+# workflow wrote); untrusted values reach scripts only through environment variables.
+#
+# Dry run on a fork (A5-T07 acceptance): create a `release` environment with a test
+# updater key and set the repository variable VGAMES_UNSIGNED_DRY_RUN=true. OS signing
+# is then skipped (never in wouhliss/vgames: there a missing certificate fails the run).
+
+name: Release desktop
+
+on:
+  push:
+    tags: ["desktop-v*"]
+
+permissions: {}
+
+concurrency:
+  group: release-desktop-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  SQLX_OFFLINE: "true"
+
+jobs:
+  prepare:
+    name: Check version and keys
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: version
+        name: Tag, workspace and package versions agree
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#desktop-v}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::tag $TAG is not desktop-v<semver>"; exit 1
+          fi
+          cargo_version=$(sed -n '/^\[workspace.package\]/,/^\[/{s/^version = "\(.*\)"/\1/p}' Cargo.toml)
+          npm_version=$(jq -r .version apps/desktop/package.json)
+          if [ "$version" != "$cargo_version" ] || [ "$version" != "$npm_version" ]; then
+            echo "::error::tag $version, Cargo.toml $cargo_version, apps/desktop/package.json $npm_version"; exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: The updater key is configured and version-bound
+        run: |
+          conf=apps/desktop/src-tauri/tauri.conf.json
+          case "$(jq -r .plugins.updater.pubkey "$conf")" in
+            REPLACE_*|""|null) echo "::error::set plugins.updater.pubkey (docs/security/release.md)"; exit 1;;
+          esac
+          jq -e '.plugins.updater.requireSignedVersion == true' "$conf"
+          jq -e '.bundle.createUpdaterArtifacts == true' "$conf"
+
+  notes:
+    name: Release notes (agent) and changelog
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: release
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Install toolchain (rust-toolchain.toml)
+        run: rustup toolchain install && rustup show active-toolchain
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - run: pnpm install --frozen-lockfile
+      - name: Inputs (fragments, merged PRs, previous player changelog)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p work previous
+          cargo xtask changelog export > work/fragments.json
+          prev=$(git tag --list 'desktop-v*' --sort=-v:refname | grep -vxF "desktop-v$VERSION" | head -n1 || true)
+          if [ -n "$prev" ]; then
+            # The previous release's changelog PR must be merged, or its fragments would count twice.
+            grep -qF "## ${prev#desktop-v} (" CHANGELOG.md || {
+              echo "::error::CHANGELOG.md has no ${prev#desktop-v} section: merge that release's changelog PR first"; exit 1; }
+            since=$(git log -1 --format=%cI "$prev")
+            gh pr list --state merged --search "merged:>$since" --limit 500 --json title,body > work/prs.json
+            gh release download "$prev" --pattern changelog-user.json --dir previous
+          else
+            gh pr list --state merged --limit 500 --json title,body > work/prs.json
+          fi
+      - name: Release-notes agent (claude-opus-5, guarded; verbatim fragments if the API is unavailable)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: >-
+          node --experimental-strip-types scripts/release-notes/src/main.ts
+          --fragments work/fragments.json --prs work/prs.json --out work/notes.json
+      - name: Assemble the changelog (same guards again)
+        run: |
+          previous=()
+          if [ -f previous/changelog-user.json ]; then previous=(--previous-user-json previous/changelog-user.json); fi
+          cargo xtask changelog release "$VERSION" --notes work/notes.json --date "$(date -u +%F)" \
+            "${previous[@]}" --out-dir work/dist
+          git add -A CHANGELOG.md .changes
+          git diff --cached --binary > work/release-changelog.patch
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-notes
+          path: work/
+          retention-days: 30
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    environment: release
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { name: "Windows x64", os: windows-2025, target: x86_64-pc-windows-msvc, bundles: nsis }
+          # The oldest supported glibc: AppImage/deb/rpm built here run on newer distributions.
+          - { name: "Linux x64", os: ubuntu-22.04, target: x86_64-unknown-linux-gnu, bundles: "appimage,deb,rpm" }
+          - { name: "macOS arm64", os: macos-15, target: aarch64-apple-darwin, bundles: "app,dmg" }
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      TARGET: ${{ matrix.target }}
+      BUNDLES: ${{ matrix.bundles }}
+      OVERLAY_DIR: apps/desktop/src-tauri/resources/overlay
+      # "true" only on a fork that opted in; the canonical repository always signs.
+      UNSIGNED: ${{ vars.VGAMES_UNSIGNED_DRY_RUN == 'true' && github.repository != 'wouhliss/vgames' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: System libraries (Tauri 2 on Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev \
+            libdbus-1-dev libudev-dev libfuse2 pkg-config build-essential
+      - name: Install toolchain (rust-toolchain.toml)
+        shell: bash
+        run: |
+          rustup toolchain install
+          rustup target add "$TARGET"
+          if [ "$RUNNER_OS" = Windows ]; then rustup target add i686-pc-windows-msvc; fi
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - run: pnpm install --frozen-lockfile
+
+      # Overlay binaries (05-social §6), staged as bundle resources. Agent 4 adds the
+      # renderer, the 32-bit inject helper (bin `vgames-inject32`) and the Vulkan layer
+      # manifests (crates/vgames-overlay/layers/*.json); each is built when present.
+      - name: Overlay binaries (Windows x64 + x86)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          mkdir -p "$OVERLAY_DIR"
+          cargo build --locked --release -p vgames-overlay --features renderer --target x86_64-pc-windows-msvc
+          cargo build --locked --release -p vgames-overlay --features renderer --target i686-pc-windows-msvc
+          cp target/x86_64-pc-windows-msvc/release/vgames_overlay.dll "$OVERLAY_DIR/vgames_overlay64.dll"
+          cp target/i686-pc-windows-msvc/release/vgames_overlay.dll "$OVERLAY_DIR/vgames_overlay32.dll"
+          if cargo metadata --no-deps --format-version 1 | jq -e '[.packages[].targets[] | select(.name == "vgames-inject32")] | length > 0' > /dev/null; then
+            cargo build --locked --release --bin vgames-inject32 --target i686-pc-windows-msvc
+            cp target/i686-pc-windows-msvc/release/vgames-inject32.exe "$OVERLAY_DIR/"
+          fi
+      - name: Overlay binaries (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p "$OVERLAY_DIR"
+          cargo build --locked --release -p vgames-overlay --features renderer --target "$TARGET"
+          cp "target/$TARGET/release/libvgames_overlay.so" "$OVERLAY_DIR/"
+          if compgen -G "crates/vgames-overlay/layers/*.json" > /dev/null; then
+            cp crates/vgames-overlay/layers/*.json "$OVERLAY_DIR/"
+          fi
+
+      - name: Windows code signing certificate
+        id: wincert
+        if: runner.os == 'Windows' && env.UNSIGNED != 'true'
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP "codesign.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+          $password = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+          $cert = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $password
+          Remove-Item $pfx
+          $config = @{ bundle = @{ windows = @{ certificateThumbprint = $cert.Thumbprint; digestAlgorithm = "sha256"; timestampUrl = "http://timestamp.digicert.com" } } }
+          $configPath = Join-Path $env:RUNNER_TEMP "tauri.sign.json"
+          $config | ConvertTo-Json -Depth 5 | Set-Content -Path $configPath -Encoding utf8
+          "thumbprint=$($cert.Thumbprint)" >> $env:GITHUB_OUTPUT
+          "config=$configPath" >> $env:GITHUB_OUTPUT
+      - name: Sign the overlay binaries (Authenticode)
+        if: runner.os == 'Windows' && env.UNSIGNED != 'true'
+        shell: pwsh
+        env:
+          THUMBPRINT: ${{ steps.wincert.outputs.thumbprint }}
+        run: |
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1
+          Get-ChildItem $env:OVERLAY_DIR -Include *.dll, *.exe -Recurse | ForEach-Object {
+            & $signtool.FullName sign /sha1 $env:THUMBPRINT /fd sha256 /tr http://timestamp.digicert.com /td sha256 $_.FullName
+            if ($LASTEXITCODE -ne 0) { throw "signing $($_.Name) failed" }
+            & $signtool.FullName verify /pa $_.FullName
+            if ($LASTEXITCODE -ne 0) { throw "$($_.Name) does not verify" }
+          }
+
+      - name: Build, OS-sign and bundle
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # macOS signing + notarization (read by the Tauri bundler; empty elsewhere).
+          APPLE_CERTIFICATE: ${{ runner.os == 'macOS' && secrets.APPLE_CERTIFICATE || '' }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_ID: ${{ runner.os == 'macOS' && secrets.APPLE_ID || '' }}
+          APPLE_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ runner.os == 'macOS' && secrets.APPLE_TEAM_ID || '' }}
+          SIGN_CONFIG: ${{ steps.wincert.outputs.config }}
+        run: |
+          if [ "$UNSIGNED" = true ]; then
+            echo "::warning::fork dry run: OS signing skipped"
+            unset APPLE_CERTIFICATE APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD
+          elif [ "$RUNNER_OS" = macOS ] && [ -z "$APPLE_SIGNING_IDENTITY" ]; then
+            echo "::error::APPLE_SIGNING_IDENTITY is not set; releases are always signed and notarized"; exit 1
+          fi
+          args=(--ci --target "$TARGET" --bundles "$BUNDLES")
+          if [ -n "$SIGN_CONFIG" ]; then args+=(--config "$SIGN_CONFIG"); fi
+          pnpm --filter @vgames/desktop tauri build "${args[@]}"
+
+      - name: Collect artifacts; sign updater artifacts for exactly this version
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          bundle="target/$TARGET/release/bundle"
+          out="out/$TARGET"
+          mkdir -p "$out"
+          case "$TARGET" in
+            *windows*) cp "$bundle"/nsis/*-setup.exe "$out/"
+                       updater=("$out"/*-setup.exe) ;;
+            *linux*)   cp "$bundle"/appimage/*.AppImage "$bundle"/deb/*.deb "$bundle"/rpm/*.rpm "$out/"
+                       updater=("$out"/*.AppImage "$out"/*.deb "$out"/*.rpm) ;;
+            *darwin*)  cp "$bundle"/macos/*.app.tar.gz "$bundle"/dmg/*.dmg "$out/"
+                       updater=("$out"/*.app.tar.gz) ;;
+          esac
+          # Replaces the bundler's .sig: the trusted comment must carry version:<V>.
+          cargo xtask updater sign --version "$VERSION" "${updater[@]}"
+      - name: Verify OS signatures (Windows)
+        if: runner.os == 'Windows' && env.UNSIGNED != 'true'
+        shell: pwsh
+        run: |
+          Get-ChildItem "out\$env:TARGET\*.exe" | ForEach-Object {
+            $s = Get-AuthenticodeSignature $_.FullName
+            if ($s.Status -ne 'Valid') { throw "$($_.Name): Authenticode status $($s.Status)" }
+          }
+      - name: Verify OS signatures and notarization (macOS)
+        if: runner.os == 'macOS' && env.UNSIGNED != 'true'
+        run: |
+          app=$(ls -d "target/$TARGET/release/bundle/macos/"*.app)
+          codesign --verify --deep --strict --verbose=2 "$app"
+          xcrun stapler validate "$app"
+          spctl --assess --type execute --verbose "$app"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bundle-${{ matrix.target }}
+          path: out/${{ matrix.target }}
+          retention-days: 30
+          if-no-files-found: error
+
+  publish:
+    name: Draft release
+    needs: [prepare, notes, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install toolchain (rust-toolchain.toml)
+        run: rustup toolchain install && rustup show active-toolchain
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: bundle-*
+          path: release
+          merge-multiple: true
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-notes
+          path: work
+      - name: latest.json (every artifact verified against the launcher's key and version)
+        run: |
+          shopt -s nullglob
+          # Exactly one artifact per kind, or the release is ambiguous.
+          one() { [ "$#" -eq 1 ] || { echo "::error::expected one artifact, found: $*"; exit 1; }; printf '%s' "$1"; }
+          win=$(one release/*-setup.exe); img=$(one release/*.AppImage); deb=$(one release/*.deb)
+          rpm=$(one release/*.rpm); mac=$(one release/*.app.tar.gz)
+          cargo xtask updater manifest --version "$VERSION" --notes work/dist/latest-notes.txt \
+            --pub-date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --url-base "https://github.com/$GITHUB_REPOSITORY/releases/download/desktop-v$VERSION" \
+            --artifact "windows-x86_64=$win" --artifact "windows-x86_64-nsis=$win" \
+            --artifact "linux-x86_64=$img" --artifact "linux-x86_64-appimage=$img" \
+            --artifact "linux-x86_64-deb=$deb" --artifact "linux-x86_64-rpm=$rpm" \
+            --artifact "darwin-aarch64=$mac" --artifact "darwin-aarch64-app=$mac" \
+            --out release/latest.json
+          cargo xtask updater verify --latest release/latest.json --dir release
+          cp work/dist/changelog-user.json release/
+          cp work/notes.json release/release-notes-agent.json
+          cp work/release-changelog.patch release/
+      - uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2.87.20
+        with:
+          tool: cargo-cyclonedx
+      - name: SBOM (Rust, CycloneDX; the launcher and the overlay it ships)
+        run: |
+          # Writes <crate>.cdx.json next to every workspace member's Cargo.toml.
+          cargo cyclonedx --format json --spec-version 1.5
+          mv apps/desktop/src-tauri/vgames-desktop.cdx.json release/vgames-launcher-rust.cdx.json
+          mv crates/vgames-overlay/vgames-overlay.cdx.json release/vgames-overlay-rust.cdx.json
+      - name: SBOM (npm, CycloneDX)
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          path: apps/desktop
+          format: cyclonedx-json
+          output-file: release/vgames-launcher-npm.cdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Checksums
+        run: cd release && sha256sum -- * > SHA256SUMS && cat SHA256SUMS
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: release/*
+      - name: Draft GitHub release (a human reviews and publishes it)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "desktop-v$VERSION" --draft --verify-tag
+          --title "vgames $VERSION" --notes-file work/dist/latest-notes.txt release/*
