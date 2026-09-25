@@ -236,6 +236,91 @@ async fn expired_links_are_refreshed() {
     assert!(setup.api.reports().is_empty());
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn repeatedly_refused_identical_urls_have_a_retry_limit() {
+    let package = TestPackage::build(
+        &[FileSpec::random("data.bin", 1024, 7)],
+        &[],
+        Compression::None,
+    );
+    let setup = Setup::new(package).await;
+    // The mock refreshes the expiration while returning the same URL text.
+    for _ in 0..12 {
+        setup.rig.inject(None, Fault::Status(403));
+    }
+    let options = DownloadOptions {
+        initial_connections: 1,
+        min_connections: 1,
+        max_connections: 1,
+        adaptive: false,
+        ..options()
+    };
+    let error = tokio::time::timeout(Duration::from_secs(5), setup.install(&options))
+        .await
+        .expect("repeatedly refused links must terminate")
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        InstallError::Download(DownloadError::LinksRefused {
+            pack: 0,
+            status: 403
+        })
+    ));
+    assert_eq!(setup.rig.pack_requests(), 5);
+    assert_eq!(setup.api.url_calls(), 5);
+    assert_eq!(
+        install::read_record(&setup.root()).unwrap().unwrap().state,
+        InstallState::Installing
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn resume_redownloads_files_missing_or_truncated_since_the_journal() {
+    use vgames_transfer::download::journal::{Journal, JournalKey};
+
+    for truncate in [false, true] {
+        let package = TestPackage::build(
+            &[FileSpec::random("data.bin", 1024, 7)],
+            &[],
+            Compression::None,
+        );
+        let setup = Setup::new(package).await;
+        setup.install(&options()).await.unwrap();
+        let release = setup.package.release();
+        // Model an interrupted finalization: all chunks were durable and the
+        // journal remains, but a file disappears or shrinks before resuming.
+        let mut journal = Journal::load_or_new(
+            &setup.root().join(".vgames/journal.bin"),
+            JournalKey {
+                version_id: release.manifest().version_id,
+                manifest_blake3: *release.verified.digest.as_bytes(),
+                chunk_count: chunk_count(&setup.package) as u32,
+            },
+        );
+        for chunk in 0..chunk_count(&setup.package) as u32 {
+            journal.mark(chunk);
+        }
+        journal.persist().unwrap();
+        let path = setup.root().join("data.bin");
+        if truncate {
+            std::fs::OpenOptions::new()
+                .write(true)
+                .open(&path)
+                .unwrap()
+                .set_len(17)
+                .unwrap();
+        } else {
+            std::fs::remove_file(&path).unwrap();
+        }
+
+        let (outcome, stats) = setup.install(&options()).await.unwrap();
+
+        assert!(matches!(outcome, InstallOutcome::Installed(_)));
+        assert_eq!(stats.chunks_written, chunk_count(&setup.package));
+        setup.assert_identical();
+    }
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_flipped_byte_is_never_written_and_is_reported() {
     let files = vec![
@@ -336,6 +421,22 @@ async fn pause_resume_and_cancel() {
         install::remove_install(&other.root(), other.package.release().manifest()).unwrap();
     assert!(leftovers.paths.is_empty(), "{leftovers:?}");
     assert!(!other.root().exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn uninstall_never_descends_through_a_linked_manifest_directory() {
+    let package = TestPackage::build(&[], &["linked/empty"], Compression::None);
+    let folder = tempfile::tempdir().unwrap();
+    let root = folder.path().join("install");
+    let outside = folder.path().join("outside");
+    std::fs::create_dir(&root).unwrap();
+    std::fs::create_dir(&outside).unwrap();
+    std::fs::create_dir(outside.join("empty")).unwrap();
+    std::os::unix::fs::symlink(&outside, root.join("linked")).unwrap();
+    let leftovers = install::remove_install(&root, package.release().manifest()).unwrap();
+    assert!(outside.join("empty").is_dir());
+    assert_eq!(leftovers.paths, vec![root.join("linked")]);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

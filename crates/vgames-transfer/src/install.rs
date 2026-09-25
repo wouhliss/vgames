@@ -439,11 +439,27 @@ fn prepare(
 
     let table = ChunkTable::new(manifest)?;
     let mut targets = Vec::with_capacity(manifest.files.len());
+    let journal_path = meta.join(JOURNAL_FILE);
+    let mut journal_invalidated = false;
     for (i, file) in manifest.files.iter().enumerate() {
         if i % 256 == 0 && control.is_cancelled() {
             return Err(InstallError::Cancelled);
         }
         let path = safe.file_target(&file.path)?;
+        if !journal_invalidated && !fs::symlink_metadata(&path).is_ok_and(|m| m.len() == file.size)
+        {
+            // A journal bit describes bytes in the previous file, not a newly
+            // created or resized replacement. Invalidate before allocation,
+            // so a crash here cannot leave zeros recorded as completed data.
+            match fs::remove_file(&journal_path) {
+                Ok(()) => {
+                    fsutil::sync_dir(&meta).map_err(|e| InstallError::io("flush", &meta, e))?
+                }
+                Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+                Err(e) => return Err(InstallError::io("delete", &journal_path, e)),
+            }
+            journal_invalidated = true;
+        }
         let mut options = OpenOptions::new();
         options.write(true).create(true).truncate(false);
         #[cfg(unix)]
@@ -466,7 +482,7 @@ fn prepare(
         targets.push(Some(path));
     }
     let journal = Journal::load_or_new(
-        &meta.join(JOURNAL_FILE),
+        &journal_path,
         JournalKey {
             version_id: manifest.version_id,
             manifest_blake3: *release.verified.digest.as_bytes(),
@@ -600,16 +616,16 @@ pub fn remove_install(root: &Path, manifest: &Manifest) -> Result<Leftovers, Ins
         }
     }
     for dir in &manifest.directories {
-        let path = dir.split('/').fold(root.to_owned(), |p, c| p.join(c));
-        if fs::symlink_metadata(&path).is_ok_and(|m| m.is_dir() && !m.file_type().is_symlink()) {
-            let mut p = path.clone();
-            while p != root {
-                dirs.insert(p.clone());
-                if !p.pop() {
-                    break;
-                }
+        let mut path = root.to_owned();
+        let mut plain = Vec::new();
+        for part in dir.split('/') {
+            path.push(part);
+            match fs::symlink_metadata(&path) {
+                Ok(m) if m.is_dir() && !m.file_type().is_symlink() => plain.push(path.clone()),
+                _ => break,
             }
         }
+        dirs.extend(plain);
     }
     let meta_dir = root.join(META_DIR);
     if fs::symlink_metadata(&meta_dir).is_ok_and(|m| m.is_dir() && !m.file_type().is_symlink()) {

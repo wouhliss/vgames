@@ -41,8 +41,9 @@ pub struct Timings {
 pub struct UrlCache {
     urls: Mutex<HashMap<u32, (Arc<str>, OffsetDateTime)>>,
     refresh: tokio::sync::Mutex<()>,
-    /// Per pack: distinct links refused in a row, and the last one refused.
-    rejections: Mutex<HashMap<u32, (u32, String)>>,
+    /// Per pack: cached URL generations refused in a row, and the last one.
+    /// A refresh may legitimately return the same URL text.
+    rejections: Mutex<HashMap<u32, (u32, Arc<str>)>>,
 }
 
 impl UrlCache {
@@ -94,11 +95,11 @@ impl UrlCache {
         &self,
         api: &A,
         pack: u32,
-        stale: Option<&str>,
+        stale: Option<&Arc<str>>,
     ) -> Result<Arc<str>, RemoteError> {
         let _single_flight = self.refresh.lock().await;
         if let Some(url) = self.cached(pack)
-            && stale.is_none_or(|s| s != &*url)
+            && stale.is_none_or(|s| !Arc::ptr_eq(s, &url))
         {
             return Ok(url);
         }
@@ -112,16 +113,25 @@ impl UrlCache {
             })
     }
 
-    /// Records that `url` was refused; returns how many distinct links of
-    /// this pack were refused in a row (concurrent refusals of one link count once).
-    fn rejected(&self, pack: u32, url: &str) -> u32 {
+    /// Counts each refreshed URL generation once, even when its text is
+    /// unchanged. Late refusals from an older generation do not count again.
+    fn rejected(&self, pack: u32, url: &Arc<str>) -> u32 {
+        let Ok(urls) = self.urls.lock() else {
+            return u32::MAX;
+        };
+        let current = urls
+            .get(&pack)
+            .is_some_and(|(cached, _)| Arc::ptr_eq(cached, url));
         self.rejections
             .lock()
             .map(|mut r| {
-                let entry = r.entry(pack).or_insert_with(|| (0, String::new()));
-                if entry.1 != url {
-                    entry.0 += 1;
-                    url.clone_into(&mut entry.1);
+                if !current {
+                    return r.get(&pack).map_or(0, |entry| entry.0);
+                }
+                let entry = r.entry(pack).or_insert_with(|| (1, Arc::clone(url)));
+                if !Arc::ptr_eq(&entry.1, url) {
+                    entry.0 = entry.0.saturating_add(1);
+                    entry.1 = Arc::clone(url);
                 }
                 entry.0
             })
@@ -370,6 +380,10 @@ async fn fetch<A>(ctx: &WorkerCtx<A>, url: &str, task: &Task) -> Result<(), Fail
 
     let mut next = first;
     let mut buffer = None;
+    // Keep the final chunk until EOF proves the range has exactly the
+    // requested length. Otherwise a trailing byte arrives after all chunks
+    // have already been marked done, leaving nothing for the retry path.
+    let mut final_job = None;
     loop {
         let piece = tokio::select! {
             biased;
@@ -394,6 +408,9 @@ async fn fetch<A>(ctx: &WorkerCtx<A>, url: &str, task: &Task) -> Result<(), Fail
         }
         let mut data: &[u8] = &piece;
         while !data.is_empty() {
+            if final_job.is_some() {
+                return fail(next, Kind::Protocol("more bytes than requested".into()));
+            }
             let Some(info) = ctx.table.chunk(next).filter(|_| next < end_chunk) else {
                 return fail(next, Kind::Protocol("more bytes than requested".into()));
             };
@@ -421,15 +438,52 @@ async fn fetch<A>(ctx: &WorkerCtx<A>, url: &str, task: &Task) -> Result<(), Fail
                     chunk: next,
                     stored,
                 };
-                if ctx.sender.send(job).await.is_err() {
-                    return fail(next, Kind::Stopped);
+                if next + 1 == end_chunk {
+                    final_job = Some(job);
+                } else {
+                    if ctx.sender.send(job).await.is_err() {
+                        return fail(next, Kind::Stopped);
+                    }
+                    next += 1;
                 }
-                next += 1;
             }
         }
+    }
+    if let Some(job) = final_job {
+        if ctx.sender.send(job).await.is_err() {
+            return fail(next, Kind::Stopped);
+        }
+        next += 1;
     }
     if next < end_chunk {
         return fail(next, Kind::Transient("the response ended early".into()));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejection_counts_are_per_refresh_even_for_identical_urls() {
+        let cache = UrlCache::new();
+        let link = || vgames_proto::versions::PackUrl {
+            pack_index: 0,
+            url: "https://storage.example/pack".into(),
+            size: 1,
+            expires_at: OffsetDateTime::now_utc() + time::Duration::hours(6),
+        };
+        cache.store(vec![link()]);
+        let first = cache.cached(0).unwrap();
+        assert_eq!(cache.rejected(0, &first), 1);
+        assert_eq!(cache.rejected(0, &first), 1);
+        cache.store(vec![link()]);
+        let second = cache.cached(0).unwrap();
+        assert_eq!(cache.rejected(0, &second), 2);
+        assert_eq!(cache.rejected(0, &first), 2);
+        assert_eq!(cache.rejected(0, &second), 2);
+        cache.accepted(0);
+        assert_eq!(cache.rejected(0, &second), 1);
+    }
 }

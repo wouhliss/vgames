@@ -48,19 +48,35 @@ impl SafePathError {
 /// Writes `bytes` to `path` atomically: temp file, fsync, rename, fsync the
 /// directory. Readers see the old or the new content, never a mix.
 pub fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    let mut tmp_name = path.file_name().unwrap_or_default().to_owned();
-    tmp_name.push(".tmp");
-    let tmp = path.with_file_name(tmp_name);
+    let (tmp, mut file) = loop {
+        let mut name = path.file_name().unwrap_or_default().to_owned();
+        name.push(format!(".{}.tmp", uuid::Uuid::now_v7()));
+        let tmp = path.with_file_name(name);
+        match OpenOptions::new().write(true).create_new(true).open(&tmp) {
+            Ok(file) => break (PendingWrite(tmp), file),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error),
+        }
+    };
     {
-        let mut file = File::create(&tmp)?;
         file.write_all(bytes)?;
         file.sync_all()?;
     }
-    fs::rename(&tmp, path)?;
+    drop(file);
+    fs::rename(&tmp.0, path)?;
     if let Some(dir) = path.parent() {
         sync_dir(dir)?;
     }
     Ok(())
+}
+
+/// Remove only the temporary file this write created, including on error.
+struct PendingWrite(PathBuf);
+
+impl Drop for PendingWrite {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.0);
+    }
 }
 
 /// Makes a rename or create in `dir` durable (no-op where the OS cannot).
@@ -280,6 +296,42 @@ mod tests {
         atomic_write(&path, b"two").unwrap();
         assert_eq!(fs::read(&path).unwrap(), b"two");
         assert!(!dir.path().join("install.json.tmp").exists());
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn atomic_write_does_not_follow_a_planted_temporary_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = tempfile::NamedTempFile::new().unwrap();
+        fs::write(outside.path(), b"untouched").unwrap();
+        let path = dir.path().join("install.json");
+        let planted = dir.path().join("install.json.tmp");
+        std::os::unix::fs::symlink(outside.path(), &planted).unwrap();
+
+        atomic_write(&path, b"record").unwrap();
+
+        assert_eq!(fs::read(outside.path()).unwrap(), b"untouched");
+        assert_eq!(fs::read(path).unwrap(), b"record");
+        assert!(
+            fs::symlink_metadata(planted)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 2);
+    }
+
+    #[test]
+    fn failed_atomic_write_removes_its_temporary_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("install.json");
+        fs::create_dir(&path).unwrap();
+
+        assert!(atomic_write(&path, b"record").is_err());
+
+        assert!(path.is_dir());
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
     }
 
     #[test]
