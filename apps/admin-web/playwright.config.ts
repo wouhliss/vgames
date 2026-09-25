@@ -4,6 +4,8 @@ import { defineConfig, devices } from "@playwright/test";
 // same specs against the real stack (nightly e2e.yml).
 const PORT = 5174;
 const external = process.env.ADMIN_E2E_BASE_URL;
+// A preinstalled Chromium can be used instead of Playwright's download. CI leaves it unset.
+const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE;
 
 export default defineConfig({
   testDir: "e2e",
@@ -11,7 +13,11 @@ export default defineConfig({
   forbidOnly: Boolean(process.env.CI),
   retries: 0,
   reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : "list",
-  use: { baseURL: external ?? `http://localhost:${PORT}`, trace: "retain-on-failure" },
+  use: {
+    baseURL: external ?? `http://localhost:${PORT}`,
+    trace: "retain-on-failure",
+    ...(executablePath ? { launchOptions: { executablePath } } : {}),
+  },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   ...(external
     ? {}
