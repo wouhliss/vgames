@@ -209,8 +209,32 @@ export const OFFLINE_LIBRARY: Library = {
   install_count: 0,
 };
 
-const DAY = 86_400_000;
-const BASE_TIME = Date.parse("2026-09-24T12:00:00Z");
+/** The title of fixture package `i`; the first few are unicode, right-to-left and long names. */
+export function titleFor(i: number, withSpecials: boolean): string {
+  const special = withSpecials && i < SPECIAL_TITLES.length ? SPECIAL_TITLES[i] : undefined;
+  if (special) return special;
+  // (i mod 50, (51·i + ⌊i/50⌋) mod 100) is a distinct pair for every i < 5,000.
+  const base = `${ADJECTIVES[i % ADJECTIVES.length]} ${NOUNS[(i * 51 + Math.floor(i / ADJECTIVES.length)) % NOUNS.length]}`;
+  const round = Math.floor(i / (ADJECTIVES.length * NOUNS.length));
+  return round > 0 ? `${base} ${round + 1}` : base;
+}
+
+export function slugFor(title: string, i: number): string {
+  const slug = title
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+  return slug || `package-${i + 1}`;
+}
+
+/** Package ids are shared by the library and catalog fixtures: installed package i is catalog entry i. */
+export function packageIdFor(i: number): string {
+  return mockId("0192a6f0-1c2d-7e3f-8a9b", i + 1);
+}
+
+export const DAY = 86_400_000;
+export const BASE_TIME = Date.parse("2026-09-24T12:00:00Z");
 
 /** `count` installed packages on `server` spread over `libraries`, deterministic. */
 export function makeInstalls(
@@ -222,31 +246,19 @@ export function makeInstalls(
   const collectionIds = MOCK_COLLECTIONS.map((c) => c.id);
   const out: InstalledPackage[] = [];
   for (let i = 0; i < count; i += 1) {
-    const special = i < SPECIAL_TITLES.length && count > 20 ? SPECIAL_TITLES[i] : undefined;
-    const title =
-      special ??
-      // (i mod 50, (51·i + ⌊i/50⌋) mod 100) is a distinct pair for every i < 5,000.
-      `${ADJECTIVES[i % ADJECTIVES.length]} ${NOUNS[(i * 51 + Math.floor(i / ADJECTIVES.length)) % NOUNS.length]}${
-        i >= ADJECTIVES.length * NOUNS.length
-          ? ` ${Math.floor(i / (ADJECTIVES.length * NOUNS.length)) + 1}`
-          : ""
-      }`;
+    const title = titleFor(i, count > 20);
     const library = libraries[i % 13 === 5 ? libraries.length - 1 : 0] ?? libraries[0];
     const played = random() > 0.3;
     const installedAt = BASE_TIME - Math.floor(random() * 400) * DAY;
     const state: InstalledPackage["state"] = i % 23 === 7 ? "incomplete" : "installed";
-    const slug = title
-      .toLowerCase()
-      .normalize("NFKD")
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "");
+    const slug = slugFor(title, i);
     out.push({
-      package: { server_id: server.id, package_id: mockId("0192a6f0-1c2d-7e3f-8a9b", i + 1) },
-      slug: slug || `package-${i + 1}`,
+      package: { server_id: server.id, package_id: packageIdFor(i) },
+      slug,
       title,
       cover_url: null,
       library_id: library?.id ?? "",
-      install_path: `${library?.path ?? "/games"}/${slug || `package-${i + 1}`}`,
+      install_path: `${library?.path ?? "/games"}/${slug}`,
       platform: i % 9 === 4 ? "windows-x86_64" : "linux-x86_64",
       version_label: `1.${i % 7}.${Math.floor(random() * 10)}`,
       sequence: 3 + (i % 5),
