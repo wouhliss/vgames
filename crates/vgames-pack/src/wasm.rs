@@ -14,11 +14,20 @@
 //! ```
 //!
 //! The browser packer stores every chunk raw (02 §4), so the stored bytes are
-//! the decoded bytes. Key-file decryption and signing come from `vgames-core`
-//! (re-exported here once A5-T03 lands).
+//! the decoded bytes. Key-file decryption and signing come from `vgames-core`,
+//! re-exported below so they land in the same `.wasm` and `.d.ts`:
+//!
+//! ```js
+//! const key = UnlockedKey.unlock(keyFileBytes, passphrase);   // publisher keys only
+//! const envelopeJson = key.signManifestDigest(blake3HexOfManifest);
+//! key.free();                                                // zeroizes the key
+//! ```
 
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
+
+// Referenced so the linker keeps vgames-core's browser exports in this module.
+pub use vgames_core::wasm::{KeyfileInfo, UnlockedKey, fingerprint, keyfile_info};
 
 use crate::layout::PACK_SIZE;
 use crate::manifest::{self, Execution, VersionIdentity};
