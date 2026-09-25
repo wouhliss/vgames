@@ -28,7 +28,10 @@ pub enum SocialError {
     #[error("conflict: {code}")]
     Conflict { code: String, message: String },
     #[error("a contact's device key changed")]
-    KeyChanged { user_id: Uuid, device_ids: Vec<Uuid> },
+    KeyChanged {
+        user_id: Uuid,
+        device_ids: Vec<Uuid>,
+    },
     #[error("server error {code}")]
     Server { code: String, message: String },
     #[error("internal error: {detail}")]

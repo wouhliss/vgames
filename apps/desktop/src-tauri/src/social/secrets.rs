@@ -74,7 +74,10 @@ impl SecretStore for KeychainStore {
         let entry = self.entry(name)?;
         match entry.get_secret() {
             Ok(bytes) => {
-                let arr: [u8; 32] = bytes.as_slice().try_into().map_err(|_| SecretError::Malformed)?;
+                let arr: [u8; 32] = bytes
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| SecretError::Malformed)?;
                 Ok(SecretKey32::from_bytes(arr))
             }
             Err(keyring::Error::NoEntry) => {
@@ -121,7 +124,10 @@ impl SecretStore for FileStore {
         let path = self.path(name);
         match std::fs::read(&path) {
             Ok(bytes) => {
-                let arr: [u8; 32] = bytes.as_slice().try_into().map_err(|_| SecretError::Malformed)?;
+                let arr: [u8; 32] = bytes
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| SecretError::Malformed)?;
                 return Ok(SecretKey32::from_bytes(arr));
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -199,16 +205,20 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt as _;
-            let mode = std::fs::metadata(dir.path().join("secrets").join("social-olm-pickle-key.key"))
-                .unwrap()
-                .permissions()
-                .mode();
+            let mode =
+                std::fs::metadata(dir.path().join("secrets").join("social-olm-pickle-key.key"))
+                    .unwrap()
+                    .permissions()
+                    .mode();
             assert_eq!(mode & 0o777, 0o600);
         }
         assert!(store.is_fallback());
         // A truncated file is reported, not silently replaced.
         std::fs::write(dir.path().join("secrets").join("broken.key"), b"short").unwrap();
-        assert!(matches!(store.get_or_create("broken"), Err(SecretError::Malformed)));
+        assert!(matches!(
+            store.get_or_create("broken"),
+            Err(SecretError::Malformed)
+        ));
     }
 
     #[test]

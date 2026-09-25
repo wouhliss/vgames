@@ -66,7 +66,12 @@ pub enum PayloadError {
 }
 
 impl Payload {
-    pub fn text(conversation_id: Uuid, client_message_id: Uuid, sent_at: OffsetDateTime, body: &str) -> Result<Self, PayloadError> {
+    pub fn text(
+        conversation_id: Uuid,
+        client_message_id: Uuid,
+        sent_at: OffsetDateTime,
+        body: &str,
+    ) -> Result<Self, PayloadError> {
         let body = body.trim_end();
         if body.trim().is_empty() {
             return Err(PayloadError::Empty);
@@ -110,7 +115,8 @@ pub fn decode(bytes: &[u8]) -> Result<Decoded, PayloadError> {
         return Err(PayloadError::Malformed);
     }
     let value: Value = serde_json::from_slice(bytes).map_err(|_| PayloadError::Malformed)?;
-    let header: Header = serde_json::from_value(value.clone()).map_err(|_| PayloadError::Malformed)?;
+    let header: Header =
+        serde_json::from_value(value.clone()).map_err(|_| PayloadError::Malformed)?;
     let unsupported = || Decoded::Unsupported {
         conversation_id: header.conversation_id,
         client_message_id: header.client_message_id,
@@ -129,7 +135,11 @@ pub fn decode(bytes: &[u8]) -> Result<Decoded, PayloadError> {
         }
         Content::ReceiptRead { .. } => true,
     };
-    Ok(if valid { Decoded::Known(payload) } else { unsupported() })
+    Ok(if valid {
+        Decoded::Known(payload)
+    } else {
+        unsupported()
+    })
 }
 
 #[cfg(test)]
@@ -156,7 +166,10 @@ mod tests {
     #[test]
     fn limits() {
         let (c, m) = ids();
-        assert!(matches!(Payload::text(c, m, OffsetDateTime::UNIX_EPOCH, "   "), Err(PayloadError::Empty)));
+        assert!(matches!(
+            Payload::text(c, m, OffsetDateTime::UNIX_EPOCH, "   "),
+            Err(PayloadError::Empty)
+        ));
         assert!(Payload::text(c, m, OffsetDateTime::UNIX_EPOCH, &"é".repeat(4000)).is_ok());
         assert!(matches!(
             Payload::text(c, m, OffsetDateTime::UNIX_EPOCH, &"é".repeat(4001)),
@@ -180,14 +193,20 @@ mod tests {
             r#""#,
         ] {
             assert!(
-                matches!(decode(base(extra).as_bytes()).unwrap(), Decoded::Unsupported { .. }),
+                matches!(
+                    decode(base(extra).as_bytes()).unwrap(),
+                    Decoded::Unsupported { .. }
+                ),
                 "{extra}"
             );
         }
         let future = format!(
             r#"{{"v":2,"conversation_id":"{c}","client_message_id":"{m}","sent_at":"2026-09-24T10:00:00Z","type":"text","body":"x"}}"#
         );
-        assert!(matches!(decode(future.as_bytes()).unwrap(), Decoded::Unsupported { .. }));
+        assert!(matches!(
+            decode(future.as_bytes()).unwrap(),
+            Decoded::Unsupported { .. }
+        ));
         assert!(decode(b"not json").is_err());
         assert!(decode(br#"{"type":"text","body":"no header"}"#).is_err());
     }
