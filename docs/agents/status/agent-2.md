@@ -4,10 +4,11 @@
 - A2-T01 Desktop shell bootstrap (commit on `main`, "feat(desktop): shell bootstrap")
 - A2-T02 Local database (commit on `main`, "feat(desktop): local SQLite database")
 - A2-T03 `vgames-pack` planner, pack streams, verifier, WASM (commit on `main`, "feat(pack): …").
-  Interim `layout`/`paths` modules until `vgames_core` lands (see Needs from others).
+  Now on `vgames_core::{layout, paths}` (interim copies deleted); pack-wasm re-exports core's key-file/signing API.
+- A2-T04 Download engine (`vgames-transfer::{download, install}`): see Interfaces and Measurements.
 
 ## In progress
-- A2-T04 Download engine (`vgames-transfer::download`)
+- None. Next: A2-T05 upload engine (`vgames-transfer::upload`).
 
 ## Interfaces delivered (other agents may now rely on these)
 - **Event bus** (A2-T01, for Agents 3, 4, 5): `vgames_desktop_lib::events::{EventBus, AppEvent}`,
@@ -48,12 +49,37 @@
   Usage example in `crates/vgames-pack/src/wasm.rs`; a Node smoke test in `packages/pack-wasm/test/smoke.mjs`.
   Key-file decrypt + sign re-exports are added once A5-T03 lands.
 
+- **Download engine** (A2-T04, for my own A2-T08 and for Agent 4's invites through it):
+  - `vgames_transfer::install::{fetch_release, verify_release, load_local_release, install, remove_install,
+    read_record, check_space, free_dir_name}`: `fetch_release(client, &ManifestLink, envelope, &TrustState,
+    &ExpectedRelease, installed_sequence, VerifyMode, stall)` downloads the manifest (size + BLAKE3) and runs
+    `verify_manifest`; `install(root, Arc<Release>, Arc<impl PackUrlSource>, &DownloadOptions, &DownloadControl)`
+    → `InstallOutcome::{Installed(InstallRecord), Paused(User|DiskFull), Cancelled}`. Call it again to resume
+    (journal in `.vgames/journal.bin`). `InstallError::is_integrity()` = never retry automatically.
+  - `vgames_transfer::download::{DownloadControl (pause/resume/cancel/set_limit/progress watch), Progress
+    {phase, bytes_done, bytes_total, bytes_per_second, eta_seconds, connections} (≤ 4 Hz), PackUrlSource
+    (the launcher API client implements `pack_urls` = `POST /v1/versions/{vid}/download-urls` and
+    `report_integrity`), RemoteError, DownloadError, run + DownloadSpec (used by update/repair)}`.
+  - `vgames_transfer::http::{transfer_client (HTTP/1.1 only, no content decoding), redact_url}`.
+  - Test support for other crates' tests: feature `testkit` (`TestPackage` signed packages, `Rig` loopback
+    storage with fault injection, `MockApi`).
+
 ## Measurements
 - A2-T01 idle, Linux (WSLg, debug build, Vite dev server, software GL), 60 s window
   (`apps/desktop/perf/idle.py`): CPU 0.03% total (core 0.02%, WebKit web 0.02%, network 0.00%);
   context switches ≈ 1.4/s in total, all from WebKit/GTK. Launcher tokio workers: 0 wakeups.
   PSS 241 MB in total (core 88, web 141, network 12). This is a debug build with llvmpipe, so the < 200 MB budget
   is re-measured on a release build in A2-T14.
+- A2-T04 loopback benchmark (`tests/bench_loopback.rs`, release build, 4 vCPU Xeon @ 2.1 GHz, tmpfs, storage rig
+  in the same process): 2 GiB package, download phase **2.4–3.0 GB/s** (7 runs; one outlier at 1.37 GB/s on the
+  shared VM), whole install including preallocation and finalize 1.9–2.3 GB/s; 4 GiB: 2.42 GB/s. Target ≥ 1.5 GB/s.
+- A2-T04 memory (`tests/resilience.rs`, child process, 32 fixed connections, 512 MiB package, 8 MiB ranges): peak
+  RSS (VmHWM, includes code pages) **243 MiB** debug / 237 MiB release; 48 buffers of 4 MiB are 192 MiB of it.
+  Budget 256 MiB.
+- A2-T04 crash safety: 50 random `SIGKILL`s of a child mid-install (10 of them killed twice), resumed in the parent:
+  every tree byte-identical. Disk usage sampled every ms during an install never exceeded the final footprint plus
+  3 blocks (journal, its temp file, the install record's temp file). No chunk is verified twice unless retried
+  (asserted in every fault-free test and across pause/resume).
 - Found and fixed: `blocking` 1.7 (via zbus ← single-instance/notification/keyring) wakes idle threads
   every 500 ms forever. `Cargo.lock` pins `blocking` 1.6.2 (idle threads exit). **Do not
   `cargo update` it back to 1.7** until upstream restores thread exit.
@@ -61,11 +87,6 @@
 ## Needs from others
 - From Agent 3: call `commands.appReady()` once the first screen has rendered (until then the window shows
   after a 15 s fallback).
-- From Agent 5: `vgames_core::{layout, paths, manifest}` (A5-T02) for A2-T03;
-  `sign`, `trust`, `verify_manifest` (A5-T03/T04) for A2-T04 and A2-T07.
-- From Agent 1: fs storage backend protocol (A1-T07) for transfer engine tests.
-- From Agent 5 (CI, A5-T01): please add the WASM package build to CI:
-  `cargo install wasm-pack` then `pnpm --filter @vgames/pack-wasm build && pnpm --filter @vgames/pack-wasm smoke`.
 - From Agent 5 (manifest format): `vgames-pack` writes compact JSON in the 02 §5 field order, with
   `directories` always present (possibly `[]`) and `launch`/`controllers`/`saves`/`multiplayer` omitted when
   absent; `launch.targets[].args` always present, `working_dir`/`env` omitted when empty. Please make

@@ -134,6 +134,10 @@ rusqlite = { version = "0.39", features = ["bundled"] }
 keyring = "4"
 zstd = "0.14"
 directories = "6"
+# OS APIs for the transfer engines and launcher (preallocation, free space,
+# process tracking). FFI only, behind `#[allow(unsafe_code)]` + SAFETY comments.
+libc = "0.2"
+windows-sys = "0.61"
 sysinfo = "0.39"
 sdl3 = "0.20"
 # tauri-specta v2 is a release candidate: keep `=` pins so the generated bindings stay stable.
