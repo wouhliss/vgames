@@ -4,6 +4,9 @@ import { defineConfig, devices } from "@playwright/test";
 // the Rust core is replaced by the fixtures in src/mocks, driven per test through `?mock=` presets and
 // `window.__vgamesMock`.
 const PORT = 1421;
+// A preinstalled Chromium can be used instead of Playwright's download (e.g. in sandboxes that
+// cannot fetch browsers). CI leaves it unset.
+const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE;
 
 export default defineConfig({
   testDir: "e2e",
@@ -14,6 +17,7 @@ export default defineConfig({
   use: {
     baseURL: `http://localhost:${PORT}`,
     trace: "retain-on-failure",
+    ...(executablePath ? { launchOptions: { executablePath } } : {}),
   },
   projects: [
     {
