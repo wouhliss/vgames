@@ -6,11 +6,13 @@
 //! - `casefold <CaseFolding.txt>`     regenerate vgames-core's Unicode simple case folding table
 //! - `codeowners check`             every tracked file has an owner; security paths stay with security
 //! - `openapi check`                  fail if the API's generated spec drifts from openapi/openapi.yaml
+//! - `updater sign | manifest | verify` version-bound updater signatures and `latest.json` (08-release §2)
 
 mod casefold;
 mod changelog;
 mod codeowners;
 mod release;
+mod updater;
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
@@ -49,6 +51,116 @@ enum Cmd {
         /// Path to CaseFolding.txt (https://www.unicode.org/Public/UCD/latest/ucd/CaseFolding.txt).
         input: PathBuf,
     },
+    /// Launcher-update artifacts (release workflow).
+    Updater {
+        #[command(subcommand)]
+        command: UpdaterCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum UpdaterCmd {
+    /// Sign updater artifacts (writes FILE.sig) with `version:<V>` in the trusted comment.
+    Sign {
+        /// The release version (semver), e.g. 0.4.0.
+        #[arg(long)]
+        version: String,
+        /// Environment variable holding the Tauri updater private key (content or path).
+        #[arg(long, default_value = "TAURI_SIGNING_PRIVATE_KEY")]
+        key_env: String,
+        /// Environment variable holding its password.
+        #[arg(long, default_value = "TAURI_SIGNING_PRIVATE_KEY_PASSWORD")]
+        password_env: String,
+        files: Vec<PathBuf>,
+    },
+    /// Write latest.json after verifying every artifact and its signed version.
+    Manifest {
+        #[arg(long)]
+        version: String,
+        /// latest.json notes (`dist/latest-notes.txt` from `changelog release`).
+        #[arg(long)]
+        notes: PathBuf,
+        /// RFC 3339 publication time.
+        #[arg(long)]
+        pub_date: String,
+        /// Where the artifacts are downloaded from (the GitHub release's download URL).
+        #[arg(long)]
+        url_base: String,
+        /// TARGET=FILE, e.g. windows-x86_64=vgames_0.4.0_x64-setup.exe (FILE.sig next to it).
+        #[arg(long = "artifact", required = true)]
+        artifacts: Vec<String>,
+        /// Updater public key (base64, as in tauri.conf.json); default: from tauri.conf.json.
+        #[arg(long)]
+        pubkey: Option<String>,
+        #[arg(long, default_value = "latest.json")]
+        out: PathBuf,
+    },
+    /// Verify latest.json against the artifacts in a directory.
+    Verify {
+        #[arg(long, default_value = "latest.json")]
+        latest: PathBuf,
+        #[arg(long, default_value = ".")]
+        dir: PathBuf,
+        #[arg(long)]
+        pubkey: Option<String>,
+    },
+}
+
+fn tauri_conf(root: &Path) -> PathBuf {
+    root.join("apps/desktop/src-tauri/tauri.conf.json")
+}
+
+fn run_updater(root: &Path, command: UpdaterCmd) -> Result<bool> {
+    match command {
+        UpdaterCmd::Sign {
+            version,
+            key_env,
+            password_env,
+            files,
+        } => {
+            let key = std::env::var(&key_env).with_context(|| format!("{key_env} is not set"))?;
+            let password = std::env::var(&password_env).ok();
+            updater::sign(&version, &key, password.as_deref(), &files)?;
+        }
+        UpdaterCmd::Manifest {
+            version,
+            notes,
+            pub_date,
+            url_base,
+            artifacts,
+            pubkey,
+            out,
+        } => {
+            let pk = updater::load_public_key(pubkey.as_deref(), &tauri_conf(root))?;
+            let artifacts = updater::parse_artifacts(&artifacts)?;
+            let latest = updater::manifest(&updater::ManifestArgs {
+                version: &version,
+                notes: &notes,
+                pub_date: &pub_date,
+                url_base: &url_base,
+                pubkey: &pk,
+                artifacts: &artifacts,
+            })?;
+            let mut json = serde_json::to_vec_pretty(&latest)?;
+            json.push(b'\n');
+            std::fs::write(&out, json).with_context(|| format!("writing {}", out.display()))?;
+            println!(
+                "wrote {} ({} platforms)",
+                out.display(),
+                latest.platforms.len()
+            );
+        }
+        UpdaterCmd::Verify {
+            latest,
+            dir,
+            pubkey,
+        } => {
+            let pk = updater::load_public_key(pubkey.as_deref(), &tauri_conf(root))?;
+            let n = updater::verify(&latest, &dir, &pk)?;
+            println!("{} verified: {n} platforms", latest.display());
+        }
+    }
+    Ok(true)
 }
 
 #[derive(Subcommand)]
@@ -296,6 +408,7 @@ fn main() -> ExitCode {
             .map(|()| true)
         }),
         Cmd::Casefold { input } => casefold::generate(&input, &root).map(|()| true),
+        Cmd::Updater { command } => run_updater(&root, command),
         Cmd::Openapi {
             command: OpenapiCmd::Check,
         } => Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()))

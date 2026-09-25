@@ -16,9 +16,14 @@ the GitHub settings below; agents cannot.
 | `Desktop build check (Linux, WebKitGTK)` | Builds the launcher UI, then `cargo clippy -p vgames-desktop -D warnings` with the Tauri system libraries |
 | `Supply chain (cargo-deny, cargo-audit, pnpm audit)` | [`deny.toml`](../../deny.toml): RustSec advisories, license allowlist (no GPL/AGPL), crates.io only, duplicate versions reported; `cargo audit`; `pnpm audit --prod` |
 | `Secret scan (gitleaks)` | Full history with [`.gitleaks.toml`](../../.gitleaks.toml): default rules plus `vga_`/`vgr_`/`vgs_` tokens, `vgames.key/1` key files, `.vgkey` files, minisign secret keys |
+| `Workflows (actionlint)` | Every workflow in `.github/workflows/` passes actionlint (expression and permission checks, shellcheck of `run:` scripts); the release workflows are otherwise only exercised at release time |
 | `Dependency review` | PRs only: new dependencies with moderate+ advisories or GPL/AGPL licenses. Needs GitHub Advanced Security on a private repository (see below) |
 
 The OpenAPI drift check runs inside `cargo test` (`apps/api/tests/openapi_contract.rs`).
+
+Other workflows: [`desktop-matrix.yml`](../../.github/workflows/desktop-matrix.yml) (Windows, Linux, macOS
+builds and Rust tests of the launcher crates on PRs touching them, and nightly; not required) and
+[`release-desktop.yml`](../../.github/workflows/release-desktop.yml) (see [release.md](release.md)).
 
 Workflow rules (08-release §1): every action is pinned by commit SHA, `permissions: {}` at the top and
 `contents: read` per job, no secrets in `ci.yml` (fork PRs get nothing to steal), caches keyed by lockfiles

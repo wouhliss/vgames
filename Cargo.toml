@@ -183,3 +183,8 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.blake2]
 opt-level = 3
+# minisign key files (updater and runtime-catalog signing) use scrypt.
+[profile.dev.package.scrypt]
+opt-level = 3
+[profile.dev.package.salsa20]
+opt-level = 3
