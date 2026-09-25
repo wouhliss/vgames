@@ -7873,6 +7873,7 @@ dependencies = [
  "utoipa-swagger-ui",
  "uuid",
  "vgames-core",
+ "vgames-pack",
  "vgames-proto",
  "wiremock",
 ]

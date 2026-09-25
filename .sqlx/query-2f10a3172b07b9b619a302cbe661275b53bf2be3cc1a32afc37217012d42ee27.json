@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT v.package_id, v.platform, v.sequence, v.state, v.created_by FROM package_versions v\n           JOIN packages p ON p.id = v.package_id AND p.deleted_at IS NULL WHERE v.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "package_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "package_versions",
+            "name": "package_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "platform",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "package_versions",
+            "name": "platform"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "sequence",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "package_versions",
+            "name": "sequence"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "state",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "package_versions",
+            "name": "state"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "created_by",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "package_versions",
+            "name": "created_by"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "2f10a3172b07b9b619a302cbe661275b53bf2be3cc1a32afc37217012d42ee27"
+}

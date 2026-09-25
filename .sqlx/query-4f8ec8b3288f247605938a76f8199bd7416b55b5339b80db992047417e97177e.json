@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT manifest_size AS \"size!\", manifest_blake3 AS \"blake3!\", publisher_key_id AS \"key_id!\"\n           FROM package_versions WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "size!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "package_versions",
+            "name": "manifest_size"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "blake3!",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "package_versions",
+            "name": "manifest_blake3"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "key_id!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "package_versions",
+            "name": "publisher_key_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "4f8ec8b3288f247605938a76f8199bd7416b55b5339b80db992047417e97177e"
+}

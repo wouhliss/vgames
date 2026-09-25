@@ -49,11 +49,16 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   upserted in the same transaction, revocations applied; audited), `GET /v1/admin/trust/publisher-keys`.
   `/.well-known/vgames.json` now serves the `VG1-…` fingerprint (the ignored test runs again).
 
+- A1-T11 — Version upload protocol: create/list/get/abort versions, pack and manifest upload targets (#13);
+  `POST …/finalize` (manifest size + BLAKE3, `vgames_core::verify::verify_manifest` in server mode against the current
+  trust state, every pack present with its manifest size, `manifest.sig` stored, `package_packs` inserted, state →
+  `verifying`, `version.verify` queued) and `POST …/signature` (re-sign over the stored manifest). 422 codes:
+  `manifest_hash_mismatch`, `manifest_missing`, `signature_invalid`, `publisher_key_untrusted`,
+  `publisher_key_not_yours`, `publisher_key_expired`, `manifest_invalid`, `manifest_mismatch`, `pack_missing`,
+  `pack_size_mismatch`.
+
 ## In progress
-- A1-T11 — Version upload protocol. Part 1 (this PR): `POST/GET /v1/admin/packages/{id}/versions` (sequence =
-  max + 1 per platform under the package row lock, Idempotency-Key), `GET`/`DELETE /v1/admin/versions/{id}` (abort →
-  `aborted` + `version.cleanup` job), `…/packs/{i}/upload-session` (resumable, 1..=256 MiB, creator only, while
-  `uploading`) and `…/manifest-upload` (PUT 1..=256 MiB). Part 2 next: `finalize` and re-sign.
+- A1-T12 — Verification, publishing, downloads
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_api::error::ApiError` / `ApiResult` (problem+json), `vgames_api::http::json::{Json, Validate}`

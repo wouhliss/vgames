@@ -64,6 +64,33 @@ fn current_pin(root: PublicKey, stored: &[(Vec<u8>, Vec<u8>)], server_id: Uuid) 
     pin
 }
 
+/// The trust state of the latest stored bundle, verified along the same pin chain as
+/// uploads; `None` while no bundle verifies.
+pub async fn current_state(state: &AppState) -> ApiResult<Option<trust::TrustState>> {
+    let stored = sqlx::query!("SELECT bundle, signature FROM trust_bundles ORDER BY version")
+        .fetch_all(&state.db)
+        .await?;
+    let server_id = state.config.server_id;
+    let mut pin = RootPin::new(state.config.root_public_key);
+    let mut latest = None;
+    for row in stored {
+        let Ok(sig) = <[u8; 64]>::try_from(row.signature.as_slice()) else {
+            continue;
+        };
+        if let Ok(v) = trust::verify_bundle(
+            &row.bundle,
+            &Signature::from_bytes(sig),
+            &pin,
+            None,
+            server_id,
+        ) {
+            pin = v.pin;
+            latest = Some(v.state);
+        }
+    }
+    Ok(latest)
+}
+
 fn trust_error(e: TrustError) -> ApiError {
     let detail = e.to_string();
     match e {
