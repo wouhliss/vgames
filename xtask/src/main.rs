@@ -7,11 +7,13 @@
 //! - `codeowners check`             every tracked file has an owner; security paths stay with security
 //! - `openapi check`                  fail if the API's generated spec drifts from openapi/openapi.yaml
 //! - `updater sign | manifest | verify` version-bound updater signatures and `latest.json` (08-release §2)
+//! - `runtimes build | sign | verify`  the signed runtime catalog `runtimes.json` (09-compatibility §5)
 
 mod casefold;
 mod changelog;
 mod codeowners;
 mod release;
+mod runtimes;
 mod updater;
 
 use std::path::{Path, PathBuf};
@@ -56,6 +58,138 @@ enum Cmd {
         #[command(subcommand)]
         command: UpdaterCmd,
     },
+    /// The runtime catalog: runtimes/catalog.toml → signed runtimes.json.
+    Runtimes {
+        #[command(subcommand)]
+        command: RuntimesCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum RuntimesCmd {
+    /// Build runtimes.json (`vgames.runtimes/1`) from catalog.toml, one version above --previous.
+    Build {
+        #[arg(long, default_value = "runtimes/catalog.toml")]
+        catalog: PathBuf,
+        /// The last published runtimes.json (its version + 1 is used); omit for version 1.
+        #[arg(long)]
+        previous: Option<PathBuf>,
+        /// RFC 3339 UTC build time; default: now.
+        #[arg(long)]
+        generated_at: Option<String>,
+        #[arg(long, default_value = "runtimes.json")]
+        out: PathBuf,
+    },
+    /// Sign runtimes.json with the runtime-catalog minisign key (writes FILE.minisig).
+    Sign {
+        /// Environment variable holding the key (minisign secret key text, its base64, or a path).
+        #[arg(long, default_value = "VGAMES_RUNTIME_CATALOG_KEY")]
+        key_env: String,
+        /// Environment variable holding its password.
+        #[arg(long, default_value = "VGAMES_RUNTIME_CATALOG_KEY_PASSWORD")]
+        password_env: String,
+        #[arg(default_value = "runtimes.json")]
+        file: PathBuf,
+    },
+    /// Verify runtimes.json + FILE.minisig with the launcher's own code.
+    Verify {
+        /// Public key file (minisign .pub) or its base64 line.
+        #[arg(long, default_value = "runtimes/runtime-catalog.pub")]
+        pubkey: String,
+        /// The highest catalog version already published: older ones are a rollback.
+        #[arg(long)]
+        last_version: Option<u64>,
+        #[arg(default_value = "runtimes.json")]
+        file: PathBuf,
+    },
+}
+
+fn minisig_path(file: &Path) -> PathBuf {
+    let mut name = file.as_os_str().to_owned();
+    name.push(".minisig");
+    PathBuf::from(name)
+}
+
+fn run_runtimes(root: &Path, command: RuntimesCmd) -> Result<bool> {
+    match command {
+        RuntimesCmd::Build {
+            catalog,
+            previous,
+            generated_at,
+            out,
+        } => {
+            let toml = runtimes::read_toml(&root.join(catalog))?;
+            let previous = previous
+                .map(|p| std::fs::read(&p).with_context(|| format!("reading {}", p.display())))
+                .transpose()?;
+            let generated_at = match generated_at {
+                Some(t) => t
+                    .parse()
+                    .context("--generated-at: not an RFC 3339 UTC time")?,
+                None => vgames_core::Timestamp::new(time::OffsetDateTime::now_utc()),
+            };
+            let bytes = runtimes::build(toml, previous.as_deref(), generated_at)?;
+            let catalog = vgames_core::runtimes::parse_and_validate(&bytes)
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            std::fs::write(&out, &bytes).with_context(|| format!("writing {}", out.display()))?;
+            println!(
+                "wrote {} (version {}, {} runtimes)",
+                out.display(),
+                catalog.version,
+                catalog.runtimes.len()
+            );
+        }
+        RuntimesCmd::Sign {
+            key_env,
+            password_env,
+            file,
+        } => {
+            let key = std::env::var(&key_env).with_context(|| format!("{key_env} is not set"))?;
+            let password = std::env::var(&password_env).ok();
+            let key = updater::load_secret_key(&key, password.as_deref())?;
+            let bytes =
+                std::fs::read(&file).with_context(|| format!("reading {}", file.display()))?;
+            let catalog = vgames_core::runtimes::parse_and_validate(&bytes)
+                .map_err(|e| anyhow::anyhow!("{}: {e}", file.display()))?;
+            let signature = runtimes::sign(&key, &bytes, catalog.version)?;
+            let out = minisig_path(&file);
+            std::fs::write(&out, signature)
+                .with_context(|| format!("writing {}", out.display()))?;
+            println!("wrote {}", out.display());
+        }
+        RuntimesCmd::Verify {
+            pubkey,
+            last_version,
+            file,
+        } => {
+            let key_path = root.join(&pubkey);
+            let key = match key_path.is_file() {
+                true => std::fs::read_to_string(&key_path)
+                    .with_context(|| format!("reading {}", key_path.display()))?,
+                false if pubkey.ends_with(".pub") => bail!(
+                    "{} does not exist yet: the runtime-catalog key pair is created by humans \
+                     (docs/security/release.md); pass --pubkey",
+                    key_path.display()
+                ),
+                false => pubkey,
+            };
+            let bytes =
+                std::fs::read(&file).with_context(|| format!("reading {}", file.display()))?;
+            let sig_path = minisig_path(&file);
+            let signature = std::fs::read_to_string(&sig_path)
+                .with_context(|| format!("reading {}", sig_path.display()))?;
+            let verified =
+                vgames_core::runtimes::verify_catalog(&bytes, &signature, &key, last_version)
+                    .map_err(|e| anyhow::anyhow!("{}: {e}", file.display()))?;
+            println!(
+                "{} verified: version {}, {} runtimes",
+                file.display(),
+                verified.catalog.version,
+                verified.catalog.runtimes.len()
+            );
+        }
+    }
+    Ok(true)
 }
 
 #[derive(Subcommand)]
@@ -409,6 +543,7 @@ fn main() -> ExitCode {
         }),
         Cmd::Casefold { input } => casefold::generate(&input, &root).map(|()| true),
         Cmd::Updater { command } => run_updater(&root, command),
+        Cmd::Runtimes { command } => run_runtimes(&root, command),
         Cmd::Openapi {
             command: OpenapiCmd::Check,
         } => Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()))

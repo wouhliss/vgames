@@ -8,7 +8,7 @@ use proptest::prelude::*;
 use vgames_core::keyfile::{KeyFile, KeyKind};
 use vgames_core::sign::{Context, Envelope, SecretKey};
 use vgames_core::trust::{RootPin, TrustBundle, sign_bundle, verify_bundle};
-use vgames_core::{compat, manifest};
+use vgames_core::{compat, manifest, runtimes};
 
 fn key() -> SecretKey {
     SecretKey::from_seed(&[7; 32])
@@ -96,6 +96,21 @@ fn mutated(base: Vec<u8>) -> impl Strategy<Value = Vec<u8>> {
     )
 }
 
+fn valid_runtimes() -> Vec<u8> {
+    serde_json::to_vec(&serde_json::json!({
+        "format": "vgames.runtimes/1", "version": 2, "generated_at": "2026-09-25T12:00:00Z",
+        "commercial": false,
+        "runtimes": [{
+            "id": "d3dmetal", "version": "3.0", "os": "macos", "arch": "aarch64",
+            "url": "https://github.com/wouhliss/vgames/releases/download/runtimes/D3DMetal-3.0.tar.gz",
+            "sha256": "b".repeat(64), "size": 90_000_000u64, "archive": "tar.gz",
+            "license": "LicenseRef-Apple-GPTK", "min_launcher_version": "0.2.0",
+            "redistribution": "non-commercial", "macos_max_supported": 27
+        }]
+    }))
+    .unwrap()
+}
+
 fn arbitrary() -> impl Strategy<Value = Vec<u8>> {
     prop::collection::vec(any::<u8>(), 0..1024)
 }
@@ -135,6 +150,14 @@ proptest! {
     fn compat_never_panics(b in prop_oneof![arbitrary(), mutated(valid_compat())]) {
         let _ = compat::parse_and_validate(&b);
     }
+
+    #[test]
+    fn runtime_catalog_never_panics(b in prop_oneof![arbitrary(), mutated(valid_runtimes())]) {
+        let _ = runtimes::parse_and_validate(&b);
+        // Arbitrary signature text and keys never panic either.
+        let sig = String::from_utf8_lossy(&b);
+        let _ = runtimes::verify_catalog(&b, &sig, &sig, Some(1));
+    }
 }
 
 #[test]
@@ -144,4 +167,5 @@ fn the_valid_documents_are_valid() {
     TrustBundle::parse_unverified(&valid_bundle()).unwrap();
     KeyFile::parse(&valid_keyfile()).unwrap();
     compat::parse_and_validate(&valid_compat()).unwrap();
+    runtimes::parse_and_validate(&valid_runtimes()).unwrap();
 }

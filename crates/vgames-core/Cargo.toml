@@ -26,11 +26,15 @@ chacha20poly1305 = { workspace = true, features = ["zeroize"] }
 getrandom.workspace = true
 zeroize.workspace = true
 unicode-normalization.workspace = true
+minisign-verify.workspace = true
 wasm-bindgen = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest.workspace = true
 insta.workspace = true
+# Test signatures and archive hashes for the runtime catalog vectors.
+minisign.workspace = true
+sha2.workspace = true
 
 [lints]
 workspace = true

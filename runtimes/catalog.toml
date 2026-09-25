@@ -1,0 +1,22 @@
+# Compatibility runtimes the launcher may download (09-compatibility §5). Owner: Agent 5.
+#
+# `cargo xtask runtimes build` turns this file into runtimes.json (`vgames.runtimes/1`), validated
+# by the launcher's own parser (vgames_core::runtimes); release-runtimes.yml signs and publishes it.
+# runtimes.yml proposes new versions as PRs; review each one like code.
+#
+# Each entry:
+#   id                    umu-proton | ge-proton | umu-launcher | wine-macos | d3dmetal | dxmt | dxvk-macos | moltenvk
+#   version               the upstream version or tag (letters, digits, . _ + -)
+#   os, arch              linux | macos; x86_64 | aarch64 (or arm64)
+#   url                   https://github.com/<owner>/<repo>/releases/download/<tag>/<file>
+#   sha256, size          of the archive, as downloaded (the launcher checks both before extracting)
+#   archive               tar.gz | tar.xz | tar.zst | zip
+#   license               SPDX expression (LicenseRef-… for Apple's D3DMetal license)
+#   min_launcher_version  oldest launcher that can use this entry
+#   rosetta_required      optional, macOS x86_64 only
+#   macos_max_supported   optional, newest macOS major version it was tested on
+#   redistribution        optional; "non-commercial" (D3DMetal) needs `commercial = false` below
+
+# vgames is non-commercial (09-compatibility §7). Setting this to true makes every
+# non-commercial entry (D3DMetal) fail the build: remove them in the same change.
+commercial = false

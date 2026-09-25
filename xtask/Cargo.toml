@@ -1,6 +1,6 @@
 [package]
 name = "xtask"
-description = "Repository automation: changelog fragments, OpenAPI drift check, release notes. Run with `cargo xtask <cmd>`."
+description = "Repository automation: changelog fragments, OpenAPI drift check, release notes, updater and runtime-catalog signing. Run with `cargo xtask <cmd>`."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -18,6 +18,9 @@ globset.workspace = true
 minisign.workspace = true
 base64.workspace = true
 time.workspace = true
+# The runtime catalog, validated by the launcher's own parser.
+vgames-core.workspace = true
+toml.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
