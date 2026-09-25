@@ -105,6 +105,18 @@ pub fn open_for_write(path: &Path) -> io::Result<File> {
     options.open(path)
 }
 
+/// Opens an existing file for verification without following a final symlink.
+pub fn open_for_read(path: &Path) -> io::Result<File> {
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW);
+    }
+    options.open(path)
+}
+
 /// Positional write of the whole buffer (`pwrite` / `seek_write`).
 pub fn write_all_at(file: &File, mut data: &[u8], mut offset: u64) -> io::Result<()> {
     #[cfg(unix)]
@@ -268,6 +280,37 @@ impl SafeRoot {
             }
         }
         Ok(path)
+    }
+
+    /// Finds an existing regular manifest file without creating missing
+    /// directories. A missing component means the file needs repair.
+    pub fn existing_file(&self, rel: &str) -> Result<Option<PathBuf>, SafePathError> {
+        let mut path = self.root.clone();
+        let mut parts = rel.split('/').peekable();
+        while let Some(part) = parts.next() {
+            path.push(part);
+            let meta = match fs::symlink_metadata(&path) {
+                Ok(meta) => meta,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+                Err(error) => return Err(SafePathError::io(&path, error)),
+            };
+            if meta.file_type().is_symlink() {
+                return Err(SafePathError::Link(path));
+            }
+            if parts.peek().is_some() {
+                if !meta.is_dir() {
+                    return Err(SafePathError::NotADirectory(path));
+                }
+                let canonical =
+                    fs::canonicalize(&path).map_err(|error| SafePathError::io(&path, error))?;
+                if !canonical.starts_with(&self.root) {
+                    return Err(SafePathError::Escapes(path));
+                }
+            } else if !meta.is_file() {
+                return Err(SafePathError::NotAFile(path));
+            }
+        }
+        Ok(Some(path))
     }
 
     fn is_known(&self, rel: &str) -> bool {

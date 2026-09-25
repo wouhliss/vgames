@@ -11,7 +11,7 @@
 - A2-T05 Upload engine (`vgames-transfer::upload`): direct pack streams to GCS-style resumable sessions, private resume records, adaptive 4–16 workers, progress events, and end-to-end publishing API ([PR #39](https://github.com/wouhliss/vgames/pull/39), stacked on #38). The protocol is tested with a wiremock simulator and Agent 1's real fs storage backend; a separate process is killed after a randomly selected 256 KiB-aligned confirmed offset and the next process resumes; changing a file during streaming aborts with a clear error.
 
 ## In progress
-- A2-T06 update, verify, repair, move, and uninstall: the signed-manifest planner now identifies unchanged files, changed files, removable paths, locally reusable chunks, remote bytes, and safe versus explicit in-place space requirements. The transfer, commit replay, verify, repair, and move paths remain to be implemented.
+- A2-T06 update, verify, repair, move, and uninstall: the signed-manifest planner ([PR #40](https://github.com/wouhliss/vgames/pull/40)) identifies unchanged files, changed files, removable paths, locally reusable chunks, remote bytes, and safe versus explicit in-place space requirements. A read-only verifier now hashes installed files on bounded blocking workers, reports damaged file indices, and feeds a repair plan that excludes damaged chunks from local reuse. Transfer execution, commit replay, move, and uninstall prompts remain to be implemented.
 
 ## Interfaces delivered (other agents may now rely on these)
 - **Event bus** (A2-T01, for Agents 3, 4, 5): `vgames_desktop_lib::events::{EventBus, AppEvent}`,
