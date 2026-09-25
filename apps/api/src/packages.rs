@@ -292,6 +292,21 @@ fn detail(row: &PackageRow, assets: &[Asset], releases: &[ReleaseInfo]) -> Packa
     }
 }
 
+/// Summaries of non-deleted packages, whatever their status (callers check visibility).
+pub async fn summaries(state: &AppState, ids: &[Uuid]) -> ApiResult<HashMap<Uuid, PackageSummary>> {
+    let rows = fetch_rows(state, ids).await?;
+    let assets = assets_for(state, ids).await?;
+    let releases = releases_for(state, ids).await?;
+    Ok(rows
+        .iter()
+        .map(|r| {
+            let a = assets.get(&r.id).map(Vec::as_slice).unwrap_or_default();
+            let rel = releases.get(&r.id).map(Vec::as_slice).unwrap_or_default();
+            (r.id, summary(r, a, rel))
+        })
+        .collect())
+}
+
 pub async fn users_public(state: &AppState, ids: &[Uuid]) -> ApiResult<HashMap<Uuid, UserPublic>> {
     let rows = sqlx::query!(
         "SELECT id, discord_id, username, display_name, avatar_hash FROM users WHERE id = ANY($1)",

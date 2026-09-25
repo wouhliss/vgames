@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO game_invites (from_user_id, to_user_id, package_id, message, expires_at)\n         VALUES ($1, $2, $3, $4, now() + make_interval(secs => $5))\n         ON CONFLICT (from_user_id, to_user_id, package_id)\n           WHERE state IN ('pending', 'accepted', 'installing', 'ready') DO NOTHING\n         RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "game_invites",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "4fac9a132c452a98ff0ac6bf2ac5e3be22a70b766a76a4c3eedf66b731cb0229"
+}

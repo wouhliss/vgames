@@ -591,7 +591,9 @@ pub struct Invite {
     pub progress: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+    /// Documented as a plain string so new reasons stay compatible with older clients.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "openapi", schema(value_type = Option<String>))]
     pub failure_reason: Option<InviteFailure>,
     #[serde(with = "time::serde::rfc3339")]
     #[cfg_attr(feature = "openapi", schema(value_type = String, format = DateTime))]
@@ -602,6 +604,13 @@ pub struct Invite {
     #[serde(with = "time::serde::rfc3339")]
     #[cfg_attr(feature = "openapi", schema(value_type = String, format = DateTime))]
     pub expires_at: OffsetDateTime,
+}
+
+/// `GET /v1/invites` response.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct InviteList {
+    pub items: Vec<Invite>,
 }
 
 /// `POST /v1/invites` body.

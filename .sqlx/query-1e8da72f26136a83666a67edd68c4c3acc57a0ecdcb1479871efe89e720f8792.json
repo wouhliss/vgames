@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id FROM game_invites\n         WHERE (from_user_id = $1 OR to_user_id = $1)\n           AND (state = ANY($2) OR updated_at > now() - make_interval(secs => $3))\n         ORDER BY created_at DESC, id DESC LIMIT 200",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "game_invites",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "TextArray",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "1e8da72f26136a83666a67edd68c4c3acc57a0ecdcb1479871efe89e720f8792"
+}

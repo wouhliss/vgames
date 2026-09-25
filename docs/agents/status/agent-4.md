@@ -48,8 +48,19 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   Evidence: 7 API tests (`tests/it/social_relay.rs`) incl. a real vodozemac session through the relay and a scan of
   every column of every table for the plaintext; mutation-checked (ack scope, membership, blocks).
 
+- A4-T06 — Server: invite state machine. `apps/api/src/social/invites.rs`, migration
+  `20260925140000_social_invites.sql` (sender index; the one-active unique index already existed): create (accepted
+  friends; strangers and blocks → 404; published package with a release; one active per triple returns it; 60/h),
+  accept/decline (invitee), cancel (sender), status (installing/ready/joined/failed per 04-database §3; progress
+  stored always, published ≤ every 2 s), every transition a guarded update (racing requests: one wins, the other
+  409), expiry (pending 10 min, 24 h after accept) in `social.sweep` and lazily in its own transaction, events to
+  both parties; blocks cancel live invites with `invite.updated`. All social operations of the contract are now
+  implemented (`openapi_unimplemented.txt` is empty).
+  Evidence: 7 API tests (`tests/it/social_invites.rs`): all 63 action × state cases, races, throttling over a real
+  socket, expiry, create rules, rate limit; mutation-checked (state guard, role guard, throttle).
+
 ## In progress
-- A4-T06 — Server: invite state machine
+- A4-T07 — Launcher: realtime client, social state, presence
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_proto::social::{DeviceList, DeviceKeysList, ClaimedKeyList, MAX_UNCLAIMED_ONE_TIME_KEYS, MAX_CLAIM_DEVICES}` (A4-T04).
@@ -72,6 +83,8 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   failed once locally under a full `cargo test` run (line 211) and passed 3/3 alone; it looks timing-sensitive.
 
 ## Cross-area edits (small, for the owners' review)
+- Agent 1 (A4-T06): `packages.rs` `pub async fn summaries(state, ids)` (wraps the existing private helpers) for
+  the package in invites.
 - Agent 1 (A4-T03): `realtime/mod.rs` `start()` also starts `social::presence::start` (the presence heartbeat
   lives with the sockets); `realtime/hub.rs` `Hub::connected_users()`; `jobs/mod.rs` one `SCHEDULES` entry
   (`social.sweep`, 60 s, as `jobs/builtin.rs` anticipates).

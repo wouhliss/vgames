@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE game_invites SET\n           state = $4,\n           progress = CASE WHEN $4 IN ('ready', 'joined') THEN 1 WHEN $4 = 'accepted' THEN NULL ELSE progress END,\n           failure_reason = $5,\n           expires_at = CASE WHEN $6::float8 IS NULL THEN expires_at ELSE now() + make_interval(secs => $6) END\n         WHERE id = $1 AND state = ANY($3)\n           AND CASE WHEN $7 THEN from_user_id = $2 ELSE to_user_id = $2 END\n         RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "game_invites",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "TextArray",
+        "Text",
+        "Text",
+        "Float8",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "62c6caa872fca41b7e6f31d6a4b57d3ce3678f9bea71b01aa976a5ea2427ce01"
+}

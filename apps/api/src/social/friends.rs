@@ -581,7 +581,7 @@ pub async fn block_user(
     .execute(&mut *tx)
     .await?
     .rows_affected();
-    super::invites::cancel_between(&mut tx, me, other).await?;
+    super::invites::cancel_between(&state, &mut tx, me, other).await?;
     if removed > 0 {
         notify_pair(
             &mut tx,
