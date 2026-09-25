@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE game_invites SET state = 'expired'\n         WHERE state = ANY($1) AND expires_at <= now()\n           AND ($2::uuid IS NULL OR from_user_id = $2 OR to_user_id = $2)\n         RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "game_invites",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "2323091d08f8a19aaa2e7030310f64bdbdde1618d0d2a11d773f25ddf1d21237"
+}

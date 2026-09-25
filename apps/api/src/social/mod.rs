@@ -19,6 +19,7 @@ pub fn routes() -> OpenApiRouter<AppState> {
         .merge(friends::routes())
         .merge(devices::routes())
         .merge(relay::routes())
+        .merge(invites::routes())
         .merge(presence::routes())
 }
 
@@ -39,8 +40,9 @@ async fn sweep(ctx: crate::jobs::JobContext) -> Result<(), crate::jobs::JobError
     Ok(sweep_once(&ctx.state).await?)
 }
 
-/// One `social.sweep` pass: deletes friend codes a day after they expire, claimed one-time
-/// keys after 30 days and undelivered envelopes when they expire (30 days), and marks stale
+/// One `social.sweep` pass: expires overdue invites, deletes friend codes a day after they
+/// expire, claimed one-time keys after 30 days and undelivered envelopes when they expire
+/// (30 days), and marks stale
 /// presence offline (API instances do the latter every 10 s too; the guarded update makes
 /// the two agree).
 pub async fn sweep_once(state: &AppState) -> crate::error::ApiResult<()> {
@@ -56,6 +58,9 @@ pub async fn sweep_once(state: &AppState) -> crate::error::ApiResult<()> {
     sqlx::query!("DELETE FROM message_envelopes WHERE expires_at < now()")
         .execute(&state.db)
         .await?;
+    let mut tx = state.db.begin().await?;
+    invites::expire_due(state, &mut tx, None).await?;
+    tx.commit().await?;
     presence::sweep_stale(state, presence::OFFLINE_AFTER).await?;
     Ok(())
 }

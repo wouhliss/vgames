@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE game_invites SET\n             progress = COALESCE($3, progress),\n             progress_published_at = CASE\n               WHEN state <> 'installing' OR progress_published_at IS NULL\n                    OR progress_published_at <= now() - interval '2 seconds' THEN now()\n               ELSE progress_published_at END,\n             state = 'installing'\n           WHERE id = $1 AND to_user_id = $2 AND state IN ('accepted', 'installing')\n           RETURNING progress_published_at = now() AS \"published!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "published!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Float4"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "9d5b35a51625b4c4a42f40fec1c6795a02581c859d82e64c8ec61848ca8705ca"
+}

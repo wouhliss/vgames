@@ -1,9 +1,3 @@
 # Contract operations not implemented yet (A1-T03). This list must only shrink;
 # A1-T17 empties it. Social/messaging/invites operations are Agent 4's.
 
-GET /v1/invites
-POST /v1/invites
-POST /v1/invites/{invite_id}/accept
-POST /v1/invites/{invite_id}/cancel
-POST /v1/invites/{invite_id}/decline
-POST /v1/invites/{invite_id}/status

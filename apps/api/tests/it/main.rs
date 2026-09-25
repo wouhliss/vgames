@@ -26,6 +26,7 @@ mod saves;
 mod skeleton;
 mod social_devices;
 mod social_friends;
+mod social_invites;
 mod social_presence;
 mod social_relay;
 mod storage;
