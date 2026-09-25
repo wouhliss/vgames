@@ -210,3 +210,85 @@ pub struct YankRequest {
     #[cfg_attr(feature = "openapi", schema(min_length = 3, max_length = 500))]
     pub reason: String,
 }
+
+/// Signed link to a version's `manifest.json`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ManifestLink {
+    #[cfg_attr(feature = "openapi", schema(format = "uri"))]
+    pub url: String,
+    #[cfg_attr(feature = "openapi", schema(minimum = 1))]
+    pub size: i64,
+    #[cfg_attr(feature = "openapi", schema(pattern = "^[0-9a-f]{64}$"))]
+    pub blake3: String,
+    #[serde(with = "time::serde::rfc3339")]
+    #[cfg_attr(feature = "openapi", schema(value_type = String, format = DateTime))]
+    pub expires_at: OffsetDateTime,
+}
+
+/// Everything a launcher needs to download and verify a release.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ReleaseDescriptor {
+    pub package_id: Uuid,
+    pub version_id: Uuid,
+    pub platform: Platform,
+    #[cfg_attr(feature = "openapi", schema(minimum = 1))]
+    pub sequence: i64,
+    pub version_label: String,
+    #[cfg_attr(feature = "openapi", schema(minimum = 0))]
+    pub total_size: i64,
+    #[cfg_attr(feature = "openapi", schema(minimum = 1))]
+    pub pack_count: i32,
+    #[cfg_attr(feature = "openapi", schema(inline))]
+    pub manifest: ManifestLink,
+    pub signature: SignatureEnvelope,
+    /// Withdrawn versions of this package/platform; launchers on them are offered this release.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub yanked_version_ids: Vec<Uuid>,
+    #[serde(with = "time::serde::rfc3339")]
+    #[cfg_attr(feature = "openapi", schema(value_type = String, format = DateTime))]
+    pub published_at: OffsetDateTime,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(deny_unknown_fields)]
+pub struct DownloadUrlsRequest {
+    #[cfg_attr(feature = "openapi", schema(min_items = 1, max_items = 500))]
+    pub packs: std::collections::BTreeSet<u32>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct PackUrl {
+    #[cfg_attr(feature = "openapi", schema(minimum = 0))]
+    pub pack_index: u32,
+    #[cfg_attr(feature = "openapi", schema(format = "uri"))]
+    pub url: String,
+    #[cfg_attr(feature = "openapi", schema(minimum = 1))]
+    pub size: i64,
+    #[serde(with = "time::serde::rfc3339")]
+    #[cfg_attr(feature = "openapi", schema(value_type = String, format = DateTime))]
+    pub expires_at: OffsetDateTime,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct PackUrlList {
+    pub items: Vec<PackUrl>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(deny_unknown_fields)]
+pub struct IntegrityReport {
+    #[cfg_attr(feature = "openapi", schema(minimum = 0))]
+    pub pack_index: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "openapi", schema(minimum = 0))]
+    pub chunk_index: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "openapi", schema(max_length = 1000))]
+    pub detail: Option<String>,
+}

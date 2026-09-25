@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT package_id, state, manifest_object AS \"manifest_object!\", manifest_size AS \"manifest_size!\"\n           FROM package_versions WHERE id = $1 AND manifest_object IS NOT NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "package_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "package_versions",
+            "name": "package_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "state",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "package_versions",
+            "name": "state"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "manifest_object!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "package_versions",
+            "name": "manifest_object"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "manifest_size!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "package_versions",
+            "name": "manifest_size"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "388409aa727bfa7a8ab9025d09a455ee20234b21db8c4eb1a728daceb63ae1e5"
+}

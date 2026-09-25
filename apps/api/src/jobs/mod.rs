@@ -95,6 +95,9 @@ impl Registry {
         for (kind, h) in builtin::handlers() {
             r.register(kind, h);
         }
+        for (kind, h) in crate::downloads::job_handlers() {
+            r.register(kind, h);
+        }
         for (kind, h) in crate::releases::job_handlers() {
             r.register(kind, h);
         }

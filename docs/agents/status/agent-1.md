@@ -64,6 +64,10 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   older published version can be re-published to roll back), `POST …/yank` (reason; the release falls back to the
   newest remaining published version). Migration `20260925090000_version_verify`. Next: release descriptor, download
   URLs, integrity reports, compat profiles.
+  Part 2 (this PR): `GET /v1/packages/{id}/releases/{platform}` (descriptor with signed manifest URL, envelope rebuilt
+  from the version row, `yanked_version_ids`), `POST /v1/versions/{id}/download-urls` (≤ 500 packs, `DownloadUrls`
+  rate limit, `410 version_yanked`), `POST …/integrity-reports` (3 distinct users in 24 h → `pack.reverify` job; a
+  corrupt pack is reported to admins as `version.state` with `failure_reason: "integrity: …"`). Next: compat profiles.
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_api::error::ApiError` / `ApiResult` (problem+json), `vgames_api::http::json::{Json, Validate}`
@@ -119,6 +123,11 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   exactly those headers, take `Location` as the session URI, `PUT` chunks with `Content-Range`. The manifest target is a
   single `PUT` with `content-type: application/json` and `x-goog-content-length-range: 1,268435456`. Objects:
   `v1/{package}/{version}/packs/{i:05}.pack`, `…/manifest.json` (`vgames_api::versions::{pack_object, manifest_object}`).
+- **Downloads for Agent 2 (launcher):** `GET /v1/packages/{id}/releases/{platform}` → `ReleaseDescriptor`
+  (`manifest.{url,size,blake3,expires_at}`, `signature` envelope for `vgames_core::verify::verify_manifest`,
+  `yanked_version_ids`); then `POST /v1/versions/{id}/download-urls {packs:[…]}` → `{items:[{pack_index,url,size,
+  expires_at}]}` (URLs live `VGAMES_SIGNED_URL_TTL_SECONDS`, default 6 h). Report a chunk seen corrupt twice with
+  `POST /v1/versions/{id}/integrity-reports {pack_index, chunk_index?, detail?}`.
 - `Storage::sign_put_range(bucket, name, ttl, content_type, min, max)` (both backends).
 - Test harness: `apps/api/tests/common/mod.rs` (`app(pool)`, `send`, `body_json`, `json_request`) with
   `#[sqlx::test(migrations = "./migrations")]`.

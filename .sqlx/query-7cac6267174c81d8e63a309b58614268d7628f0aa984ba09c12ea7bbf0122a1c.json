@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT v.state, v.pack_count, p.status FROM package_versions v\n           JOIN packages p ON p.id = v.package_id AND p.deleted_at IS NULL WHERE v.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "state",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "package_versions",
+            "name": "state"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "pack_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "package_versions",
+            "name": "pack_count"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "packages",
+            "name": "status"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "7cac6267174c81d8e63a309b58614268d7628f0aa984ba09c12ea7bbf0122a1c"
+}

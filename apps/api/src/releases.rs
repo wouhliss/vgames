@@ -40,7 +40,7 @@ pub fn job_handlers() -> Vec<(&'static str, JobHandler)> {
 }
 
 /// Tells every admin's sockets about a version state change (03-api §6 `version.state`).
-async fn notify_admins(
+pub(crate) async fn notify_admins(
     state: &AppState,
     version_id: Uuid,
     new_state: VersionState,
@@ -70,13 +70,13 @@ async fn notify_admins(
 // ---------------------------------------------------------------------------------------
 
 /// Why a pack is bad (content problems are final; storage trouble is retried).
-enum PackOutcome {
+pub(crate) enum PackOutcome {
     Ok,
     Bad(String),
 }
 
 /// Streams one pack through the verifier on the blocking pool.
-async fn verify_pack(
+pub(crate) async fn verify_pack(
     state: AppState,
     package_id: Uuid,
     version_id: Uuid,
