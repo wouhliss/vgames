@@ -1,7 +1,7 @@
 //! Trust bundle upload and publisher keys (A1-T08), with bundles signed by test keys.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-mod common;
+use crate::common;
 
 use axum::{
     Router,

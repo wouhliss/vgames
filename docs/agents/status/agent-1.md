@@ -27,7 +27,7 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   `dead` after `max_attempts`, dedupe keys, advisory-locked schedules (`sweep.expired` every minute,
   `saves.gc` daily). Workers run with `--role=all|worker`.
 - A1-T07 — Object storage: `vgames_api::storage::Storage` (GCS via the official crate with V4 signed URLs;
-  `fs` backend for dev/tests/self-hosting), conformance suite in `apps/api/tests/storage.rs`; `/v1/health` now
+  `fs` backend for dev/tests/self-hosting), conformance suite in `apps/api/tests/it/storage.rs`; `/v1/health` now
   reports storage.
 - A1-T09 — Packages, assets and catalog: admin CRUD (`/v1/admin/packages[/{id}]`, Idempotency-Key on create,
   `If-Match` on PATCH/DELETE, slug generation with `-2…` suffixes, soft delete keeps the slug), image upload
@@ -86,7 +86,7 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   (CSRF + Origin enforced on unsafe methods) and applies the per-user rate limit. `device_id` is `None` until the
   launcher registers a device (A4-T04 sets `sessions.device_id`).
 - **Launcher sign-in (Agent 2, A2-T07):** `POST /v1/auth/discord/start` → browser → `vgames://auth/callback?code=…&client_state=…`
-  → `POST /v1/auth/token`; see `apps/api/tests/auth.rs` for the exact flow. Refresh-token reuse returns
+  → `POST /v1/auth/token`; see `apps/api/tests/it/auth.rs` for the exact flow. Refresh-token reuse returns
   `401 refresh_token_reused` and ends the session.
 - **Realtime for Agent 4:**
   - Publish: `vgames_api::realtime::bus::publish(&pool, &Target::users(&[..]), "invite.created", data)`, or
@@ -105,7 +105,7 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   `Content-Range`; exact-length `PUT` with the signed `content-type`; resumable start = `POST` with the returned
   headers (`x-goog-resumable: start`, `x-goog-content-length-range`) → `201` + `Location`; chunks `PUT` with
   `Content-Range: bytes a-b/total|*` → `308` + `Range: bytes=0-n` until complete (`200`); progress query
-  `Content-Range: bytes */*`. See `conformance()` in `apps/api/tests/storage.rs`.
+  `Content-Range: bytes */*`. See `conformance()` in `apps/api/tests/it/storage.rs`.
 - **Catalog for Agent 3 (library/store views) and Agent 2 (launcher client):** `GET /v1/packages`,
   `GET /v1/packages/{id}` and the admin package endpoints match `openapi/openapi.yaml`; asset `url`s are
   `/v1/assets/{id}` and answer `302` to a short-lived signed URL (`Cache-Control: private, max-age=3600`), so
@@ -144,8 +144,10 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   Paths are checked with `vgames_core::paths` rules per save location (no case collisions); up to 10,000 files per snapshot.
 - `vgames_proto::saves` holds the cloud-save DTOs (`SaveSnapshot` flattens `SaveSnapshotSummary`).
 - `Storage::sign_put_range(bucket, name, ttl, content_type, min, max)` (both backends).
-- Test harness: `apps/api/tests/common/mod.rs` (`app(pool)`, `send`, `body_json`, `json_request`) with
+- Test harness: `apps/api/tests/it/common/mod.rs` (`app(pool)`, `send`, `body_json`, `json_request`) with
   `#[sqlx::test(migrations = "./migrations")]`.
+  All API integration tests are modules of one binary (`apps/api/tests/it/main.rs`); add new files there, not
+  as new `tests/*.rs` targets (each separate target is another ~440 MB debug binary, which filled CI disks).
 - Root `clippy.toml` allows unwrap/expect/panic/indexing in tests (AGENTS.md §5).
 
 ## Needs from others

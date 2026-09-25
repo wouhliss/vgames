@@ -6,7 +6,7 @@
     clippy::indexing_slicing
 )]
 
-mod common;
+use crate::common;
 
 use axum::http::StatusCode;
 use base64::{Engine, engine::general_purpose::STANDARD};
