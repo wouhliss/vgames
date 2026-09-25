@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users SET disabled_at = COALESCE(disabled_at, now()),\n                          disabled_reason = COALESCE($2, disabled_reason)\n                   WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3fcfff738d936b65d70ba88d71d463d9149993b7c54a36ff8c0c10bec686ab31"
+}

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT key, value FROM server_settings WHERE key IN ('registration.mode', 'server.motd')",
+  "query": "SELECT key, value, updated_at FROM server_settings WHERE key = ANY($1)",
   "describe": {
     "columns": [
       {
@@ -24,15 +24,29 @@
             "name": "value"
           }
         }
+      },
+      {
+        "ordinal": 2,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "server_settings",
+            "name": "updated_at"
+          }
+        }
       }
     ],
     "parameters": {
-      "Left": []
+      "Left": [
+        "TextArray"
+      ]
     },
     "nullable": [
+      false,
       false,
       false
     ]
   },
-  "hash": "b54ba485e91260054cd5b774d3a949036ac8329784e48230c9fb355100e63658"
+  "hash": "b5253ca487e92b0b20b9d92be8b8ba5e2ae225cc5a8ea5f803de1f46db2fdd2d"
 }

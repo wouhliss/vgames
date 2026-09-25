@@ -21,15 +21,15 @@ use vgames_api::{
     realtime::{self, bus, hub::Target},
 };
 
-type Ws =
+pub(crate) type Ws =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
-struct Instance {
-    state: AppState,
-    addr: SocketAddr,
+pub(crate) struct Instance {
+    pub(crate) state: AppState,
+    pub(crate) addr: SocketAddr,
 }
 
-async fn instance(pool: &PgPool) -> Instance {
+pub(crate) async fn instance(pool: &PgPool) -> Instance {
     let state = common::state(pool.clone());
     realtime::start(&state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -43,7 +43,7 @@ async fn instance(pool: &PgPool) -> Instance {
     Instance { state, addr }
 }
 
-async fn ticket(inst: &Instance, token: &str) -> String {
+pub(crate) async fn ticket(inst: &Instance, token: &str) -> String {
     let resp = send(
         &vgames_api::http::router(inst.state.clone()),
         bearer_request("POST", "/v1/realtime/ticket", token),
@@ -56,7 +56,7 @@ async fn ticket(inst: &Instance, token: &str) -> String {
         .to_string()
 }
 
-async fn connect(
+pub(crate) async fn connect(
     inst: &Instance,
     ticket: &str,
 ) -> Result<Ws, tokio_tungstenite::tungstenite::Error> {
@@ -67,7 +67,7 @@ async fn connect(
 }
 
 /// Next text frame as JSON (skips pings).
-async fn next_event(ws: &mut Ws) -> Value {
+pub(crate) async fn next_event(ws: &mut Ws) -> Value {
     loop {
         let msg = tokio::time::timeout(Duration::from_secs(10), ws.next())
             .await

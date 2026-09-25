@@ -70,8 +70,18 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   `413 save_quota_exceeded`). `saves.gc`: newest 20 snapshots + head, unreferenced blobs after one day.
   Contract commit: 404 on prepare/commit for unknown packages, quota rule in 06 §4.
 
+- A1-T14 — Admin server endpoints: `GET /v1/admin/users` (`q` = username/display name substring or exact Discord id,
+  `role`, signed cursors), `PATCH /v1/admin/users/{id}` (role: owner only; `409 last_owner`; admins cannot disable or
+  enable admins/owners; `403 cannot_disable_self`; disabling revokes every session and sends `session.revoked` + close
+  4001 on commit), allowlist `GET/POST/DELETE` (`409 already_allowlisted`), settings `GET` (admins) / `PATCH` (owner,
+  `If-Match` → 428/412; `name` overrides `VGAMES_SERVER_NAME`, also in `/.well-known/vgames.json`; empty `motd` clears),
+  `GET /v1/admin/jobs` (`state`, `kind`) and `POST …/retry` (failed/dead only → `409 job_not_retryable`,
+  `409 job_already_queued`), `GET /v1/admin/audit-log` (actor, action, target, since/until). All mutations audited.
+  Authorization matrix test: every contract `/v1/admin/*` operation × anonymous/user/disabled/admin/owner; it found
+  and fixed a plain-text rejection on non-multipart asset uploads (now `415` problem+json).
+
 ## In progress
-- A1-T14 — Admin server endpoints
+- A1-T15 — Admin web hosting
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_api::error::ApiError` / `ApiResult` (problem+json), `vgames_api::http::json::{Json, Validate}`
@@ -142,6 +152,11 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   `POST …/blobs/download-urls {blake3:[…≤1000]}`. Send an `Idempotency-Key` on commits so a retry after a lost response
   returns the same snapshot instead of a conflict. `device_id` comes from the session (A4-T04), not the body.
   Paths are checked with `vgames_core::paths` rules per save location (no case collisions); up to 10,000 files per snapshot.
+- **Admin server for Agent 3 (admin web users/allowlist/settings/jobs/audit screens):** everything under the
+  `admin-server` tag now matches `openapi/openapi.yaml`; DTOs in `vgames_proto::admin` (`AdminUser`, `AdminUserPatch`,
+  `AllowlistEntry`, `ServerSettings`, `ServerSettingsPatch`, `AuditEntry`) and `vgames_proto::jobs::JobPage`. Problem codes
+  to handle: `last_owner`, `cannot_disable_self`, `already_allowlisted`, `job_not_retryable`, `job_already_queued`,
+  `precondition_required` / `precondition_failed` (settings). Admins can read settings; only owners get a `200` on PATCH.
 - `vgames_proto::saves` holds the cloud-save DTOs (`SaveSnapshot` flattens `SaveSnapshotSummary`).
 - `Storage::sign_put_range(bucket, name, ttl, content_type, min, max)` (both backends).
 - Test harness: `apps/api/tests/it/common/mod.rs` (`app(pool)`, `send`, `body_json`, `json_request`) with

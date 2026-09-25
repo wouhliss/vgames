@@ -39,8 +39,8 @@ pub async fn server_info(State(state): State<AppState>) -> ApiResult<impl IntoRe
     let info = ServerInfo {
         format: "vgames.server/1".to_string(),
         server_id: state.config.server_id,
-        name: state.config.server_name.clone(),
-        motd: settings.motd.filter(|m| !m.is_empty()),
+        name: settings.name_or(&state.config.server_name).to_string(),
+        motd: settings.motd.clone(),
         api_versions: vec![ApiVersion::V1],
         root_public_key: state.config.root_public_key.to_base64(),
         root_key_fingerprint: state.config.root_public_key.fingerprint().to_string(),
