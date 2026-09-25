@@ -8,11 +8,11 @@
  *
  * Input is only the fragments and merged PR titles/bodies; no diffs, no secrets.
  */
-import { execFile } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseArgs, promisify } from "node:util";
+import { parseArgs } from "node:util";
 
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
@@ -27,13 +27,16 @@ const repo = path.resolve(here, "../../..");
 /** The one implementation of the §3.2 lint: `cargo xtask changelog lint-text`. */
 export const xtaskLint: Lint = async (text, type) => {
   try {
-    await promisify(execFile)("cargo", ["xtask", "changelog", "lint-text", "--type", type], {
+    // Synchronous on purpose: only the sync variant pipes `input` to stdin and closes it.
+    execFileSync("cargo", ["xtask", "changelog", "lint-text", "--type", type], {
       cwd: repo,
       input: text,
-    } as Parameters<typeof execFile>[2]);
+      stdio: ["pipe", "pipe", "pipe"],
+      timeout: 300_000,
+    });
     return [];
   } catch (err) {
-    const stdout = (err as { stdout?: string }).stdout ?? "";
+    const stdout = String((err as { stdout?: Buffer | string }).stdout ?? "");
     const lines = stdout.split("\n").filter((l) => l.trim() !== "");
     return lines.length > 0 ? lines : [`lint failed to run: ${String(err)}`];
   }
@@ -50,15 +53,26 @@ async function main(): Promise<void> {
   if (!values.fragments || !values.out) {
     throw new Error("usage: main.ts --fragments fragments.json [--prs prs.json] --out notes.json");
   }
-  const fragments = z.array(FragmentSchema).parse(JSON.parse(readFileSync(values.fragments, "utf8")));
+  const fragments = z
+    .array(FragmentSchema)
+    .parse(JSON.parse(readFileSync(values.fragments, "utf8")));
   const prs = values.prs
     ? z.array(PullRequestSchema).parse(JSON.parse(readFileSync(values.prs, "utf8")))
     : [];
   const system = readFileSync(path.join(here, "../prompts/system.md"), "utf8");
   const parse = process.env.ANTHROPIC_API_KEY ? apiParse(new Anthropic()) : null;
-  const notes = await curate({ fragments, prs, system, parse, lint: xtaskLint, log: console.error });
+  const notes = await curate({
+    fragments,
+    prs,
+    system,
+    parse,
+    lint: xtaskLint,
+    log: console.error,
+  });
   writeFileSync(values.out, `${JSON.stringify(notes, null, 2)}\n`);
-  console.error(`release notes: ${notes.entries.length} entries (${notes.source}), ${notes.dropped.length} dropped`);
+  console.error(
+    `release notes: ${notes.entries.length} entries (${notes.source}), ${notes.dropped.length} dropped`,
+  );
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

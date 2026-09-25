@@ -13,6 +13,7 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
 - A5-T03 signatures, fingerprints, key files, WASM exports — https://github.com/wouhliss/vgames/pull/5.
 - A5-T04 trust bundles, `verify_manifest`, `verify_compat_profile` — pushed to main, compat part in PR 7.
 - A5-T08 (part 1) changelog lint + PR gate — https://github.com/wouhliss/vgames/pull/9.
+- A5-T10 security gates (CODEOWNERS, ownership check, review checklist) — https://github.com/wouhliss/vgames/pull/14.
 - A5-T05 as redefined: no-panic property tests (`crates/vgames-core/tests/no_panic.rs`) for manifest, envelope,
   trust bundle, key file and compat parsers (arbitrary bytes + mutated valid documents), plus the existing path and
   manifest properties. **Fuzzing was removed completely at the owner's request** (no fuzz targets, corpora,
@@ -20,7 +21,7 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
 
 ## In progress
 - A5-T06 CLI: offline ceremonies merged (https://github.com/wouhliss/vgames/pull/10); `login`, `trust publish`, `publish`, `trust re-sign` next (need A1-T08/T11
-  and Agent 2's upload library). A5-T10 security gates in review. Then A5-T09 updater, A5-T08 release notes.
+  and Agent 2's upload library). A5-T08 release-notes agent in review. Then A5-T09 updater, A5-T07 release pipelines.
 
 ## Interfaces delivered (other agents may now rely on these)
 - **Signatures, key ids, fingerprints** (A5-T03 slice 1, for Agents 1, 2, 3):
@@ -125,6 +126,11 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
 - **Security gates for every agent** (A5-T10): `.github/CODEOWNERS` (every file owned; security-critical paths in a
   last, checked section), `cargo xtask codeowners check` in CI, and `docs/security/review-checklist.md`, linked from the
   PR template's security section. PRs touching a security-critical path go through that checklist.
+
+- **Release notes** (A5-T08, for the release workflow A5-T07): `scripts/release-notes` (claude-opus-5, structured
+  output, guards, deterministic fallback) and `cargo xtask changelog export | release <version>`. Dry run on the real
+  repo (no API key → fallback): 35 fragments folded, the 2 user launcher fragments became the player notes.
+  The live-API dry run on a test tag needs `ANTHROPIC_API_KEY` in the `release` environment (humans).
 
 ## Blockers / contract questions
 - `contract:` https://github.com/wouhliss/vgames/pull/12 — drops `cargo fuzz` from 01-security §9 and the Agent 1, 2

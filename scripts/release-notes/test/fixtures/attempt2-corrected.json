@@ -3,10 +3,16 @@
   "stop_reason": "end_turn",
   "parsed_output": {
     "entries": [
-      { "type": "fixed", "text": "Downloads now pick up where they left off after your computer restarts.",
-        "source_fragments": ["resume-after-restart"] },
-      { "type": "added", "text": "You can now pin favorite packages to the top of your library.",
-        "source_fragments": ["pin-favorites"] }
+      {
+        "type": "fixed",
+        "text": "Downloads now pick up where they left off after your computer restarts.",
+        "source_fragments": ["resume-after-restart"]
+      },
+      {
+        "type": "added",
+        "text": "You can now pin favorite packages to the top of your library.",
+        "source_fragments": ["pin-favorites"]
+      }
     ],
     "dropped": [
       { "slug": "download-engine-refactor", "reason": "internal change" },

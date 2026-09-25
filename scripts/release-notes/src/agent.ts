@@ -2,7 +2,13 @@ import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 
 import { checkNotes, deterministicNotes, type Lint } from "./guards.ts";
-import { type Fragment, type Notes, NotesSchema, type PullRequest, type ReleaseNotes } from "./schema.ts";
+import {
+  type Fragment,
+  type Notes,
+  NotesSchema,
+  type PullRequest,
+  type ReleaseNotes,
+} from "./schema.ts";
 
 export const MODEL = "claude-opus-5";
 /** `fallbacks: "default"` (routes declined requests by refusal category) needs this beta header. */
@@ -60,7 +66,11 @@ function prompt(fragments: Fragment[], prs: PullRequest[]): string {
   ].join("\n");
 }
 
-async function ask(parse: Parse, system: string, messages: Anthropic.Beta.BetaMessageParam[]): Promise<ParsedResponse & { parsed_output: Notes }> {
+async function ask(
+  parse: Parse,
+  system: string,
+  messages: Anthropic.Beta.BetaMessageParam[],
+): Promise<ParsedResponse & { parsed_output: Notes }> {
   const res = await parse({ system, messages });
   // Check why the model stopped before reading anything it produced.
   if (res.stop_reason === "refusal") {
@@ -110,7 +120,9 @@ export async function curate(opts: {
       res = await ask(opts.parse, opts.system, messages);
     } catch (err) {
       if (isUnavailable(err)) {
-        return fallback(`the API is unavailable (${err instanceof Error ? err.message : String(err)})`);
+        return fallback(
+          `the API is unavailable (${err instanceof Error ? err.message : String(err)})`,
+        );
       }
       throw err;
     }

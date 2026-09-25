@@ -3,13 +3,22 @@
   "stop_reason": "end_turn",
   "parsed_output": {
     "entries": [
-      { "type": "fixed", "text": "Downloads now pick up where they left off after your computer restarts.",
-        "source_fragments": ["resume-after-restart"] },
-      { "type": "added", "text": "You can now pin favorite packages to the top of your library.",
-        "source_fragments": ["pin-favorites"] },
-      { "type": "changed", "text": "Downloads start faster.",
-        "source_fragments": ["download-engine-refactor"] }
+      {
+        "type": "fixed",
+        "text": "Downloads now pick up where they left off after your computer restarts.",
+        "source_fragments": ["resume-after-restart"]
+      },
+      {
+        "type": "added",
+        "text": "You can now pin favorite packages to the top of your library.",
+        "source_fragments": ["pin-favorites"]
+      },
+      {
+        "type": "changed",
+        "text": "Downloads start faster.",
+        "source_fragments": ["download-engine-refactor"]
+      }
     ],
-    "dropped": [ { "slug": "admin-bulk-yank", "reason": "admin-only change" } ]
+    "dropped": [{ "slug": "admin-bulk-yank", "reason": "admin-only change" }]
   }
 }
