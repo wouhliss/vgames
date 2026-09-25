@@ -160,6 +160,8 @@ jobs:
       - name: All fragments are valid
         if: github.event_name != 'pull_request'
         run: cargo xtask changelog lint
+      - name: Every file has a code owner; security paths stay with security
+        run: cargo xtask codeowners check
 
   wasm:
     name: WASM (vgames-core, pack-wasm)
