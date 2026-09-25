@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT package_id, state, manifest_object, manifest_size FROM package_versions WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "package_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "package_versions",
+            "name": "package_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "state",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "package_versions",
+            "name": "state"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "manifest_object",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "package_versions",
+            "name": "manifest_object"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "manifest_size",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "package_versions",
+            "name": "manifest_size"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "fb00704a2773dc784d19f2c48f2474abdd5c2713fa92adbd1e56a0caeb9a57c2"
+}

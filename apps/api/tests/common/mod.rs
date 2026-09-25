@@ -1,6 +1,8 @@
 //! Shared helpers for integration tests.
 #![allow(dead_code, clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+pub mod publishing;
+
 use std::collections::HashMap;
 
 use axum::{

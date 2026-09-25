@@ -202,3 +202,11 @@ pub struct FinalizeRequest {
 pub struct ReplaceSignature {
     pub signature: SignatureEnvelope,
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(deny_unknown_fields)]
+pub struct YankRequest {
+    #[cfg_attr(feature = "openapi", schema(min_length = 3, max_length = 500))]
+    pub reason: String,
+}

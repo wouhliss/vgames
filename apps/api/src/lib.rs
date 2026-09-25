@@ -17,6 +17,7 @@ pub mod openapi;
 pub mod openapi_problems;
 pub mod packages;
 pub mod realtime;
+pub mod releases;
 pub mod saves;
 pub mod secret;
 pub mod server;
