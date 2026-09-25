@@ -20,10 +20,13 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
   trust bundle, key file and compat parsers (arbitrary bytes + mutated valid documents), plus the existing path and
   manifest properties. **Fuzzing was removed completely at the owner's request** (no fuzz targets, corpora,
   workflows, nightly toolchain or cargo-fuzz).
+- A5-T09 launcher updater — https://github.com/wouhliss/vgames/pull/22 (supersedes PR 17): tested against a local
+  update server with throwaway minisign keys; `requireSignedVersion` on.
 
 ## In progress
-- A5-T09 launcher updater (in review, supersedes PR 17). Then A5-T07 release pipelines, A5-T06 server commands
-  (`login`, `trust publish`, `publish`, `trust re-sign`), A5-T12 runtime catalog, A5-T11 adversarial tests, A5-T13 runbooks.
+- A5-T06 part 2: `vgames login | logout`, `trust publish`, `trust re-sign` (in review). `vgames publish` waits for
+  Agent 2's upload library (A2-T05). Then A5-T07 release pipelines, A5-T12 runtime catalog, A5-T11 adversarial tests,
+  A5-T13 runbooks.
 
 ## Interfaces delivered (other agents may now rely on these)
 - **Signatures, key ids, fingerprints** (A5-T03 slice 1, for Agents 1, 2, 3):
@@ -106,8 +109,20 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
   `--passphrase-env VAR` / `--passphrase-file PATH` for scripts). `trust build` carries every previous revocation
   forward and refuses to re-trust a revoked key; `trust sign` writes the `{bundle, signature}` JSON that
   `POST /v1/admin/trust/bundles` takes. **Agent 1:** use it to make test bundles for A1-T08 (see
-  `crates/vgames-cli/tests/ceremony.rs`). Next: `login`, `trust publish`, `publish`, `trust re-sign` (need A1-T08/T11
-  and Agent 2's upload library).
+  `crates/vgames-cli/tests/ceremony.rs`).
+- **`vgames` CLI, server commands** (A5-T06 part 2, for server owners and admins):
+  - `vgames login --server URL` (desktop PKCE flow, paste the code or the whole `vgames://auth/callback` link; the root
+    fingerprint is pinned at login, `--fingerprint VG1-…` non-interactively; `--authorize-with PROGRAM` replaces the
+    browser in scripts). Tokens in the OS keychain (service `vgames-cli`), else a `0600` file with a warning; refresh
+    rotation is persisted before use. `VGAMES_ACCESS_TOKEN=vga_…` for one-shot scripts. `vgames logout` revokes.
+  - `vgames trust publish --signed bundle.signed.json`: verified locally (pinned root, server id, newer than the
+    server's) before `POST /v1/admin/trust/bundles`.
+  - `vgames trust re-sign --from <old key id> --key new.vgkey [--previous old.signed.json] [--finalized-before T]
+    [--dry-run]`: lists every `verifying | ready | published` version signed by the old key, verifies each old envelope
+    under the old key (so only digests the old key really signed are re-attested), signs the same digest with the new
+    key and posts `…/signature`. Checks the new key is trusted in the server's verified bundle first.
+  - Smoke-tested against the real API (fake Discord, fs storage): login, bundle v1, bundle v2 revoking the key,
+    replay refused, re-sign dry run over the admin listings.
 
 - **CI for everyone** (A5-T01): every PR runs `.github/workflows/ci.yml` (Rust fmt/clippy/tests with Postgres 18,
   sqlx offline check + migrations on an empty DB and upgrade from the base revision, WASM + pack-wasm smoke,
@@ -141,6 +156,16 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
   the `ui_ready` latch above).
 - From Agent 2: a way to pause active downloads at their next checkpoint (A2-T04/T08). `updater_install` waits until
   every install reports `InstallPhase::Paused` or finishes; today it just waits.
+- From Agent 2: the upload library (A2-T05) for `vgames publish` (A5-T06) and the end-to-end key-pipeline script.
+- **From Agent 1 (security finding, sign-in):** the desktop callback answers `302 Location: vgames://…` with the
+  paste-code page as the **body**. Browsers never render a 302 body, so when the deep link cannot reach the launcher
+  (not installed, scheme not registered) or the sign-in comes from the CLI, the code is never shown and the paste
+  fallback (01 §4.1) cannot work. Proposal: answer `200` with the page (code + "open vgames" link) and trigger the deep
+  link from the page (`<meta http-equiv="refresh" content="0;url=vgames://…">`), `Cache-Control: no-store` as today.
+- **From Agent 1 (contract request):** add the optional `signature` (`SignatureEnvelope`) to the admin `Version`
+  schema (the server already stores `manifest_blake3`, `signature` and `publisher_key_id`). Today `vgames trust
+  re-sign` can only reach versions that are the current release (their envelope is in the release descriptor);
+  older `ready`/`published` versions are listed as skipped. The CLI already reads the field when present.
 
 - **Security gates for every agent** (A5-T10): `.github/CODEOWNERS` (every file owned; security-critical paths in a
   last, checked section), `cargo xtask codeowners check` in CI, and `docs/security/review-checklist.md`, linked from the

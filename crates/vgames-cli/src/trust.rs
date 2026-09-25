@@ -105,6 +105,10 @@ Examples:
         #[arg(long)]
         last_version: Option<u64>,
     },
+    /// Upload a signed bundle to the server (owner; verified locally first).
+    Publish(crate::trust_server::PublishArgs),
+    /// Re-sign every version signed by an old publisher key with your new one.
+    ReSign(crate::trust_server::ReSignArgs),
 }
 
 pub fn run(cmd: TrustCmd) -> Result<()> {
@@ -139,6 +143,8 @@ pub fn run(cmd: TrustCmd) -> Result<()> {
             server_id.as_deref(),
             last_version,
         ),
+        TrustCmd::Publish(args) => crate::block_on(crate::trust_server::publish(args)),
+        TrustCmd::ReSign(args) => crate::block_on(crate::trust_server::re_sign(args)),
     }
 }
 
