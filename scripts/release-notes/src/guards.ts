@@ -9,7 +9,11 @@ export type Lint = (text: string, type: string) => Promise<string[]>;
  * every entry must cite only existing `audience: user` + `component: launcher`
  * fragments, and every text must pass the same lint as the fragments.
  */
-export async function checkNotes(notes: Notes, fragments: Fragment[], lint: Lint): Promise<string[]> {
+export async function checkNotes(
+  notes: Notes,
+  fragments: Fragment[],
+  lint: Lint,
+): Promise<string[]> {
   const bySlug = new Map(fragments.map((f) => [f.slug, f]));
   const problems: string[] = [];
   for (const [i, e] of notes.entries.entries()) {
@@ -22,9 +26,13 @@ export async function checkNotes(notes: Notes, fragments: Fragment[], lint: Lint
       if (!f) {
         problems.push(`${where}: cites unknown fragment ${JSON.stringify(slug)}`);
       } else if (f.audience !== "user") {
-        problems.push(`${where}: cites internal fragment ${JSON.stringify(slug)}; internal changes never reach players`);
+        problems.push(
+          `${where}: cites internal fragment ${JSON.stringify(slug)}; internal changes never reach players`,
+        );
       } else if (f.component !== "launcher") {
-        problems.push(`${where}: cites ${f.component} fragment ${JSON.stringify(slug)}; only launcher changes belong here`);
+        problems.push(
+          `${where}: cites ${f.component} fragment ${JSON.stringify(slug)}; only launcher changes belong here`,
+        );
       }
     }
     for (const p of await lint(e.text, e.type)) {

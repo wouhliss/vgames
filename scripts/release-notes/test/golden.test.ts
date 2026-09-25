@@ -10,7 +10,8 @@ import type { Lint } from "../src/guards.ts";
 import type { Fragment } from "../src/schema.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const load = <T>(name: string): T => JSON.parse(readFileSync(path.join(here, "fixtures", name), "utf8")) as T;
+const load = <T>(name: string): T =>
+  JSON.parse(readFileSync(path.join(here, "fixtures", name), "utf8")) as T;
 const fragments = load<Fragment[]>("fragments.json");
 const system = readFileSync(path.join(here, "../prompts/system.md"), "utf8");
 
@@ -21,7 +22,10 @@ const lint: Lint = async (text) =>
     : [];
 
 /** Replays recorded responses in order and records the requests. */
-function replay(...responses: ParsedResponse[]): { parse: Parse; requests: Parameters<Parse>[0][] } {
+function replay(...responses: ParsedResponse[]): {
+  parse: Parse;
+  requests: Parameters<Parse>[0][];
+} {
   const requests: Parameters<Parse>[0][] = [];
   const queue = [...responses];
   return {
@@ -43,7 +47,10 @@ describe("release-notes agent", () => {
     );
     const notes = await curate({ fragments, prs: [], system, parse, lint });
     expect(notes.source).toBe("agent");
-    expect(notes.entries.map((e) => e.source_fragments)).toEqual([["resume-after-restart"], ["pin-favorites"]]);
+    expect(notes.entries.map((e) => e.source_fragments)).toEqual([
+      ["resume-after-restart"],
+      ["pin-favorites"],
+    ]);
     // The retry told the model exactly why.
     expect(requests).toHaveLength(2);
     const feedback = JSON.stringify(requests[1]?.messages.at(-1));
@@ -54,7 +61,9 @@ describe("release-notes agent", () => {
   it("fails the job when the guards reject the answer twice", async () => {
     const bad = load<ParsedResponse>("attempt1-promotes-internal.json");
     const { parse } = replay(bad, bad);
-    await expect(curate({ fragments, prs: [], system, parse, lint })).rejects.toThrow(/failed the guards twice/);
+    await expect(curate({ fragments, prs: [], system, parse, lint })).rejects.toThrow(
+      /failed the guards twice/,
+    );
   });
 
   it("refuses entries citing admin fragments or unknown slugs", async () => {
@@ -63,20 +72,32 @@ describe("release-notes agent", () => {
       stop_reason: "end_turn",
       parsed_output: {
         entries: [
-          { type: "added", text: "Admins can now withdraw several versions at once.", source_fragments: ["admin-bulk-yank"] },
-          { type: "added", text: "Something that never happened is here.", source_fragments: ["made-up"] },
+          {
+            type: "added",
+            text: "Admins can now withdraw several versions at once.",
+            source_fragments: ["admin-bulk-yank"],
+          },
+          {
+            type: "added",
+            text: "Something that never happened is here.",
+            source_fragments: ["made-up"],
+          },
         ],
         dropped: [],
       },
     };
     const { parse } = replay(answer, answer);
-    await expect(curate({ fragments, prs: [], system, parse, lint })).rejects.toThrow(/admin fragment[\s\S]*unknown fragment/);
+    await expect(curate({ fragments, prs: [], system, parse, lint })).rejects.toThrow(
+      /admin fragment[\s\S]*unknown fragment/,
+    );
   });
 
   it("fails on a refusal and on any stop reason other than end_turn", async () => {
     for (const stop_reason of ["refusal", "max_tokens"]) {
       const { parse } = replay({ model: "claude-opus-5", stop_reason, parsed_output: null });
-      await expect(curate({ fragments, prs: [], system, parse, lint })).rejects.toBeInstanceOf(ReleaseNotesError);
+      await expect(curate({ fragments, prs: [], system, parse, lint })).rejects.toBeInstanceOf(
+        ReleaseNotesError,
+      );
     }
   });
 
@@ -91,7 +112,9 @@ describe("release-notes agent", () => {
       "You can now pin favorite packages to the top of your library.",
     ]);
     // Without credentials, same result.
-    expect((await curate({ fragments, prs: [], system, parse: null, lint })).entries).toHaveLength(2);
+    expect((await curate({ fragments, prs: [], system, parse: null, lint })).entries).toHaveLength(
+      2,
+    );
   });
 
   it("an internal-only release has no entries", async () => {
@@ -99,9 +122,16 @@ describe("release-notes agent", () => {
     const { parse } = replay({
       model: "claude-opus-5",
       stop_reason: "end_turn",
-      parsed_output: { entries: [], dropped: [{ slug: "download-engine-refactor", reason: "internal" }] },
+      parsed_output: {
+        entries: [],
+        dropped: [{ slug: "download-engine-refactor", reason: "internal" }],
+      },
     });
-    expect((await curate({ fragments: internal, prs: [], system, parse, lint })).entries).toEqual([]);
-    expect((await curate({ fragments: internal, prs: [], system, parse: null, lint })).entries).toEqual([]);
+    expect((await curate({ fragments: internal, prs: [], system, parse, lint })).entries).toEqual(
+      [],
+    );
+    expect(
+      (await curate({ fragments: internal, prs: [], system, parse: null, lint })).entries,
+    ).toEqual([]);
   });
 });

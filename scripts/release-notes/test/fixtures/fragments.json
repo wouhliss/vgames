@@ -1,10 +1,30 @@
 [
-  { "slug": "resume-after-restart", "audience": "user", "component": "launcher", "type": "fixed",
-    "text": "Downloads now resume after your computer restarts." },
-  { "slug": "pin-favorites", "audience": "user", "component": "launcher", "type": "added",
-    "text": "You can now pin favorite packages to the top of your library." },
-  { "slug": "download-engine-refactor", "audience": "internal", "component": "launcher", "type": "changed",
-    "text": "Refactored the download engine into smaller modules." },
-  { "slug": "admin-bulk-yank", "audience": "user", "component": "admin", "type": "added",
-    "text": "Admins can now withdraw several versions at once." }
+  {
+    "slug": "resume-after-restart",
+    "audience": "user",
+    "component": "launcher",
+    "type": "fixed",
+    "text": "Downloads now resume after your computer restarts."
+  },
+  {
+    "slug": "pin-favorites",
+    "audience": "user",
+    "component": "launcher",
+    "type": "added",
+    "text": "You can now pin favorite packages to the top of your library."
+  },
+  {
+    "slug": "download-engine-refactor",
+    "audience": "internal",
+    "component": "launcher",
+    "type": "changed",
+    "text": "Refactored the download engine into smaller modules."
+  },
+  {
+    "slug": "admin-bulk-yank",
+    "audience": "user",
+    "component": "admin",
+    "type": "added",
+    "text": "Admins can now withdraw several versions at once."
+  }
 ]
