@@ -6,7 +6,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use axum::{
-    extract::{Path, State},
+    extract::State,
     http::StatusCode,
     response::{IntoResponse, Response},
 };
@@ -28,6 +28,7 @@ use vgames_proto::{
     },
 };
 
+use crate::http::path::Path;
 use crate::{
     audit,
     auth::{CurrentUser, RequestMeta, RequireAdmin},
@@ -1195,7 +1196,30 @@ pub async fn admin_delete(
 
 #[cfg(test)]
 mod tests {
+    use proptest::prelude::*;
+
     use super::*;
+
+    proptest! {
+        /// Any title gives a valid slug that stays valid with every collision suffix.
+        #[test]
+        fn slugify_always_yields_valid_slugs(title in any::<String>()) {
+            let slug = slugify(&title);
+            prop_assert!(valid_slug(&slug), "{slug:?} from {title:?}");
+            prop_assert!(slug.is_ascii());
+            prop_assert!(slug.len() <= 56);
+            prop_assert_eq!(slugify(&slug), slug.clone(), "idempotent");
+            for n in [2, 10, 9_999] {
+                let suffixed = format!("{slug}-{n}");
+                prop_assert!(valid_slug(&suffixed), "{}", suffixed);
+            }
+        }
+
+        #[test]
+        fn valid_slug_never_panics(s in any::<String>()) {
+            let _ = valid_slug(&s);
+        }
+    }
 
     #[test]
     fn slugs() {

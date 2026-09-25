@@ -2,7 +2,7 @@
 //! Verification is `vgames_core::verify::verify_compat_profile`; documents are stored verbatim.
 
 use axum::{
-    extract::{Path, State},
+    extract::State,
     http::StatusCode,
     response::{IntoResponse, Response},
 };
@@ -24,6 +24,7 @@ use vgames_proto::{
     },
 };
 
+use crate::http::path::Path;
 use crate::{
     audit,
     auth::{CurrentUser, RequestMeta, RequireAdmin},

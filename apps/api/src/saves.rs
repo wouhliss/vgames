@@ -20,7 +20,7 @@ use std::{
 };
 
 use axum::{
-    extract::{DefaultBodyLimit, Path, State},
+    extract::{DefaultBodyLimit, State},
     http::StatusCode,
     response::{IntoResponse, Response},
 };
@@ -41,6 +41,7 @@ use vgames_proto::{
     },
 };
 
+use crate::http::path::Path;
 use crate::{
     auth::CurrentUser,
     error::{ApiError, ApiResult},

@@ -3,10 +3,7 @@
 //!
 //! Signed URLs are bearer credentials: they are returned to the caller and never logged.
 
-use axum::{
-    extract::{Path, State},
-    http::StatusCode,
-};
+use axum::{extract::State, http::StatusCode};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use utoipa_axum::{router::OpenApiRouter, routes};
@@ -21,6 +18,7 @@ use vgames_proto::{
     },
 };
 
+use crate::http::path::Path;
 use crate::{
     auth::CurrentUser,
     error::{ApiError, ApiResult},

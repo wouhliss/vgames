@@ -6,7 +6,7 @@ pub mod tokens;
 
 use axum::{
     Router,
-    extract::{Path, Query as AxumQuery, State},
+    extract::{Query as AxumQuery, State, rejection::QueryRejection},
     http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{Html, IntoResponse, Redirect, Response},
     routing::get,
@@ -29,6 +29,7 @@ use extract::{CSRF_COOKIE, SESSION_COOKIE, WEB_ABSOLUTE, WEB_IDLE, parse_role};
 pub use extract::{CurrentUser, RequestMeta, RequireAdmin, RequireOwner};
 use tokens::{ACCESS_PREFIX, REFRESH_PREFIX, WEB_SESSION_PREFIX};
 
+use crate::http::path::Path;
 use crate::{
     config::DiscordConfig,
     error::{ApiError, ApiResult},
@@ -270,8 +271,11 @@ pub struct CallbackParams {
 pub async fn callback(
     State(state): State<AppState>,
     meta: RequestMeta,
-    AxumQuery(params): AxumQuery<CallbackParams>,
+    params: Result<AxumQuery<CallbackParams>, QueryRejection>,
 ) -> ApiResult<Response> {
+    // Discord may add parameters, so this is axum's lenient query parser; its rejection is
+    // plain text, so a missing or malformed state becomes the usual problem.
+    let AxumQuery(params) = params.map_err(|_| invalid_state())?;
     if params.state.len() > 128 {
         return Err(invalid_state());
     }

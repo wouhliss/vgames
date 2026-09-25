@@ -87,7 +87,8 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   fails config validation at startup.
 
 ## In progress
-- A1-T16 — Hardening and performance
+- A1-T16 — Hardening and performance. Part 1 (rate limits, problem+json, property tests) done; part 2
+  (`EXPLAIN (ANALYZE)` review with seeded data, indexes, load test numbers) next.
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_api::error::ApiError` / `ApiResult` (problem+json), `vgames_api::http::json::{Json, Validate}`
@@ -158,6 +159,13 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   `POST …/blobs/download-urls {blake3:[…≤1000]}`. Send an `Idempotency-Key` on commits so a retry after a lost response
   returns the same snapshot instead of a conflict. `device_id` comes from the session (A4-T04), not the body.
   Paths are checked with `vgames_core::paths` rules per save location (no case collisions); up to 10,000 files per snapshot.
+- **Rate limits and errors for everyone (A1-T16):** every route is limited. Routes that authenticate (bearer/cookie in
+  the OpenAPI document) are limited per user when the request carries a valid session; everything else (public routes,
+  unknown paths, requests without or with bad credentials) per IP, `/_storage/*` under its own `Policy::Storage`
+  (6,000/min per IP) and `/admin/*` + `/docs/*` under `Policy::Static` (3,000/min per IP). `tests/it/limits.rs` walks every operation, so a new route without a limit fails CI.
+  Any non-JSON error on `/v1/*` is rewritten to problem+json by `http::problems::normalize` (same status, original
+  text in `detail`). **Agent 4:** prefer `vgames_api::http::path::Path` over `axum::extract::Path` in `social/`: a
+  malformed id then answers `400 invalid_path` with a readable detail instead of the generic rewrite.
 - **Admin web hosting for Agent 3 (admin-web build):** build with Vite `base: "/admin/"` and emit hashed files into
   `assets/` (Vite's default); everything else in `dist/` is served `no-cache`. Point `VGAMES_ADMIN_DIST` at `dist/`.
   The CSP allows `'wasm-unsafe-eval'` and `worker-src 'self'` for the upload worker, `connect-src`/`img-src` for

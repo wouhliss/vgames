@@ -5,7 +5,7 @@
 //! Disabling revokes every session in the same transaction and closes the user's sockets
 //! (`session.revoked`) once it commits.
 
-use axum::extract::{Path, State};
+use axum::extract::State;
 use serde::Deserialize;
 use serde_json::json;
 use time::OffsetDateTime;
@@ -18,6 +18,7 @@ use vgames_proto::{
     auth::{Role, User, UserPublic},
 };
 
+use crate::http::path::Path;
 use crate::{
     audit,
     auth::{

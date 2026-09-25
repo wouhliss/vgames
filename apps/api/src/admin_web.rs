@@ -16,13 +16,14 @@ use std::path::{Path as FsPath, PathBuf};
 use axum::{
     Router,
     body::Body,
-    extract::{Path, State},
+    extract::State,
     http::{HeaderValue, header},
     response::{IntoResponse, Redirect, Response},
     routing::get,
 };
 use tokio_util::io::ReaderStream;
 
+use crate::http::path::Path;
 use crate::{error::ApiError, state::AppState};
 
 /// The admin CSP (01-security §5).
