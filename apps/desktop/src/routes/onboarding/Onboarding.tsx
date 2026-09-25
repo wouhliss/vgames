@@ -8,12 +8,12 @@ import { useActiveServer, useLibraries, useOnboardingNeed } from "../../app/quer
 import type { OnboardingLinkState } from "../../app/RootLayout";
 import { Button } from "../../components/Button";
 import { ErrorState, LoadingState } from "../../components/Feedback";
+import { Notice } from "../../components/Notice";
 import { t } from "../../i18n";
 import { commands, type ServerPreview, type ServerProfile } from "../../ipc";
 import { queryKeys } from "../../ipc/query";
 import { CheckStep } from "./CheckStep";
 import { LibraryStep } from "./LibraryStep";
-import { Notice } from "./Notice";
 import styles from "./Onboarding.module.css";
 import { ServerStep } from "./ServerStep";
 import { SignInStep } from "./SignInStep";

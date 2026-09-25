@@ -43,7 +43,7 @@ export function Badge({
   return (
     <span className={`${styles.badge} ${styles[tone]}`}>
       {icon ? <Icon name={icon} size={12} /> : null}
-      {children}
+      <span className={styles.badgeText}>{children}</span>
     </span>
   );
 }

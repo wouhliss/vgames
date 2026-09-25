@@ -77,78 +77,9 @@
   justify-content: flex-start;
 }
 
-.fingerprint {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-5);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-raised);
-}
-
 .fingerprintLabel {
   color: var(--color-text-muted);
   font-size: var(--text-sm);
-}
-
-.groups {
-  display: grid;
-  grid-template-columns: auto repeat(4, auto);
-  gap: var(--space-2) var(--space-4);
-  justify-content: start;
-  margin: 0;
-  font-family: var(--font-mono);
-  font-size: var(--text-3xl);
-  font-weight: var(--weight-medium);
-  letter-spacing: 0.06em;
-  line-height: 1.2;
-  user-select: text;
-}
-
-.prefix {
-  grid-row: span 2;
-  align-self: center;
-  color: var(--color-text-subtle);
-  font-size: var(--text-xl);
-}
-
-.notice {
-  display: flex;
-  gap: var(--space-3);
-  align-items: flex-start;
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-md);
-  background: var(--color-info-subtle);
-}
-
-.noticeSuccess {
-  background: var(--color-success-subtle);
-}
-
-.noticeSuccess svg {
-  color: var(--color-success);
-}
-
-.noticeWarning {
-  background: var(--color-warning-subtle);
-}
-
-.noticeWarning svg {
-  color: var(--color-warning);
-}
-
-.noticeDanger {
-  background: var(--color-danger-subtle);
-}
-
-.noticeDanger svg {
-  color: var(--color-danger);
-}
-
-.notice svg {
-  flex: none;
-  margin-top: 2px;
 }
 
 .meta {

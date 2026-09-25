@@ -18,19 +18,13 @@ import type {
   ServerPreview,
   ServerProfile,
   UpdateCheck,
+  UpdaterStatus,
 } from "../ipc";
 import { events } from "../ipc";
+import { defaultLibraryState, type LibraryState, libraryHandlers } from "./library";
+import { CommandFailure, fail, type Handler } from "./runtime";
 
-/** Thrown from a handler to make the command resolve to `{ status: "error", error }`. */
-class CommandFailure {
-  constructor(readonly error: unknown) {}
-}
-
-export function fail(error: unknown): never {
-  throw new CommandFailure(error);
-}
-
-export type Handler = (args: Record<string, unknown>) => unknown;
+export { fail, type Handler } from "./runtime";
 
 export interface MockCall {
   cmd: string;
@@ -68,7 +62,7 @@ export const MOCK_LIBRARY: Library = {
   install_count: 0,
 };
 
-export interface MockState {
+export interface MockState extends LibraryState {
   appInfo: AppInfo;
   appearance: AppearanceSettings;
   servers: ServerProfile[];
@@ -80,11 +74,15 @@ export interface MockState {
   /** How long sign-in takes in the browser before `auth-finished` arrives (ms). */
   authDelayMs: number;
   diagnostics: string;
+  /** What `updater_check` returns (a check the user asked for). */
   updateCheck: UpdateCheck;
+  /** What `updater_status` returns. */
+  updater: UpdaterStatus;
 }
 
 export function defaultState(): MockState {
   return {
+    ...defaultLibraryState(),
     appInfo: {
       version: "0.4.0",
       profile: null,
@@ -103,6 +101,11 @@ export function defaultState(): MockState {
     libraryAddError: null,
     authDelayMs: 600,
     updateCheck: { kind: "available", version: "0.9.1" },
+    updater: {
+      current_version: "0.4.0",
+      state: { kind: "available", version: "0.9.1", date: "2026-09-20" },
+      blocked: null,
+    },
     diagnostics: "vgames 0.4.0 (linux x86_64)\nservers: 1\nlibraries: 1",
   };
 }
@@ -353,6 +356,7 @@ export function installMockBackend(overrides: Partial<MockState> = {}): MockBack
       return null;
     },
 
+    updater_status: () => state.updater,
     updater_check: () => state.updateCheck,
 
     libraries_list: () => state.libraries,
@@ -380,6 +384,8 @@ export function installMockBackend(overrides: Partial<MockState> = {}): MockBack
       void events.librariesChanged.emit({});
       return library;
     },
+
+    ...libraryHandlers(state),
   };
 
   function signIn(serverId: string) {

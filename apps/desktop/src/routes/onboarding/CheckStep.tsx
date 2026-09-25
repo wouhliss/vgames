@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { Button } from "../../components/Button";
+import { Fingerprint, Notice } from "../../components/Notice";
 import { t } from "../../i18n";
 import { commands, type ServerPreview, type ServerProfile } from "../../ipc";
 import { serverErrorMessage } from "./messages";
-import { Fingerprint, Notice } from "./Notice";
 import styles from "./Onboarding.module.css";
 import { StepHeading } from "./StepHeading";
 

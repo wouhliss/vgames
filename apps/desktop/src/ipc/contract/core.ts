@@ -1,4 +1,5 @@
-// Commands and events the UI needs that are NOT in the generated `src/bindings.ts` yet.
+// Commands and events the UI needs that are NOT in the generated `src/bindings.ts` yet: app,
+// servers, accounts and libraries (Agent 2, A2-T01/T07/T08).
 //
 // Same shape as tauri-specta output (`Result`, snake_case payload fields, camelCase argument keys), so
 // the UI can be built and tested today against mockIPC. This is the request list for Agent 2 and
@@ -10,20 +11,10 @@
 // - Commands returning `Result<T, E>` in Rust resolve to `{ status: "ok", data } | { status: "error", error }`.
 // - Rust enums are `#[serde(tag = "kind", rename_all = "snake_case")]`.
 // - Event names are the kebab-case type name (`UiNav` → "ui-nav").
-import { invoke as TAURI_INVOKE } from "@tauri-apps/api/core";
-import * as TAURI_API_EVENT from "@tauri-apps/api/event";
-import type { ControllerKind } from "../bindings";
+import type { ControllerKind } from "../../bindings";
+import { call, get, makeEvents, type Result } from "./runtime";
 
-export type Result<T, E> = { status: "ok"; data: T } | { status: "error"; error: E };
-
-async function call<T, E>(cmd: string, args?: Record<string, unknown>): Promise<Result<T, E>> {
-  try {
-    return { status: "ok", data: await TAURI_INVOKE<T>(cmd, args) };
-  } catch (e) {
-    if (e instanceof Error) throw e;
-    return { status: "error", error: e as E };
-  }
-}
+export type { Result } from "./runtime";
 
 // ------------------------------------------------------------------------------------------------
 // Shared types
@@ -31,6 +22,14 @@ async function call<T, E>(cmd: string, args?: Record<string, unknown>): Promise<
 export type Os = "windows" | "linux" | "macos";
 export type Arch = "x86_64" | "aarch64";
 export type Role = "user" | "admin" | "owner";
+/** A package build's target (OpenAPI `Platform`). */
+export type Platform =
+  | "windows-x86_64"
+  | "windows-aarch64"
+  | "linux-x86_64"
+  | "linux-aarch64"
+  | "macos-aarch64"
+  | "macos-x86_64";
 
 /** Generic error for commands without a more specific error type. Messages are English fallbacks. */
 export type AppError =
@@ -196,24 +195,24 @@ export type LibrariesChanged = Record<string, never>;
 // ------------------------------------------------------------------------------------------------
 // Commands
 
-export const pendingCommands = {
+export const coreCommands = {
   /** Redacted diagnostics text for bug reports (no tokens, ids or paths under the home directory). */
   async appDiagnostics(): Promise<string> {
-    return await TAURI_INVOKE("app_diagnostics");
+    return await get("app_diagnostics");
   },
   /** Opens an http(s) URL in the system browser. Rust rejects every other scheme. */
   async openExternalUrl(url: string): Promise<Result<null, AppError>> {
     return call("open_external_url", { url });
   },
   async appearanceGet(): Promise<AppearanceSettings> {
-    return await TAURI_INVOKE("appearance_get");
+    return await get("appearance_get");
   },
   async appearanceSet(settings: AppearanceSettings): Promise<Result<AppearanceSettings, AppError>> {
     return call("appearance_set", { settings });
   },
 
   async serversList(): Promise<ServerProfile[]> {
-    return await TAURI_INVOKE("servers_list");
+    return await get("servers_list");
   },
   /** Fetches `/.well-known/vgames.json`. `expectedFingerprint` comes from a `vgames://server/add` link. */
   async serverPreview(
@@ -245,7 +244,7 @@ export const pendingCommands = {
     return call("auth_submit_code", { flowId, code });
   },
   async authCancel(flowId: string): Promise<null> {
-    return await TAURI_INVOKE("auth_cancel", { flowId });
+    return await get("auth_cancel", { flowId });
   },
 
   /** Revokes this device's session on the server and deletes its tokens from the keychain. */
@@ -266,28 +265,9 @@ export const pendingCommands = {
 };
 
 // ------------------------------------------------------------------------------------------------
-// Events (same helper shape as tauri-specta's `__makeEvents__`)
+// Events
 
-type EventApi<T> = {
-  listen: (cb: TAURI_API_EVENT.EventCallback<T>) => ReturnType<typeof TAURI_API_EVENT.listen<T>>;
-  once: (cb: TAURI_API_EVENT.EventCallback<T>) => ReturnType<typeof TAURI_API_EVENT.once<T>>;
-  emit: (payload: T) => ReturnType<typeof TAURI_API_EVENT.emit>;
-};
-
-function makeEvents<T extends Record<string, unknown>>(mappings: Record<keyof T, string>) {
-  const out = {} as { [K in keyof T]: EventApi<T[K]> };
-  for (const key of Object.keys(mappings) as (keyof T)[]) {
-    const name = mappings[key];
-    out[key] = {
-      listen: (cb) => TAURI_API_EVENT.listen(name, cb),
-      once: (cb) => TAURI_API_EVENT.once(name, cb),
-      emit: (payload) => TAURI_API_EVENT.emit(name, payload),
-    };
-  }
-  return out;
-}
-
-export const pendingEvents = makeEvents<{
+export const coreEvents = makeEvents<{
   uiNav: UiNav;
   activeControllerChanged: ActiveControllerChanged;
   connectivityChanged: ConnectivityChanged;

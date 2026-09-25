@@ -1,10 +1,10 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { Button } from "../../components/Button";
+import { Notice } from "../../components/Notice";
 import { TextField } from "../../components/TextField";
 import { t } from "../../i18n";
 import { commands, type ServerError, type ServerPreview, type UpdateCheck } from "../../ipc";
 import { serverErrorMessage } from "./messages";
-import { Notice } from "./Notice";
 import styles from "./Onboarding.module.css";
 import { StepHeading } from "./StepHeading";
 

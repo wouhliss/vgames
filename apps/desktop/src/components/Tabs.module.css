@@ -42,6 +42,12 @@
   color: var(--color-text);
 }
 
+.tab[data-drop-active="true"] {
+  outline: 2px dashed var(--color-accent);
+  outline-offset: -4px;
+  color: var(--color-text);
+}
+
 .glyph {
   color: var(--color-text-subtle);
 }

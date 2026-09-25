@@ -2,11 +2,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../components/Button";
 import { Icon } from "../../components/Icon";
+import { Notice } from "../../components/Notice";
 import { formatBytes, t } from "../../i18n";
 import { commands, type FolderPick } from "../../ipc";
 import { queryKeys } from "../../ipc/query";
 import { libraryErrorMessage } from "./messages";
-import { Notice } from "./Notice";
 import styles from "./Onboarding.module.css";
 import { StepHeading } from "./StepHeading";
 

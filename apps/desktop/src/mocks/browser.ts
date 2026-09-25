@@ -10,12 +10,27 @@ import {
   type MockBackend,
   type MockState,
 } from "./backend";
+import { MOCK_COLLECTIONS, makeInstalls, OFFLINE_LIBRARY } from "./library";
+
+function withInstalls(count: number): Partial<MockState> {
+  const libraries = [MOCK_LIBRARY, OFFLINE_LIBRARY];
+  return {
+    servers: [MOCK_SERVER],
+    libraries,
+    collections: MOCK_COLLECTIONS,
+    installs: makeInstalls(count, MOCK_SERVER, libraries),
+  };
+}
 
 const PRESETS: Record<string, () => Partial<MockState>> = {
   /** First run: no server, no library. */
   fresh: () => ({}),
-  /** Signed in with a library. */
-  ready: () => ({ servers: [MOCK_SERVER], libraries: [MOCK_LIBRARY] }),
+  /** Signed in, with a library holding a few dozen packages (one drive offline). */
+  ready: () => withInstalls(40),
+  /** Signed in with an empty library. */
+  empty: () => ({ servers: [MOCK_SERVER], libraries: [MOCK_LIBRARY] }),
+  /** 5,000 installed packages (performance). */
+  huge: () => withInstalls(5000),
   /** Server added and signed in, but no library yet. */
   "no-library": () => ({ servers: [MOCK_SERVER] }),
   /** Debug build (http://localhost allowed). */

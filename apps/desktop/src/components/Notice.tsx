@@ -1,6 +1,7 @@
+// Inline messages inside a screen or dialog, and the large grouped fingerprint display.
 import type { ReactNode } from "react";
-import { Icon, type IconName } from "../../components/Icon";
-import styles from "./Onboarding.module.css";
+import { Icon, type IconName } from "./Icon";
+import styles from "./Notice.module.css";
 
 const TONES = {
   info: { icon: "info", className: "" },

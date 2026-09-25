@@ -16,6 +16,8 @@ export interface ConfirmDialogProps {
   tone?: "default" | "danger";
   /** Require typing this exact text (trimmed, case-sensitive) before confirming. */
   typedConfirmation?: string;
+  /** Keeps the confirm button inert, e.g. while the dialog loads what it asks about. */
+  confirmDisabled?: boolean;
   onConfirm: () => void | Promise<void>;
   onCancel: () => void;
   children?: ReactNode;
@@ -33,6 +35,7 @@ function OpenConfirm({
   cancelLabel,
   tone = "default",
   typedConfirmation,
+  confirmDisabled = false,
   onConfirm,
   onCancel,
   children,
@@ -41,7 +44,8 @@ function OpenConfirm({
   const [busy, setBusy] = useState(false);
   const cancelRef = useRef<HTMLButtonElement>(null);
   const inputId = useId();
-  const matches = typedConfirmation === undefined || typed.trim() === typedConfirmation;
+  const matches =
+    !confirmDisabled && (typedConfirmation === undefined || typed.trim() === typedConfirmation);
 
   const confirm = async () => {
     if (!matches || busy) return;

@@ -18,6 +18,20 @@ export function useLibraries() {
   });
 }
 
+export function useInstalls() {
+  return useQuery({
+    queryKey: queryKeys.installs,
+    queryFn: async () => unwrap(await commands.installsList()),
+  });
+}
+
+export function useCollections() {
+  return useQuery({
+    queryKey: queryKeys.collections,
+    queryFn: async () => unwrap(await commands.collectionsList()),
+  });
+}
+
 export function useAppInfo() {
   return useQuery({ queryKey: queryKeys.appInfo, queryFn: () => commands.appInfo() });
 }
