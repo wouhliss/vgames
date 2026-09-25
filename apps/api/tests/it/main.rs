@@ -7,6 +7,7 @@
 
 mod common;
 
+mod admin;
 mod auth;
 mod cli;
 mod compat;

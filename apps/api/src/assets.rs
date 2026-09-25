@@ -8,7 +8,7 @@
 use std::{io::Cursor, time::Duration};
 
 use axum::{
-    extract::{DefaultBodyLimit, Multipart, Path, State},
+    extract::{DefaultBodyLimit, Multipart, Path, State, multipart::MultipartRejection},
     http::{HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
 };
@@ -261,8 +261,13 @@ pub async fn upload_asset(
     RequireAdmin(admin): RequireAdmin,
     meta: RequestMeta,
     Path(package_id): Path<Uuid>,
-    mut multipart: Multipart,
+    multipart: Result<Multipart, MultipartRejection>,
 ) -> ApiResult<Response> {
+    // axum's own rejection is plain text; every error here is problem+json.
+    let mut multipart = multipart.map_err(|_| {
+        ApiError::unsupported_media_type()
+            .with_detail("Send the image as multipart/form-data with a boundary")
+    })?;
     let exists = sqlx::query_scalar!(
         r#"SELECT EXISTS (SELECT 1 FROM packages WHERE id = $1 AND deleted_at IS NULL) AS "e!""#,
         package_id

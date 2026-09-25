@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM registration_allowlist WHERE discord_id = $1 RETURNING note",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "note",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "registration_allowlist",
+            "name": "note"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "f90a8954fdc333f4b915494d24f2080857e8c035b21c189a0086e2893f49197f"
+}

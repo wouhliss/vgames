@@ -1,15 +1,9 @@
 # Contract operations not implemented yet (A1-T03). This list must only shrink;
 # A1-T17 empties it. Social/messaging/invites operations are Agent 4's.
 
-DELETE /v1/admin/allowlist/{discord_id}
 DELETE /v1/blocks/{user_id}
 DELETE /v1/devices/{device_id}
 DELETE /v1/friends/{user_id}
-GET /v1/admin/allowlist
-GET /v1/admin/audit-log
-GET /v1/admin/jobs
-GET /v1/admin/settings
-GET /v1/admin/users
 GET /v1/conversations
 GET /v1/devices
 GET /v1/friends
@@ -17,10 +11,6 @@ GET /v1/inbox
 GET /v1/invites
 GET /v1/users/{user_id}
 GET /v1/users/{user_id}/devices
-PATCH /v1/admin/settings
-PATCH /v1/admin/users/{user_id}
-POST /v1/admin/allowlist
-POST /v1/admin/jobs/{job_id}/retry
 POST /v1/blocks/{user_id}
 POST /v1/conversations
 POST /v1/conversations/{conversation_id}/messages

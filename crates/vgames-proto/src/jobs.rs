@@ -43,3 +43,35 @@ pub struct Job {
     #[cfg_attr(feature = "openapi", schema(value_type = Option<String>, format = DateTime))]
     pub finished_at: Option<OffsetDateTime>,
 }
+
+impl JobState {
+    pub const ALL: [JobState; 5] = [
+        JobState::Queued,
+        JobState::Running,
+        JobState::Succeeded,
+        JobState::Failed,
+        JobState::Dead,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            JobState::Queued => "queued",
+            JobState::Running => "running",
+            JobState::Succeeded => "succeeded",
+            JobState::Failed => "failed",
+            JobState::Dead => "dead",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|j| j.as_str() == s)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct JobPage {
+    pub items: Vec<Job>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}

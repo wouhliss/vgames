@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO registration_allowlist (discord_id, note, added_by) VALUES ($1, $2, $3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "96651550f086ffe0d2eca3c2d5e1608416fd227bb7633e6e0681b2f33cc1dba7"
+}

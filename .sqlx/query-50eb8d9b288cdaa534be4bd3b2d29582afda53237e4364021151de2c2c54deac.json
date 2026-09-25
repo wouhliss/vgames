@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT max(updated_at) AS \"updated_at!\" FROM (\n             SELECT updated_at FROM server_settings WHERE key = ANY($1) FOR UPDATE) s",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "updated_at!",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "50eb8d9b288cdaa534be4bd3b2d29582afda53237e4364021151de2c2c54deac"
+}

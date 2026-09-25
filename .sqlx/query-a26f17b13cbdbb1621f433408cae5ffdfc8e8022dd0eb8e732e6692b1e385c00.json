@@ -1,0 +1,127 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, kind, state, attempts, max_attempts, last_error, run_at, created_at, finished_at\n           FROM jobs\n           WHERE ($1::uuid IS NULL OR id < $1)\n             AND ($2::text IS NULL OR state = $2)\n             AND ($3::text IS NULL OR kind = $3)\n           ORDER BY id DESC LIMIT $4",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "jobs",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "jobs",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "state",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "jobs",
+            "name": "state"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "attempts",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "jobs",
+            "name": "attempts"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "max_attempts",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "jobs",
+            "name": "max_attempts"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "last_error",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "jobs",
+            "name": "last_error"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "run_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "jobs",
+            "name": "run_at"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "jobs",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "finished_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "jobs",
+            "name": "finished_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "a26f17b13cbdbb1621f433408cae5ffdfc8e8022dd0eb8e732e6692b1e385c00"
+}

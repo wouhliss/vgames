@@ -571,6 +571,21 @@ async fn asset_upload_rejects_bad_images(pool: PgPool) {
     .await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 
+    // Not multipart at all: a problem+json 415, not axum's plain-text rejection.
+    let resp = send(
+        &app,
+        common::publishing::json_req(
+            "POST",
+            &format!("/v1/admin/packages/{id}/assets"),
+            &admin,
+            &json!({}),
+        ),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
+    assert_eq!(resp.headers()["content-type"], "application/problem+json");
+    assert_eq!(body_json(resp).await["code"], "unsupported_media_type");
+
     let count: i64 = sqlx::query_scalar("SELECT count(*) FROM package_assets")
         .fetch_one(&pool)
         .await

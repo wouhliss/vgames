@@ -11,6 +11,7 @@
 //! bodies reject unknown fields (`deny_unknown_fields`); optional response fields
 //! are omitted when absent.
 
+pub mod admin;
 pub mod auth;
 pub mod common;
 pub mod discovery;

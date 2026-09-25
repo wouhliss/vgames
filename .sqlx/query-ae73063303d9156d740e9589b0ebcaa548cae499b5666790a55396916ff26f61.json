@@ -1,0 +1,112 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT a.discord_id, a.note, a.created_at,\n                  u.id AS \"added_by_id?\", u.username AS \"added_by_username?\",\n                  u.display_name AS \"added_by_display_name?\", u.discord_id AS \"added_by_discord_id?\",\n                  u.avatar_hash AS \"added_by_avatar_hash?\"\n           FROM registration_allowlist a LEFT JOIN users u ON u.id = a.added_by\n           WHERE a.discord_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "discord_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "registration_allowlist",
+            "name": "discord_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "note",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "registration_allowlist",
+            "name": "note"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "registration_allowlist",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "added_by_id?",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "added_by_username?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "username"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "added_by_display_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "display_name"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "added_by_discord_id?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "discord_id"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "added_by_avatar_hash?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "avatar_hash"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "ae73063303d9156d740e9589b0ebcaa548cae499b5666790a55396916ff26f61"
+}
