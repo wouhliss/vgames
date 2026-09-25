@@ -1808,6 +1808,8 @@ export interface components {
                 external?: {
                     steam_app_id?: number;
                     igdb_id?: number;
+                    /** @description umu-database id (Steam candidates only), a hint for writing compat profiles (09-compatibility §4) */
+                    umu_id?: string;
                 };
             };
             fetched_at: components["schemas"]["Timestamp"];
@@ -2582,6 +2584,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             413: components["responses"]["PayloadTooLarge"];
         };
@@ -2641,6 +2644,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
             413: components["responses"]["PayloadTooLarge"];
         };
     };
@@ -3633,6 +3637,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             412: components["responses"]["PreconditionFailed"];
+            428: components["responses"]["PreconditionRequired"];
         };
     };
     adminUploadAsset: {

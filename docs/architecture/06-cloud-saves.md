@@ -73,12 +73,20 @@ server snapshots and local backups with **Restore**.
 
 ## 4. Server rules (Agent 1)
 
-- `blobs/prepare`: validate hashes/sizes, enforce quota (sum of distinct blob sizes referenced by
-  retained snapshots + pending), insert `save_blobs` rows with `uploaded_at = NULL`, return URLs
-  (PUT, 15 min, `x-goog-content-length-range: size,size`). Blobs already uploaded are not returned.
+- `blobs/prepare`: validate hashes/sizes, enforce quota, insert `save_blobs` rows with `uploaded_at = NULL`,
+  return URLs (PUT, 15 min, `x-goog-content-length-range: size,size`). Blobs already uploaded are not returned.
+  Unknown (or deleted) package → `404`.
+- **Quota** (`VGAMES_SAVE_QUOTA_BYTES_PER_PACKAGE`, distinct blob bytes): `prepare` answers `413 save_quota_exceeded`
+  when the head's blobs + the pushed blobs + the user's uploads still in flight (prepared in the last hour, not yet
+  committed) exceed it; a commit whose own distinct blobs exceed it is `413` too. After a commit, the oldest snapshots
+  of that package (never the head) are dropped until the retained snapshots fit the quota, so history shrinks instead
+  of blocking new saves.
 - Snapshot commit (one transaction): every referenced blob exists **and** is uploaded (the server
   confirms via object metadata, including size, the first time it is referenced) → insert snapshot and
   `save_snapshot_blobs` → `UPDATE save_heads SET snapshot_id=$new WHERE user_id=$u AND
   package_id=$p AND snapshot_id=$parent` (or insert if the parent is null and no head exists). Zero rows → rollback, `409`.
-- Retention job: keep the latest 20 snapshots + the head; delete blobs no longer referenced (and their objects).
+- Retention job: keep the latest 20 snapshots + the head; delete blobs no longer referenced (and their objects)
+  once a day has passed since their last `prepare` or upload (a push in progress keeps its blobs). Deletion holds a
+  per-user lock that `prepare` and commits share, so a blob confirmed for a commit cannot disappear before the
+  snapshot references it.
 - A user can only ever see their own saves. There is no admin UI for save contents.
