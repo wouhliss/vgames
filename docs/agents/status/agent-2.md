@@ -12,7 +12,8 @@
 - A2-T06 signed-manifest update planner ([PR #40](https://github.com/wouhliss/vgames/pull/40), merged): identifies unchanged and changed files, removable paths, locally reusable chunks, remote bytes, and safe versus explicit in-place space requirements.
 
 ## In progress
-- A2-T06 read-only verifier ([PR #41](https://github.com/wouhliss/vgames/pull/41)) hashes installed files on bounded blocking workers, reports damaged file indices, and feeds a repair plan that excludes damaged chunks from local reuse. Transfer execution, commit replay, move, and uninstall prompts remain to be implemented.
+- A2-T06 read-only verifier ([PR #41](https://github.com/wouhliss/vgames/pull/41), merged) hashes installed files on bounded blocking workers, reports damaged file indices, and feeds a repair plan that excludes damaged chunks from local reuse.
+- A2-T06 durable safe-update commit: validates staged files against the signed release, writes a commit marker and preserved signed manifests, applies deletions and renames idempotently, then writes `install.json` last. `update::commit::recover_pending(root, trust)` replays after a crash; callers must invoke it before offering Launch. Transfer execution, in-place mode, move, and uninstall prompts remain.
 - A2-T07 servers, trust, and launcher authentication are assigned to another agent; this workstream remains on A2-T06.
 
 ## Interfaces delivered (other agents may now rely on these)

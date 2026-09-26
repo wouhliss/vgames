@@ -139,7 +139,7 @@ pub enum InstallError {
 }
 
 impl InstallError {
-    fn io(op: &'static str, path: &Path, source: io::Error) -> Self {
+    pub(crate) fn io(op: &'static str, path: &Path, source: io::Error) -> Self {
         Self::Io {
             op,
             path: path.to_owned(),
