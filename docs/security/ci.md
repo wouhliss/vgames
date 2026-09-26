@@ -69,10 +69,20 @@ Tags: protect `desktop-v*`, `api-v*` and `runtimes-*` with a tag ruleset so only
 
 ## Running the checks locally
 
-```sh
-cargo fmt --all -- --check && cargo clippy --all-targets -- -D warnings && cargo test
-cargo clippy -p vgames-core --features wasm --target wasm32-unknown-unknown -- -D warnings
-cargo deny --workspace check            # https://github.com/EmbarkStudios/cargo-deny
-gitleaks git --config .gitleaks.toml .  # https://github.com/gitleaks/gitleaks
-pnpm lint && pnpm typecheck && pnpm test && pnpm openapi:lint
-```
+`scripts/ci/local.sh` runs the jobs of `ci.yml` on your machine before you push (commit first). It checks the committed
+tree against its merge base with `origin/main` and writes `target/ci-local/summary.md`. `--list` names the jobs, and
+`scripts/ci/local.sh rust changelog` runs a subset. A missing tool fails its job with the install command. Postgres 18
+comes from `DATABASE_URL`, or from `docker compose up -d postgres`. Keep its jobs in step with `ci.yml` (both owned by
+Agent 5).
+
+## Public repository (since 2026-09-26, humans)
+
+- Actions minutes are free on public repositories. The private-repo quota ran out on 2026-09-25, which is why jobs
+  failed before starting that evening.
+- Fork PRs: keep "Require approval for all outside collaborators". `ci.yml` uses no secrets, and every secret stays
+  in the approval-gated `release` environment.
+- Turn on **secret scanning** and **push protection** (free on public repositories; they complement gitleaks), and
+  **private vulnerability reporting**.
+- `Dependency review` now runs on every PR (it is free on public repositories). Add it to the required checks.
+- `soak.yml` uses a self-hosted runner. It never runs on `pull_request`, so fork code cannot reach that runner; keep it
+  that way, and restrict the runner group to this repository.
