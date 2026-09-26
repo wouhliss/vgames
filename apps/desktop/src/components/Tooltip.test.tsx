@@ -8,11 +8,12 @@ afterEach(() => {
 
 /** jsdom has no layout: the panel spans x 120–1120 in a 1280 px window; the tooltip spans `tip`. */
 function renderInPanel(tip: [number, number] = [500, 626]) {
+  const place = { tip };
   vi.spyOn(document.documentElement, "clientWidth", "get").mockReturnValue(1280);
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
     this: HTMLElement,
   ) {
-    const [left, right] = this.getAttribute("role") === "tooltip" ? tip : [120, 1120];
+    const [left, right] = this.getAttribute("role") === "tooltip" ? place.tip : [120, 1120];
     return {
       left,
       right,
@@ -33,9 +34,10 @@ function renderInPanel(tip: [number, number] = [500, 626]) {
     </div>,
   );
   document.documentElement.dataset.modality = "keyboard";
+  return place;
 }
 
-describe("Tooltip", async () => {
+describe("Tooltip", () => {
   it("shows on keyboard focus and hides on Escape", async () => {
     renderInPanel();
     fireEvent.focus(screen.getByRole("button"));
@@ -63,6 +65,17 @@ describe("Tooltip", async () => {
     expect((await screen.findByRole("tooltip", { hidden: true })).style.translate).toBe(
       "calc(-50% + -184px) 0",
     );
+  });
+
+  it("forgets the shift when it closes", async () => {
+    const place = renderInPanel([110, 236]);
+    const button = screen.getByRole("button");
+    fireEvent.focus(button);
+    expect((await screen.findByRole("tooltip", { hidden: true })).style.translate).not.toBe("");
+    fireEvent.blur(button);
+    place.tip = [500, 626];
+    fireEvent.focus(button);
+    expect((await screen.findByRole("tooltip", { hidden: true })).style.translate).toBe("");
   });
 
   it("stays centered when it fits", async () => {

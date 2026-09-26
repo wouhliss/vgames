@@ -54,12 +54,10 @@ export function Tooltip({
   const tip = useRef<HTMLSpanElement>(null);
 
   // Centered on the trigger, but moved sideways so a dialog's or panel's edge never cuts it off.
+  // Measured only while open: closed tooltips (one per tile in long lists) cost nothing.
   useLayoutEffect(() => {
     const el = tip.current;
-    if (!open || !el) {
-      setShift(0);
-      return;
-    }
+    if (!open || !el) return;
     const rect = el.getBoundingClientRect();
     const [min, max] = visibleSpan(el);
     if (rect.left < min + EDGE) setShift(min + EDGE - rect.left);
@@ -73,6 +71,7 @@ export function Tooltip({
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
         setOpen(false);
+        setShift(0);
       }
     }
     document.addEventListener("keydown", onKey, true);
@@ -86,6 +85,7 @@ export function Tooltip({
   const hide = () => {
     clearTimeout(timer.current);
     setOpen(false);
+    setShift(0);
   };
 
   const trigger =
