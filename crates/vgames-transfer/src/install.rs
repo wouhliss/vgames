@@ -13,7 +13,7 @@
 //! [`install`] again. [`remove_install`] deletes what a manifest lists
 //! (cancelled installs, uninstall) without following links.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 use std::fs::{self, OpenOptions};
 use std::io;
 use std::path::{Path, PathBuf};
@@ -577,6 +577,86 @@ pub struct Leftovers {
     pub paths: Vec<PathBuf>,
 }
 
+/// Read-only preview for an uninstall confirmation. `paths` are relative to
+/// the install root; symlinks and non-regular entries are reported, not opened.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct UninstallPreview {
+    pub paths: Vec<PathBuf>,
+    /// More than 10,000 entries remain; the UI should show a count limit.
+    pub truncated: bool,
+}
+
+/// Lists files and empty folders the signed manifest does not own, before
+/// [`remove_install`] changes anything. The default uninstall keeps them.
+pub fn preview_uninstall(
+    root: &Path,
+    manifest: &Manifest,
+) -> Result<UninstallPreview, InstallError> {
+    let safe = SafeRoot::open(root)?;
+    let mut known_files = HashSet::new();
+    let mut known_dirs = HashSet::new();
+    for file in &manifest.files {
+        let path = safe.path_of(&file.path);
+        add_parents(&path, safe.root(), &mut known_dirs);
+        known_files.insert(path);
+    }
+    for dir in &manifest.directories {
+        let path = safe.path_of(dir);
+        add_parents(&path, safe.root(), &mut known_dirs);
+        known_dirs.insert(path);
+    }
+    let meta = safe.path_of(META_DIR);
+    let mut preview = UninstallPreview::default();
+    let mut pending = vec![safe.root().to_owned()];
+    while let Some(dir) = pending.pop() {
+        let entries = fs::read_dir(&dir).map_err(|error| InstallError::io("read", &dir, error))?;
+        let mut empty = true;
+        for entry in entries {
+            let entry = entry.map_err(|error| InstallError::io("read", &dir, error))?;
+            empty = false;
+            let path = entry.path();
+            let metadata = fs::symlink_metadata(&path)
+                .map_err(|error| InstallError::io("inspect", &path, error))?;
+            if path == meta && metadata.is_dir() && !metadata.file_type().is_symlink() {
+                continue;
+            }
+            if metadata.is_dir() && !metadata.file_type().is_symlink() {
+                pending.push(path);
+            } else if !metadata.is_file()
+                || metadata.file_type().is_symlink()
+                || !known_files.contains(&path)
+            {
+                preview
+                    .paths
+                    .push(path.strip_prefix(safe.root()).unwrap_or(&path).to_owned());
+            }
+            if preview.paths.len() >= 10_000 {
+                preview.truncated = true;
+                preview.paths.sort();
+                return Ok(preview);
+            }
+        }
+        if empty && dir != safe.root() && !known_dirs.contains(&dir) {
+            preview
+                .paths
+                .push(dir.strip_prefix(safe.root()).unwrap_or(&dir).to_owned());
+        }
+    }
+    preview.paths.sort();
+    Ok(preview)
+}
+
+fn add_parents(path: &Path, root: &Path, known_dirs: &mut HashSet<PathBuf>) {
+    let mut current = path.parent();
+    while let Some(parent) = current {
+        if parent == root {
+            break;
+        }
+        known_dirs.insert(parent.to_owned());
+        current = parent.parent();
+    }
+}
+
 /// Deletes every file the manifest lists, the launcher metadata and the
 /// folders that became empty, never following links (02 §9). Anything else
 /// (saves, mods, configs, links) is left in place and returned, so the caller
@@ -722,4 +802,62 @@ pub fn manifest_digest(root: &Path) -> Result<Digest, InstallError> {
     fs::read(&path)
         .map(|b| Digest::of(&b))
         .map_err(|e| InstallError::io("read", &path, e))
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod uninstall_preview_tests {
+    use super::*;
+    use crate::testkit::package::{FileSpec, TestPackage, write_tree};
+    use vgames_pack::Compression;
+
+    #[test]
+    fn previews_leftovers_before_uninstall_and_keeps_them_by_default() {
+        let file = FileSpec::random("bin/game", 16, 4);
+        let package = TestPackage::build(
+            std::slice::from_ref(&file),
+            &["known-empty"],
+            Compression::None,
+        );
+        let root = tempfile::tempdir().unwrap();
+        write_tree(root.path(), &[file], &["known-empty", "user-empty"]);
+        fs::write(root.path().join("bin/config.ini"), b"player settings").unwrap();
+        let preview = preview_uninstall(root.path(), package.release().manifest()).unwrap();
+        assert_eq!(
+            preview.paths,
+            vec![PathBuf::from("bin/config.ini"), PathBuf::from("user-empty")]
+        );
+        assert!(!preview.truncated);
+        let leftovers = remove_install(root.path(), package.release().manifest()).unwrap();
+        assert!(
+            leftovers
+                .paths
+                .iter()
+                .any(|path| path.ends_with("bin/config.ini"))
+        );
+        assert_eq!(
+            fs::read(root.path().join("bin/config.ini")).unwrap(),
+            b"player settings"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_at_a_signed_file_path_is_reported_without_following_it() {
+        use std::os::unix::fs::symlink;
+        let file = FileSpec::random("game", 8, 9);
+        let package = TestPackage::build(std::slice::from_ref(&file), &[], Compression::None);
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        write_tree(root.path(), &[file], &[]);
+        fs::remove_file(root.path().join("game")).unwrap();
+        fs::write(outside.path().join("secret"), b"untouched").unwrap();
+        symlink(outside.path().join("secret"), root.path().join("game")).unwrap();
+        let preview = preview_uninstall(root.path(), package.release().manifest()).unwrap();
+        assert_eq!(preview.paths, vec![PathBuf::from("game")]);
+        assert_eq!(
+            fs::read(outside.path().join("secret")).unwrap(),
+            b"untouched"
+        );
+    }
 }
