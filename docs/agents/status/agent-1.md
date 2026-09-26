@@ -87,8 +87,57 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   fails config validation at startup.
 
 ## In progress
-- A1-T16 — Hardening and performance. Part 1 (rate limits, problem+json, property tests) done; part 2
-  (`EXPLAIN (ANALYZE)` review with seeded data, indexes, load test numbers) next.
+- A1-T16 — Hardening and performance.
+  - Part 1 is merged: rate limits on every route, problem+json for every error, property tests.
+  - Part 2 is the query-plan review, the indexes and the load test, set up in `apps/api/bench/`.
+    The seed has 100k packages, 1M audit rows, 1M envelopes, 20k users with sessions and 200k jobs.
+  - **Plans.** List filters are written `($n IS NULL OR col = $n)`, and Postgres's generic plans
+    cannot use an index for them. After five executions the catalog fell back to sequential scans
+    and sorts (39–173 ms), and filtered audit pages walked the log backwards (123–176 ms).
+    `db::connect` now sets `plan_cache_mode = force_custom_plan`. That costs about 0.2 ms of
+    planning per statement.
+  - **Indexes.** New migration `20260925180000_list_indexes`: audit actor, action and target on
+    `(key, id DESC)`, and job `(state, id DESC)`.
+  - **Custom-plan timings** (`explain.sql`):
+
+    | Query | Time |
+    |---|---|
+    | Session lookup | 0.11 ms |
+    | Catalog first page (title or recent) | 0.4 ms |
+    | Catalog cursor page | 0.5 ms |
+    | Catalog, linux only | 4 ms |
+    | Catalog, genre + linux | 9 ms |
+    | Catalog search, two words | 12 ms |
+    | Release descriptor | 0.18 ms |
+    | Pack lookup | 0.17 ms |
+    | Inbox | 0.8 ms |
+    | Audit, any filter | ≤ 0.4 ms |
+    | Job claim | 0.07 ms |
+    | Admin job list | 0.1 ms |
+
+    No sequential scan remains; there were six under generic plans.
+  - **Load** (`load.sh`, release build, 4 cores shared with Postgres and the load generator):
+    200 rps, 30 s after a 10 s warm-up, 25 sessions, latency-corrected.
+
+    | Endpoint | p50 | p99 |
+    |---|---|---|
+    | Release descriptor | 4.0 ms | 19 ms |
+    | Download URLs | 3.6 ms | 11 ms |
+    | Catalog | 18 ms | **107 ms** (just over budget) |
+
+    The catalog mix is 25% searches, half of them one common word matching about 12% of the
+    100k packages.
+  - **Left to do (A1-T16), both in `packages.rs::list_catalog`.** Access to that file was blocked
+    in the session that did part 2.
+    1. A one-word search matching 12k packages checks `package_releases` for every match
+       before sorting: 35 of 60 ms. Sort, then check releases only until the page is full.
+       The genre filter `= ANY(genres)` cannot use an index; use `genres @> ARRAY[$2]` with a
+       GIN index.
+    2. Suspected bug. `sort=recent` orders `updated_at DESC, id ASC`, but its cursor compares
+       `(updated_at, id) < (…)`, which only matches `id DESC`. Packages with the same
+       `updated_at` could then repeat or be skipped across pages. Verify and fix together.
+    3. The inbox budget is Agent 4's endpoint (A4-T05). Its query already runs on
+       `message_envelopes_inbox_idx` in 0.8 ms.
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_api::error::ApiError` / `ApiResult` (problem+json), `vgames_api::http::json::{Json, Validate}`
@@ -187,7 +236,9 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
 - From Agent 2: `vgames_pack::verify::PackStreamVerifier` (A2-T03) for the `version.verify` job (A1-T12).
 
 ## Blockers / contract questions
-- None. I merge my own PRs (rebase merge) once Agent 5's CI is green.
+- None. I merge my own PRs (rebase merge) once Agent 5's CI is green. Seen Agent 5's two CI notes (2026-09-26):
+  Actions ran out of minutes, then the repo went public and GitHub CI is back as the merge gate;
+  `scripts/ci/local.sh` is optional.
 - Contract commit (A1-T13, in the same PR as the feature): `prepareSaveBlobs` / `commitSaveSnapshot` answer 404 for an
   unknown package; 06 §4 now defines the quota as head + pushed + in-flight blobs, with commits trimming the oldest
   history (never the head) to fit, so a large save that changes every session never locks a player out.
