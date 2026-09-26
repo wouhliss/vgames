@@ -16,6 +16,7 @@
 - A2-T06 durable safe-update commit: validates staged files against the signed release, writes a commit marker and preserved signed manifests, applies deletions and renames idempotently, then writes `install.json` last. `update::commit::recover_pending(root, trust)` replays after a crash; callers must invoke it before offering Launch. Transfer execution, in-place mode, move, and uninstall prompts remain.
 - A2-T06 safe transfer execution: `update::execute::update_safe` stages changed files, verifies and reuses matching chunks from the old install, downloads only remaining changed-file chunks, resumes through a separate journal, and invokes the durable commit. In-place mode, repair execution, move, and uninstall prompts remain.
 - A2-T06 uninstall preview: `install::preview_uninstall(root, manifest)` lists unknown files, links, and empty user folders before removal; `remove_install` still keeps those leftovers by default. UI confirmation wiring remains for A2-T08/Agent 3.
+- A2-T06 install move: `move_install::move_install(source, destination, manifest)` renames on one filesystem; across filesystems it copies all regular files (including user settings), verifies the copy and signed package files, then deletes the source. Links and special files are refused without following them.
 - A2-T07 servers, trust, and launcher authentication are assigned to another agent; this workstream remains on A2-T06.
 
 ## Interfaces delivered (other agents may now rely on these)
