@@ -12,6 +12,10 @@
 // - Rust enums are `#[serde(tag = "kind", rename_all = "snake_case")]`.
 // - Event names are the kebab-case type name (`UiNav` → "ui-nav").
 import type { AppError, ControllerKind } from "../../bindings";
+
+// Now generated; re-exported so contract files can keep importing it from here.
+export type { AppError } from "../../bindings";
+
 import { call, get, makeEvents, type Result } from "./runtime";
 
 export type { Result } from "./runtime";

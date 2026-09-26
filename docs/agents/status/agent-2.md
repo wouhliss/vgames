@@ -10,15 +10,33 @@
 - A2-T04 CI follow-up ([PR #38](https://github.com/wouhliss/vgames/pull/38)): crash-resume tests wait for pack bytes before killing child processes on fast macOS runners; Windows Tauri test binaries embed the Common Controls v6 manifest, and generated bindings compare equal across CRLF/LF checkouts.
 - A2-T05 Upload engine (`vgames-transfer::upload`): direct pack streams to GCS-style resumable sessions, private resume records, adaptive 4–16 workers, progress events, and end-to-end publishing API ([PR #39](https://github.com/wouhliss/vgames/pull/39), stacked on #38). The protocol is tested with a wiremock simulator and Agent 1's real fs storage backend; a separate process is killed after a randomly selected 256 KiB-aligned confirmed offset and the next process resumes; changing a file during streaming aborts with a clear error.
 
-- A2-T07 Servers, trust and sign-in in the launcher (branch `claude/optimistic-fermat-gwfhvh`): see Interfaces.
+- A2-T07 Servers, trust and sign-in in the launcher ([PR #47](https://github.com/wouhliss/vgames/pull/47)): see Interfaces.
   Mock-server tests cover TOFU pin, fingerprint-mismatch block (persisted, survives restart, lifts only when the
   pinned key returns), trust rollback and forged bundles refused, root rotation via `next_root`, refresh-token
   rotation (5 concurrent callers → one refresh), 401 → one refresh then one retry, refused refresh → local sign-out.
 
 ## In progress
-- Work split with the other Agent 2 session (owner's decision): that session finishes A2-T05/T06 (branches
-  `agent2/*`); this one takes A2-T07 onward. Noted Agent 5's CI notes: GitHub CI runs again (repo public);
-  `scripts/ci/local.sh` stays optional.
+- Nothing. **Next task: A2-T08** (libraries, catalog, install orchestration).
+
+### Handoff for the next Agent 2 session
+- A2-T01…T07 are on `main` (A2-T05/T06 by the other Agent 2 session, A2-T07 by PR #47). Start A2-T08 from a
+  fresh branch off `main`, e.g. `agent2/libraries-installs`.
+- Building blocks for A2-T08:
+  - HTTP: `state.servers.api(server_id)` → `ApiClient::{public, authed, authed_empty}`. Never build another client.
+  - Trust: `state.servers.trust_state(id)` for `vgames_transfer::install::fetch_release`; on an unknown signing
+    key, call `state.servers.refresh_trust(id)` once, then retry.
+  - Downloads: `vgames_transfer::{install, download, update}` (see Interfaces below); implement `PackUrlSource`
+    on top of `ApiClient` (`POST v1/versions/{vid}/download-urls`, integrity reports).
+  - DB: `download_jobs`, `installs`, `libraries`, `favorites`, `collections` already exist in `0001_init`.
+    New desktop migrations go after `0003_servers_trust`.
+  - UI contract to fulfil: `apps/desktop/src/ipc/contract/{core,library,catalog}.ts` (Agent 3). When a command
+    lands in `bindings.ts`, delete it from the contract file; `AppError` is re-exported from `core.ts`.
+- Open questions for others are under "Needs from others" (Agent 3: an `internal` error kind; Agent 1: a
+  `vgames://auth/callback?error=` redirect).
+- Old branch `claude/optimistic-fermat-gwfhvh` on the remote still holds a superseded commit from closed PR #43.
+  Ignore it (do not merge it); A2-T05 on `main` replaces it.
+- Workflow: GitHub CI runs again (the repo is public); merge with rebase when the required checks are green.
+  `scripts/ci/local.sh` runs the same jobs locally (optional).
 
 ## Interfaces delivered (other agents may now rely on these)
 - **Event bus** (A2-T01, for Agents 3, 4, 5): `vgames_desktop_lib::events::{EventBus, AppEvent}`,
