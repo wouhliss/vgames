@@ -1,7 +1,7 @@
 // The signed-in app: sidebar, top bar, banners and the routed content. Sends first-run users to
 // onboarding until a server, an account and a library exist.
-import { useState } from "react";
-import { Navigate, NavLink, Outlet } from "react-router";
+import { useEffect, useRef, useState } from "react";
+import { Navigate, NavLink, Outlet, useLocation } from "react-router";
 import { ErrorState, LoadingState } from "../components/Feedback";
 import { Icon, type IconName } from "../components/Icon";
 import { t } from "../i18n";
@@ -19,7 +19,26 @@ const NAV: { to: string; icon: IconName; label: () => string }[] = [
   { to: "/settings", icon: "settings", label: () => t("nav.settings") },
 ];
 
+/**
+ * After a navigation, focus the new page's title so keyboard, controller and screen reader users
+ * start at the top of the page instead of on a link that no longer exists. Settings sections are
+ * one page: moving between them keeps focus in the section list.
+ */
+function useRouteFocus(): void {
+  const { pathname } = useLocation();
+  const page = pathname.startsWith("/settings") ? "/settings" : pathname;
+  const previous = useRef(page);
+  useEffect(() => {
+    if (previous.current === page) return;
+    previous.current = page;
+    const main = document.getElementById("main-content");
+    const title = main?.querySelector<HTMLElement>("[data-page-title]");
+    (title ?? main)?.focus({ preventScroll: true });
+  }, [page]);
+}
+
 export function Shell() {
+  useRouteFocus();
   const { need, loading, error } = useOnboardingNeed();
   const servers = useServers();
   const { server } = useActiveServer();

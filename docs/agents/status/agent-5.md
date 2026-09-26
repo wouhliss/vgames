@@ -30,13 +30,16 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
 - A5-T07 part 2: `apps/api/Dockerfile` (distroless, non-root, `--read-only`), `release-api.yml` (multi-arch, cosign
   keyless, SBOM + provenance), nightly `e2e.yml` (CLI key pipeline + admin Playwright against the real API), `soak.yml`,
   Dependabot — https://github.com/wouhliss/vgames/pull/33. The fork dry run (acceptance) needs humans.
+- A5-T12 part 1: `vgames_core::runtimes` (`verify_catalog`), runtime-catalog test vectors, `cargo xtask runtimes
+  build | sign | verify`, `runtimes/catalog.toml` — https://github.com/wouhliss/vgames/pull/35.
 
 ## In progress
-- A5-T12 part 1 (this change): `vgames_core::runtimes` (catalog types, rules, `verify_catalog`), test vectors for
-  Agent 2, `cargo xtask runtimes build | sign | verify`, `runtimes/catalog.toml` (no entries yet). Next: `runtimes.yml`
-  (upstream watcher that opens PRs), `release-runtimes.yml`, D3DMetal intake. Then `vgames publish` (A5-T06, on
-  Agent 2's A2-T05), A5-T11 adversarial tests, A5-T13 runbooks. The fork dry run of the release (A5-T07 acceptance)
-  needs humans.
+- **CI runs on GitHub again (the repository is public since 2026-09-26; Actions minutes are free).** Nothing changes
+  in the workflow: open the PR, wait for the required checks, merge. `scripts/ci/local.sh` runs the same jobs locally
+  before you push (optional, but it saves a round trip). The manual-only note of 2026-09-26 morning is withdrawn.
+- A5-T12 part 2 (runtime watcher `runtimes.yml`, `release-runtimes.yml`, `cargo xtask runtimes upsert`, `tar`
+  archives, smoke tests) is ready locally and lands next. Then `vgames publish`
+  (A5-T06, on Agent 2's A2-T05, https://github.com/wouhliss/vgames/pull/39), A5-T11, A5-T13.
 
 ## Interfaces delivered (other agents may now rely on these)
 - **Signatures, key ids, fingerprints** (A5-T03 slice 1, for Agents 1, 2, 3):
@@ -146,15 +149,9 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
   - `desktop-matrix.yml` runs the launcher crates' tests on Windows and macOS too (PRs touching them + nightly):
     **Agents 2 and 4**, expect OS-specific failures there to be reported as real bugs.
 - **CI for everyone** (A5-T01): every PR runs `.github/workflows/ci.yml` (Rust fmt/clippy/tests with Postgres 18,
-  sqlx offline check + migrations on an empty DB and upgrade from the base revision, WASM + pack-wasm smoke,
-  Biome/typecheck/Vitest/OpenAPI lint, launcher Playwright (mock), desktop clippy with WebKitGTK, cargo-deny,
-  cargo-audit, pnpm audit, gitleaks). **How to wait for CI with our token:** `gh pr checks` and `gh run watch` fail
-  (the token cannot read checks/annotations). Poll instead:
-  `id=$(gh run list -R wouhliss/vgames --branch <your-branch> -L 1 --json databaseId --jq '.[0].databaseId')`, then
-  `gh run view $id -R wouhliss/vgames --json status,conclusion,jobs` until `status` is `completed`; merge with
-  `gh pr merge <n> -R wouhliss/vgames --rebase` only when `conclusion` is `success`.
-  PR creation works now (`gh pr create`). Agent 3's request (desktop e2e in CI) and Agent 2's (pack-wasm build +
-  smoke) are included.
+  sqlx offline data + migrations, changelog fragments + code owners, WASM + pack-wasm smoke, Biome/typecheck/Vitest/OpenAPI
+  lint, launcher Playwright (mock), desktop clippy with WebKitGTK, cargo-deny/cargo-audit/pnpm audit, gitleaks,
+  actionlint). `scripts/ci/local.sh` runs the same jobs on your machine (`--list`, `--help`).
 - Formatting-only fixes I made so `main` is green (please pull before editing): `apps/api/src/storage/mod.rs`,
   `crates/vgames-pack/tests/roundtrip.rs` (rustfmt), `packages/pack-wasm/test/smoke.mjs`, `infra/gcs/cors.json`
   (Biome); `biome.json` migrated (`preset`) and now ignores `.sqlx/`, `**/tests/vectors`, `**/snapshots`, `**/pkg`.

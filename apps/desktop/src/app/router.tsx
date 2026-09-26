@@ -14,9 +14,15 @@ const devRoutes: RouteObject[] = import.meta.env.DEV
     ]
   : [];
 
+/** Shown while the first screen's code loads (a few milliseconds from disk): nothing. */
+function InitialLoad(): null {
+  return null;
+}
+
 export const routes: RouteObject[] = [
   {
     Component: RootLayout,
+    HydrateFallback: InitialLoad,
     errorElement: <RouteError />,
     children: [
       ...devRoutes,

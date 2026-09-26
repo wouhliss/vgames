@@ -169,3 +169,33 @@ async fn openapi_and_swagger_are_served(pool: PgPool) {
     let resp = send(&app, get_req("/docs/")).await;
     assert_eq!(resp.status(), StatusCode::OK);
 }
+
+/// A1-T16: every API connection plans each statement with its parameters, so the optional
+/// filters of the list queries fold away and their indexes are used (see `db::SESSION_OPTIONS`).
+#[sqlx::test(migrations = false)]
+async fn pool_connections_use_custom_plans(pool: PgPool) {
+    use sqlx::ConnectOptions;
+
+    let url = pool.connect_options().to_url_lossy();
+    let config = config_with(&[("DATABASE_URL", url.as_str())]);
+    let db = vgames_api::db::connect(&config).await.unwrap();
+    for _ in 0..3 {
+        // Several pool connections, each with the setting.
+        let mode: String = sqlx::query_scalar("SHOW plan_cache_mode")
+            .fetch_one(&db)
+            .await
+            .unwrap();
+        assert_eq!(mode, "force_custom_plan");
+    }
+    let mut conns = Vec::new();
+    for _ in 0..2 {
+        conns.push(db.acquire().await.unwrap());
+    }
+    for conn in &mut conns {
+        let mode: String = sqlx::query_scalar("SHOW plan_cache_mode")
+            .fetch_one(&mut **conn)
+            .await
+            .unwrap();
+        assert_eq!(mode, "force_custom_plan");
+    }
+}

@@ -101,7 +101,8 @@ export function PackageBadges({ pkg, offline }: { pkg: InstalledPackage; offline
   );
 }
 
-function PrimaryButton({ pkg }: { pkg: InstalledPackage }) {
+/** Play / Stop / Resume / View download; `size` is "lg" on the details page. */
+export function PrimaryButton({ pkg, size = "sm" }: { pkg: InstalledPackage; size?: "sm" | "lg" }) {
   const actions = useLibraryActionsContext();
   const action = actions.primary(pkg);
   const run = () => actions.runPrimary(pkg);
@@ -110,7 +111,7 @@ function PrimaryButton({ pkg }: { pkg: InstalledPackage }) {
       return (
         <Button
           variant="primary"
-          size="sm"
+          size={size}
           icon="play"
           loading={actions.launching.has(pkg.package.package_id)}
           aria-label={t("library.actions.playTitle", { title: pkg.title })}
@@ -124,7 +125,7 @@ function PrimaryButton({ pkg }: { pkg: InstalledPackage }) {
         <Tooltip content={action.reason} describe>
           <Button
             variant="primary"
-            size="sm"
+            size={size}
             icon="play"
             aria-disabled
             aria-label={t("library.actions.playTitle", { title: pkg.title })}
@@ -137,7 +138,7 @@ function PrimaryButton({ pkg }: { pkg: InstalledPackage }) {
       return (
         <Button
           variant="danger"
-          size="sm"
+          size={size}
           icon="stop"
           aria-label={t("library.actions.stopTitle", { title: pkg.title })}
           onClick={run}
@@ -148,7 +149,7 @@ function PrimaryButton({ pkg }: { pkg: InstalledPackage }) {
     case "resume":
       return (
         <Button
-          size="sm"
+          size={size}
           icon="download"
           aria-label={t("library.actions.resumeTitle", { title: pkg.title })}
           onClick={run}
@@ -158,27 +159,41 @@ function PrimaryButton({ pkg }: { pkg: InstalledPackage }) {
       );
     case "download":
       return (
-        <Button size="sm" icon="download" onClick={run}>
+        <Button size={size} icon="download" onClick={run}>
           {t("library.actions.viewDownload")}
         </Button>
       );
     case "busy":
       return (
-        <Button size="sm" aria-disabled>
+        <Button size={size} aria-disabled>
           {action.label}
         </Button>
       );
   }
 }
 
-function MoreMenu({ pkg }: { pkg: InstalledPackage }) {
+/** The actions menu; `omit` hides entries by id (e.g. "details" on the details page). */
+export function MoreMenu({
+  pkg,
+  omit,
+  size = "sm",
+}: {
+  pkg: InstalledPackage;
+  omit?: readonly string[];
+  size?: "sm" | "md";
+}) {
   const actions = useLibraryActionsContext();
+  const entries = actions.entries(pkg);
   return (
     <Menu
       label={t("library.actions.menu", { title: pkg.title })}
-      entries={actions.entries(pkg)}
+      entries={omit ? entries.filter((e) => !omit.includes(e.id)) : entries}
       trigger={
-        <IconButton icon="more" size="sm" label={t("library.actions.more", { title: pkg.title })} />
+        <IconButton
+          icon="more"
+          size={size}
+          label={t("library.actions.more", { title: pkg.title })}
+        />
       }
     />
   );

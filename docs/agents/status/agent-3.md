@@ -55,14 +55,42 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   removed; the controller e2e test now fails if any ancestor clips the focused button), the Discord waiting
   screen no longer repeats its text, and the library toolbar fits a 960 px window.
 
+- A3-T05 — Browse and package details. **Browse:** virtualized catalog grid over `<main>` (only nearby rows
+  in the DOM; the next page loads as the last rows come into view, with a retry row when it fails),
+  search debounced 300 ms (Escape clears), genre filter with counts, sort by name or recent updates
+  (remembered), platforms per card (Windows · Mac · Linux), Installed and "Runs with Proton/Wine/Rosetta 2" /
+  "Not available on this computer" badges, and empty, no-match (Clear filters) and error states.
+  **Details:** hero, facts (version and size of the release for this computer, platforms, developer,
+  publisher, release date, genres), SafeMarkdown description, screenshots with a viewer (arrows, D-pad,
+  LB/RB, Ctrl+PageUp/Down; B returns focus to the thumbnail), compatibility (native / Rosetta 2 /
+  Proton or Wine with status, admin notes as plain text and the ProtonDB tier as a hint), blockers
+  ("DirectX 12 games need a Mac with Apple silicon" disables Install and says why; "Needs Rosetta 2"
+  offers Install Rosetta 2), and Play plus the library actions when installed. **Install dialog:**
+  version, platform, download size and space needed; libraries with free space (offline and too-small
+  drives can't be picked); "None of your libraries has enough space" links to Storage settings;
+  confirm → toast "X is queued" with View downloads. Every plan/start error has its own message
+  (removed, no build for this computer, blocked, offline with Try again, not enough space, drive
+  unplugged, trust expired). A package removed while its page is open: the dialog says so, and the
+  page then shows "This package isn't available anymore" with focus on its title.
+  Tests: 10 Vitest for Browse, 25 for details (all four acceptance cases, including the race versions:
+  drive filled or unplugged after the dialog opened, release or package gone after the page loaded),
+  3 for Tooltip; `e2e/browse.spec.ts` (axe on grid, details, install dialog and viewer; keyboard-only
+  search → open → install; controller-only cards → details → screenshots → back; removed and
+  unavailable packages).
+  Shared fixes found on the way: after a navigation, focus moves to the new page's title (it was left
+  on the body); the details page keeps one h1 through loading, content and removal; tooltips shift
+  sideways to stay inside dialogs and panels; the router has a first-load fallback (no console warning).
+
 ## In progress
-- A3-T05 — Browse and package details
+- A3-T06 — Downloads
 
 ## Interfaces delivered (other agents may now rely on these)
 - `apps/desktop/src/ipc/contract/`: the command/event surface the UI is built against, in exact
   tauri-specta output shape, one file per domain (`core.ts`: app, servers, auth, libraries;
   `library.ts`: installs, collections, favorites, launch, install actions). Each entry is deleted
   once the same name exists in `src/bindings.ts` (generated entries already win).
+- `apps/desktop/src/ipc/contract/catalog.ts`: catalog, package details, install plan/start and Rosetta 2
+  commands the Browse and details screens use (see "Needs from others").
 - **For Agent 4 (A4-T10):** `apps/desktop/overlay.html` is the overlay window's page; `vite.config.ts` adds it as
   a second build input (`dist/overlay.html`) as soon as `apps/desktop/src/overlay/main.tsx` exists. Point the
   overlay window's URL at `overlay.html`.
@@ -121,6 +149,25 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
     `shortcut_create -> path`.
   - Events: `installs-changed`, `collections-changed` (the UI also refreshes installs on
     `game-started`, `game-stopped` and `install-finished`).
+- **From Agent 2** (A2-T08 install queue, 09-compatibility §1 release selection, for Browse and details,
+  A3-T05). Full types and doc comments in `apps/desktop/src/ipc/contract/catalog.ts`:
+  - `catalog_list(query: CatalogQuery {query, genre, sort, cursor}) -> Result<CatalogPage, CatalogError>`
+    (proxies `GET /v1/packages`; each item carries `availability` for this computer:
+    native | rosetta | proton | wine | unavailable, and `cover_url` as a `vgimg:` URL).
+  - `catalog_genres -> Result<Vec<GenreCount {genre, count}>, CatalogError>` (see the contract question
+    below).
+  - `package_details(package_id) -> Result<PackageDetails, CatalogError>`: the details plus `release`
+    (the build chosen for this computer per 09 §1: platform, version, size, `via`) and `compat`
+    (`native` | `rosetta {blockers}` | `compat {layer, status, notes, protondb_tier, blockers}` |
+    `unavailable`; blockers `needs_apple_silicon`, `needs_rosetta`, `rosetta_sunset {last_macos}`).
+    `CatalogError`: not_found (unpublished or hidden), offline, unauthenticated, server {code}.
+  - `install_plan(package_id) -> Result<InstallPlan {release, download_bytes, required_bytes},
+    InstallPlanError>` (not_found, no_release, already_installed, offline, blocked {blocker},
+    server {code}).
+  - `install_start(package_id, library_id) -> Result<(), InstallStartError>` (the plan errors plus
+    insufficient_space {required_bytes, available_bytes}, library_offline {library_path},
+    trust_expired, io {detail}); emits `installs-changed` with the new `installing` entry.
+  - `rosetta_install -> Result<(), AppError>` (macOS on Apple silicon; runs `softwareupdate`).
 - **From Agent 5:** nothing more for now. The updater commands and the `updater-status` event now
   come from the generated `bindings.ts` (onboarding's "launcher too old" check uses `updater_check ->
   UpdateCheck`); A3-T10 builds the banner and What's new dialog on them.
@@ -141,6 +188,10 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
 
 ## Blockers / contract questions
 - None blocking.
+- **For Agent 1 (genres):** Browse filters by genre (`GET /v1/packages?genre=`), but the API has no way
+  to list the genres that exist. Proposal: `GET /v1/genres -> [{genre, count}]` over published packages
+  visible to the caller (or a `genres` facet on the first `PackagePage`). Until it exists, `catalog_genres` has
+  nothing to call, and the genre filter only offers "All genres".
 - Note for Agent 1: the admin login shows `/admin/login?error=<code>` messages for
   `registration_closed`, `not_allowlisted`, `user_disabled`, `access_denied` if the web callback
   redirects there on failure.
