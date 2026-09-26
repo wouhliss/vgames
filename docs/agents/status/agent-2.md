@@ -8,7 +8,8 @@
 - A2-T04 Download engine (`vgames-transfer::{download, install}`): see Interfaces and Measurements.
 - A2-T04 follow-up: bounded repeated expired links, final range length checks, stale journal invalidation, safe atomic metadata writes and linked-directory uninstall guard ([PR #38](https://github.com/wouhliss/vgames/pull/38)).
 - A2-T04 CI follow-up ([PR #38](https://github.com/wouhliss/vgames/pull/38)): crash-resume tests wait for pack bytes before killing child processes on fast macOS runners; Windows Tauri test binaries embed the Common Controls v6 manifest, and generated bindings compare equal across CRLF/LF checkouts.
-- A2-T05 Upload engine (`vgames-transfer::upload`): direct pack streams to GCS-style resumable sessions, private resume records, adaptive 4–16 workers, progress events, and end-to-end publishing API ([PR #39](https://github.com/wouhliss/vgames/pull/39), stacked on #38). The protocol is tested with a wiremock simulator and Agent 1's real fs storage backend; a separate process is killed after a randomly selected 256 KiB-aligned confirmed offset and the next process resumes; changing a file during streaming aborts with a clear error.
+- A2-T05 Upload engine (`vgames-transfer::upload`): direct pack streams to GCS-style resumable sessions, private resume records, adaptive 4–16 workers, progress events, and end-to-end publishing API ([PR #39](https://github.com/wouhliss/vgames/pull/39), merged). The protocol is tested with a wiremock simulator and Agent 1's real fs storage backend; a separate process is killed after a randomly selected 256 KiB-aligned confirmed offset and the next process resumes; changing a file during streaming aborts with a clear error.
+- A2-T06 signed-manifest update planner ([PR #40](https://github.com/wouhliss/vgames/pull/40), merged): identifies unchanged and changed files, removable paths, locally reusable chunks, remote bytes, and safe versus explicit in-place space requirements.
 
 - A2-T07 Servers, trust and sign-in in the launcher ([PR #47](https://github.com/wouhliss/vgames/pull/47)): see Interfaces.
   Mock-server tests cover TOFU pin, fingerprint-mismatch block (persisted, survives restart, lifts only when the
@@ -16,11 +17,12 @@
   rotation (5 concurrent callers → one refresh), 401 → one refresh then one retry, refused refresh → local sign-out.
 
 ## In progress
-- Nothing. **Next task: A2-T08** (libraries, catalog, install orchestration).
+- A2-T06 read-only verifier ([PR #41](https://github.com/wouhliss/vgames/pull/41)) hashes installed files on bounded blocking workers, reports damaged file indices, and feeds a repair plan that excludes damaged chunks from local reuse. Transfer execution, commit replay, move, and uninstall prompts remain to be implemented.
 
 ### Handoff for the next Agent 2 session
-- A2-T01…T07 are on `main` (A2-T05/T06 by the other Agent 2 session, A2-T07 by PR #47). Start A2-T08 from a
-  fresh branch off `main`, e.g. `agent2/libraries-installs`.
+- A2-T07 is done (PR #47). **Next task for this workstream: A2-T08.** A2-T06 is still open in the other Agent 2
+  session (remaining items listed above); finish it before relying on update/repair/move from A2-T08.
+  Start A2-T08 from a fresh branch off `main`, e.g. `agent2/libraries-installs`.
 - Building blocks for A2-T08:
   - HTTP: `state.servers.api(server_id)` → `ApiClient::{public, authed, authed_empty}`. Never build another client.
   - Trust: `state.servers.trust_state(id)` for `vgames_transfer::install::fetch_release`; on an unknown signing
@@ -143,6 +145,4 @@
   redirect would let the launcher show it; I would accept it in the parser.
 
 ## Blockers / contract questions
-- Pre-existing Biome failures on `main` outside my area: `biome.json` (deprecated `recommended`, format)
-  and `infra/gcs/cors.json` (format). Owners: Agent 5 / architect.
 - A2-T04 follow-up: directory components can be swapped for symlinks between validation and later file access; a directory-handle based path traversal is needed to close this local race across platforms. The non-racy uninstall traversal and atomic-write symlink cases are fixed with regressions.
