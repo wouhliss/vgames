@@ -97,6 +97,5 @@
   `vgames_core::manifest` accept exactly this (snapshot: `crates/vgames-pack/tests/snapshots/`).
 
 ## Blockers / contract questions
-- Pre-existing Biome failures on `main` outside my area: `biome.json` (deprecated `recommended`, format)
-  and `infra/gcs/cors.json` (format). Owners: Agent 5 / architect.
+- PRs #38–#41 cannot merge while the required GitHub Actions checks fail before runner assignment (empty runner names and no job steps on repeated attempts). The account's Actions-minute allowance appears exhausted; the repository owner must restore runner access. The stack is rebased on `main` at `07f0861` and passes local formatting, strict Clippy, Rust tests with the development database, changelog lint, and TypeScript lint/typecheck/tests. The Windows manifest fix still needs its matrix run.
 - A2-T04 follow-up: directory components can be swapped for symlinks between validation and later file access; a directory-handle based path traversal is needed to close this local race across platforms. The non-racy uninstall traversal and atomic-write symlink cases are fixed with regressions.
