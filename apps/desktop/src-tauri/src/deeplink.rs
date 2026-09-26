@@ -174,4 +174,13 @@ mod tests {
             })
         );
     }
+
+    proptest::proptest! {
+        #[test]
+        fn parsing_never_panics(text in "\\PC{0,300}", tail in "[a-z0-9=&%:/?._~-]{0,200}") {
+            let _ = parse(&text, true);
+            let _ = parse(&format!("vgames://server/add?{tail}"), false);
+            let _ = parse(&format!("vgames://auth/callback?{tail}"), false);
+        }
+    }
 }

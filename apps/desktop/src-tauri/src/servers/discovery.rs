@@ -273,4 +273,15 @@ mod tests {
         other.format = "something/1".into();
         assert_eq!(validate(other, &v).unwrap_err(), ServerError::NotVgames);
     }
+
+    proptest::proptest! {
+        #[test]
+        fn untrusted_input_never_panics(text in "\\PC{0,300}", bytes in proptest::collection::vec(proptest::num::u8::ANY, 0..512)) {
+            let _ = normalize_url(&text, true);
+            if let Ok(doc) = serde_json::from_slice::<WellKnown>(&bytes) {
+                let _ = validate(doc, &semver::Version::new(1, 0, 0));
+            }
+            let _ = clean_text(&text, 10);
+        }
+    }
 }
