@@ -128,6 +128,7 @@ fn setup(app: &AppHandle, profile: Option<String>) -> Result<(), Box<dyn std::er
     }
 
     updater::init(app, &state);
+    social::commands::init(app, &state)?;
     app.manage(state);
     Ok(())
 }

@@ -2,7 +2,7 @@
 // management, download limits, the overlay's per-package switches, privacy and overlay preferences
 // (Agent 4's `SocialSettings`, 05-social-notes §5) and third-party licenses (Agents 2 and 4).
 // Requested shapes; see core.ts for the conventions.
-import type { PackageRef } from "../../bindings";
+import type { PackageRef, SocialSettings } from "../../bindings";
 import type { AppError, LibraryError } from "./core";
 import { call, get, type Result } from "./runtime";
 
@@ -37,14 +37,8 @@ export type SettingsError =
   | { kind: "invalid"; field: string; detail: string }
   | { kind: "io"; detail: string };
 
-/** Agent 4's contract (05-social-notes §5). */
-export type SocialSettings = {
-  show_current_game: boolean;
-  do_not_disturb: boolean;
-  overlay_enabled: boolean;
-  /** Accelerator, e.g. "Shift+F3". */
-  overlay_hotkey: string;
-};
+// `SocialSettings` (05-social-notes §5) is generated now; the typed hotkey errors below are still
+// requested (A4-T10 registers the hotkey).
 
 export type HotkeyError =
   /** Not a valid accelerator (no key, or a modifier alone). */

@@ -28,7 +28,20 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             crate::updater::updater_status,
             crate::updater::updater_check,
             crate::updater::updater_whats_new,
-            crate::updater::updater_install
+            crate::updater::updater_install,
+            crate::social::commands::social_connection,
+            crate::social::commands::social_settings_get,
+            crate::social::commands::social_settings_set,
+            crate::social::commands::friends_list,
+            crate::social::commands::friend_code_create,
+            crate::social::commands::friend_request_send,
+            crate::social::commands::friend_accept,
+            crate::social::commands::friend_decline,
+            crate::social::commands::friend_remove,
+            crate::social::commands::user_block,
+            crate::social::commands::user_unblock,
+            crate::social::commands::blocks_list,
+            crate::social::commands::user_profile
         ])
         .events(tauri_specta::collect_events![
             GameStarted,
@@ -37,7 +50,11 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             InstallFinished,
             ServerSwitched,
             ControllerEvent,
-            crate::updater::UpdaterStatus
+            crate::updater::UpdaterStatus,
+            crate::social::commands::SocialConnectionChanged,
+            crate::social::commands::FriendsChanged,
+            crate::social::commands::PresenceChanged,
+            crate::social::commands::FriendRequestReceived
         ])
         .error_handling(tauri_specta::ErrorHandlingMode::Result)
         // Byte counts and ids that are u64 in Rust stay below 2^53.
