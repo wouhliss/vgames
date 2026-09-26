@@ -6,11 +6,23 @@
 //! - `payload`: the plaintext inside Olm messages.
 //! - `secrets`: the keychain-backed pickle and chat keys.
 //! - `model`: the types commands and events hand to the UI.
+//! - `ports`: the session slot Agent 2's session manager fills, and OS idle time.
+//! - `api`, `realtime`: REST calls and the realtime socket to the active server.
+//! - `service`, `presence`, `commands`: friends, blocks, settings, presence publishing,
+//!   and the Tauri commands and events over them.
 //!
 //! All crypto runs here, in Rust. The WebView only receives decrypted messages for display.
 
+pub mod api;
+pub mod commands;
 pub mod crypto;
+mod idle;
 pub mod model;
+mod netwatch;
 pub mod payload;
+pub mod ports;
+pub mod presence;
+pub mod realtime;
 pub mod secrets;
+pub mod service;
 pub mod store;

@@ -10,6 +10,19 @@
     "allow-updater-status",
     "allow-updater-check",
     "allow-updater-whats-new",
-    "allow-updater-install"
+    "allow-updater-install",
+    "allow-social-connection",
+    "allow-social-settings-get",
+    "allow-social-settings-set",
+    "allow-friends-list",
+    "allow-friend-code-create",
+    "allow-friend-request-send",
+    "allow-friend-accept",
+    "allow-friend-decline",
+    "allow-friend-remove",
+    "allow-user-block",
+    "allow-user-unblock",
+    "allow-blocks-list",
+    "allow-user-profile"
   ]
 }
