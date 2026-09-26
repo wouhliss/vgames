@@ -16,6 +16,7 @@ pub mod download;
 pub mod fsutil;
 pub mod http;
 pub mod install;
+pub mod move_install;
 pub mod sys;
 #[cfg(feature = "testkit")]
 pub mod testkit;
