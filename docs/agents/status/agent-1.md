@@ -86,58 +86,50 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   resolved file (after symlinks) must stay inside the canonical root. A missing directory or one without `index.html`
   fails config validation at startup.
 
-## In progress
-- A1-T16 — Hardening and performance.
-  - Part 1 is merged: rate limits on every route, problem+json for every error, property tests.
-  - Part 2 is the query-plan review, the indexes and the load test, set up in `apps/api/bench/`.
-    The seed has 100k packages, 1M audit rows, 1M envelopes, 20k users with sessions and 200k jobs.
-  - **Plans.** List filters are written `($n IS NULL OR col = $n)`, and Postgres's generic plans
-    cannot use an index for them. After five executions the catalog fell back to sequential scans
-    and sorts (39–173 ms), and filtered audit pages walked the log backwards (123–176 ms).
-    `db::connect` now sets `plan_cache_mode = force_custom_plan`. That costs about 0.2 ms of
-    planning per statement.
-  - **Indexes.** New migration `20260925180000_list_indexes`: audit actor, action and target on
-    `(key, id DESC)`, and job `(state, id DESC)`.
-  - **Custom-plan timings** (`explain.sql`):
+- A1-T16 — Hardening and performance (wouhliss/vgames#36, wouhliss/vgames#45, and the catalog follow-up PR).
+  - Rate limits on every route, problem+json for every error, property tests (#36).
+  - `apps/api/bench/`: seed (100k packages, 1M audit rows, 1M envelopes, 20k sessions, 200k jobs),
+    `explain.sql` (the handlers' SQL; `-v generic=1` for generic plans) and `load.sh` (`oha`).
+  - `db::connect` sets `plan_cache_mode = force_custom_plan`: list filters are `($n IS NULL OR …)`,
+    which generic plans cannot index (catalog 39–173 ms, filtered audit 123–176 ms before).
+  - Indexes: audit actor/action/target and job state on `(key, id DESC)`; GIN on `packages.genres`.
+  - Catalog: `sort=recent` pages by `(updated_at, id) DESC`, matching its cursor (it could repeat or
+    skip packages sharing an `updated_at`); genre filter `genres @> ARRAY[$genre]`; searches sort
+    their matches before checking for a release.
+  - **Plans** (`explain.sql`, custom plans, warm; no sequential scan on a hot path):
 
     | Query | Time |
     |---|---|
-    | Session lookup | 0.11 ms |
-    | Catalog first page (title or recent) | 0.4 ms |
-    | Catalog cursor page | 0.5 ms |
-    | Catalog, linux only | 4 ms |
-    | Catalog, genre + linux | 9 ms |
-    | Catalog search, two words | 12 ms |
-    | Release descriptor | 0.18 ms |
-    | Pack lookup | 0.17 ms |
-    | Inbox | 0.8 ms |
+    | Session lookup | 0.1 ms |
+    | Catalog first or cursor page (title or recent) | 0.2–0.5 ms |
+    | Catalog, linux only / genre + linux | 4 / 5 ms |
+    | Catalog, rare genre | 0.5 ms |
+    | Catalog search: rare / two words / broad one word by recency / by title | 1 / 10 / 21–35 / ~40 ms |
+    | Release descriptor, pack lookup | 0.2 ms |
+    | Inbox (Agent 4's query) | 0.8 ms |
     | Audit, any filter | ≤ 0.4 ms |
-    | Job claim | 0.07 ms |
-    | Admin job list | 0.1 ms |
+    | Job claim / admin job list | 0.07 / 0.1 ms |
 
-    No sequential scan remains; there were six under generic plans.
-  - **Load** (`load.sh`, release build, 4 cores shared with Postgres and the load generator):
-    200 rps, 30 s after a 10 s warm-up, 25 sessions, latency-corrected.
+  - **Load** (`load.sh`, release build, 200 rps for 30 s after a 10 s warm-up, 25 sessions,
+    latency-corrected; 4 cores shared by Postgres, the API and the load generator):
 
-    | Endpoint | p50 | p99 |
-    |---|---|---|
-    | Release descriptor | 4.0 ms | 19 ms |
-    | Download URLs | 3.6 ms | 11 ms |
-    | Catalog | 18 ms | **107 ms** (just over budget) |
+    | Endpoint | p50 | p99 | Budget (100 ms) |
+    |---|---|---|---|
+    | Release descriptor | 4–5 ms | 10–12 ms | met |
+    | Download URLs | 4–5 ms | 9–10 ms | met |
+    | Catalog | 18–21 ms | 107–194 ms over four warm runs | **not met** |
 
-    The catalog mix is 25% searches, half of them one common word matching about 12% of the
-    100k packages.
-  - **Left to do (A1-T16), both in `packages.rs::list_catalog`.** Access to that file was blocked
-    in the session that did part 2.
-    1. A one-word search matching 12k packages checks `package_releases` for every match
-       before sorting: 35 of 60 ms. Sort, then check releases only until the page is full.
-       The genre filter `= ANY(genres)` cannot use an index; use `genres @> ARRAY[$2]` with a
-       GIN index.
-    2. Suspected bug. `sort=recent` orders `updated_at DESC, id ASC`, but its cursor compares
-       `(updated_at, id) < (…)`, which only matches `id DESC`. Packages with the same
-       `updated_at` could then repeat or be skipped across pages. Verify and fix together.
-    3. The inbox budget is Agent 4's endpoint (A4-T05). Its query already runs on
-       `message_envelopes_inbox_idx` in 0.8 ms.
+    The catalog mix is 25% searches, half of them one common word matching ~12% of 100k titles.
+    Such a search costs ~40 ms of CPU: a trigram recheck of ~12k rows plus a sort under the
+    `en_US` collation. Plans that walk the title index instead are faster for words spread
+    through titles, but can scan most of the index for a title's first word (its matches sit
+    in one alphabetical block): `'%shadow quest%'` took 235 ms that way. So I kept the bounded
+    plan. Browsing, filters and specific searches are well inside the budget. A faster broad
+    search needs a product decision (ranked or capped results, or byte-order title sorting).
+  - Inbox budget: Agent 4's endpoint (A4-T05); its query runs on `message_envelopes_inbox_idx` in 0.8 ms.
+
+## In progress
+- None.
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_api::error::ApiError` / `ApiResult` (problem+json), `vgames_api::http::json::{Json, Validate}`
