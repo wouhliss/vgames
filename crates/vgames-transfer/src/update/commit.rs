@@ -24,7 +24,7 @@ const NEXT_MANIFEST: &str = ".vgames/next-manifest.json";
 const NEXT_SIGNATURE: &str = ".vgames/next-manifest.sig";
 const OLD_MANIFEST: &str = ".vgames/old-manifest.json";
 const OLD_SIGNATURE: &str = ".vgames/old-manifest.sig";
-const MAX_COMMIT_BYTES: u64 = 4096;
+const MAX_COMMIT_BYTES: u64 = 1024 * 1024;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -32,6 +32,8 @@ struct CommitMarker {
     format: String,
     old_digest: String,
     new_digest: String,
+    #[serde(default)]
+    damaged_files: Vec<u32>,
 }
 
 fn marker_path(root: &Path) -> PathBuf {
@@ -123,11 +125,21 @@ fn verify_file(path: &Path, expected: &vgames_core::manifest::File) -> Result<()
 /// and `new` must have passed `verify_manifest`; the plan is recomputed here
 /// so callers cannot inject arbitrary deletion paths.
 pub fn begin(root: &Path, old: &Release, new: &Release) -> Result<InstallRecord, InstallError> {
+    begin_with_damaged(root, old, new, &[])
+}
+
+/// Commits a repair or an update that also replaces damaged old files.
+pub fn begin_with_damaged(
+    root: &Path,
+    old: &Release,
+    new: &Release,
+    damaged_files: &[u32],
+) -> Result<InstallRecord, InstallError> {
     if read_marker(root)?.is_some() {
         return replay(root, old, new)?
             .ok_or_else(|| InstallError::Conflict("commit marker vanished".into()));
     }
-    let plan = UpdatePlan::new(old, new, true)
+    let plan = UpdatePlan::new_with_damaged(old, new, true, damaged_files)
         .map_err(|error| InstallError::Conflict(format!("invalid update: {error}")))?;
     ensure_record(root, old, new)?;
     let safe = SafeRoot::open(root)?;
@@ -189,6 +201,7 @@ pub fn begin(root: &Path, old: &Release, new: &Release) -> Result<InstallRecord,
         format: "vgames.commit/1".into(),
         old_digest: old.verified.digest.to_hex(),
         new_digest: new.verified.digest.to_hex(),
+        damaged_files: damaged_files.to_vec(),
     };
     let bytes =
         serde_json::to_vec(&marker).map_err(|error| InstallError::Internal(error.to_string()))?;
@@ -215,7 +228,7 @@ pub fn replay(
         ));
     }
     ensure_record(root, old, new)?;
-    let plan = UpdatePlan::new(old, new, true)
+    let plan = UpdatePlan::new_with_damaged(old, new, true, &marker.damaged_files)
         .map_err(|error| InstallError::Conflict(format!("invalid update: {error}")))?;
     let safe = SafeRoot::open(root)?;
     let staging = SafeRoot::open(&safe.path_of(STAGING_DIR))?;
@@ -541,6 +554,7 @@ mod tests {
             format: "vgames.commit/1".into(),
             old_digest: old.verified.digest.to_hex(),
             new_digest: new.verified.digest.to_hex(),
+            damaged_files: Vec::new(),
         };
         fsutil::atomic_write(
             &dir.path()
@@ -593,5 +607,67 @@ mod tests {
             old_files[0].bytes()
         );
         assert!(!marker_path(dir.path()).exists());
+    }
+
+    #[test]
+    fn repair_marker_replays_damaged_file_after_restart() {
+        let files = [
+            FileSpec::random("bad.bin", 16, 1),
+            FileSpec::random("good.bin", 16, 2),
+        ];
+        let package = TestPackage::build(&files, &[], Compression::None);
+        let release = package.release();
+        let dir = tempfile::tempdir().unwrap();
+        write_tree(dir.path(), &files, &[]);
+        fs::create_dir(dir.path().join(META_DIR)).unwrap();
+        fs::write(
+            dir.path().join(META_DIR).join(MANIFEST_FILE),
+            &release.manifest_bytes,
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join(META_DIR).join(SIGNATURE_FILE),
+            release.envelope.to_bytes(),
+        )
+        .unwrap();
+        write_record(
+            dir.path(),
+            &InstallRecord::for_manifest(&release.verified, InstallState::Installed),
+        )
+        .unwrap();
+        fs::write(dir.path().join("bad.bin"), b"corrupt contents").unwrap();
+        stage(dir.path(), &files[0]);
+        for (path, bytes) in [
+            (NEXT_MANIFEST, release.manifest_bytes.as_slice()),
+            (OLD_MANIFEST, release.manifest_bytes.as_slice()),
+        ] {
+            fsutil::atomic_write(&dir.path().join(path), bytes).unwrap();
+        }
+        for path in [NEXT_SIGNATURE, OLD_SIGNATURE] {
+            fsutil::atomic_write(&dir.path().join(path), &release.envelope.to_bytes()).unwrap();
+        }
+        let marker = CommitMarker {
+            format: "vgames.commit/1".into(),
+            old_digest: release.verified.digest.to_hex(),
+            new_digest: release.verified.digest.to_hex(),
+            damaged_files: vec![0],
+        };
+        fsutil::atomic_write(
+            &marker_path(dir.path()),
+            &serde_json::to_vec(&marker).unwrap(),
+        )
+        .unwrap();
+        let recovered = recover_pending(dir.path(), &trust_state())
+            .unwrap()
+            .unwrap();
+        assert_eq!(recovered.version_id, release.manifest().version_id);
+        assert_eq!(
+            fs::read(dir.path().join("bad.bin")).unwrap(),
+            files[0].bytes()
+        );
+        assert_eq!(
+            fs::read(dir.path().join("good.bin")).unwrap(),
+            files[1].bytes()
+        );
     }
 }

@@ -17,6 +17,7 @@
 - A2-T06 safe transfer execution: `update::execute::update_safe` stages changed files, verifies and reuses matching chunks from the old install, downloads only remaining changed-file chunks, resumes through a separate journal, and invokes the durable commit. In-place mode, repair execution, move, and uninstall prompts remain.
 - A2-T06 uninstall preview: `install::preview_uninstall(root, manifest)` lists unknown files, links, and empty user folders before removal; `remove_install` still keeps those leftovers by default. UI confirmation wiring remains for A2-T08/Agent 3.
 - A2-T06 install move: `move_install::move_install(source, destination, manifest)` renames on one filesystem; across filesystems it copies all regular files (including user settings), verifies the copy and signed package files, then deletes the source. Links and special files are refused without following them.
+- A2-T06 repair execution: `update::execute::repair_safe` rebuilds damaged files on the same signed release, downloads chunks that touched them, and stores the damaged-file indices in the commit marker so crash replay finishes the repair.
 - A2-T07 servers, trust, and launcher authentication are assigned to another agent; this workstream remains on A2-T06.
 - A2-T08 library roots: validate canonical writable folders, reject system folders and overlapping libraries, write `.vgames-library.json`, and detect missing or changed drives. Database registration and Tauri commands follow in this workstream.
 

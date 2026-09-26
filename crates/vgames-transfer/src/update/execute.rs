@@ -34,8 +34,55 @@ pub async fn update_safe<A: PackUrlSource>(
     control: &DownloadControl,
     allow_older: bool,
 ) -> Result<InstallReport, InstallError> {
+    run_safe(
+        root,
+        old,
+        new,
+        api,
+        options,
+        control,
+        allow_older,
+        Vec::new(),
+    )
+    .await
+}
+
+/// Rebuilds files reported by `verify_install` without changing the release.
+/// Damaged old chunks are never reused as repair sources.
+pub async fn repair_safe<A: PackUrlSource>(
+    root: &Path,
+    release: Arc<Release>,
+    damaged_files: &[u32],
+    api: Arc<A>,
+    options: &DownloadOptions,
+    control: &DownloadControl,
+) -> Result<InstallReport, InstallError> {
+    run_safe(
+        root,
+        Arc::clone(&release),
+        release,
+        api,
+        options,
+        control,
+        true,
+        damaged_files.to_vec(),
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_safe<A: PackUrlSource>(
+    root: &Path,
+    old: Arc<Release>,
+    new: Arc<Release>,
+    api: Arc<A>,
+    options: &DownloadOptions,
+    control: &DownloadControl,
+    allow_older: bool,
+    damaged_files: Vec<u32>,
+) -> Result<InstallReport, InstallError> {
     control.set_phase(Phase::Allocating);
-    let plan = UpdatePlan::new(&old, &new, allow_older)
+    let plan = UpdatePlan::new_with_damaged(&old, &new, allow_older, &damaged_files)
         .map_err(|error| InstallError::Conflict(format!("invalid update: {error}")))?;
     let prepared = {
         let root = root.to_owned();
@@ -59,7 +106,7 @@ pub async fn update_safe<A: PackUrlSource>(
             control.set_phase(Phase::Finalizing);
             let root = root.to_owned();
             let record = tokio::task::spawn_blocking(move || {
-                let record = commit::begin(&root, &old, &new)?;
+                let record = commit::begin_with_damaged(&root, &old, &new, &damaged_files)?;
                 let journal = root.join(UPDATE_JOURNAL);
                 if let Err(error) = fs::remove_file(&journal)
                     && error.kind() != io::ErrorKind::NotFound
@@ -499,5 +546,49 @@ mod tests {
             fs::read(dir.path().join("game.bin")).unwrap(),
             new_files[0].bytes()
         );
+    }
+
+    #[tokio::test]
+    async fn repair_rebuilds_damaged_file_without_changing_version() {
+        let files = [
+            FileSpec::random("good.bin", 1024, 1),
+            FileSpec::random("bad.bin", 1024, 2),
+        ];
+        let package = TestPackage::build(&files, &[], Compression::None);
+        let dir = tempfile::tempdir().unwrap();
+        install_old(dir.path(), &package);
+        fs::write(dir.path().join("bad.bin"), vec![0u8; 1024]).unwrap();
+        let rig = Rig::start(package.manifest.clone(), package.packs.clone()).await;
+        let api = MockApi::new(
+            &rig,
+            package.packs.iter().map(|pack| pack.len() as u64).collect(),
+        );
+        let report = repair_safe(
+            dir.path(),
+            Arc::new(package.release()),
+            &[0],
+            api,
+            &DownloadOptions::default(),
+            &DownloadControl::new(None),
+        )
+        .await
+        .unwrap();
+        assert!(matches!(report.outcome, InstallOutcome::Installed(_)));
+        assert_eq!(
+            fs::read(dir.path().join("bad.bin")).unwrap(),
+            files[1].bytes()
+        );
+        assert_eq!(
+            fs::read(dir.path().join("good.bin")).unwrap(),
+            files[0].bytes()
+        );
+        assert_eq!(
+            install::read_record(dir.path())
+                .unwrap()
+                .unwrap()
+                .version_id,
+            package.expected.version_id
+        );
+        assert_eq!(rig.pack_bytes(), 2048);
     }
 }
