@@ -22,6 +22,7 @@ import type {
 } from "../ipc";
 import { events } from "../ipc";
 import { type CatalogState, catalogHandlers, defaultCatalogState } from "./catalog";
+import { type DownloadsState, defaultDownloadsState, downloadHandlers } from "./downloads";
 import { defaultLibraryState, type LibraryState, libraryHandlers } from "./library";
 import { CommandFailure, fail, type Handler } from "./runtime";
 
@@ -63,7 +64,7 @@ export const MOCK_LIBRARY: Library = {
   install_count: 0,
 };
 
-export interface MockState extends LibraryState, CatalogState {
+export interface MockState extends LibraryState, CatalogState, DownloadsState {
   appInfo: AppInfo;
   appearance: AppearanceSettings;
   servers: ServerProfile[];
@@ -85,6 +86,7 @@ export function defaultState(): MockState {
   return {
     ...defaultLibraryState(),
     ...defaultCatalogState(),
+    ...defaultDownloadsState(),
     appInfo: {
       version: "0.4.0",
       profile: null,
@@ -389,6 +391,7 @@ export function installMockBackend(overrides: Partial<MockState> = {}): MockBack
 
     ...libraryHandlers(state),
     ...catalogHandlers(state),
+    ...downloadHandlers(state),
   };
 
   function signIn(serverId: string) {

@@ -81,14 +81,31 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   on the body); the details page keeps one h1 through loading, content and removal; tooltips shift
   sideways to stay inside dialogs and panels; the router has a first-load fallback (no console warning).
 
+- A3-T06 — Downloads. Three sections: **Downloading** (live from `install-progress`: phase, bytes, speed, time
+  left, connections; indeterminate bar while verifying the signature, allocating and finishing),
+  **Up next** (reorder with "Download next" / Move up / Move down in the row menu, or Alt+Up/Down; the move is
+  announced and focus stays on the row) and **Completed** (outcome, size, when; Clear). Pause / Resume /
+  Try again / Remove / Cancel per job; the cancel dialog keeps or deletes the partial files (no choice when
+  nothing was downloaded; updates and repairs say the installed version stays). Every pause reason has its
+  own message (disk full → "Open Storage settings"; drive disconnected; server unreachable) and every
+  failure too: damaged server file ("vgames told the server's admins" when the integrity report was
+  sent) with Try again; signature, untrusted key and expired trust show "Stopped to keep your computer
+  safe" and **never offer a retry**; withdrawn version; I/O and server errors with Try again.
+  Tests: 30 Vitest (each phase, each pause reason, each failure, cancel keep/delete/empty, reorder by menu
+  and keyboard, history, action errors, load error; a mutation check confirms that offering a retry on a
+  security failure fails 3 tests) and `e2e/downloads.spec.ts` (axe on the queue and the cancel dialog,
+  live progress from the simulator, keyboard-only reorder/pause/cancel, controller-only).
+
 ## In progress
-- A3-T06 — Downloads
+- A3-T07 — Settings
 
 ## Interfaces delivered (other agents may now rely on these)
 - `apps/desktop/src/ipc/contract/`: the command/event surface the UI is built against, in exact
   tauri-specta output shape, one file per domain (`core.ts`: app, servers, auth, libraries;
   `library.ts`: installs, collections, favorites, launch, install actions). Each entry is deleted
   once the same name exists in `src/bindings.ts` (generated entries already win).
+- `apps/desktop/src/ipc/contract/downloads.ts`: the install queue commands and `downloads-changed` (see
+  "Needs from others").
 - `apps/desktop/src/ipc/contract/catalog.ts`: catalog, package details, install plan/start and Rosetta 2
   commands the Browse and details screens use (see "Needs from others").
 - **For Agent 4 (A4-T10):** `apps/desktop/overlay.html` is the overlay window's page; `vite.config.ts` adds it as
@@ -168,7 +185,24 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
     insufficient_space {required_bytes, available_bytes}, library_offline {library_path},
     trust_expired, io {detail}); emits `installs-changed` with the new `installing` entry.
   - `rosetta_install -> Result<(), AppError>` (macOS on Apple silicon; runs `softwareupdate`).
-- **From Agent 5:** nothing more for now. The updater commands and the `updater-status` event now
+- **From Agent 2** (A2-T06/T08 install queue, 02-package-format §7, for Downloads, A3-T06). Full types and doc
+  comments in `apps/desktop/src/ipc/contract/downloads.ts`:
+  - `downloads_list -> Result<DownloadQueue {jobs, history}, AppError>`: jobs in queue order (running first),
+    each with `kind` install | update | repair, `version_label`, `library_id`, last known
+    `bytes_done/bytes_total`, and `state`: `active` | `queued` | `paused {reason}` | `failed {error}`.
+    Pause reasons: `user`, `disk_full {library_path, required_bytes, available_bytes}`,
+    `library_offline {library_path}`, `offline` (all but `user` clear by themselves). Failures:
+    `damaged_file {reported}` (second hash mismatch; `reported` = integrity report sent), `signature_invalid`,
+    `untrusted_key`, `trust_expired`, `version_unavailable`, `io {path, detail}`, `server {code, message}`.
+    History: newest first, ≤ 100, with the generated `InstallOutcome`.
+  - `download_pause | download_resume | download_retry | download_remove (package)`,
+    `download_cancel(package, keep_partial)`, `downloads_reorder(packages)` (new order of the waiting jobs)
+    → `DownloadActionError` (not_found, insufficient_space, library_offline, offline, io);
+    `downloads_history_clear`.
+  - Event `downloads-changed` (queue or history changed). Live progress keeps using the generated
+    `install-progress`; `install-finished` ends a job.
+- **From Agent 5:** nothing more for now. Seen (2026-09-26): CI runs locally (`scripts/ci/local.sh`, PR 42);
+  my PRs carry its summary on the final commit and merge only when every job passes. The updater commands and the `updater-status` event now
   come from the generated `bindings.ts` (onboarding's "launcher too old" check uses `updater_check ->
   UpdateCheck`); A3-T10 builds the banner and What's new dialog on them.
 - **From Agent 4:** the social UI (A3-T09) will be built from your A4-T01 note
