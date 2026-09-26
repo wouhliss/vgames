@@ -49,7 +49,8 @@ Content-Type: application/problem+json
 Common codes: `unauthenticated` 401, `session_expired` 401, `forbidden` 403, `not_found` 404,
 `validation_failed` 400, `unknown_field` 400, `conflict` 409, `precondition_failed` 412,
 `payload_too_large` 413, `unsupported_media_type` 415, `rate_limited` 429,
-`registration_closed` 403, `user_disabled` 403, `internal` 500, `unavailable` 503.
+`registration_closed` 403, `not_allowlisted` 403, `user_disabled` 403, `internal` 500, `unavailable` 503.
+The Discord callback does not answer these as problems: it redirects with `error=<code>` (01-security §4.1).
 
 ## 3. Pagination and filtering
 
@@ -78,7 +79,7 @@ Legend: 🔓 public · 👤 user · 🛡 admin · 👑 owner.
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
 | POST | `/v1/auth/discord/start` | 🔓 | Begin Discord login (desktop: PKCE; web: return_to) |
-| GET | `/v1/auth/discord/callback` | 🔓 | Discord redirect target (302 to `vgames://…` or `/admin/…`) |
+| GET | `/v1/auth/discord/callback` | 🔓 | Discord redirect target (302 to `vgames://…` or `/admin/…`; a refused sign-in redirects with `error=<code>`) |
 | POST | `/v1/auth/token` | 🔓 | Exchange login code (+ verifier) or refresh token |
 | POST | `/v1/auth/logout` | 👤 | Revoke current session |
 | GET | `/v1/me` | 👤 | Current user, role, device |
@@ -89,6 +90,7 @@ Legend: 🔓 public · 👤 user · 🛡 admin · 👑 owner.
 |---|---|---|---|
 | GET | `/v1/trust/bundle` | 🔓 | Latest signed trust bundle |
 | GET | `/v1/packages` | 👤 | Browse published packages (search, genre, platform) |
+| GET | `/v1/genres` | 👤 | Genres of the published catalog with counts (≤ 60 s stale) |
 | GET | `/v1/packages/{package_id}` | 👤 | Package details + assets + available platforms |
 | GET | `/v1/packages/{package_id}/releases/{platform}` | 👤 | Current release descriptor (manifest URL + signature envelope) |
 | POST | `/v1/versions/{version_id}/download-urls` | 👤 | Signed GET URLs for up to 500 packs (`410 version_yanked` for withdrawn versions) |
