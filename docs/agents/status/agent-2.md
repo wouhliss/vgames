@@ -10,8 +10,15 @@
 - A2-T04 CI follow-up ([PR #38](https://github.com/wouhliss/vgames/pull/38)): crash-resume tests wait for pack bytes before killing child processes on fast macOS runners; Windows Tauri test binaries embed the Common Controls v6 manifest, and generated bindings compare equal across CRLF/LF checkouts.
 - A2-T05 Upload engine (`vgames-transfer::upload`): direct pack streams to GCS-style resumable sessions, private resume records, adaptive 4–16 workers, progress events, and end-to-end publishing API ([PR #39](https://github.com/wouhliss/vgames/pull/39), stacked on #38). The protocol is tested with a wiremock simulator and Agent 1's real fs storage backend; a separate process is killed after a randomly selected 256 KiB-aligned confirmed offset and the next process resumes; changing a file during streaming aborts with a clear error.
 
+- A2-T07 Servers, trust and sign-in in the launcher (branch `claude/optimistic-fermat-gwfhvh`): see Interfaces.
+  Mock-server tests cover TOFU pin, fingerprint-mismatch block (persisted, survives restart, lifts only when the
+  pinned key returns), trust rollback and forged bundles refused, root rotation via `next_root`, refresh-token
+  rotation (5 concurrent callers → one refresh), 401 → one refresh then one retry, refused refresh → local sign-out.
+
 ## In progress
-- A2-T06 update, verify, repair, move, and uninstall: the signed-manifest planner now identifies unchanged files, changed files, removable paths, locally reusable chunks, remote bytes, and safe versus explicit in-place space requirements. The transfer, commit replay, verify, repair, and move paths remain to be implemented.
+- Work split with the other Agent 2 session (owner's decision): that session finishes A2-T05/T06 (branches
+  `agent2/*`); this one takes A2-T07 onward. Noted Agent 5's CI notes: GitHub CI runs again (repo public);
+  `scripts/ci/local.sh` stays optional.
 
 ## Interfaces delivered (other agents may now rely on these)
 - **Event bus** (A2-T01, for Agents 3, 4, 5): `vgames_desktop_lib::events::{EventBus, AppEvent}`,
@@ -68,6 +75,20 @@
     storage with fault injection, `MockApi`).
 - **Upload engine (A2-T05, for Agent 5's CLI):** `vgames_transfer::upload::{run, UploadApi, UploadOptions, UploadControl}` streams `PackSource` packs through resumable sessions. `vgames_transfer::upload::publish::{create_version, run, PublishApi, PublishRequest, PublishOptions, PublishControl}` creates a version with a caller-persisted idempotency key, then resumes an existing version through signing, manifest upload, verification and publication. The caller must persist the returned `Version` before `publish::run` and place the private resume record in app data, outside the source tree.
 
+- **Servers, trust, sign-in** (A2-T07, for my A2-T08+ and Agents 3/4):
+  - `state.servers: Arc<servers::Servers>`. `servers.api(server_id) -> ApiClient` is the only HTTP client:
+    `public(method, "v1/…", body)` / `authed(…)` / `authed_empty(…)` return `api::ApiError` (`Problem{status, code,
+    message}`, `Unauthenticated`, `TrustBlocked`, `Timeout`, `Network`, `Tls`, `InvalidResponse`); `AppError: From<ApiError>`.
+  - `servers.trust_state(id)` (stored, no network) and `servers.refresh_trust(id)` (call it when the API or a
+    manifest reports an unknown signing key); `servers.connect(id)` = identity check + trust refresh.
+  - Commands (in `bindings.ts`): `serversList`, `serverPreview(url, expectedFingerprint)`, `serverConfirm(previewId)`,
+    `serverSwitch`, `serverRemove`, `authStart`, `authOpenBrowser`, `authSubmitCode`, `authCancel`, `authSignOut`,
+    `authTokenStorage` (→ `{ fallback_file }` for the Settings warning). Events: `serversChanged`,
+    `connectivityChanged`, `trustProblem`, `serverAddRequested` (sent after `appReady`), `authFinished`.
+    `ServerProfile.blocked_fingerprint` (optional) is set while a server is blocked, so a block found before the
+    UI listened is still visible. Landed items were removed from `src/ipc/contract/core.ts` as its header asks.
+  - Deep links: `deeplink::parse` (strict grammar) routes `server/add` and `auth/callback`; A2-T10 adds the rest.
+
 ## Measurements
 - A2-T01 idle, Linux (WSLg, debug build, Vite dev server, software GL), 60 s window
   (`apps/desktop/perf/idle.py`): CPU 0.03% total (core 0.02%, WebKit web 0.02%, network 0.00%);
@@ -95,6 +116,13 @@
   `directories` always present (possibly `[]`) and `launch`/`controllers`/`saves`/`multiplayer` omitted when
   absent; `launch.targets[].args` always present, `working_dir`/`env` omitted when empty. Please make
   `vgames_core::manifest` accept exactly this (snapshot: `crates/vgames-pack/tests/snapshots/`).
+
+- From Agent 3: `ServerError` and `AuthError` have no "local failure" kind, so a local database error shows as
+  `unreachable` / `server{code:"internal"}`. If you want an `internal { detail }` kind, add the case to
+  `onboarding/messages.ts` and tell me; I will add the variant. `auth_token_storage().fallback_file` → Settings warning.
+- From Agent 1 (FYI): a registration refusal (`not_allowlisted`, `registration_closed`) is only shown on the browser
+  callback page, so the launcher sees the flow expire. A `vgames://auth/callback?error=<code>&client_state=…`
+  redirect would let the launcher show it; I would accept it in the parser.
 
 ## Blockers / contract questions
 - Pre-existing Biome failures on `main` outside my area: `biome.json` (deprecated `recommended`, format)

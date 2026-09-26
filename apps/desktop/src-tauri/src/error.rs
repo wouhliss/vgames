@@ -77,6 +77,70 @@ impl std::fmt::Display for DisplayChain<'_> {
 
 pub type CommandResult<T> = Result<T, CommandError>;
 
+/// Generic error of commands without a more specific error type (the UI's
+/// `AppError`). Messages are English fallbacks; the UI switches on `kind`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type, thiserror::Error)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum AppError {
+    #[error("the server could not be reached: {detail}")]
+    Network { detail: String },
+    #[error("{message} ({code})")]
+    Server { code: String, message: String },
+    #[error("sign-in required")]
+    Unauthenticated,
+    #[error("not found")]
+    NotFound,
+    #[error("{field}: {message}")]
+    InvalidInput { field: String, message: String },
+    #[error("{detail}")]
+    Io {
+        path: Option<String>,
+        detail: String,
+    },
+    #[error("{detail}")]
+    Internal { detail: String },
+}
+
+impl AppError {
+    /// Logs `error` with its full chain and returns a generic message.
+    pub fn internal(context: &str, error: &dyn std::error::Error) -> Self {
+        tracing::error!(error = %DisplayChain(error), "cannot {context}");
+        Self::Internal {
+            detail: format!("Cannot {context}. See the log for details."),
+        }
+    }
+
+    pub fn invalid(field: &str, message: impl Into<String>) -> Self {
+        Self::InvalidInput {
+            field: field.to_owned(),
+            message: message.into(),
+        }
+    }
+}
+
+impl From<crate::api::ApiError> for AppError {
+    fn from(error: crate::api::ApiError) -> Self {
+        use crate::api::ApiError as E;
+        match error {
+            E::Timeout => Self::Network {
+                detail: "the server did not answer in time".into(),
+            },
+            E::Tls(detail) | E::Network(detail) => Self::Network { detail },
+            E::Problem { status: 401, .. } | E::Unauthenticated => Self::Unauthenticated,
+            E::Problem { status: 404, .. } => Self::NotFound,
+            E::Problem { code, message, .. } => Self::Server { code, message },
+            E::TrustBlocked => Self::Server {
+                code: "trust_blocked".into(),
+                message: "This server's identity changed; it is blocked.".into(),
+            },
+            E::InvalidResponse(detail) => Self::Server {
+                code: "invalid_response".into(),
+                message: detail,
+            },
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

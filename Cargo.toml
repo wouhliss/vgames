@@ -142,6 +142,8 @@ directories = "6"
 libc = "0.2"
 windows-sys = "0.61"
 sysinfo = "0.39"
+# Opens sign-in pages and confirmed links in the system browser (no WebView navigation).
+open = "5"
 sdl3 = "0.20"
 # tauri-specta v2 is a release candidate: keep `=` pins so the generated bindings stay stable.
 tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }

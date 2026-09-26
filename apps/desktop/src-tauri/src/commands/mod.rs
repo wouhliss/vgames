@@ -6,13 +6,16 @@
 
 mod app;
 pub mod names;
+mod servers;
 
 use std::path::{Path, PathBuf};
 
 pub(crate) use app::show_main_window;
+pub(crate) use servers::spawn_connect;
 
 use crate::events::{
-    ControllerEvent, GameStarted, GameStopped, InstallFinished, InstallProgress, ServerSwitched,
+    AuthFinished, ConnectivityChanged, ControllerEvent, GameStarted, GameStopped, InstallFinished,
+    InstallProgress, ServerAddRequested, ServerSwitched, ServersChanged, TrustProblem,
 };
 
 /// Header of the generated file.
@@ -25,6 +28,17 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         .commands(tauri_specta::collect_commands![
             app::app_ready,
             app::app_info,
+            servers::servers_list,
+            servers::server_preview,
+            servers::server_confirm,
+            servers::server_switch,
+            servers::server_remove,
+            servers::auth_start,
+            servers::auth_open_browser,
+            servers::auth_submit_code,
+            servers::auth_cancel,
+            servers::auth_sign_out,
+            servers::auth_token_storage,
             crate::updater::updater_status,
             crate::updater::updater_check,
             crate::updater::updater_whats_new,
@@ -37,6 +51,11 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             InstallFinished,
             ServerSwitched,
             ControllerEvent,
+            ServersChanged,
+            ConnectivityChanged,
+            TrustProblem,
+            ServerAddRequested,
+            AuthFinished,
             crate::updater::UpdaterStatus
         ])
         .error_handling(tauri_specta::ErrorHandlingMode::Result)
