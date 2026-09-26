@@ -112,6 +112,13 @@ paths:
         Desktop flows redirect to `vgames://auth/callback?code=…&client_state=…` (with an HTML
         fallback page showing a copyable code). Web flows set the session and CSRF cookies and
         redirect to `return_to` under `/admin/`.
+
+        A refused sign-in also redirects, with `error=<code>` instead of a code or cookies:
+        `vgames://auth/callback?error=<code>&client_state=…` (HTML fallback page with the reason)
+        or `/admin/login?error=<code>`. Codes: `access_denied` (cancelled in Discord),
+        `registration_closed`, `not_allowlisted`, `user_disabled`, `sign_in_failed` (Discord
+        rejected the code or could not be reached; start again). Only a missing, expired or
+        reused `state` (no flow to return to) answers `400 invalid_state`.
       security: []
       parameters:
         - { name: code, in: query, required: false, schema: { type: string, maxLength: 256 } }
@@ -119,12 +126,11 @@ paths:
         - { name: error, in: query, required: false, schema: { type: string, maxLength: 128 } }
       responses:
         "302":
-          description: Redirect to the launcher deep link or the admin UI
+          description: Redirect to the launcher deep link or the admin UI (also for a refused sign-in)
           headers:
             Location:
               schema: { type: string }
         "400": { $ref: "#/components/responses/BadRequest" }
-        "403": { $ref: "#/components/responses/Forbidden" }
   /v1/auth/token:
     post:
       tags: [auth]
@@ -229,6 +235,24 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/PackagePage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/genres:
+    get:
+      tags: [catalog]
+      operationId: listGenres
+      summary: Genres of the published catalog, with package counts
+      description: |
+        Every genre carried by at least one package that `GET /v1/packages` would list, most
+        common first (ties by name), at most 200. The list may be up to 60 s stale.
+      parameters:
+        - { name: platform, in: query, schema: { $ref: "#/components/schemas/Platform" }, description: Only packages with a release for this platform }
+      responses:
+        "200":
+          description: Genres
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenreList" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
   /v1/packages/{package_id}:
@@ -1103,6 +1127,7 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "412": { $ref: "#/components/responses/PreconditionFailed" }
+        "428": { $ref: "#/components/responses/PreconditionRequired" }
   /v1/admin/packages/{package_id}/metadata/refresh:
     post:
       tags: [admin-packages]
@@ -2060,6 +2085,17 @@ components:
       properties:
         items: { type: array, items: { $ref: "#/components/schemas/PackageSummary" } }
         next_cursor: { type: string }
+    GenreCount:
+      type: object
+      required: [genre, count]
+      properties:
+        genre: { type: string, maxLength: 64 }
+        count: { type: integer, format: int64, minimum: 1 }
+    GenreList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, maxItems: 200, items: { $ref: "#/components/schemas/GenreCount" } }
     ReleaseDescriptor:
       type: object
       required: [package_id, version_id, platform, sequence, version_label, total_size, pack_count, manifest, signature, published_at]
