@@ -8,10 +8,12 @@
 - A2-T04 Download engine (`vgames-transfer::{download, install}`): see Interfaces and Measurements.
 - A2-T04 follow-up: bounded repeated expired links, final range length checks, stale journal invalidation, safe atomic metadata writes and linked-directory uninstall guard ([PR #38](https://github.com/wouhliss/vgames/pull/38)).
 - A2-T04 CI follow-up ([PR #38](https://github.com/wouhliss/vgames/pull/38)): crash-resume tests wait for pack bytes before killing child processes on fast macOS runners; Windows Tauri test binaries embed the Common Controls v6 manifest, and generated bindings compare equal across CRLF/LF checkouts.
-- A2-T05 Upload engine (`vgames-transfer::upload`): direct pack streams to GCS-style resumable sessions, private resume records, adaptive 4–16 workers, progress events, and end-to-end publishing API ([PR #39](https://github.com/wouhliss/vgames/pull/39), stacked on #38). The protocol is tested with a wiremock simulator and Agent 1's real fs storage backend; a separate process is killed after a randomly selected 256 KiB-aligned confirmed offset and the next process resumes; changing a file during streaming aborts with a clear error.
+- A2-T05 Upload engine (`vgames-transfer::upload`): direct pack streams to GCS-style resumable sessions, private resume records, adaptive 4–16 workers, progress events, and end-to-end publishing API ([PR #39](https://github.com/wouhliss/vgames/pull/39), merged). The protocol is tested with a wiremock simulator and Agent 1's real fs storage backend; a separate process is killed after a randomly selected 256 KiB-aligned confirmed offset and the next process resumes; changing a file during streaming aborts with a clear error.
+- A2-T06 signed-manifest update planner ([PR #40](https://github.com/wouhliss/vgames/pull/40), merged): identifies unchanged and changed files, removable paths, locally reusable chunks, remote bytes, and safe versus explicit in-place space requirements.
 
 ## In progress
-- A2-T06 update, verify, repair, move, and uninstall: the signed-manifest planner ([PR #40](https://github.com/wouhliss/vgames/pull/40)) identifies unchanged files, changed files, removable paths, locally reusable chunks, remote bytes, and safe versus explicit in-place space requirements. A read-only verifier ([PR #41](https://github.com/wouhliss/vgames/pull/41)) hashes installed files on bounded blocking workers, reports damaged file indices, and feeds a repair plan that excludes damaged chunks from local reuse. Transfer execution, commit replay, move, and uninstall prompts remain to be implemented.
+- A2-T06 read-only verifier ([PR #41](https://github.com/wouhliss/vgames/pull/41)) hashes installed files on bounded blocking workers, reports damaged file indices, and feeds a repair plan that excludes damaged chunks from local reuse. Transfer execution, commit replay, move, and uninstall prompts remain to be implemented.
+- A2-T07 servers, trust, and launcher authentication are assigned to another agent; this workstream remains on A2-T06.
 
 ## Interfaces delivered (other agents may now rely on these)
 - **Event bus** (A2-T01, for Agents 3, 4, 5): `vgames_desktop_lib::events::{EventBus, AppEvent}`,
@@ -97,5 +99,4 @@
   `vgames_core::manifest` accept exactly this (snapshot: `crates/vgames-pack/tests/snapshots/`).
 
 ## Blockers / contract questions
-- PRs #38–#41 cannot merge while the required GitHub Actions checks fail before runner assignment (empty runner names and no job steps on repeated attempts). The account's Actions-minute allowance appears exhausted; the repository owner must restore runner access. The stack is rebased on `main` at `07f0861` and passes local formatting, strict Clippy, Rust tests with the development database, changelog lint, and TypeScript lint/typecheck/tests. The Windows manifest fix still needs its matrix run.
 - A2-T04 follow-up: directory components can be swapped for symlinks between validation and later file access; a directory-handle based path traversal is needed to close this local race across platforms. The non-racy uninstall traversal and atomic-write symlink cases are fixed with regressions.
