@@ -68,6 +68,11 @@ fn read_marker(root: &Path) -> Result<Option<CommitMarker>, InstallError> {
     Ok(Some(marker))
 }
 
+/// Whether startup recovery must finish before another transfer or launch.
+pub fn is_pending(root: &Path) -> Result<bool, InstallError> {
+    Ok(read_marker(root)?.is_some())
+}
+
 fn ensure_record(root: &Path, old: &Release, new: &Release) -> Result<(), InstallError> {
     let record = read_record(root)?
         .ok_or_else(|| InstallError::Conflict("missing install record".into()))?;
