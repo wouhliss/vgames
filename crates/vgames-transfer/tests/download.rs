@@ -200,18 +200,19 @@ async fn survives_every_transient_fault() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn protocol_violations_are_retried_once_on_a_fresh_connection() {
     let files = random_files(12, 30, 9 * MIB);
-    let setup = Setup::new(TestPackage::build(&files, &[], Compression::None)).await;
     for fault in [
         Fault::WrongContentRange,
         Fault::Truncated,
         Fault::IgnoreRange,
     ] {
+        let setup = Setup::new(TestPackage::build(&files, &[], Compression::None)).await;
         setup.rig.inject(None, fault);
+        let (outcome, _) = setup.install(&options()).await.unwrap();
+        assert!(matches!(outcome, InstallOutcome::Installed(_)));
+        assert_eq!(setup.rig.pending_faults(), 0);
+        setup.assert_identical();
+        assert!(setup.api.reports().is_empty());
     }
-    let (outcome, _) = setup.install(&options()).await.unwrap();
-    assert!(matches!(outcome, InstallOutcome::Installed(_)));
-    setup.assert_identical();
-    assert!(setup.api.reports().is_empty());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
