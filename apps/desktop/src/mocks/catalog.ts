@@ -23,6 +23,7 @@ import type {
   ServerProfile,
 } from "../ipc";
 import { events } from "../ipc";
+import { type DownloadsState, makeJob, queueInstall } from "./downloads";
 import { BASE_TIME, DAY, packageIdFor, slugFor, titleFor } from "./library";
 import { fail, type Handler, mockId, seeded } from "./runtime";
 
@@ -250,11 +251,12 @@ function releaseFor(pkg: MockPackage, state: CatalogState): HostRelease | null {
 const HARD_BLOCKERS = new Set(["needs_apple_silicon", "needs_rosetta"]);
 
 export function catalogHandlers(
-  state: CatalogState & {
-    installs: InstalledPackage[];
-    libraries: Library[];
-    servers: ServerProfile[];
-  },
+  state: CatalogState &
+    DownloadsState & {
+      installs: InstalledPackage[];
+      libraries: Library[];
+      servers: ServerProfile[];
+    },
 ): Record<string, Handler> {
   const visible = () => state.packages.filter((p) => !state.removedPackages.includes(p.id));
   const find = (id: unknown): MockPackage => {
@@ -391,6 +393,14 @@ export function catalogHandlers(
           cloud_saves: "unsupported",
         },
       ];
+      queueInstall(
+        state,
+        makeJob(pkg, server?.id ?? "", library.id, {
+          version_label: planned.release.version_label,
+          bytes_total: planned.download_bytes,
+          queued_at: new Date().toISOString(),
+        }),
+      );
       void events.installsChanged.emit({});
       return null;
     },

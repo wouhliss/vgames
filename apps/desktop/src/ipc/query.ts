@@ -39,6 +39,7 @@ export const queryKeys = {
   catalog: ["catalog_list"] as const,
   genres: ["catalog_genres"] as const,
   details: (packageId: string) => ["package_details", packageId] as const,
+  downloads: ["downloads_list"] as const,
 };
 
 export function createQueryClient(): QueryClient {
@@ -68,8 +69,13 @@ export function useIpcInvalidation(): void {
     void client.invalidateQueries({ queryKey: queryKeys.libraries });
   });
   const installs = () => void client.invalidateQueries({ queryKey: queryKeys.installs });
+  const downloads = () => void client.invalidateQueries({ queryKey: queryKeys.downloads });
   useTauriEvent(events.installsChanged, installs);
-  useTauriEvent(events.installFinished, installs);
+  useTauriEvent(events.installFinished, () => {
+    installs();
+    downloads();
+  });
+  useTauriEvent(events.downloadsChanged, downloads);
   useTauriEvent(events.gameStarted, installs);
   useTauriEvent(events.gameStopped, installs);
   useTauriEvent(events.collectionsChanged, () => {
