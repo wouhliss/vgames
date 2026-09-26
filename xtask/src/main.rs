@@ -7,7 +7,7 @@
 //! - `codeowners check`             every tracked file has an owner; security paths stay with security
 //! - `openapi check`                  fail if the API's generated spec drifts from openapi/openapi.yaml
 //! - `updater sign | manifest | verify` version-bound updater signatures and `latest.json` (08-release §2)
-//! - `runtimes build | sign | verify`  the signed runtime catalog `runtimes.json` (09-compatibility §5)
+//! - `runtimes build | upsert | sign | verify`  the signed runtime catalog `runtimes.json` (09-compatibility §5)
 
 mod casefold;
 mod changelog;
@@ -97,6 +97,13 @@ enum RuntimesCmd {
         #[arg(default_value = "runtimes.json")]
         file: PathBuf,
     },
+    /// Add the entries of a JSON array (from the upstream watcher) to catalog.toml.
+    Upsert {
+        #[arg(long, default_value = "runtimes/catalog.toml")]
+        catalog: PathBuf,
+        /// JSON array of catalog.toml entries.
+        entries: PathBuf,
+    },
     /// Verify runtimes.json + FILE.minisig with the launcher's own code.
     Verify {
         /// Public key file (minisign .pub) or its base64 line.
@@ -162,6 +169,30 @@ fn run_runtimes(root: &Path, command: RuntimesCmd) -> Result<bool> {
             std::fs::write(&out, signature)
                 .with_context(|| format!("writing {}", out.display()))?;
             println!("wrote {}", out.display());
+        }
+        RuntimesCmd::Upsert { catalog, entries } => {
+            let path = root.join(catalog);
+            let mut toml = runtimes::read_toml(&path)?;
+            let new: Vec<runtimes::RuntimeToml> = serde_json::from_slice(
+                &std::fs::read(&entries)
+                    .with_context(|| format!("reading {}", entries.display()))?,
+            )
+            .with_context(|| format!("parsing {}", entries.display()))?;
+            let added = runtimes::upsert(&mut toml, new)?;
+            let text = runtimes::to_canonical_toml(&toml)?;
+            // Only a catalog the launcher would accept is written.
+            runtimes::build(
+                toml::from_str(&text)?,
+                None,
+                vgames_core::Timestamp::new(time::OffsetDateTime::now_utc()),
+            )?;
+            std::fs::write(&path, text).with_context(|| format!("writing {}", path.display()))?;
+            for line in &added {
+                println!("added {line}");
+            }
+            if added.is_empty() {
+                println!("{} unchanged", path.display());
+            }
         }
         RuntimesCmd::Verify {
             pubkey,

@@ -54,7 +54,6 @@
 # ---- Agent 5: DevOps and security tooling (non-critical) -----------------------
 /crates/vgames-cli/                         @wouhliss   # team: security (Agent 5)
 /xtask/                                     @wouhliss   # team: security (Agent 5)
-/runtimes/                                  @wouhliss   # team: security (Agent 5)
 /scripts/                                   @wouhliss   # team: security (Agent 5)
 /docs/security/                             @wouhliss   # team: security (Agent 5)
 /docs/agents/status/agent-5.md              @wouhliss   # team: security (Agent 5)
@@ -82,6 +81,9 @@
 /apps/desktop/src-tauri/src/updater/        @wouhliss   # team: security
 /apps/desktop/src-tauri/capabilities/       @wouhliss   # team: security
 /apps/desktop/src-tauri/tauri.conf.json     @wouhliss   # team: security (CSP, updater key)
+# What runtimes launchers may download and run, and the tools that pin and verify them (09 §5):
+/runtimes/                                  @wouhliss   # team: security
+/scripts/runtimes/                          @wouhliss   # team: security
 # End-to-end encryption (invariant 3):
 /apps/desktop/src-tauri/src/social/crypto/  @wouhliss   # team: security
 # Supply chain and release gates:

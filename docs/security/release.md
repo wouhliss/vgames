@@ -9,10 +9,10 @@ Humans hold every key and approve every release; the workflow cannot publish any
 ## One-time setup (humans)
 
 1. **Environment `release`** (Settings → Environments): required reviewers (at least one person who is not
-   the tagger), "Prevent self-review", deployment branches and tags limited to `desktop-v*` and `api-v*`.
-   Every job that reads a secret runs in it.
-2. **Tag ruleset**: `desktop-v*`, `api-v*` and `runtimes-*` can be created only by maintainers, never
-   deleted or moved.
+   the tagger), "Prevent self-review", deployment branches and tags limited to `desktop-v*`, `api-v*` and the
+   `main` branch (the runtime catalog is signed after a merge to `main`). Every job that reads a secret runs in it.
+2. **Tag ruleset**: `desktop-v*`, `api-v*` and `runtimes` (the runtime catalog's release) can be created only by
+   maintainers and the release workflows, never deleted or moved.
 3. **Updater key** (minisign), on an offline machine:
    ```sh
    pnpm --filter @vgames/desktop tauri signer generate -w vgames-updater.key
@@ -111,10 +111,44 @@ Commit `runtime-catalog.pub` as `runtimes/runtime-catalog.pub` through a normal 
 Store the content of `runtime-catalog.key` as the secret `VGAMES_RUNTIME_CATALOG_KEY` and its password as
 `VGAMES_RUNTIME_CATALOG_KEY_PASSWORD`, in the `release` environment only, and keep two offline copies.
 
+**How a new runtime version gets to players:**
+
+1. [`runtimes.yml`](../../.github/workflows/runtimes.yml) runs daily. For each upstream in
+   [`runtimes/upstreams.toml`](../../runtimes/upstreams.toml) it finds the newest release and downloads the asset.
+   It then checks the declared size, GitHub's SHA-256 digest and the upstream checksum file (GE-Proton and
+   UMU-Proton `.sha512sum`), and the licenses (the repository's license must not change, and every SPDX id must be
+   in `license_allowlist`).
+2. It smoke-tests the new versions:
+   - Linux: a D3D11 test program runs under umu-run and the new Proton in Xvfb, on Mesa's lavapipe (DXVK end to
+     end).
+   - macOS (Apple silicon runner, Rosetta): `wine --version`, a fresh prefix, and the same program. When the virtual
+     machine has no GPU, the graphics check is reported as NOT VERIFIED rather than passed.
+   - DXMT, DXVK-macOS and MoltenVK are not smoke-tested yet; their PR says so, so review them by hand.
+3. It opens **one** PR from `runtimes/update` with the table of new versions and the smoke results. Later runs update
+   that PR (or leave it alone when nothing changed) and never open a second one.
+   - Integrity or license problems propose nothing, and the run fails.
+   - Upstreams needing a human decision are listed under "Needs attention": a renamed asset, or a `repo_license` not
+     yet recorded. Recording `repo_license` for each upstream is the one onboarding step.
+4. Review the PR like code and merge it. [`release-runtimes.yml`](../../.github/workflows/release-runtimes.yml) then:
+   1. verifies the published catalog;
+   2. builds the next version;
+   3. downloads every new entry again and checks it against its pin;
+   4. after the `release` environment approval, signs it and verifies the signature with the committed public key;
+   5. uploads `runtimes.json`, `runtimes.json.minisig` and a versioned copy to the `runtimes` release.
+   That release is never marked latest, so the launcher's `releases/latest/download/latest.json` is unaffected.
+
+**Optional: CI on the watcher's PRs.** A PR opened with the default `GITHUB_TOKEN` starts no workflows, so its required
+checks never report. Create a GitHub App with *Contents* and *Pull requests* write access on this repository only.
+Then create an environment `runtimes-bot` limited to `main`, and put the App's client id in the variable
+`RUNTIMES_BOT_CLIENT_ID` and its private key in the secret `RUNTIMES_BOT_PRIVATE_KEY`. Without them, a maintainer
+pushes a commit to `runtimes/update`, for example rebasing it on `main`, to start CI.
+
 **Build, sign and check by hand** (what the release workflow does):
 
 ```sh
+cargo xtask runtimes upsert new-entries.json                   # adds entries; a pinned version never changes bytes
 cargo xtask runtimes build --previous last/runtimes.json --out runtimes.json
+python3 scripts/runtimes/verify_new.py runtimes.json --previous last/runtimes.json
 cargo xtask runtimes sign runtimes.json                        # reads the two variables above; writes runtimes.json.minisig
 cargo xtask runtimes verify --last-version <published version> runtimes.json
 ```
@@ -126,6 +160,7 @@ cargo xtask runtimes verify --last-version <published version> runtimes.json
 | [`e2e.yml`](../../.github/workflows/e2e.yml) | nightly, manual | The `vgames` CLI key pipeline against a real API (`scripts/e2e/key-pipeline.sh`), and the admin Playwright suite against the API serving the built admin web |
 | [`desktop-matrix.yml`](../../.github/workflows/desktop-matrix.yml) | nightly, PRs touching the launcher crates | Unsigned builds and Rust tests on Windows, Linux and macOS |
 | [`soak.yml`](../../.github/workflows/soak.yml) | weekly, manual | 24 h launcher leak test on a dedicated self-hosted runner (labels `self-hosted, linux, vgames-soak`); skipped until the repository variable `VGAMES_SOAK_RUNNER=true` |
+| [`runtimes.yml`](../../.github/workflows/runtimes.yml) | daily, manual (`only`, `dry_run`) | The upstream runtime watcher above; downloads only when a new version appears |
 | [Dependabot](../../.github/dependabot.yml) | weekly | Grouped updates; cryptography crates in their own PR; nothing is auto-merged |
 
 ## Dry run on a fork (A5-T07 acceptance)

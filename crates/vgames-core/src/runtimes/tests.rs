@@ -74,6 +74,21 @@ fn a_valid_catalog_parses_and_roundtrips() {
     );
     assert_eq!(serde_json::to_value(&c).unwrap(), doc);
     parse(&catalog(1, vec![])).unwrap();
+    // Every archive format by its wire name; anything else is refused.
+    for (name, format) in [
+        ("tar", ArchiveFormat::Tar),
+        ("tar.gz", ArchiveFormat::TarGz),
+        ("tar.xz", ArchiveFormat::TarXz),
+        ("tar.zst", ArchiveFormat::TarZst),
+        ("zip", ArchiveFormat::Zip),
+    ] {
+        let c = with_entry(|e| e["archive"] = json!(name)).unwrap();
+        assert_eq!(c.runtimes[0].archive, format);
+    }
+    assert!(matches!(
+        with_entry(|e| e["archive"] = json!("tar.bz2")),
+        Err(RuntimesError::Json(_))
+    ));
 }
 
 #[test]

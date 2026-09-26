@@ -1,0 +1,251 @@
+# Upstream runtime watcher (A5-T12, 08-release §1, 09-compatibility §5). Owner: Agent 5.
+#
+# Daily: for every upstream in runtimes/upstreams.toml, find the newest release, download it and verify
+# it (declared size, GitHub's SHA-256 digest, the upstream checksum file, the license), smoke-test it,
+# and propose it in ONE pull request from the branch `runtimes/update`. A later run updates that PR
+# rather than opening another, and does nothing when the result is unchanged. Merging it lets
+# release-runtimes.yml sign and publish the new catalog.
+#
+# No secret is exposed to downloaded code: the watch and smoke jobs have a read-only token and run
+# third-party binaries only after their SHA-256 matched. Only `propose` can write, and it runs no
+# downloaded code. Pull requests opened with the default token do not start CI; with a GitHub App
+# (variable RUNTIMES_BOT_CLIENT_ID, secret RUNTIMES_BOT_PRIVATE_KEY in the environment `runtimes-bot`)
+# they do. Setup: docs/security/release.md.
+
+name: Runtimes
+
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+    inputs:
+      only:
+        description: Watch only this runtime id (empty = all)
+        required: false
+        default: ""
+      dry_run:
+        description: Report only; do not open or update the pull request
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: runtimes-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    name: Watch upstreams
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    outputs:
+      new: ${{ steps.watch.outputs.new }}
+      linux: ${{ steps.watch.outputs.linux }}
+      macos: ${{ steps.watch.outputs.macos }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Watcher self-test (offline)
+        run: python3 -m unittest discover -s scripts/runtimes
+      - name: Versions already proposed in the open pull request
+        # Counted as pinned, so a pending PR is not downloaded and tested again every day.
+        # (The full-history checkout already has origin/*; no credentials are kept for a fetch.)
+        run: |
+          git show origin/runtimes/update:runtimes/catalog.toml > "$RUNNER_TEMP/pending.toml" 2>/dev/null ||
+            echo "commercial = false" > "$RUNNER_TEMP/pending.toml"
+      - id: watch
+        name: Find, download and verify new versions
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ONLY: ${{ inputs.only }}
+        run: |
+          out="$RUNNER_TEMP/watch"
+          args=(--out "$out" --pending "$RUNNER_TEMP/pending.toml")
+          if [ -n "$ONLY" ]; then args+=(--only "$ONLY"); fi
+          set +e
+          python3 scripts/runtimes/watch.py "${args[@]}"
+          rc=$?
+          set -e
+          cat "$out/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          # The archives stay here: the smoke jobs download them again and check the same SHA-256.
+          rm -rf "$out/files"
+          {
+            echo "new=$(jq 'length > 0' "$out/entries.json")"
+            echo "linux=$(jq 'any(.[]; .os == "linux")' "$out/smoke.json")"
+            echo "macos=$(jq 'any(.[]; .os == "macos")' "$out/smoke.json")"
+          } >> "$GITHUB_OUTPUT"
+          exit "$rc"
+      - name: Build the D3D11 smoke test
+        if: steps.watch.outputs.new == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc-mingw-w64-x86-64
+          x86_64-w64-mingw32-gcc -O2 -Wall -Wextra -Werror -o "$RUNNER_TEMP/watch/d3d11_smoke.exe" \
+            scripts/runtimes/smoke/d3d11_smoke.c -ld3d11
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: steps.watch.outputs.new == 'true'
+        with:
+          name: watch
+          path: ${{ runner.temp }}/watch
+          if-no-files-found: error
+          retention-days: 3
+
+  smoke-linux:
+    name: Smoke test (Linux, Proton + umu, DXVK on lavapipe)
+    needs: watch
+    if: needs.watch.outputs.linux == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: watch
+          path: ${{ runner.temp }}/watch
+      - name: Xvfb and Mesa's software Vulkan driver
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth mesa-vulkan-drivers libvulkan1
+      - name: Run
+        run: scripts/runtimes/smoke/linux.sh "$RUNNER_TEMP/watch" "$RUNNER_TEMP/watch/d3d11_smoke.exe"
+      - if: always()
+        run: cat "$RUNNER_TEMP/watch/smoke-linux.md" >> "$GITHUB_STEP_SUMMARY" || true
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: smoke-linux
+          path: ${{ runner.temp }}/watch/smoke-linux.md
+          retention-days: 3
+
+  smoke-macos:
+    name: Smoke test (macOS, Wine)
+    needs: watch
+    if: needs.watch.outputs.macos == 'true'
+    runs-on: macos-15
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: watch
+          path: ${{ runner.temp }}/watch
+      - name: Run
+        run: scripts/runtimes/smoke/macos.sh "$RUNNER_TEMP/watch" "$RUNNER_TEMP/watch/d3d11_smoke.exe"
+      - if: always()
+        run: cat "$RUNNER_TEMP/watch/smoke-macos.md" >> "$GITHUB_STEP_SUMMARY" || true
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: smoke-macos
+          path: ${{ runner.temp }}/watch/smoke-macos.md
+          retention-days: 3
+
+  propose:
+    name: Open or update the pull request
+    needs: [watch, smoke-linux, smoke-macos]
+    if: >-
+      always() && !inputs.dry_run &&
+      needs.watch.result == 'success' && needs.watch.outputs.new == 'true' &&
+      needs.smoke-linux.result != 'failure' && needs.smoke-linux.result != 'cancelled' &&
+      needs.smoke-macos.result != 'failure' && needs.smoke-macos.result != 'cancelled'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: runtimes-bot
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: "{watch,smoke-*}"
+          path: ${{ runner.temp }}/in
+      - name: Install toolchain (rust-toolchain.toml)
+        run: rustup toolchain install && rustup show active-toolchain
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: xtask
+          save-if: false
+      - name: Update catalog.toml (pending + new entries, validated by the launcher's parser)
+        run: |
+          python3 -c 'import json, sys, tomllib; print(json.dumps(tomllib.load(open(sys.argv[1], "rb")).get("runtime", [])))' \
+            <(git show origin/runtimes/update:runtimes/catalog.toml 2>/dev/null || echo "commercial = false") \
+            > "$RUNNER_TEMP/pending.json"
+          cargo xtask runtimes upsert "$RUNNER_TEMP/pending.json"
+          cargo xtask runtimes upsert "$RUNNER_TEMP/in/watch/entries.json"
+          cargo xtask runtimes build --out "$RUNNER_TEMP/runtimes.json"
+      - name: Pull request body
+        run: |
+          {
+            cat "$RUNNER_TEMP/in/watch/summary.md"
+            echo
+            echo "### Smoke tests"
+            echo
+            cat "$RUNNER_TEMP"/in/smoke-*/smoke-*.md 2>/dev/null || echo "- none ran"
+            echo
+            echo "Review like code: merging lets release-runtimes.yml sign this catalog for every launcher."
+            echo "Opened by the runtimes.yml run $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID."
+          } > "$RUNNER_TEMP/body.md"
+      - id: app
+        if: vars.RUNTIMES_BOT_CLIENT_ID != ''
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RUNTIMES_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.RUNTIMES_BOT_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Push runtimes/update and open or update its pull request
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token || github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          if git diff --quiet -- runtimes/catalog.toml; then
+            echo "catalog.toml unchanged"; exit 0
+          fi
+          if git rev-parse --verify --quiet origin/runtimes/update >/dev/null &&
+            git diff --quiet origin/runtimes/update -- runtimes/catalog.toml; then
+            echo "the open pull request already proposes exactly this catalog"; exit 0
+          fi
+          git config user.name "vgames-runtimes-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # The PR's changelog fragment (AGENTS.md §3): a new file each time, as the fragment gate requires.
+          fragment=".changes/runtimes-$(date -u +%Y%m%d%H%M).md"
+          python3 - "$fragment" <<'PY'
+          import subprocess, sys, tomllib
+          head = subprocess.run(["git", "show", "HEAD:runtimes/catalog.toml"], capture_output=True, text=True, check=True)
+          key = lambda e: (e["id"], e["version"], e["os"], e["arch"])
+          pinned = {key(e) for e in tomllib.loads(head.stdout).get("runtime", [])}
+          with open("runtimes/catalog.toml", "rb") as f:
+              new = [e for e in tomllib.load(f).get("runtime", []) if key(e) not in pinned]
+          names = ", ".join(f"{e['id']} {e['version']} ({e['os']}, {e['arch']})" for e in new)
+          with open(sys.argv[1], "w", encoding="utf-8") as out:
+              out.write(f"---\naudience: internal\ncomponent: launcher\ntype: changed\n---\nRuntime catalog: pinned {names}.\n")
+          PY
+          cargo xtask changelog lint
+          git switch -c runtimes/update
+          git add runtimes/catalog.toml "$fragment"
+          git commit -m "chore(runtimes): pin new upstream runtime versions"
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" HEAD:refs/heads/runtimes/update
+          pr=$(gh pr list --repo "$REPO" --head runtimes/update --state open --json number --jq '.[0].number')
+          if [ -n "$pr" ]; then
+            gh pr edit "$pr" --repo "$REPO" --body-file "$RUNNER_TEMP/body.md"
+          else
+            gh pr create --repo "$REPO" --base main --head runtimes/update \
+              --title "chore(runtimes): pin new upstream runtime versions" --body-file "$RUNNER_TEMP/body.md"
+          fi
