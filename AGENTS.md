@@ -101,6 +101,9 @@ pnpm openapi:lint
 
 # Repo automation
 cargo xtask changelog lint
+
+# Every CI job locally, before you push (commit first; --list, --help)
+scripts/ci/local.sh
 ```
 
 ## 5. Code standards
