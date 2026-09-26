@@ -66,13 +66,20 @@ pub fn render_bindings(
     Ok(text)
 }
 
+fn bindings_equal(committed: &str, generated: &str) -> bool {
+    committed.replace("\r\n", "\n") == generated.replace("\r\n", "\n")
+}
+
 /// Rewrites `bindings.ts` when it differs (debug builds call this at startup).
 pub fn write_bindings_if_changed(
     builder: &tauri_specta::Builder<tauri::Wry>,
 ) -> Result<bool, BindingsError> {
     let text = render_bindings(builder)?;
     let path = bindings_path();
-    if std::fs::read_to_string(&path).ok().as_deref() == Some(text.as_str()) {
+    if std::fs::read_to_string(&path)
+        .ok()
+        .is_some_and(|committed| bindings_equal(&committed, &text))
+    {
         return Ok(false);
     }
     std::fs::write(&path, text).map_err(BindingsError::Io)?;
@@ -156,9 +163,15 @@ mod tests {
         }
         let committed = std::fs::read_to_string(bindings_path()).unwrap_or_default();
         assert!(
-            committed == text,
+            bindings_equal(&committed, &text),
             "apps/desktop/src/bindings.ts is stale; run `VGAMES_UPDATE_BINDINGS=1 cargo test -p vgames-desktop bindings`"
         );
+    }
+
+    #[test]
+    fn bindings_comparison_accepts_windows_line_endings_but_not_stale_content() {
+        assert!(bindings_equal("one\r\ntwo\r\n", "one\ntwo\n"));
+        assert!(!bindings_equal("one\r\nold\r\n", "one\ntwo\n"));
     }
 
     #[test]
