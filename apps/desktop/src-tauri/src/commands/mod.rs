@@ -5,6 +5,7 @@
 //! `VGAMES_UPDATE_BINDINGS=1 cargo test -p vgames-desktop bindings`).
 
 mod app;
+mod libraries;
 pub mod names;
 
 use std::path::{Path, PathBuf};
@@ -25,6 +26,11 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         .commands(tauri_specta::collect_commands![
             app::app_ready,
             app::app_info,
+            libraries::libraries_list,
+            libraries::library_pick_folder,
+            libraries::library_add,
+            libraries::library_set_default,
+            libraries::library_remove,
             crate::updater::updater_status,
             crate::updater::updater_check,
             crate::updater::updater_whats_new,
