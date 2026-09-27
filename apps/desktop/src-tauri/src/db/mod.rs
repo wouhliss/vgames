@@ -13,6 +13,7 @@
 //! records on disk).
 
 pub mod collections;
+pub mod download_jobs;
 pub mod libraries;
 pub mod migrations;
 pub mod settings;
