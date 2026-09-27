@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-conversation-open-direct"
+description = "Enables the conversation_open_direct command without any pre-configured scope."
+commands.allow = ["conversation_open_direct"]
+
+[[permission]]
+identifier = "deny-conversation-open-direct"
+description = "Denies the conversation_open_direct command without any pre-configured scope."
+commands.deny = ["conversation_open_direct"]

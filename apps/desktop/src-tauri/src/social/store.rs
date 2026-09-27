@@ -27,8 +27,8 @@ use super::crypto::{
     SignedDeviceKeys,
 };
 use super::model::{
-    ContactDevice, ContactDeviceState, ContactSecurity, DeviceNotice, Message, MessageBody,
-    MessageStatus, unix_rfc3339,
+    ContactDevice, ContactDeviceState, ContactSecurity, Conversation, ConversationKind,
+    DeviceNotice, Message, MessageBody, MessageStatus, UserSummary, unix_rfc3339,
 };
 use super::payload::{self, Content, Decoded, Payload, PayloadError};
 use super::secrets::{CHAT_KEY, PICKLE_KEY, SecretError, SecretStore};
@@ -221,6 +221,18 @@ pub fn wipe_server(conn: &Connection, server: Uuid) -> Result<(), StoreError> {
         "social_processed_envelopes",
         "social_blocks",
     ] {
+        conn.execute(
+            &format!("DELETE FROM {table} WHERE server_id = ?1"),
+            [text(server)],
+        )?;
+    }
+    Ok(())
+}
+
+/// Forgets this install's Olm account and sessions on `server` (the device was revoked),
+/// keeping history, pins, verification and blocks. [`ensure_account`] then creates a new one.
+pub fn reset_account(conn: &Connection, server: Uuid) -> Result<(), StoreError> {
+    for table in ["social_accounts", "social_olm_sessions"] {
         conn.execute(
             &format!("DELETE FROM {table} WHERE server_id = ?1"),
             [text(server)],
@@ -1520,6 +1532,138 @@ pub fn set_verified(
 }
 
 // ---------------------------------------------------------------------------------------
+// Conversations (a local copy of the server's list, for members, ordering and unread)
+// ---------------------------------------------------------------------------------------
+
+/// Stores or refreshes a conversation from the server. `members` includes the local user.
+pub fn upsert_conversation(
+    conn: &Connection,
+    server: Uuid,
+    conversation: &Conversation,
+    created_at: i64,
+) -> Result<(), StoreError> {
+    let members = serde_json::to_string(&conversation.members).map_err(|_| StoreError::Corrupt)?;
+    let kind = match conversation.kind {
+        ConversationKind::Direct => "direct",
+        ConversationKind::Party => "party",
+    };
+    conn.execute(
+        "INSERT INTO social_conversations (server_id, id, kind, members, created_at, last_activity_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+         ON CONFLICT (server_id, id) DO UPDATE SET members = excluded.members,
+           last_activity_at = max(last_activity_at, excluded.last_activity_at)",
+        params![text(server), text(conversation.id), kind, members, created_at, created_at],
+    )?;
+    Ok(())
+}
+
+/// Member user ids of a known conversation.
+pub fn conversation_members(
+    conn: &Connection,
+    server: Uuid,
+    conversation: Uuid,
+) -> Result<Option<Vec<Uuid>>, StoreError> {
+    let members: Option<String> = conn
+        .query_row(
+            "SELECT members FROM social_conversations WHERE server_id = ?1 AND id = ?2",
+            params![text(server), text(conversation)],
+            |r| r.get(0),
+        )
+        .optional()?;
+    let Some(members) = members else {
+        return Ok(None);
+    };
+    let users: Vec<UserSummary> =
+        serde_json::from_str(&members).map_err(|_| StoreError::Corrupt)?;
+    Ok(Some(users.into_iter().map(|u| u.id).collect()))
+}
+
+fn conversation_from(
+    conn: &Connection,
+    keys: &Keys,
+    server: Uuid,
+    row: (String, String, String, i64, i64),
+) -> Result<Conversation, StoreError> {
+    let (cid, kind, members, created_at, last_read) = row;
+    let conversation = id(&cid)?;
+    let last = conn
+        .query_row(
+            &format!(
+                "SELECT {MESSAGE_COLUMNS} FROM social_messages WHERE server_id = ?1 AND conversation_id = ?2 ORDER BY seq DESC LIMIT 1"
+            ),
+            params![text(server), cid],
+            map_message,
+        )
+        .optional()?;
+    let unread: i64 = conn.query_row(
+        "SELECT count(*) FROM social_messages WHERE server_id = ?1 AND conversation_id = ?2 AND direction = 'in' AND seq > ?3",
+        params![text(server), cid, last_read],
+        |r| r.get(0),
+    )?;
+    Ok(Conversation {
+        id: conversation,
+        kind: if kind == "direct" {
+            ConversationKind::Direct
+        } else {
+            ConversationKind::Party
+        },
+        members: serde_json::from_str(&members).map_err(|_| StoreError::Corrupt)?,
+        last_message: last.map(|t| message_from(keys, server, t)).transpose()?,
+        unread: u32::try_from(unread).unwrap_or(u32::MAX),
+        created_at: unix_rfc3339(created_at),
+    })
+}
+
+/// Known conversations, most recently active first.
+pub fn list_conversations(
+    conn: &Connection,
+    keys: &Keys,
+    server: Uuid,
+) -> Result<Vec<Conversation>, StoreError> {
+    let mut stmt = conn.prepare(
+        "SELECT id, kind, members, created_at, last_read_seq FROM social_conversations
+         WHERE server_id = ?1 ORDER BY last_activity_at DESC, created_at DESC, id",
+    )?;
+    let rows = stmt
+        .query_map([text(server)], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    rows.into_iter()
+        .map(|row| conversation_from(conn, keys, server, row))
+        .collect()
+}
+
+/// One known conversation.
+pub fn get_conversation(
+    conn: &Connection,
+    keys: &Keys,
+    server: Uuid,
+    conversation: Uuid,
+) -> Result<Option<Conversation>, StoreError> {
+    let row = conn
+        .query_row(
+            "SELECT id, kind, members, created_at, last_read_seq FROM social_conversations WHERE server_id = ?1 AND id = ?2",
+            params![text(server), text(conversation)],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+        )
+        .optional()?;
+    row.map(|r| conversation_from(conn, keys, server, r))
+        .transpose()
+}
+
+/// Marks every message of a conversation read.
+pub fn mark_read(conn: &Connection, server: Uuid, conversation: Uuid) -> Result<(), StoreError> {
+    conn.execute(
+        "UPDATE social_conversations SET last_read_seq = coalesce(
+           (SELECT max(seq) FROM social_messages WHERE server_id = ?1 AND conversation_id = ?2), last_read_seq)
+         WHERE server_id = ?1 AND id = ?2",
+        params![text(server), text(conversation)],
+    )?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------------------
 // Blocks (kept locally: the server has no list endpoint)
 // ---------------------------------------------------------------------------------------
 
@@ -1551,7 +1695,8 @@ pub fn blocks_list(
     server: Uuid,
 ) -> Result<Vec<(Uuid, Option<String>, i64)>, StoreError> {
     let mut stmt = conn.prepare(
-        "SELECT user_id, username, blocked_at FROM social_blocks WHERE server_id = ?1 ORDER BY blocked_at DESC",
+        "SELECT user_id, username, blocked_at FROM social_blocks WHERE server_id = ?1
+         ORDER BY blocked_at DESC, user_id",
     )?;
     let rows = stmt
         .query_map([text(server)], |r| {

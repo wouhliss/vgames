@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-contact-trust-device"
+description = "Enables the contact_trust_device command without any pre-configured scope."
+commands.allow = ["contact_trust_device"]
+
+[[permission]]
+identifier = "deny-contact-trust-device"
+description = "Denies the contact_trust_device command without any pre-configured scope."
+commands.deny = ["contact_trust_device"]

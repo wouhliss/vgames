@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-conversations-list"
+description = "Enables the conversations_list command without any pre-configured scope."
+commands.allow = ["conversations_list"]
+
+[[permission]]
+identifier = "deny-conversations-list"
+description = "Denies the conversations_list command without any pre-configured scope."
+commands.deny = ["conversations_list"]
