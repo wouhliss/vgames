@@ -22,6 +22,7 @@
 - A2-T07 servers, trust, and launcher authentication are assigned to another agent; this workstream remains on A2-T06.
 - A2-T08 library roots: validate canonical writable folders, reject system folders and overlapping libraries, write `.vgames-library.json`, and detect missing or changed drives. Database registration and Tauri commands follow in this workstream.
 - A2-T08 library registration: add, list, and set-default operations use the dedicated SQLite thread; concurrent additions cannot register nested roots. Tauri commands and removal follow.
+- A2-T08 library removal: refuses libraries with installs or downloads, keeps the folder and player files, removes only its own marker, and promotes another default. Tauri commands follow.
 
 ## Interfaces delivered (other agents may now rely on these)
 - **Event bus** (A2-T01, for Agents 3, 4, 5): `vgames_desktop_lib::events::{EventBus, AppEvent}`,

@@ -137,6 +137,16 @@ pub fn create_root(path: &Path, existing: &[PathBuf]) -> Result<LibraryRoot, Lib
 /// Undo a marker we just created if database registration fails. Refuses to
 /// remove a marker whose identity changed in the meantime.
 pub fn remove_marker_if_matches(root: &LibraryRoot) -> Result<(), LibraryError> {
+    let metadata = fs::symlink_metadata(&root.path)
+        .map_err(|error| LibraryError::io("inspect", &root.path, error))?;
+    if !metadata.is_dir()
+        || metadata.file_type().is_symlink()
+        || fs::canonicalize(&root.path)
+            .map_err(|error| LibraryError::io("open", &root.path, error))?
+            != root.path
+    {
+        return Err(LibraryError::InvalidMarker);
+    }
     if read_marker(&root.path)? != Some(root.id) {
         return Err(LibraryError::InvalidMarker);
     }
@@ -293,6 +303,24 @@ mod tests {
             inspect_root(&library).unwrap(),
             LibraryPresence::MarkerChanged
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn marker_cleanup_does_not_follow_a_replaced_library_link() {
+        use std::os::unix::fs::symlink;
+        let dir = worktree_tempdir();
+        let path = dir.path().join("library");
+        let moved = dir.path().join("moved");
+        fs::create_dir(&path).unwrap();
+        let library = create_root(&path, &[]).unwrap();
+        fs::rename(&path, &moved).unwrap();
+        symlink(&moved, &path).unwrap();
+        assert!(matches!(
+            remove_marker_if_matches(&library),
+            Err(LibraryError::InvalidMarker)
+        ));
+        assert!(moved.join(MARKER).exists());
     }
 
     #[test]

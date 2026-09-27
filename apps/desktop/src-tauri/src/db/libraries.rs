@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use rusqlite::params;
+use rusqlite::{OptionalExtension, params};
 use uuid::Uuid;
 
 use super::{Db, DbError, now_unix};
@@ -20,6 +20,8 @@ pub enum LibraryStoreError {
     InvalidStoredId,
     #[error("library is not registered")]
     NotFound,
+    #[error("move installed packages and finish downloads before removing this library")]
+    InUse,
     #[error(transparent)]
     Root(#[from] LibraryError),
     #[error(transparent)]
@@ -34,6 +36,14 @@ pub struct Library {
     pub label: String,
     pub is_default: bool,
     pub created_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Removal {
+    /// The folder and player files remain; only the owned marker is removed.
+    pub path: PathBuf,
+    pub marker_removed: bool,
+    pub new_default: Option<Uuid>,
 }
 
 /// Registers one new library. The marker is removed if the SQLite transaction
@@ -167,6 +177,73 @@ pub async fn set_default(db: &Db, id: Uuid) -> Result<(), LibraryStoreError> {
     .await?
 }
 
+/// Unregisters an empty library. The transaction refuses both installed
+/// packages and queued transfers, and promotes the oldest remaining library
+/// if the removed one was default. The folder and player files are preserved.
+pub async fn remove(db: &Db, id: Uuid) -> Result<Removal, LibraryStoreError> {
+    let (path, new_default) = db
+        .call(move |conn| {
+            Ok((|| -> Result<_, LibraryStoreError> {
+                let tx = conn.transaction()?;
+                let (path, was_default): (String, bool) = tx
+                    .query_row(
+                        "SELECT path, is_default FROM libraries WHERE id = ?1",
+                        [id.to_string()],
+                        |row| Ok((row.get(0)?, row.get(1)?)),
+                    )
+                    .optional()?
+                    .ok_or(LibraryStoreError::NotFound)?;
+                let in_use: bool = tx.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM installs WHERE library_id = ?1)
+                         OR EXISTS(SELECT 1 FROM download_jobs WHERE library_id = ?1)",
+                    [id.to_string()],
+                    |row| row.get(0),
+                )?;
+                if in_use {
+                    return Err(LibraryStoreError::InUse);
+                }
+                tx.execute("DELETE FROM libraries WHERE id = ?1", [id.to_string()])?;
+                let new_default = if was_default {
+                    let next: Option<String> = tx
+                        .query_row(
+                            "SELECT id FROM libraries ORDER BY created_at, id LIMIT 1",
+                            [],
+                            |row| row.get(0),
+                        )
+                        .optional()?;
+                    if let Some(ref next) = next {
+                        tx.execute("UPDATE libraries SET is_default = 1 WHERE id = ?1", [next])?;
+                    }
+                    next.map(|value| {
+                        Uuid::parse_str(&value).map_err(|_| LibraryStoreError::InvalidStoredId)
+                    })
+                    .transpose()?
+                } else {
+                    None
+                };
+                tx.commit()?;
+                Ok((PathBuf::from(path), new_default))
+            })())
+        })
+        .await??;
+    let root = LibraryRoot {
+        id,
+        path: path.clone(),
+    };
+    let marker_removed = match libraries::remove_marker_if_matches(&root) {
+        Ok(()) => true,
+        Err(error) => {
+            tracing::warn!(%error, library_id = %id, "library unregistered but marker remains");
+            false
+        }
+    };
+    Ok(Removal {
+        path,
+        marker_removed,
+        new_default,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -228,6 +305,89 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let (a, b) = tokio::join!(add(&db, &parent, "Parent"), add(&db, &child, "Child"));
         assert_eq!(usize::from(a.is_ok()) + usize::from(b.is_ok()), 1);
+        assert_eq!(list(&db).await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn removing_an_empty_default_keeps_player_files_and_promotes_next() {
+        let dir = worktree_tempdir();
+        let first = dir.path().join("one");
+        let second = dir.path().join("two");
+        std::fs::create_dir(&first).unwrap();
+        std::fs::create_dir(&second).unwrap();
+        let db = Db::open_in_memory().unwrap();
+        let first = add(&db, &first, "One").await.unwrap();
+        let second = add(&db, &second, "Two").await.unwrap();
+        std::fs::write(first.root.path.join("player.txt"), b"settings").unwrap();
+        let removed = remove(&db, first.root.id).await.unwrap();
+        assert!(removed.marker_removed);
+        assert_eq!(removed.new_default, Some(second.root.id));
+        assert!(!first.root.path.join(".vgames-library.json").exists());
+        assert_eq!(
+            std::fs::read(first.root.path.join("player.txt")).unwrap(),
+            b"settings"
+        );
+        let remaining = list(&db).await.unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert!(remaining[0].is_default);
+    }
+
+    #[tokio::test]
+    async fn installed_package_prevents_unregistration() {
+        let dir = worktree_tempdir();
+        let db = Db::open_in_memory().unwrap();
+        let library = add(&db, dir.path(), "Games").await.unwrap();
+        let library_id = library.root.id.to_string();
+        db.call(move |conn| {
+            conn.execute(
+                "INSERT INTO servers (id, url, name, root_public_key, root_fingerprint, added_at)
+                 VALUES ('server', 'https://example.test', 'Test', zeroblob(32), 'VG1', 0)",
+                [],
+            )?;
+            conn.execute(
+                "INSERT INTO installs (server_id, package_id, library_id, dir_name,
+                 version_id, sequence, platform, state)
+                 VALUES ('server', 'package', ?1, 'game', 'version', 1, 'linux-x64', 'installed')",
+                [library_id],
+            )?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+        assert!(matches!(
+            remove(&db, library.root.id).await,
+            Err(LibraryStoreError::InUse)
+        ));
+        assert_eq!(list(&db).await.unwrap().len(), 1);
+        assert!(library.root.path.join(".vgames-library.json").exists());
+    }
+
+    #[tokio::test]
+    async fn queued_download_prevents_unregistration() {
+        let dir = worktree_tempdir();
+        let db = Db::open_in_memory().unwrap();
+        let library = add(&db, dir.path(), "Games").await.unwrap();
+        let library_id = library.root.id.to_string();
+        db.call(move |conn| {
+            conn.execute(
+                "INSERT INTO servers (id, url, name, root_public_key, root_fingerprint, added_at)
+                 VALUES ('server', 'https://example.test', 'Test', zeroblob(32), 'VG1', 0)",
+                [],
+            )?;
+            conn.execute(
+                "INSERT INTO download_jobs (id, server_id, package_id, version_id,
+                 library_id, kind, state, position, created_at, updated_at)
+                 VALUES ('job', 'server', 'package', 'version', ?1, 'install', 'queued', 0, 0, 0)",
+                [library_id],
+            )?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+        assert!(matches!(
+            remove(&db, library.root.id).await,
+            Err(LibraryStoreError::InUse)
+        ));
         assert_eq!(list(&db).await.unwrap().len(), 1);
     }
 }
