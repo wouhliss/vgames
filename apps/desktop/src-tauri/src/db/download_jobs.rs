@@ -16,6 +16,8 @@ pub enum JobStoreError {
     AlreadyQueued,
     #[error("download job was not found")]
     NotFound,
+    #[error("download job is not in the required state")]
+    InvalidState,
     #[error("stored download job has an invalid ID, kind, or state")]
     InvalidStoredJob,
     #[error("stored download options are invalid")]
@@ -62,6 +64,29 @@ pub enum JobState {
     Active,
     Paused,
     Failed,
+}
+
+/// Allowed durable queue changes. The worker must stop before recording an
+/// active pause or failure, so another worker cannot claim the same package.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum JobTransition {
+    PauseQueued,
+    PauseActive { reason: String },
+    Resume,
+    Retry,
+    FailActive { error: String },
+}
+
+impl JobTransition {
+    fn states(&self) -> (&'static str, &'static str, Option<&str>) {
+        match self {
+            Self::PauseQueued => ("queued", "paused", Some("user")),
+            Self::PauseActive { reason } => ("active", "paused", Some(reason)),
+            Self::Resume => ("paused", "queued", None),
+            Self::Retry => ("failed", "queued", None),
+            Self::FailActive { error } => ("active", "failed", Some(error)),
+        }
+    }
 }
 
 impl JobState {
@@ -248,6 +273,58 @@ pub async fn recover_active(db: &Db) -> Result<u64, JobStoreError> {
                 "UPDATE download_jobs SET state = 'queued', updated_at = ?1 WHERE state = 'active'",
                 [now_unix()],
             )? as u64)
+        })())
+    })
+    .await?
+}
+
+/// Changes a job only from the state required by the requested transition.
+/// A paused or failed job keeps its queue position across resume and retry.
+pub async fn transition(
+    db: &Db,
+    package: PackageRef,
+    action: JobTransition,
+) -> Result<(), JobStoreError> {
+    db.call(move |conn| {
+        Ok((|| -> Result<(), JobStoreError> {
+            let (from, to, reason) = action.states();
+            let changed = conn.execute(
+                "UPDATE download_jobs SET state = ?3, error = ?4, updated_at = ?5
+                 WHERE server_id = ?1 AND package_id = ?2 AND state = ?6",
+                params![package.server_id.to_string(), package.package_id.to_string(),
+                    to, reason, now_unix(), from],
+            )?;
+            if changed == 1 {
+                return Ok(());
+            }
+            let exists: bool = conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM download_jobs WHERE server_id = ?1 AND package_id = ?2)",
+                params![package.server_id.to_string(), package.package_id.to_string()],
+                |row| row.get(0),
+            )?;
+            Err(if exists { JobStoreError::InvalidState } else { JobStoreError::NotFound })
+        })())
+    })
+    .await?
+}
+
+/// Removes only a waiting job. Active work must first be cancelled and joined.
+pub async fn remove_waiting(db: &Db, package: PackageRef) -> Result<(), JobStoreError> {
+    db.call(move |conn| {
+        Ok((|| -> Result<(), JobStoreError> {
+            let changed = conn.execute(
+                "DELETE FROM download_jobs WHERE server_id = ?1 AND package_id = ?2 AND state != 'active'",
+                params![package.server_id.to_string(), package.package_id.to_string()],
+            )?;
+            if changed == 1 {
+                return Ok(());
+            }
+            let exists: bool = conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM download_jobs WHERE server_id = ?1 AND package_id = ?2)",
+                params![package.server_id.to_string(), package.package_id.to_string()],
+                |row| row.get(0),
+            )?;
+            Err(if exists { JobStoreError::InvalidState } else { JobStoreError::NotFound })
         })())
     })
     .await?
@@ -465,6 +542,88 @@ mod tests {
         assert_eq!(after[1].state, JobState::Failed);
         assert_eq!(after[2].state, JobState::Paused);
         assert_eq!(after[3].state, JobState::Queued);
+    }
+
+    #[tokio::test]
+    async fn transitions_preserve_order_and_refuse_active_removal() {
+        let (db, dir, server_id, library_id) = setup().await;
+        let first = package(server_id);
+        let second = package(server_id);
+        let missing = package(server_id);
+        for reference in [first, second] {
+            enqueue(
+                &db,
+                reference,
+                Uuid::now_v7(),
+                library_id,
+                JobKind::Install,
+                JobOptions::default(),
+            )
+            .await
+            .unwrap();
+        }
+        assert!(matches!(
+            transition(&db, missing, JobTransition::PauseQueued).await,
+            Err(JobStoreError::NotFound)
+        ));
+        transition(&db, second, JobTransition::PauseQueued)
+            .await
+            .unwrap();
+        assert!(matches!(
+            transition(&db, second, JobTransition::Retry).await,
+            Err(JobStoreError::InvalidState)
+        ));
+        let active = claim_next(&db).await.unwrap().unwrap();
+        assert_eq!(active.package, first);
+        assert!(matches!(
+            remove_waiting(&db, first).await,
+            Err(JobStoreError::InvalidState)
+        ));
+        transition(
+            &db,
+            first,
+            JobTransition::FailActive {
+                error: "integrity".into(),
+            },
+        )
+        .await
+        .unwrap();
+        transition(&db, first, JobTransition::Retry).await.unwrap();
+        transition(&db, second, JobTransition::Resume)
+            .await
+            .unwrap();
+        drop(db);
+
+        let db = Db::open(&dir.path().join("launcher.sqlite3")).unwrap();
+        let jobs = list(&db).await.unwrap();
+        assert_eq!(
+            jobs.iter().map(|job| job.package).collect::<Vec<_>>(),
+            vec![first, second]
+        );
+        assert!(
+            jobs.iter()
+                .all(|job| job.state == JobState::Queued && job.error.is_none())
+        );
+        assert_eq!(claim_next(&db).await.unwrap().unwrap().package, first);
+        transition(
+            &db,
+            first,
+            JobTransition::PauseActive {
+                reason: "disk_full".into(),
+            },
+        )
+        .await
+        .unwrap();
+        let paused = list(&db).await.unwrap();
+        assert_eq!(paused[0].state, JobState::Paused);
+        assert_eq!(paused[0].error.as_deref(), Some("disk_full"));
+        assert_eq!(claim_next(&db).await.unwrap().unwrap().package, second);
+        remove_waiting(&db, first).await.unwrap();
+        assert!(matches!(
+            remove_waiting(&db, first).await,
+            Err(JobStoreError::NotFound)
+        ));
+        assert_eq!(list(&db).await.unwrap().len(), 1);
     }
 
     #[tokio::test]
