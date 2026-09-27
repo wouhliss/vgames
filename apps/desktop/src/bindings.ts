@@ -14,6 +14,15 @@ export const commands = {
 	 */
 	appReady: () => typedError<null, CommandError>(__TAURI_INVOKE("app_ready")),
 	appInfo: () => __TAURI_INVOKE<AppInfo>("app_info"),
+	librariesList: () => typedError<LibraryInfo[], CommandError>(__TAURI_INVOKE("libraries_list")),
+	libraryPickFolder: () => typedError<{
+	path: string,
+	free_bytes: number,
+	total_bytes: number,
+} | null, LibraryActionError>(__TAURI_INVOKE("library_pick_folder")),
+	libraryAdd: (path: string, makeDefault: boolean) => typedError<LibraryInfo, LibraryActionError>(__TAURI_INVOKE("library_add", { path, makeDefault })),
+	librarySetDefault: (libraryId: string) => typedError<null, LibraryActionError>(__TAURI_INVOKE("library_set_default", { libraryId })),
+	libraryRemove: (libraryId: string) => typedError<null, LibraryRemovalError>(__TAURI_INVOKE("library_remove", { libraryId })),
 	/**  Current updater status. */
 	updaterStatus: () => __TAURI_INVOKE<UpdaterStatus>("updater_status"),
 	/**  Checks for an update now. Refused while a game runs. */
@@ -90,6 +99,12 @@ export type ChangeEntry = {
 
 /**  Kind of a player-facing change, in the order the dialog groups them. */
 export type ChangeType = "added" | "changed" | "fixed" | "removed" | "security";
+
+export type ChosenLibraryFolder = {
+	path: string,
+	free_bytes: number,
+	total_bytes: number,
+};
 
 /**  Error payload of every command. */
 export type CommandError = {
@@ -210,6 +225,23 @@ export type InstallProgress = {
 	eta_seconds: number | null,
 	connections: number,
 };
+
+/**  Errors expected by the launcher's library screens. */
+export type LibraryActionError = { kind: "not_writable" } | { kind: "system_directory" } | { kind: "nested_in_library"; library_path: string } | { kind: "contains_library"; library_path: string } | { kind: "already_added" } | { kind: "not_found" } | { kind: "io"; detail: string };
+
+export type LibraryInfo = {
+	id: string,
+	path: string,
+	label: string | null,
+	is_default: boolean,
+	online: boolean,
+	free_bytes: number | null,
+	/**  Reserved for a filesystem capacity measurement; absent when unavailable. */
+	total_bytes: number | null,
+	install_count: number,
+};
+
+export type LibraryRemovalError = { kind: "not_writable" } | { kind: "system_directory" } | { kind: "nested_in_library"; library_path: string } | { kind: "contains_library"; library_path: string } | { kind: "already_added" } | { kind: "not_found" } | { kind: "io"; detail: string } | { kind: "not_empty"; install_count: number };
 
 /**  A package on a specific server (package ids are only unique per server). */
 export type PackageRef = {

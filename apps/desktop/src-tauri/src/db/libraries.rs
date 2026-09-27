@@ -2,6 +2,7 @@
 //! the dedicated DB thread inside the insert transaction, so two concurrent
 //! additions cannot create nested libraries from stale path snapshots.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use rusqlite::{OptionalExtension, params};
@@ -49,6 +50,17 @@ pub struct Removal {
 /// Registers one new library. The marker is removed if the SQLite transaction
 /// fails; no install or other player file is deleted.
 pub async fn add(db: &Db, path: &Path, label: &str) -> Result<Library, LibraryStoreError> {
+    add_with_default(db, path, label, false).await
+}
+
+/// Registers a library and optionally selects it as default in one SQLite
+/// transaction, so a failed add cannot change the existing default.
+pub async fn add_with_default(
+    db: &Db,
+    path: &Path,
+    label: &str,
+    make_default: bool,
+) -> Result<Library, LibraryStoreError> {
     let label = label.trim();
     if label.is_empty() || label.chars().count() > 100 || label.chars().any(char::is_control) {
         return Err(LibraryStoreError::InvalidLabel);
@@ -65,8 +77,8 @@ pub async fn add(db: &Db, path: &Path, label: &str) -> Result<Library, LibrarySt
                     .map(|row| row.map(PathBuf::from))
                     .collect::<rusqlite::Result<Vec<_>>>()?
             };
-            let is_default: bool =
-                tx.query_row("SELECT count(*) = 0 FROM libraries", [], |row| row.get(0))?;
+            let is_default: bool = make_default
+                || tx.query_row("SELECT count(*) = 0 FROM libraries", [], |row| row.get(0))?;
             let root = libraries::create_root(&path, &existing)?;
             let canonical = match root.path.to_str() {
                 Some(path) => path,
@@ -78,6 +90,12 @@ pub async fn add(db: &Db, path: &Path, label: &str) -> Result<Library, LibrarySt
                 }
             };
             let created_at = now_unix();
+            if make_default {
+                tx.execute(
+                    "UPDATE libraries SET is_default = 0 WHERE is_default = 1",
+                    [],
+                )?;
+            }
             let result = tx.execute(
                 "INSERT INTO libraries (id, path, label, is_default, created_at)
                  VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -144,6 +162,28 @@ pub async fn list(db: &Db) -> Result<Vec<Library>, LibraryStoreError> {
                     })
                 })
                 .collect()
+        })())
+    })
+    .await?
+}
+
+/// Counts registered installs per library for the library picker and settings.
+pub async fn install_counts(db: &Db) -> Result<HashMap<Uuid, u64>, LibraryStoreError> {
+    db.call(|conn| {
+        Ok((|| -> Result<HashMap<Uuid, u64>, LibraryStoreError> {
+            let mut query =
+                conn.prepare("SELECT library_id, count(*) FROM installs GROUP BY library_id")?;
+            let rows = query.query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })?;
+            rows.map(|row| {
+                let (id, count) = row?;
+                Ok((
+                    Uuid::parse_str(&id).map_err(|_| LibraryStoreError::InvalidStoredId)?,
+                    count as u64, // SQLite COUNT is nonnegative.
+                ))
+            })
+            .collect()
         })())
     })
     .await?
@@ -266,7 +306,7 @@ mod tests {
         assert!(first.is_default);
         assert!(matches!(
             add(&db, &nested, "Nested").await,
-            Err(LibraryStoreError::Root(LibraryError::Overlap))
+            Err(LibraryStoreError::Root(LibraryError::Overlap { .. }))
         ));
         let second = add(&db, &second, "Other").await.unwrap();
         assert!(!second.is_default);
@@ -294,6 +334,30 @@ mod tests {
         ));
         assert!(list(&db).await.unwrap().is_empty());
         assert!(!dir.path().join(".vgames-library.json").exists());
+    }
+
+    #[tokio::test]
+    async fn selecting_new_default_is_atomic_with_registration() {
+        let dir = worktree_tempdir();
+        let first_path = dir.path().join("first");
+        let second_path = dir.path().join("second");
+        std::fs::create_dir(&first_path).unwrap();
+        std::fs::create_dir(&second_path).unwrap();
+        let db = Db::open_in_memory().unwrap();
+        let first = add(&db, &first_path, "First").await.unwrap();
+        assert!(matches!(
+            add_with_default(&db, &first_path, "Duplicate", true).await,
+            Err(LibraryStoreError::Root(LibraryError::AlreadyRegistered))
+        ));
+        assert!(list(&db).await.unwrap()[0].is_default);
+        let second = add_with_default(&db, &second_path, "Second", true)
+            .await
+            .unwrap();
+        let listed = list(&db).await.unwrap();
+        assert_eq!(listed[0].root.id, second.root.id);
+        assert!(listed[0].is_default);
+        assert_eq!(listed[1].root.id, first.root.id);
+        assert!(!listed[1].is_default);
     }
 
     #[tokio::test]

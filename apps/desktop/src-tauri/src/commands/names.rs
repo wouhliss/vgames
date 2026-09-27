@@ -13,6 +13,11 @@
 pub const MAIN_WINDOW_COMMANDS: &[&str] = &[
     "app_ready",
     "app_info",
+    "libraries_list",
+    "library_pick_folder",
+    "library_add",
+    "library_set_default",
+    "library_remove",
     "updater_status",
     "updater_check",
     "updater_whats_new",

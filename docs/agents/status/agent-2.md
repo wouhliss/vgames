@@ -13,16 +13,16 @@
 - A2-T06 read-only verifier ([PR #41](https://github.com/wouhliss/vgames/pull/41), merged): hashes installed files on bounded blocking workers and reports damaged file indices.
 - A2-T06 durable update commit ([PR #50](https://github.com/wouhliss/vgames/pull/50), merged): replays interrupted signed-manifest replacements before an install becomes playable.
 - A2-T06 safe transfer execution ([PR #51](https://github.com/wouhliss/vgames/pull/51), merged): stages changed files, reuses verified old chunks, and downloads only missing chunks.
+- A2-T06 uninstall preview ([PR #55](https://github.com/wouhliss/vgames/pull/55), merged): lists leftovers before removal and preserves them unless the player chooses to delete them.
+- A2-T06 install move ([PR #56](https://github.com/wouhliss/vgames/pull/56), merged): renames on one filesystem or copies and verifies signed files across filesystems, preserving user files and refusing links.
+- A2-T06 repair and in-place update ([PR #57](https://github.com/wouhliss/vgames/pull/57), [PR #58](https://github.com/wouhliss/vgames/pull/58), merged): rebuilds damaged files and supports explicit low-space updates with crash replay.
+- A2-T08 library roots and registration ([PR #59](https://github.com/wouhliss/vgames/pull/59), [PR #60](https://github.com/wouhliss/vgames/pull/60), merged): validates and marks writable folders, detects offline drives, and stores libraries and their default choice on the SQLite thread.
+- A2-T08 library removal ([PR #61](https://github.com/wouhliss/vgames/pull/61), merged): refuses libraries with installs or downloads, keeps player files, removes only its own marker, and promotes another default.
 
 ## In progress
-- A2-T06 uninstall preview: `install::preview_uninstall(root, manifest)` lists unknown files, links, and empty user folders before removal; `remove_install` still keeps those leftovers by default. UI confirmation wiring remains for A2-T08/Agent 3.
-- A2-T06 install move: `move_install::move_install(source, destination, manifest)` renames on one filesystem; across filesystems it copies all regular files (including user settings), verifies the copy and signed package files, then deletes the source. Links and special files are refused without following them.
-- A2-T06 repair execution: `update::execute::repair_safe` rebuilds damaged files on the same signed release, downloads chunks that touched them, and stores the damaged-file indices in the commit marker so crash replay finishes the repair.
-- A2-T06 in-place execution: `update::inplace::update_in_place` requires explicit choice, marks the install unplayable before replacing old bytes, resumes with chunk verification, and commits through a replayable marker. Startup must call `update::commit::recover_pending(root, trust)` before offering Launch.
-- A2-T07 servers, trust, and launcher authentication are assigned to another agent; this workstream remains on A2-T06.
-- A2-T08 library roots: validate canonical writable folders, reject system folders and overlapping libraries, write `.vgames-library.json`, and detect missing or changed drives. Database registration and Tauri commands follow in this workstream.
-- A2-T08 library registration: add, list, and set-default operations use the dedicated SQLite thread; concurrent additions cannot register nested roots. Tauri commands and removal follow.
-- A2-T08 library removal: refuses libraries with installs or downloads, keeps the folder and player files, removes only its own marker, and promotes another default. Tauri commands follow.
+- A2-T07 servers, trust, and launcher authentication are assigned to another agent ([PR #47](https://github.com/wouhliss/vgames/pull/47)); avoid touching that workstream.
+- A2-T08 library Tauri commands: list with offline status and install counts, add, select default, and remove; typed bindings and CI validation pending.
+- A2-T08 catalog, install queue, favorites, and collections remain.
 
 ## Interfaces delivered (other agents may now rely on these)
 - **Event bus** (A2-T01, for Agents 3, 4, 5): `vgames_desktop_lib::events::{EventBus, AppEvent}`,
