@@ -21,6 +21,7 @@
 - A2-T06 in-place execution: `update::inplace::update_in_place` requires explicit choice, marks the install unplayable before replacing old bytes, resumes with chunk verification, and commits through a replayable marker. Startup must call `update::commit::recover_pending(root, trust)` before offering Launch.
 - A2-T07 servers, trust, and launcher authentication are assigned to another agent; this workstream remains on A2-T06.
 - A2-T08 library roots: validate canonical writable folders, reject system folders and overlapping libraries, write `.vgames-library.json`, and detect missing or changed drives. Database registration and Tauri commands follow in this workstream.
+- A2-T08 library registration: add, list, and set-default operations use the dedicated SQLite thread; concurrent additions cannot register nested roots. Tauri commands and removal follow.
 
 ## Interfaces delivered (other agents may now rely on these)
 - **Event bus** (A2-T01, for Agents 3, 4, 5): `vgames_desktop_lib::events::{EventBus, AppEvent}`,

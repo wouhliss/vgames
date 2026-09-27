@@ -122,11 +122,27 @@ pub fn create_root(path: &Path, existing: &[PathBuf]) -> Result<LibraryRoot, Lib
         Err(error) => return Err(LibraryError::io("create", &marker_path, error)),
     };
     if let Err(error) = file.write_all(&bytes).and_then(|()| file.sync_all()) {
+        drop(file);
         let _ = fs::remove_file(&marker_path);
         return Err(LibraryError::io("write", &marker_path, error));
     }
-    fsutil::sync_dir(&path).map_err(|error| LibraryError::io("flush", &path, error))?;
+    drop(file);
+    if let Err(error) = fsutil::sync_dir(&path) {
+        let _ = fs::remove_file(&marker_path);
+        return Err(LibraryError::io("flush", &path, error));
+    }
     Ok(LibraryRoot { id, path })
+}
+
+/// Undo a marker we just created if database registration fails. Refuses to
+/// remove a marker whose identity changed in the meantime.
+pub fn remove_marker_if_matches(root: &LibraryRoot) -> Result<(), LibraryError> {
+    if read_marker(&root.path)? != Some(root.id) {
+        return Err(LibraryError::InvalidMarker);
+    }
+    let path = root.path.join(MARKER);
+    fs::remove_file(&path).map_err(|error| LibraryError::io("remove", &path, error))?;
+    fsutil::sync_dir(&root.path).map_err(|error| LibraryError::io("flush", &root.path, error))
 }
 
 /// Checks a stored library at startup. A missing drive is shown offline;
