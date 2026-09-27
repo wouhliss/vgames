@@ -26,7 +26,10 @@ async function cycle(page: Page, times: number) {
 
 test("navigating all routes 100 times does not grow memory (steady state)", async ({ page }) => {
   test.setTimeout(240_000);
-  await open(page, "ready");
+  // The simulated download is paused: its 4 progress events per second re-render the top bar, and a
+  // tick landing between the forced GC and the reading shows up as one extra listener. This test is
+  // about what navigation leaves behind, so it measures an otherwise idle app.
+  await open(page, "ready", { downloadRate: 0 });
   await expect(page.getByRole("heading", { level: 1, name: "Library" })).toBeVisible();
   const cdp = await page.context().newCDPSession(page);
   await cdp.send("Performance.enable");
