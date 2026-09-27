@@ -4,6 +4,7 @@
 
 use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 use super::{Db, DbError, now_unix};
@@ -21,6 +22,8 @@ pub enum JobStoreError {
     InvalidOptions(#[source] serde_json::Error),
     #[error("too many download jobs")]
     PositionOverflow,
+    #[error("reorder must contain each waiting job exactly once")]
+    InvalidOrder,
     #[error(transparent)]
     Database(#[from] DbError),
     #[error(transparent)]
@@ -250,6 +253,41 @@ pub async fn recover_active(db: &Db) -> Result<u64, JobStoreError> {
     .await?
 }
 
+/// Reorders all waiting jobs. The active job keeps its place and state; the
+/// submitted list must contain every queued, paused, and failed job once.
+pub async fn reorder(db: &Db, packages: Vec<PackageRef>) -> Result<(), JobStoreError> {
+    db.call(move |conn| {
+        Ok((|| -> Result<(), JobStoreError> {
+            let tx = conn.transaction()?;
+            let waiting: Vec<_> = read_all(&tx)?
+                .into_iter()
+                .filter(|job| job.state != JobState::Active)
+                .collect();
+            if waiting.len() != packages.len() {
+                return Err(JobStoreError::InvalidOrder);
+            }
+            let positions: Vec<_> = waiting.iter().map(|job| job.position).collect();
+            let ids: HashMap<_, _> = waiting.iter().map(|job| (job.package, job.id)).collect();
+            let mut seen = HashSet::new();
+            for (package, position) in packages.into_iter().zip(positions) {
+                let Some(id) = ids.get(&package) else {
+                    return Err(JobStoreError::InvalidOrder);
+                };
+                if !seen.insert(package) {
+                    return Err(JobStoreError::InvalidOrder);
+                }
+                tx.execute(
+                    "UPDATE download_jobs SET position = ?2, updated_at = ?3 WHERE id = ?1",
+                    params![id.to_string(), position, now_unix()],
+                )?;
+            }
+            tx.commit()?;
+            Ok(())
+        })())
+    })
+    .await?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -364,6 +402,69 @@ mod tests {
         assert_eq!(recover_active(&db).await.unwrap(), 1);
         assert_eq!(recover_active(&db).await.unwrap(), 0);
         assert_eq!(claim_next(&db).await.unwrap().unwrap().id, first.id);
+    }
+
+    #[tokio::test]
+    async fn reorder_is_atomic_and_keeps_the_active_job_running() {
+        let (db, _dir, server_id, library_id) = setup().await;
+        let mut packages = Vec::new();
+        for _ in 0..4 {
+            let reference = package(server_id);
+            enqueue(
+                &db,
+                reference,
+                Uuid::now_v7(),
+                library_id,
+                JobKind::Install,
+                JobOptions::default(),
+            )
+            .await
+            .unwrap();
+            packages.push(reference);
+        }
+        let active = claim_next(&db).await.unwrap().unwrap();
+        db.call(|conn| {
+            conn.execute(
+                "UPDATE download_jobs SET state = 'paused' WHERE position = 2",
+                [],
+            )?;
+            conn.execute(
+                "UPDATE download_jobs SET state = 'failed' WHERE position = 3",
+                [],
+            )?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+
+        let before = list(&db).await.unwrap();
+        assert!(matches!(
+            reorder(&db, vec![packages[3], packages[3], packages[1]]).await,
+            Err(JobStoreError::InvalidOrder)
+        ));
+        assert!(matches!(
+            reorder(&db, vec![packages[3], packages[2]]).await,
+            Err(JobStoreError::InvalidOrder)
+        ));
+        assert!(matches!(
+            reorder(&db, vec![packages[3], packages[2], package(server_id)]).await,
+            Err(JobStoreError::InvalidOrder)
+        ));
+        assert_eq!(list(&db).await.unwrap(), before);
+
+        reorder(&db, vec![packages[3], packages[2], packages[1]])
+            .await
+            .unwrap();
+        let after = list(&db).await.unwrap();
+        assert_eq!(after[0].id, active.id);
+        assert_eq!(after[0].state, JobState::Active);
+        assert_eq!(
+            after[1..].iter().map(|job| job.package).collect::<Vec<_>>(),
+            vec![packages[3], packages[2], packages[1]]
+        );
+        assert_eq!(after[1].state, JobState::Failed);
+        assert_eq!(after[2].state, JobState::Paused);
+        assert_eq!(after[3].state, JobState::Queued);
     }
 
     #[tokio::test]

@@ -20,11 +20,12 @@
 - A2-T08 library removal ([PR #61](https://github.com/wouhliss/vgames/pull/61), merged): refuses libraries with installs or downloads, keeps player files, removes only its own marker, and promotes another default.
 - A2-T08 library Tauri commands ([PR #64](https://github.com/wouhliss/vgames/pull/64), merged): list with offline status and install counts, pick/add folders, select default, and remove.
 - A2-T08 collection and favorite storage ([PR #66](https://github.com/wouhliss/vgames/pull/66), merged): validated names, stable partial reorder, idempotent membership and favorite toggles.
+- A2-T08 install queue storage ([PR #67](https://github.com/wouhliss/vgames/pull/67), merged): persisted jobs, one atomic active claim, and startup requeue.
 
 ## In progress
 - A2-T07 servers, trust, and launcher authentication are assigned to another agent ([PR #47](https://github.com/wouhliss/vgames/pull/47)); avoid touching that workstream.
-- A2-T08 install queue storage: persisted jobs, one atomic active claim, and startup requeue; transfer orchestration and UI commands follow.
-- A2-T08 catalog, queue history, and collection commands remain.
+- A2-T08 waiting-job reorder: atomic, exact-set queue ordering while an active transfer continues.
+- A2-T08 catalog, transfer orchestration, queue history, and collection/queue commands remain.
 
 ## Interfaces delivered (other agents may now rely on these)
 - **Event bus** (A2-T01, for Agents 3, 4, 5): `vgames_desktop_lib::events::{EventBus, AppEvent}`,
