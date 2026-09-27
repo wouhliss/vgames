@@ -228,6 +228,12 @@ describe("settings", () => {
       expect(within(home).getByRole("progressbar")).toHaveAttribute("aria-valuenow", "56");
       const external = screen.getByRole("listitem", { name: "External drive" });
       expect(within(external).getByText("Drive not connected")).toBeVisible();
+      // Its files can't be reached: it can only be removed.
+      expect(
+        within(external)
+          .getAllByRole("button")
+          .map((b) => b.textContent),
+      ).toEqual(["Remove…"]);
     });
 
     it("changes the default library, and remembers it after a restart", async () => {
