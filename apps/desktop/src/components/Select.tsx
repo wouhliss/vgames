@@ -13,6 +13,7 @@ import {
 import { createPortal } from "react-dom";
 import styles from "./Field.module.css";
 import { Icon } from "./Icon";
+import { popoverContainer } from "./layers";
 import { type PopoverPosition, placeBelow, useDismissPopover } from "./popover";
 import selectStyles from "./Select.module.css";
 
@@ -155,7 +156,9 @@ export function Select<V extends string>({
         commit(active);
         return;
       case "Escape":
+        // Closes the list only, not a dialog around it.
         e.preventDefault();
+        e.stopPropagation();
         setOpen(false);
         return;
       case "Tab":
@@ -262,7 +265,7 @@ export function Select<V extends string>({
                 </div>
               ))}
             </div>,
-            document.body,
+            popoverContainer(trigger.current),
           )
         : null}
     </div>

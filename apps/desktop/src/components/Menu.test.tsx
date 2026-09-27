@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { renderWithProviders } from "../test/render";
 import { Button, IconButton } from "./Button";
+import { Dialog } from "./Dialog";
 import { ContextMenu, Menu, type MenuEntry } from "./Menu";
 
 function entries(onPlay = vi.fn(), onRemove = vi.fn()): MenuEntry[] {
@@ -123,5 +124,21 @@ describe("ContextMenu", () => {
       target: screen.getByRole("button", { name: "Portal 2" }),
     });
     expect(screen.getByRole("menu", { name: "Tile actions" })).toBeInTheDocument();
+  });
+
+  it("inside a dialog, opens in the dialog's layer", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <Dialog open title="Game" onClose={vi.fn()}>
+        <Menu
+          label="Actions"
+          entries={entries()}
+          trigger={<IconButton icon="more" label="More" />}
+        />
+      </Dialog>,
+    );
+    await user.click(screen.getByRole("button", { name: "More" }));
+    const layer = screen.getByRole("dialog").closest("[data-modal-layer]");
+    expect(layer?.contains(screen.getByRole("menu", { name: "Actions" }))).toBe(true);
   });
 });
