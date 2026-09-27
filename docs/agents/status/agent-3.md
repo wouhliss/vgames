@@ -55,7 +55,7 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   removed; the controller e2e test now fails if any ancestor clips the focused button), the Discord waiting
   screen no longer repeats its text, and the library toolbar fits a 960 px window.
 
-- A3-T05 — Browse and package details. **Browse:** virtualized catalog grid over `<main>` (only nearby rows
+- A3-T05 — Browse and package details ([PR #37](https://github.com/wouhliss/vgames/pull/37)). **Browse:** virtualized catalog grid over `<main>` (only nearby rows
   in the DOM; the next page loads as the last rows come into view, with a retry row when it fails),
   search debounced 300 ms (Escape clears), genre filter with counts, sort by name or recent updates
   (remembered), platforms per card (Windows · Mac · Linux), Installed and "Runs with Proton/Wine/Rosetta 2" /
@@ -81,7 +81,7 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   on the body); the details page keeps one h1 through loading, content and removal; tooltips shift
   sideways to stay inside dialogs and panels; the router has a first-load fallback (no console warning).
 
-- A3-T06 — Downloads. Three sections: **Downloading** (live from `install-progress`: phase, bytes, speed, time
+- A3-T06 — Downloads ([PR #48](https://github.com/wouhliss/vgames/pull/48)). Three sections: **Downloading** (live from `install-progress`: phase, bytes, speed, time
   left, connections; indeterminate bar while verifying the signature, allocating and finishing),
   **Up next** (reorder with "Download next" / Move up / Move down in the row menu, or Alt+Up/Down; the move is
   announced and focus stays on the row) and **Completed** (outcome, size, when; Clear). Pause / Resume /
@@ -97,13 +97,24 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   live progress from the simulator, keyboard-only reorder/pause/cancel, controller-only).
 
 ## In progress
-- A3-T07 — Settings
+- A3-T07 — Settings, in parts. **Part 1 (this PR):** one URL per section (`/settings/<section>`, a section list that
+  works with arrows and the D-pad) with General (theme incl. "Same as system", reduce motion), Servers (address,
+  fingerprint, signed-in account, switch, remove, add through the first-run flow), Account (sessions with "sign
+  out this device", sign out, warning when tokens are kept in a file instead of the keychain), Storage (free space,
+  default library, add with the same path checks as onboarding, remove with "not empty" / "default" reasons, move
+  every package of a library), Downloads (speed limit 0.1–1000 MB/s with validation, 1–3 installs at once),
+  Updates (version, check now) and About (version, third-party licenses as plain text, copy diagnostics). Every
+  setting is tested to survive a restart of the mock (disabling persistence fails 4 tests).
+  **Next parts:** Privacy and Overlay (hotkey capture with conflict check, per-package overlay switch and safety
+  valve), Compatibility, Controllers, Cloud saves (with A3-T08). What's new comes with A3-T10.
 
 ## Interfaces delivered (other agents may now rely on these)
 - `apps/desktop/src/ipc/contract/`: the command/event surface the UI is built against, in exact
   tauri-specta output shape, one file per domain (`core.ts`: app, servers, auth, libraries;
   `library.ts`: installs, collections, favorites, launch, install actions). Each entry is deleted
   once the same name exists in `src/bindings.ts` (generated entries already win).
+- `apps/desktop/src/ipc/contract/settings.ts`: account sessions, credential storage, library default/remove,
+  download settings, social/overlay settings and licenses (see "Needs from others").
 - `apps/desktop/src/ipc/contract/downloads.ts`: the install queue commands and `downloads-changed` (see
   "Needs from others").
 - `apps/desktop/src/ipc/contract/catalog.ts`: catalog, package details, install plan/start and Rosetta 2
@@ -201,6 +212,22 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
     `downloads_history_clear`.
   - Event `downloads-changed` (queue or history changed). Live progress keeps using the generated
     `install-progress`; `install-finished` ends a job.
+- **From Agent 2** (Settings, A3-T07). Full types in `apps/desktop/src/ipc/contract/settings.ts`:
+  - `account_sessions(server_id) -> Result<Vec<AccountSession>, AppError>` (`GET /v1/me/sessions`: id,
+    device_name, platform windows | linux | macos | web | cli, created_at, last_used_at, current) and
+    `account_session_revoke(server_id, session_id)`.
+  - `credential_storage -> CredentialStorage` (`keychain` | `file_fallback {path}`, 01-security §7).
+  - `library_set_default(library_id) -> Result<(), LibraryError>`;
+    `library_remove(library_id) -> Result<(), LibraryRemoveError>` (LibraryError, `not_empty {install_count}`,
+    `is_default`; files on disk are left alone).
+  - `download_settings_get -> DownloadSettings {bandwidth_limit_kib: Option<u32> (≥ 100), concurrent_installs: 1..=3}`,
+    `download_settings_set(settings) -> Result<DownloadSettings, SettingsError {invalid {field, detail} | io}>`.
+  - `app_licenses -> Result<String, AppError>` (bundled third-party notices, plain text).
+- **From Agent 4** (Settings → Privacy and Overlay, next part of A3-T07): `social_settings_get/set` as in
+  05-social-notes §5, plus a typed error from `social_settings_set` when the overlay hotkey can't be registered:
+  `invalid` (not an accelerator) or `in_use {by: Option<String>}` (the OS or another app holds it). Also
+  `overlay_packages -> Vec<PackageOverlay {package, title, enabled, disabled_by_safety_valve_at}>` and
+  `overlay_package_set(package, enabled)` (turning it on clears the safety valve).
 - **From Agent 5:** nothing more for now. Seen (2026-09-26): CI runs locally (`scripts/ci/local.sh`, PR 42);
   my PRs carry its summary on the final commit and merge only when every job passes. The updater commands and the `updater-status` event now
   come from the generated `bindings.ts` (onboarding's "launcher too old" check uses `updater_check ->

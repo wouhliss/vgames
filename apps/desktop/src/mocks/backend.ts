@@ -14,6 +14,7 @@ import type {
   FolderPick,
   Library,
   LibraryError,
+  LibraryRemoveError,
   ServerError,
   ServerPreview,
   ServerProfile,
@@ -25,6 +26,13 @@ import { type CatalogState, catalogHandlers, defaultCatalogState } from "./catal
 import { type DownloadsState, defaultDownloadsState, downloadHandlers } from "./downloads";
 import { defaultLibraryState, type LibraryState, libraryHandlers } from "./library";
 import { CommandFailure, fail, type Handler } from "./runtime";
+import {
+  defaultSettingsState,
+  loadPersisted,
+  type SettingsState,
+  savePersisted,
+  settingsHandlers,
+} from "./settings";
 
 export { fail, type Handler } from "./runtime";
 
@@ -64,7 +72,7 @@ export const MOCK_LIBRARY: Library = {
   install_count: 0,
 };
 
-export interface MockState extends LibraryState, CatalogState, DownloadsState {
+export interface MockState extends LibraryState, CatalogState, DownloadsState, SettingsState {
   appInfo: AppInfo;
   appearance: AppearanceSettings;
   servers: ServerProfile[];
@@ -87,6 +95,7 @@ export function defaultState(): MockState {
     ...defaultLibraryState(),
     ...defaultCatalogState(),
     ...defaultDownloadsState(),
+    ...defaultSettingsState(),
     appInfo: {
       version: "0.4.0",
       profile: null,
@@ -196,7 +205,9 @@ export interface MockBackend {
 let previewSeq = 0;
 
 export function installMockBackend(overrides: Partial<MockState> = {}): MockBackend {
-  const state: MockState = { ...defaultState(), ...overrides };
+  const initial: MockState = { ...defaultState(), ...overrides };
+  // A "restart": what the previous backend saved under the same key wins over the starting state.
+  const state: MockState = { ...initial, ...loadPersisted(initial.persistKey) };
   const calls: MockCall[] = [];
   const previews = new Map<string, { preview: ServerPreview; host: string }>();
   const flows = new Map<
@@ -389,9 +400,28 @@ export function installMockBackend(overrides: Partial<MockState> = {}): MockBack
       return library;
     },
 
+    library_set_default: (args) => {
+      const target = state.libraries.find((l) => l.id === args.libraryId);
+      if (!target) fail({ kind: "not_found" } satisfies LibraryError);
+      state.libraries = state.libraries.map((l) => ({ ...l, is_default: l.id === target.id }));
+      void events.librariesChanged.emit({});
+      return null;
+    },
+    library_remove: (args) => {
+      const target = state.libraries.find((l) => l.id === args.libraryId);
+      if (!target) fail({ kind: "not_found" } satisfies LibraryError);
+      const count = state.installs.filter((i) => i.library_id === target.id).length;
+      if (count > 0) fail({ kind: "not_empty", install_count: count } satisfies LibraryRemoveError);
+      if (target.is_default) fail({ kind: "is_default" } satisfies LibraryRemoveError);
+      state.libraries = state.libraries.filter((l) => l !== target);
+      void events.librariesChanged.emit({});
+      return null;
+    },
+
     ...libraryHandlers(state),
     ...catalogHandlers(state),
     ...downloadHandlers(state),
+    ...settingsHandlers(state),
   };
 
   function signIn(serverId: string) {
@@ -409,7 +439,9 @@ export function installMockBackend(overrides: Partial<MockState> = {}): MockBack
       const handler = handlers[cmd];
       if (!handler) throw new Error(`mock backend: no handler for command "${cmd}"`);
       try {
-        return await handler(args);
+        const result = await handler(args);
+        savePersisted(state.persistKey, state as unknown as Record<string, unknown>);
+        return result;
       } catch (e) {
         // Tauri rejects with the serialized Rust error value (not an Error instance).
         if (e instanceof CommandFailure) return Promise.reject(e.error);
