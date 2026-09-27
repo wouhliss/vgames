@@ -133,7 +133,7 @@ fn move_inner(
         if metadata.is_dir() {
             fs::create_dir(&target).map_err(|error| InstallError::io("create", &target, error))?;
         } else if metadata.is_file() {
-            let copied = copy_and_verify(&entry, &target, expected.get(&entry).copied())?;
+            let copied = copy_and_verify(&entry, &target, expected.remove(&entry))?;
             report.copied_bytes = report
                 .copied_bytes
                 .checked_add(copied)
@@ -145,6 +145,11 @@ fn move_inner(
                 entry.display()
             )));
         }
+    }
+    if !expected.is_empty() {
+        return Err(InstallError::Conflict(
+            "a signed file is missing from the source install".into(),
+        ));
     }
     sync_tree_dirs(&staging)?;
     fs::rename(&staging, &destination)
@@ -374,6 +379,17 @@ mod tests {
         let (source_library, dest_library, package) = setup();
         let source = source_library.path().join("game");
         fs::write(source.join("bin/game"), b"wrong bytes").unwrap();
+        let dest = dest_library.path().join("game");
+        assert!(move_inner(&source, &dest, package.release().manifest(), true).is_err());
+        assert!(source.exists());
+        assert!(!dest.exists());
+    }
+
+    #[test]
+    fn missing_signed_file_keeps_source_and_does_not_publish_a_copy() {
+        let (source_library, dest_library, package) = setup();
+        let source = source_library.path().join("game");
+        fs::remove_file(source.join("bin/game")).unwrap();
         let dest = dest_library.path().join("game");
         assert!(move_inner(&source, &dest, package.release().manifest(), true).is_err());
         assert!(source.exists());
