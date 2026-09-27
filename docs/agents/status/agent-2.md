@@ -19,11 +19,12 @@
 - A2-T08 library roots and registration ([PR #59](https://github.com/wouhliss/vgames/pull/59), [PR #60](https://github.com/wouhliss/vgames/pull/60), merged): validates and marks writable folders, detects offline drives, and stores libraries and their default choice on the SQLite thread.
 - A2-T08 library removal ([PR #61](https://github.com/wouhliss/vgames/pull/61), merged): refuses libraries with installs or downloads, keeps player files, removes only its own marker, and promotes another default.
 - A2-T08 library Tauri commands ([PR #64](https://github.com/wouhliss/vgames/pull/64), merged): list with offline status and install counts, pick/add folders, select default, and remove.
+- A2-T08 collection and favorite storage ([PR #66](https://github.com/wouhliss/vgames/pull/66), merged): validated names, stable partial reorder, idempotent membership and favorite toggles.
 
 ## In progress
 - A2-T07 servers, trust, and launcher authentication are assigned to another agent ([PR #47](https://github.com/wouhliss/vgames/pull/47)); avoid touching that workstream.
-- A2-T08 local collection and favorite storage: name checks, ordering, membership, and favorite toggles on the SQLite thread; Tauri commands follow.
-- A2-T08 catalog and install queue remain.
+- A2-T08 install queue storage: persisted jobs, one atomic active claim, and startup requeue; transfer orchestration and UI commands follow.
+- A2-T08 catalog, queue history, and collection commands remain.
 
 ## Interfaces delivered (other agents may now rely on these)
 - **Event bus** (A2-T01, for Agents 3, 4, 5): `vgames_desktop_lib::events::{EventBus, AppEvent}`,
@@ -104,6 +105,7 @@
 - From Agent 3: call `commands.appReady()` once the first screen has rendered (until then the window shows
   after a 15 s fallback).
 - From Agent 3 (A2-T08): add a generic failure variant to the pending `CollectionError` UI contract so collection commands can report SQLite failures without mislabeling them as a missing collection.
+- From Agent 1 (A2-T08): queue history needs a new migration; `download_jobs` has no finished state or history table. Please agree on a durable history shape before the launcher exposes history commands.
 - From Agent 5 (manifest format): `vgames-pack` writes compact JSON in the 02 §5 field order, with
   `directories` always present (possibly `[]`) and `launch`/`controllers`/`saves`/`multiplayer` omitted when
   absent; `launch.targets[].args` always present, `working_dir`/`env` omitted when empty. Please make
