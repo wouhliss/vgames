@@ -11,16 +11,25 @@ import {
   type MockState,
 } from "./backend";
 import { makeCatalog } from "./catalog";
+import { makeDownloads, startDownloadSimulation } from "./downloads";
 import { MOCK_COLLECTIONS, makeInstalls, OFFLINE_LIBRARY } from "./library";
 
-function withInstalls(count: number): Partial<MockState> {
+function withInstalls(count: number, downloads = false): Partial<MockState> {
   const libraries = [MOCK_LIBRARY, OFFLINE_LIBRARY];
+  const packages = makeCatalog(120);
+  const installs = makeInstalls(count, MOCK_SERVER, libraries);
   return {
     servers: [MOCK_SERVER],
     libraries,
     collections: MOCK_COLLECTIONS,
-    installs: makeInstalls(count, MOCK_SERVER, libraries),
-    packages: makeCatalog(120),
+    installs,
+    packages,
+    ...(downloads
+      ? {
+          ...makeDownloads(packages, installs, MOCK_SERVER.id, MOCK_LIBRARY.id, MOCK_LIBRARY.path),
+          downloadRate: 48 * 1024 ** 2,
+        }
+      : {}),
   };
 }
 
@@ -28,7 +37,7 @@ const PRESETS: Record<string, () => Partial<MockState>> = {
   /** First run: no server, no library. */
   fresh: () => ({}),
   /** Signed in, with a library holding a few dozen packages (one drive offline). */
-  ready: () => withInstalls(40),
+  ready: () => withInstalls(40, true),
   /** Signed in with an empty library. */
   empty: () => ({ servers: [MOCK_SERVER], libraries: [MOCK_LIBRARY], packages: makeCatalog(120) }),
   /** 5,000 installed packages (performance). */
@@ -63,5 +72,6 @@ export function installBrowserMocks(): void {
   const settings = params.get("mockState");
   const extra = settings ? (JSON.parse(settings) as Partial<MockState>) : {};
   const backend = installMockBackend({ ...overrides, ...extra });
+  startDownloadSimulation(backend.state);
   window.__vgamesMock = { backend, emit: (event, payload) => emit(event, payload) };
 }

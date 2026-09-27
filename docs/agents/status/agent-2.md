@@ -17,11 +17,12 @@
   rotation (5 concurrent callers → one refresh), 401 → one refresh then one retry, refused refresh → local sign-out.
 
 ## In progress
-- A2-T06 read-only verifier ([PR #41](https://github.com/wouhliss/vgames/pull/41)) hashes installed files on bounded blocking workers, reports damaged file indices, and feeds a repair plan that excludes damaged chunks from local reuse. Transfer execution, commit replay, move, and uninstall prompts remain to be implemented.
+- A2-T06 read-only verifier ([PR #41](https://github.com/wouhliss/vgames/pull/41), merged) hashes installed files on bounded blocking workers, reports damaged file indices, and feeds a repair plan that excludes damaged chunks from local reuse.
+- A2-T06 durable safe-update commit: validates staged files against the signed release, writes a commit marker and preserved signed manifests, applies deletions and renames idempotently, then writes `install.json` last. `update::commit::recover_pending(root, trust)` replays after a crash; callers must invoke it before offering Launch. Transfer execution, in-place mode, move, and uninstall prompts remain.
 
 ### Handoff for the next Agent 2 session
 - A2-T07 is done (PR #47). **Next task for this workstream: A2-T08.** A2-T06 is still open in the other Agent 2
-  session (remaining items listed above); finish it before relying on update/repair/move from A2-T08.
+  session (remaining: transfer execution, in-place mode, move, uninstall prompts); finish it before relying on update/repair/move from A2-T08.
   Start A2-T08 from a fresh branch off `main`, e.g. `agent2/libraries-installs`.
 - Building blocks for A2-T08:
   - HTTP: `state.servers.api(server_id)` → `ApiClient::{public, authed, authed_empty}`. Never build another client.

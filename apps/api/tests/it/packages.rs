@@ -1,5 +1,10 @@
 //! Packages, assets and the public catalog (A1-T09).
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
 
 use crate::common;
 
@@ -642,5 +647,102 @@ async fn release_dates_are_iso_strings(pool: PgPool) {
             .await
             .get("release_date")
             .is_none_or(Value::is_null)
+    );
+}
+
+/// Walks the catalog two items at a time and returns every title, in page order.
+async fn walk(app: &Router, token: &str, query: &str) -> Vec<String> {
+    let mut titles = Vec::new();
+    let mut cursor: Option<String> = None;
+    loop {
+        let uri = match &cursor {
+            Some(c) => format!("/v1/packages?limit=2&{query}&cursor={c}"),
+            None => format!("/v1/packages?limit=2&{query}"),
+        };
+        let resp = send(app, authed("GET", &uri, token, None)).await;
+        assert_eq!(resp.status(), StatusCode::OK, "{uri}");
+        let page = body_json(resp).await;
+        for p in page["items"].as_array().unwrap() {
+            titles.push(p["title"].as_str().unwrap().to_string());
+        }
+        match page["next_cursor"].as_str() {
+            Some(c) => cursor = Some(c.to_string()),
+            None => return titles,
+        }
+        assert!(titles.len() <= 20, "{query}: pagination does not end");
+    }
+}
+
+/// A1-T16: keyset pages visit every package exactly once, in order, also when packages share
+/// a title or an `updated_at` (only the id breaks the tie), with and without a search.
+#[sqlx::test(migrations = "./migrations")]
+async fn catalog_pages_visit_every_package_once_with_ties(pool: PgPool) {
+    let app = app(pool.clone());
+    let (admin_id, _, admin) = seed_session(&pool, "admin").await;
+    let (_, _, user) = seed_session(&pool, "user").await;
+    let titles = [
+        "Echo", "Alpha", "Delta", "Alpha", "Charlie", "Bravo", "Foxtrot",
+    ];
+    for (i, title) in titles.iter().enumerate() {
+        let (_, pkg, etag) = create(
+            &app,
+            &admin,
+            json!({ "title": title, "fetch_metadata": false }),
+        )
+        .await;
+        let id = pkg["id"].as_str().unwrap().to_string();
+        let genre = if i % 2 == 0 { "rpg" } else { "puzzle" };
+        let resp = patch(
+            &app,
+            &admin,
+            &id,
+            etag.as_deref(),
+            json!({ "status": "published", "genres": [genre] }),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        seed_release(&pool, id.parse().unwrap(), admin_id).await;
+    }
+    // Every package last changed at the same instant.
+    sqlx::query("UPDATE packages SET updated_at = '2026-09-01T12:00:00Z'")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let expected = |filter: &'static str, order: &'static str| {
+        let pool = pool.clone();
+        async move {
+            // Constant filters from this test.
+            sqlx::query_scalar::<_, String>(sqlx::AssertSqlSafe(format!(
+                "SELECT title FROM packages WHERE {filter} ORDER BY {order}"
+            )))
+            .fetch_all(&pool)
+            .await
+            .unwrap()
+        }
+    };
+    let by_title = "lower(title), id";
+    let by_recent = "updated_at DESC, id DESC";
+    for (query, filter, order) in [
+        ("sort=title", "true", by_title),
+        ("sort=recent", "true", by_recent),
+        ("sort=title&q=a", "lower(title) LIKE '%a%'", by_title),
+        ("sort=recent&q=a", "lower(title) LIKE '%a%'", by_recent),
+        ("sort=recent&genre=rpg", "'rpg' = ANY(genres)", by_recent),
+        (
+            "sort=title&genre=puzzle&q=o",
+            "'puzzle' = ANY(genres) AND lower(title) LIKE '%o%'",
+            by_title,
+        ),
+        ("sort=recent&platform=linux-x86_64", "true", by_recent),
+    ] {
+        let want = expected(filter, order).await;
+        assert!(!want.is_empty(), "{query}");
+        assert_eq!(walk(&app, &user, query).await, want, "{query}");
+    }
+    assert!(
+        walk(&app, &user, "platform=windows-x86_64")
+            .await
+            .is_empty()
     );
 }

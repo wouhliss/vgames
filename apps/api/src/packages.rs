@@ -661,42 +661,91 @@ pub async fn list_catalog(
             .filter(|s| !s.trim().is_empty())
             .map(like_pattern);
     let platform = q.platform.map(|p| p.as_str().to_string());
+    let recent = sort == CatalogSort::Recent;
+    let cursor_key = after.as_ref().map(|(k, _)| k.clone());
+    let cursor_id = after.map(|(_, id)| id).unwrap_or(Uuid::nil());
+    let fetch = i64::from(limit) + 1;
 
-    let rows = sqlx::query!(
-        r#"SELECT p.id, lower(p.title) AS "title_key!", p.updated_at
-           FROM packages p
-           WHERE p.deleted_at IS NULL AND p.status = 'published'
-             AND EXISTS (SELECT 1 FROM package_releases r WHERE r.package_id = p.id
-                         AND ($4::text IS NULL OR r.platform = $4))
-             AND ($1::text IS NULL OR lower(p.title) LIKE $1 ESCAPE '\')
-             AND ($2::text IS NULL OR $2 = ANY(p.genres))
-             AND ($3::text IS NULL OR
-                  CASE WHEN $5 = 'title' THEN (lower(p.title), p.id) > ($3, $6)
-                       ELSE (p.updated_at, p.id) < ($3::timestamptz, $6) END)
-           ORDER BY
-             CASE WHEN $5 = 'title' THEN lower(p.title) END ASC,
-             CASE WHEN $5 = 'recent' THEN p.updated_at END DESC,
-             p.id
-           LIMIT $7"#,
-        pattern,
-        q.genre,
-        after.as_ref().map(|(k, _)| k.clone()),
-        platform,
-        if sort == CatalogSort::Title {
-            "title"
-        } else {
-            "recent"
-        },
-        after.map(|(_, id)| id).unwrap_or(Uuid::nil()),
-        i64::from(limit) + 1
-    )
-    .fetch_all(&state.db)
-    .await?;
-
-    let keyed: Vec<(Uuid, String, OffsetDateTime)> = rows
+    // Optional filters stay `$n IS NULL OR …` and the sort a pair of CASE orders so the SQL is
+    // static and compile-time checked; `db::connect` plans each call with its values
+    // (`force_custom_plan`), which folds them into plain index-backed conditions. Title pages
+    // go by (lower(title), id), recent pages by (updated_at, id) DESC: each order matches its
+    // keyset cursor and its index, and the id makes it total.
+    let keyed: Vec<(Uuid, String, OffsetDateTime)> = if let Some(pattern) = pattern {
+        // A search sorts its matches before checking for a release (OFFSET 0 keeps the
+        // subquery apart), so a broad word matching thousands of titles probes releases only
+        // until the page is full instead of once per match.
+        sqlx::query!(
+            r#"SELECT m.id AS "id!", m.title_key AS "title_key!", m.updated_at AS "updated_at!"
+               FROM (
+                 SELECT p.id, lower(p.title) AS title_key, p.updated_at
+                 FROM packages p
+                 WHERE p.deleted_at IS NULL AND p.status = 'published'
+                   AND lower(p.title) LIKE $7 ESCAPE '\'
+                   AND ($1::text IS NULL OR p.genres @> ARRAY[$1::text])
+                   AND ($2::text IS NULL OR
+                        CASE WHEN $4 THEN (p.updated_at, p.id) < ($2::timestamptz, $5)
+                             ELSE (lower(p.title), p.id) > ($2, $5) END)
+                 ORDER BY
+                   CASE WHEN NOT $4 THEN lower(p.title) END,
+                   CASE WHEN NOT $4 THEN p.id END,
+                   CASE WHEN $4 THEN p.updated_at END DESC,
+                   CASE WHEN $4 THEN p.id END DESC
+                 OFFSET 0
+               ) m
+               WHERE EXISTS (SELECT 1 FROM package_releases r WHERE r.package_id = m.id
+                             AND ($3::text IS NULL OR r.platform = $3))
+               ORDER BY
+                 CASE WHEN NOT $4 THEN m.title_key END,
+                 CASE WHEN NOT $4 THEN m.id END,
+                 CASE WHEN $4 THEN m.updated_at END DESC,
+                 CASE WHEN $4 THEN m.id END DESC
+               LIMIT $6"#,
+            q.genre,
+            cursor_key,
+            platform,
+            recent,
+            cursor_id,
+            fetch,
+            pattern,
+        )
+        .fetch_all(&state.db)
+        .await?
         .into_iter()
         .map(|r| (r.id, r.title_key, r.updated_at))
-        .collect();
+        .collect()
+    } else {
+        // Without a search the index order is the page order: releases are checked lazily
+        // while walking it.
+        sqlx::query!(
+            r#"SELECT p.id, lower(p.title) AS "title_key!", p.updated_at
+               FROM packages p
+               WHERE p.deleted_at IS NULL AND p.status = 'published'
+                 AND EXISTS (SELECT 1 FROM package_releases r WHERE r.package_id = p.id
+                             AND ($3::text IS NULL OR r.platform = $3))
+                 AND ($1::text IS NULL OR p.genres @> ARRAY[$1::text])
+                 AND ($2::text IS NULL OR
+                      CASE WHEN $4 THEN (p.updated_at, p.id) < ($2::timestamptz, $5)
+                           ELSE (lower(p.title), p.id) > ($2, $5) END)
+               ORDER BY
+                 CASE WHEN NOT $4 THEN lower(p.title) END,
+                 CASE WHEN NOT $4 THEN p.id END,
+                 CASE WHEN $4 THEN p.updated_at END DESC,
+                 CASE WHEN $4 THEN p.id END DESC
+               LIMIT $6"#,
+            q.genre,
+            cursor_key,
+            platform,
+            recent,
+            cursor_id,
+            fetch,
+        )
+        .fetch_all(&state.db)
+        .await?
+        .into_iter()
+        .map(|r| (r.id, r.title_key, r.updated_at))
+        .collect()
+    };
     let sort_key = |r: &(Uuid, String, OffsetDateTime)| -> String {
         if sort == CatalogSort::Title {
             r.1.clone()
