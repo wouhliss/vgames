@@ -25,8 +25,12 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
 
 - A5-T06 part 2: `vgames login | logout`, `trust publish`, `trust re-sign` — https://github.com/wouhliss/vgames/pull/27.
 - A5-T06 part 3: `vgames publish` (pack, upload, sign, finalize, `--publish`; resumable; checks the key against the
-  server's verified trust bundle before uploading) on Agent 2's `vgames_transfer::upload::publish`. The end-to-end
-  acceptance script (publish → revoke → re-sign → launcher-side `verify_manifest`) follows.
+  server's verified trust bundle before uploading) on Agent 2's `vgames_transfer::upload::publish` —
+  https://github.com/wouhliss/vgames/pull/65.
+- A5-T06 acceptance: `vgames verify` (a release checked as launchers do) and `scripts/e2e/key-pipeline.sh` extended:
+  root init → publisher keys → bundle v1 → publish with the first key (verified) → bundle v2 revokes it (launchers
+  refuse) → v1 replay refused → re-sign with the new key → launchers accept it under v2. Passed locally twice
+  against the real API (Postgres 18, fs storage, fake Discord); runs nightly in `e2e.yml`. **A5-T06 is complete.**
 
 - A5-T07 part 1: `release-desktop.yml`, `desktop-matrix.yml`, `cargo xtask updater sign | manifest | verify`, actionlint
   in CI, `docs/security/release.md` — https://github.com/wouhliss/vgames/pull/30.

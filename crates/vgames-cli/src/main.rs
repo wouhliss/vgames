@@ -5,6 +5,7 @@
 //! - `login`, `logout`                           Discord sign-in, tokens in the OS keychain
 //! - `trust publish | re-sign`                   bundles and signatures on the server
 //! - `publish`                                   pack, upload, sign and release a version
+//! - `verify`                                    check a release the way launchers do
 
 mod keys;
 mod login;
@@ -14,6 +15,7 @@ mod server;
 mod session;
 mod trust;
 mod trust_server;
+mod verify;
 
 use std::process::ExitCode;
 
@@ -62,6 +64,8 @@ enum Cmd {
     Logout(login::LogoutArgs),
     /// Pack a folder, upload it, sign its manifest and (with --publish) release it.
     Publish(Box<publish::PublishArgs>),
+    /// Check a published release the way launchers do before installing it.
+    Verify(verify::VerifyArgs),
 }
 
 /// Runs `vgames publish` on a multi-threaded runtime (parallel pack streams, hashing).
@@ -92,6 +96,7 @@ fn main() -> ExitCode {
         Cmd::Login(args) => block_on(login::login(args)),
         Cmd::Logout(args) => block_on(login::logout(args)),
         Cmd::Publish(args) => block_on_parallel(publish::run(*args)),
+        Cmd::Verify(args) => block_on(verify::run(args)),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
