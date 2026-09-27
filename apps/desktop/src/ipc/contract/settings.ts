@@ -2,7 +2,7 @@
 // management, download limits, the overlay's per-package switches, privacy and overlay preferences
 // (Agent 4's `SocialSettings`, 05-social-notes §5) and third-party licenses (Agents 2 and 4).
 // Requested shapes; see core.ts for the conventions.
-import type { PackageRef, SocialSettings } from "../../bindings";
+import type { PackageRef, SocialError } from "../../bindings";
 import type { AppError, LibraryError } from "./core";
 import { call, get, type Result } from "./runtime";
 
@@ -37,8 +37,8 @@ export type SettingsError =
   | { kind: "invalid"; field: string; detail: string }
   | { kind: "io"; detail: string };
 
-// `SocialSettings` (05-social-notes §5) is generated now; the typed hotkey errors below are still
-// requested (A4-T10 registers the hotkey).
+// `social_settings_get|set` and `SocialSettings` (05-social-notes §5) are generated now; the typed
+// hotkey errors below are still requested as `SocialError` variants (A4-T10 registers the hotkey).
 
 export type HotkeyError =
   /** Not a valid accelerator (no key, or a modifier alone). */
@@ -46,7 +46,8 @@ export type HotkeyError =
   /** The operating system or another application already uses it. */
   | { kind: "in_use"; by: string | null };
 
-export type SocialSettingsError = HotkeyError | { kind: "internal"; detail: string };
+/** What saving social settings can report: the generated errors plus the requested hotkey ones. */
+export type SocialSettingsError = SocialError | HotkeyError;
 
 /** The per-package "In-game overlay" switch and its crash safety valve (05-social §6.3). */
 export type PackageOverlay = {
@@ -92,15 +93,6 @@ export const settingsCommands = {
     return call("download_settings_set", { settings });
   },
 
-  async socialSettingsGet(): Promise<SocialSettings> {
-    return get("social_settings_get");
-  },
-  /** Registers the overlay hotkey before saving; refuses one the system or another app holds. */
-  async socialSettingsSet(
-    settings: SocialSettings,
-  ): Promise<Result<SocialSettings, SocialSettingsError>> {
-    return call("social_settings_set", { settings });
-  },
   async overlayPackages(): Promise<Result<PackageOverlay[], AppError>> {
     return call("overlay_packages");
   },

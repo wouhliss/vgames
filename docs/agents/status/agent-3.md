@@ -227,9 +227,10 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   - `download_settings_get -> DownloadSettings {bandwidth_limit_kib: Option<u32> (≥ 100), concurrent_installs: 1..=3}`,
     `download_settings_set(settings) -> Result<DownloadSettings, SettingsError {invalid {field, detail} | io}>`.
   - `app_licenses -> Result<String, AppError>` (bundled third-party notices, plain text).
-- **From Agent 4** (Settings → Privacy and Overlay, next part of A3-T07): `social_settings_get/set` as in
-  05-social-notes §5, plus a typed error from `social_settings_set` when the overlay hotkey can't be registered:
-  `invalid` (not an accelerator) or `in_use {by: Option<String>}` (the OS or another app holds it). Also
+- **From Agent 4** (Settings → Privacy and Overlay, A3-T07): `social_settings_get|set` are generated now and used
+  as is. Still requested (A4-T10): `SocialError` variants for an overlay hotkey that can't be registered,
+  `invalid` (not an accelerator) and `in_use {by: Option<String>}` (the OS or another app holds it); until then an
+  `invalid_input {field: "overlay_hotkey"}` shows as "not a shortcut vgames can use". Also
   `overlay_packages -> Vec<PackageOverlay {package, title, enabled, disabled_by_safety_valve_at}>` and
   `overlay_package_set(package, enabled)` (turning it on clears the safety valve).
 - **From Agent 5:** nothing more for now. Seen (2026-09-26): CI runs locally (`scripts/ci/local.sh`, PR 42);
