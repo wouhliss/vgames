@@ -268,8 +268,26 @@ async fn pkce_mismatch_and_code_reuse_are_rejected(pool: PgPool) {
     );
 }
 
+/// A refused sign-in: a 302 back to the client with `error=<code>`, no login code, no cookies.
+fn assert_refused(resp: &axum::http::Response<Body>, code: &str) -> url::Url {
+    assert_eq!(resp.status(), StatusCode::FOUND);
+    assert!(resp.headers().get("set-cookie").is_none());
+    let location = url::Url::parse(resp.headers()["location"].to_str().unwrap()).unwrap();
+    let error = location.query_pairs().find(|(k, _)| k == "error");
+    assert_eq!(
+        error.map(|(_, v)| v.into_owned()).as_deref(),
+        Some(code),
+        "{location}"
+    );
+    assert!(
+        location.query_pairs().all(|(k, _)| k != "code"),
+        "{location}"
+    );
+    location
+}
+
 #[sqlx::test(migrations = "./migrations")]
-async fn oauth_state_is_single_use_and_denial_is_403(pool: PgPool) {
+async fn oauth_state_is_single_use_and_denial_redirects(pool: PgPool) {
     let e = env(pool).await;
     e.discord_user(OWNER_ID, "alice").await;
     let (_, body) = e
@@ -290,8 +308,8 @@ async fn oauth_state_is_single_use_and_denial_is_403(pool: PgPool) {
         )),
     )
     .await;
-    assert_eq!(denied.status(), StatusCode::FORBIDDEN);
-    assert_eq!(body_json(denied).await["code"], "discord_denied");
+    let location = assert_refused(&denied, "access_denied");
+    assert_eq!(location.scheme(), "vgames");
 
     let again = send(
         &e.app,
@@ -386,8 +404,7 @@ async fn registration_modes(pool: PgPool) {
     let resp = e
         .through_callback(json!({"client": "desktop", "code_challenge": challenge(VERIFIER)}))
         .await;
-    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
-    assert_eq!(body_json(resp).await["code"], "not_allowlisted");
+    assert_refused(&resp, "not_allowlisted");
 
     sqlx::query("INSERT INTO registration_allowlist (discord_id) VALUES ('400000000000000001')")
         .execute(&e.pool)
@@ -401,7 +418,7 @@ async fn registration_modes(pool: PgPool) {
     let resp = e
         .through_callback(json!({"client": "desktop", "code_challenge": challenge(VERIFIER)}))
         .await;
-    assert_eq!(body_json(resp).await["code"], "registration_closed");
+    assert_refused(&resp, "registration_closed");
     // Existing accounts keep signing in when registration closes.
     e.discord_user("400000000000000001", "bob").await;
     e.desktop_login().await;
@@ -564,7 +581,7 @@ async fn disabled_users_are_locked_out_and_their_sessions_revoked(pool: PgPool) 
     let resp = e
         .through_callback(json!({"client": "desktop", "code_challenge": challenge(VERIFIER)}))
         .await;
-    assert_eq!(body_json(resp).await["code"], "user_disabled");
+    assert_refused(&resp, "user_disabled");
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -728,5 +745,87 @@ async fn fake_discord_signs_in_without_discord(pool: PgPool) {
         .replace("http://localhost:8080", "");
     // Fake users still pass the registration policy (default allowlist).
     let resp = send(&app, get_req(&next)).await;
-    assert_eq!(body_json(resp).await["code"], "not_allowlisted");
+    assert_refused(&resp, "not_allowlisted");
+}
+
+/// A refused or failed sign-in goes back to the client that started it (01-security §4.1): the
+/// launcher gets its `client_state` and a page with the reason, the admin UI its login page;
+/// nothing is issued. Only an unknown `state` stays a 400 problem.
+#[sqlx::test(migrations = "./migrations")]
+async fn refused_sign_ins_return_to_the_client_that_started_them(pool: PgPool) {
+    let e = env(pool).await;
+    e.discord_user("400000000000000003", "dave").await;
+
+    let resp = e
+        .through_callback(json!({
+            "client": "desktop", "code_challenge": challenge(VERIFIER),
+            "client_state": "launcher-state-0002", "device_name": "Test PC"
+        }))
+        .await;
+    let location = assert_refused(&resp, "not_allowlisted");
+    assert_eq!(location.scheme(), "vgames");
+    assert_eq!(
+        location
+            .query_pairs()
+            .find(|(k, _)| k == "client_state")
+            .map(|(_, v)| v.into_owned())
+            .as_deref(),
+        Some("launcher-state-0002")
+    );
+    assert_eq!(resp.headers()["cache-control"], "no-store");
+    let page = String::from_utf8(
+        http_body_util::BodyExt::collect(resp.into_body())
+            .await
+            .unwrap()
+            .to_bytes()
+            .to_vec(),
+    )
+    .unwrap();
+    assert!(
+        page.contains("only admits invited Discord accounts"),
+        "{page}"
+    );
+
+    let resp = e
+        .through_callback(json!({"client": "web", "return_to": "/admin/packages"}))
+        .await;
+    let location = assert_refused(&resp, "not_allowlisted");
+    assert_eq!(
+        location.as_str(),
+        "http://localhost:8080/admin/login?error=not_allowlisted"
+    );
+
+    // Discord redirected without a code: the flow is spent and the client is told to retry.
+    let (_, body) = e
+        .start(json!({"client": "web", "return_to": "/admin/"}))
+        .await;
+    let url = url::Url::parse(body["authorize_url"].as_str().unwrap()).unwrap();
+    let state = url
+        .query_pairs()
+        .find(|(k, _)| k == "state")
+        .unwrap()
+        .1
+        .to_string();
+    let resp = send(
+        &e.app,
+        get_req(&format!("/v1/auth/discord/callback?state={state}")),
+    )
+    .await;
+    assert_refused(&resp, "sign_in_failed");
+    let resp = send(
+        &e.app,
+        get_req(&format!("/v1/auth/discord/callback?code=x&state={state}")),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(body_json(resp).await["code"], "invalid_state");
+
+    for table in ["users", "sessions", "login_codes"] {
+        let n: i64 =
+            sqlx::query_scalar(sqlx::AssertSqlSafe(format!("SELECT count(*) FROM {table}")))
+                .fetch_one(&e.pool)
+                .await
+                .unwrap();
+        assert_eq!(n, 0, "{table}");
+    }
 }
