@@ -102,7 +102,7 @@ pub struct PublishArgs {
     passphrase: PassphraseArgs,
 }
 
-fn parse_platform(s: &str) -> Result<Platform, String> {
+pub(crate) fn parse_platform(s: &str) -> Result<Platform, String> {
     Platform::parse(s).ok_or_else(|| {
         format!(
             "unknown platform {s:?} (windows-x86_64, windows-aarch64, linux-x86_64, \
@@ -356,7 +356,7 @@ fn execution(path: Option<&Path>, plan: &Plan) -> Result<Execution> {
     Ok(execution)
 }
 
-async fn resolve_package(api: &Api, package: &str) -> Result<Uuid> {
+pub(crate) async fn resolve_package(api: &Api, package: &str) -> Result<Uuid> {
     if let Ok(id) = Uuid::parse_str(package) {
         let found: AdminPackage =
             api.get(&format!("/v1/admin/packages/{id}"))
@@ -546,11 +546,11 @@ pub async fn run(args: PublishArgs) -> Result<()> {
         .context("scanning the folder")??;
     let execution = execution(args.execution.as_deref(), &source.plan)?;
     eprintln!(
-        "{}: {} files, {}, {} packs.",
+        "{}: {}, {}, {}.",
         folder.display(),
-        source.plan.files().len(),
+        count(source.plan.files().len(), "file"),
         bytes(source.plan.files().iter().map(|f| f.size).sum()),
-        source.packing.pack_count()
+        count(source.packing.pack_count() as usize, "pack")
     );
 
     // The key is needed only until the manifest is signed.
@@ -773,10 +773,7 @@ async fn report(control: PublishControl, releasing: bool) {
                         bytes(u.bytes_total),
                         percent(u.bytes_confirmed as f64 / u.bytes_total as f64),
                         bytes(u.bytes_per_second.max(0.0) as u64),
-                        match u.active_packs {
-                            1 => "1 pack".to_owned(),
-                            n => format!("{n} packs"),
-                        }
+                        count(u.active_packs, "pack")
                     )
                 })
             }
@@ -797,6 +794,14 @@ async fn report(control: PublishControl, releasing: bool) {
     }
     if in_line {
         eprintln!();
+    }
+}
+
+fn count(n: usize, noun: &str) -> String {
+    if n == 1 {
+        format!("1 {noun}")
+    } else {
+        format!("{n} {noun}s")
     }
 }
 
@@ -829,6 +834,8 @@ mod tests {
         assert_eq!(bytes(1536), "1.5 KiB");
         assert_eq!(bytes(5 * 1024 * 1024 * 1024), "5.0 GiB");
         assert_eq!(percent(0.371), "37%");
+        assert_eq!(count(1, "pack"), "1 pack");
+        assert_eq!(count(3, "file"), "3 files");
         assert_eq!(percent(2.0), "100%");
         assert_eq!(parse_platform("linux-x86_64"), Ok(Platform::LinuxX86_64));
         assert!(parse_platform("linux").is_err());

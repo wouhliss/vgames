@@ -245,7 +245,7 @@ async fn all_pages<T: serde::de::DeserializeOwned>(api: &Api, path: &str) -> Res
     bail!("{path}: too many pages")
 }
 
-fn envelope_from(value: &serde_json::Value) -> Result<Envelope> {
+pub(crate) fn envelope_from(value: &serde_json::Value) -> Result<Envelope> {
     let bytes = serde_json::to_vec(value)?;
     Envelope::parse(&bytes).map_err(|e| anyhow::anyhow!("invalid signature envelope: {e}"))
 }

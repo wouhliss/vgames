@@ -1,9 +1,10 @@
 # Nightly end-to-end tests against the real stack (08-release §1). Owner: Agent 5.
 #
 # - key-pipeline: `vgames` CLI against a running API (Postgres 18, fs storage, fake Discord):
-#   root and publisher keys, login, bundle v1, bundle v2 revoking a key, replay refused,
-#   re-sign (scripts/e2e/key-pipeline.sh). `vgames publish` joins it with Agent 2's upload
-#   library, completing the pack → upload → verify → download round trip.
+#   root and publisher keys, login, bundle v1, a package published with the first key and
+#   verified as launchers do, bundle v2 revoking that key (launchers refuse the release),
+#   replay refused, re-sign with the new key, launchers accept it again
+#   (scripts/e2e/key-pipeline.sh; A5-T06 acceptance).
 # - admin-web: the admin Playwright suite against the API serving the built admin web
 #   (ADMIN_E2E_BASE_URL), instead of the mocks used on PRs.
 #
