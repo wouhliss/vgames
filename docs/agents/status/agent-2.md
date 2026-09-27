@@ -23,10 +23,12 @@
 - A2-T08 install queue storage ([PR #67](https://github.com/wouhliss/vgames/pull/67), merged): persisted jobs, one atomic active claim, and startup requeue.
 - A2-T08 waiting-job reorder ([PR #70](https://github.com/wouhliss/vgames/pull/70), merged): atomic, exact-set queue ordering while an active transfer continues.
 - A2-T08 cover cache core ([PR #71](https://github.com/wouhliss/vgames/pull/71), merged): 10 MiB raster entries, 500 MB on-disk LRU, opaque server-scoped keys, and Windows-safe recency updates.
+- A2-T08 cache-only `vgimg://` protocol ([PR #72](https://github.com/wouhliss/vgames/pull/72), merged): strict opaque URL parsing and native cache reads on a blocking pool.
 
 ## In progress
 - A2-T07 servers, trust, and launcher authentication are assigned to another agent ([PR #47](https://github.com/wouhliss/vgames/pull/47)); avoid touching that workstream.
-- A2-T08 cache-only `vgimg://` protocol: strict opaque URL parsing and native cache reads on a blocking pool; remote fetch still awaits the T07 API client.
+- A2-T08 queue state transitions: atomic pause, resume, retry, failure and waiting-job removal; active jobs cannot be removed before worker shutdown.
+- A2-T08 remote image fetch still awaits the T07 API client.
 - A2-T08 catalog, transfer orchestration, queue history, and collection/queue commands remain.
 
 ## Interfaces delivered (other agents may now rely on these)
