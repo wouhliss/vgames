@@ -70,6 +70,13 @@ export interface paths {
          * @description Desktop flows redirect to `vgames://auth/callback?code=…&client_state=…` (with an HTML
          *     fallback page showing a copyable code). Web flows set the session and CSRF cookies and
          *     redirect to `return_to` under `/admin/`.
+         *
+         *     A refused sign-in also redirects, with `error=<code>` instead of a code or cookies:
+         *     `vgames://auth/callback?error=<code>&client_state=…` (HTML fallback page with the reason)
+         *     or `/admin/login?error=<code>`. Codes: `access_denied` (cancelled in Discord),
+         *     `registration_closed`, `not_allowlisted`, `user_disabled`, `sign_in_failed` (Discord
+         *     rejected the code or could not be reached; start again). Only a missing, expired or
+         *     reused `state` (no flow to return to) answers `400 invalid_state`.
          */
         get: operations["discordCallback"];
         put?: never;
@@ -191,6 +198,27 @@ export interface paths {
         };
         /** Browse published packages */
         get: operations["listPackages"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/genres": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Genres of the published catalog, with package counts
+         * @description Every genre carried by at least one package that `GET /v1/packages` would list, most
+         *     common first (ties by name), at most 200. The list may be up to 60 s stale.
+         */
+        get: operations["listGenres"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1492,6 +1520,14 @@ export interface components {
             items: components["schemas"]["PackageSummary"][];
             next_cursor?: string;
         };
+        GenreCount: {
+            genre: string;
+            /** Format: int64 */
+            count: number;
+        };
+        GenreList: {
+            items: components["schemas"]["GenreCount"][];
+        };
         ReleaseDescriptor: {
             package_id: components["schemas"]["Uuid"];
             version_id: components["schemas"]["Uuid"];
@@ -2163,7 +2199,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Redirect to the launcher deep link or the admin UI */
+            /** @description Redirect to the launcher deep link or the admin UI (also for a refused sign-in) */
             302: {
                 headers: {
                     Location?: string;
@@ -2172,7 +2208,6 @@ export interface operations {
                 content?: never;
             };
             400: components["responses"]["BadRequest"];
-            403: components["responses"]["Forbidden"];
         };
     };
     exchangeToken: {
@@ -2334,6 +2369,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PackagePage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    listGenres: {
+        parameters: {
+            query?: {
+                /** @description Only packages with a release for this platform */
+                platform?: components["schemas"]["Platform"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Genres */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenreList"];
                 };
             };
             400: components["responses"]["BadRequest"];
@@ -3514,6 +3574,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             412: components["responses"]["PreconditionFailed"];
+            428: components["responses"]["PreconditionRequired"];
         };
     };
     adminUpdatePackage: {

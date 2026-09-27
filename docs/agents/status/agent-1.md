@@ -129,7 +129,9 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   - Inbox budget: Agent 4's endpoint (A4-T05); its query runs on `message_envelopes_inbox_idx` in 0.8 ms.
 
 ## In progress
-- None.
+- A1-T17 — Handoff: `apps/api/README.md` written, interfaces listed below, `.sqlx/` current (CI checks it).
+  The drift allowlist (`apps/api/tests/openapi_unimplemented.txt`) holds only Agent 4's 11 conversation, inbox
+  and invite operations; it empties as Agent 4 implements them (A4-T05, A4-T06).
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_api::error::ApiError` / `ApiResult` (problem+json), `vgames_api::http::json::{Json, Validate}`
@@ -217,6 +219,24 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   to handle: `last_owner`, `cannot_disable_self`, `already_allowlisted`, `job_not_retryable`, `job_already_queued`,
   `precondition_required` / `precondition_failed` (settings). Admins can read settings; only owners get a `200` on PATCH.
 - `vgames_proto::saves` holds the cloud-save DTOs (`SaveSnapshot` flattens `SaveSnapshotSummary`).
+- **Catalog order for Agent 3 (store/library views) and Agent 2 (launcher client):** `GET /v1/packages` pages are
+  total and stable: `sort=title` by lowercase title then id, `sort=recent` by `updated_at` then id, both
+  descending for recent. Follow `next_cursor` until it is `null`; a cursor only works with the filters it came
+  from (`400` otherwise). `genre` matches one entry of `genres` exactly.
+- **Database access for Agent 4 (`social/`):** pools come from `vgames_api::db::connect` and plan every
+  statement with its parameters (`db::SESSION_OPTIONS`), so optional filters written `($n IS NULL OR col = $n)`
+  still use your indexes. Check a new hot query with `apps/api/bench/explain.sql` on the seeded database.
+- `apps/api/README.md`: operator guide (every environment variable, roles, `--migrate`, `--role`, storage
+  backends, job kinds and schedules).
+- **Refused sign-ins for Agent 2 (launcher deep link) and Agent 3 (login views), contract commit below:** when
+  Discord or the registration policy turns a sign-in away, the callback now redirects to the client that
+  started it with `error=<code>` and no code: `vgames://auth/callback?error=<code>&client_state=…` (accept it
+  only with the pending `client_state`, then emit `auth-finished {outcome: failed}`) or
+  `/admin/login?error=<code>`. Codes: `access_denied`, `registration_closed`, `not_allowlisted`,
+  `user_disabled`, `sign_in_failed` (Discord rejected the code or was unreachable; offer to start again).
+- **Genres for Agent 3 (Browse filter):** `GET /v1/genres[?platform=]` → `{items: [{genre, count}]}` over the
+  packages `GET /v1/packages` lists, most common first, ≤ 200, `Cache-Control: private, max-age=60`. Types:
+  `vgames_proto::packages::{GenreList, GenreCount}` and the regenerated `packages/api-client`.
 - `Storage::sign_put_range(bucket, name, ttl, content_type, min, max)` (both backends).
 - Test harness: `apps/api/tests/it/common/mod.rs` (`app(pool)`, `send`, `body_json`, `json_request`) with
   `#[sqlx::test(migrations = "./migrations")]`.
@@ -225,7 +245,7 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
 - Root `clippy.toml` allows unwrap/expect/panic/indexing in tests (AGENTS.md §5).
 
 ## Needs from others
-- From Agent 2: `vgames_pack::verify::PackStreamVerifier` (A2-T03) for the `version.verify` job (A1-T12).
+- From Agent 4: the conversation, inbox and invite operations, to empty the drift allowlist (A1-T17).
 
 ## Blockers / contract questions
 - None. I merge my own PRs (rebase merge) once Agent 5's CI is green. Seen Agent 5's two CI notes (2026-09-26):
@@ -234,10 +254,9 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
 - Contract commit (A1-T13, in the same PR as the feature): `prepareSaveBlobs` / `commitSaveSnapshot` answer 404 for an
   unknown package; 06 §4 now defines the quota as head + pushed + in-flight blobs, with commits trimming the oldest
   history (never the head) to fit, so a large save that changes every session never locks a player out.
-- Follow-up: invalid path parameters (bad UUID, unknown enum) answer axum's plain-text 400 instead of problem+json;
-  I will add a `Path` extractor wrapper (A1-T16 hardening at the latest).
-- Follow-up contract fix: `DELETE /v1/admin/packages/{id}` returns 428 without `If-Match` but does not list it;
-  I will add it (contract + handler) in a small `contract:` PR.
+- Contract commit (2026-09-27, in the same PR as its implementation, because the drift test fails on any
+  contract/code mismatch): refused sign-ins redirect with `error=<code>` (01-security §4.1, answers Agent 3's
+  question), new `GET /v1/genres` (answers Agent 3's genres request), `428` listed on package delete.
 
 ## Local environment notes
 - My tests use a dedicated Postgres 18 container on `127.0.0.1:55432` (`vgames-a1-pg`); ports 8080 and 4443

@@ -189,6 +189,14 @@ Launcher                              API                                  Disco
   shows the code with a "copy" button, and the launcher offers a paste field (same PKCE check).
 - `registration.mode`: `open` | `allowlist` (default) | `closed`. The Discord id
   in `VGAMES_BOOTSTRAP_OWNER_DISCORD_ID` always passes and becomes `owner` on first sign-in.
+- A refused or failed sign-in (cancelled in Discord, registration closed, not on the allowlist, account
+  disabled, Discord error)
+  still consumes the flow and redirects to the client that started it, with `error=<code>` and no code
+  or cookies: `vgames://auth/callback?error=<code>&client_state=…` for the launcher (the fallback page
+  states the reason), `/admin/login?error=<code>` for the admin UI. Codes: `access_denied`,
+  `registration_closed`, `not_allowlisted`, `user_disabled`, `sign_in_failed` (Discord rejected the code
+  or could not be reached). The launcher accepts an `error` deep link only with a `client_state`
+  matching its pending flow.
 
 ### 4.2 Tokens
 

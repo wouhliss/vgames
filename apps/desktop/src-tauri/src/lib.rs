@@ -14,6 +14,7 @@ pub mod db;
 pub mod deeplink;
 pub mod error;
 pub mod events;
+pub mod libraries;
 pub mod logging;
 pub mod paths;
 pub mod secrets;

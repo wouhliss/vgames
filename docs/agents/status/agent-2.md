@@ -19,11 +19,21 @@
 ## In progress
 - A2-T06 read-only verifier ([PR #41](https://github.com/wouhliss/vgames/pull/41), merged) hashes installed files on bounded blocking workers, reports damaged file indices, and feeds a repair plan that excludes damaged chunks from local reuse.
 - A2-T06 durable safe-update commit: validates staged files against the signed release, writes a commit marker and preserved signed manifests, applies deletions and renames idempotently, then writes `install.json` last. `update::commit::recover_pending(root, trust)` replays after a crash; callers must invoke it before offering Launch. Transfer execution, in-place mode, move, and uninstall prompts remain.
+- A2-T06 safe transfer execution: `update::execute::update_safe` stages changed files, verifies and reuses matching chunks from the old install, downloads only remaining changed-file chunks, resumes through a separate journal, and invokes the durable commit. In-place mode, repair execution, move, and uninstall prompts remain.
+- A2-T06 uninstall preview: `install::preview_uninstall(root, manifest)` lists unknown files, links, and empty user folders before removal; `remove_install` still keeps those leftovers by default. UI confirmation wiring remains for A2-T08/Agent 3.
+- A2-T06 install move: `move_install::move_install(source, destination, manifest)` renames on one filesystem; across filesystems it copies all regular files (including user settings), verifies the copy and signed package files, then deletes the source. Links and special files are refused without following them.
+- A2-T06 repair execution: `update::execute::repair_safe` rebuilds damaged files on the same signed release, downloads chunks that touched them, and stores the damaged-file indices in the commit marker so crash replay finishes the repair.
+- A2-T08 library roots: validate canonical writable folders, reject system folders and overlapping libraries, write `.vgames-library.json`, and detect missing or changed drives. Database registration and Tauri commands follow in this workstream.
 
 ### Handoff for the next Agent 2 session
-- A2-T07 is done (PR #47). **Next task for this workstream: A2-T08.** A2-T06 is still open in the other Agent 2
-  session (remaining: transfer execution, in-place mode, move, uninstall prompts); finish it before relying on update/repair/move from A2-T08.
-  Start A2-T08 from a fresh branch off `main`, e.g. `agent2/libraries-installs`.
+- A2-T07 is done (PR #47). A2-T06 and A2-T08 continue in the other Agent 2 session (see the items above).
+  Whoever picks up next: finish A2-T06's remaining items, then continue A2-T08, then A2-T09 onward in order.
+- **A2-T07 follow-up (small, do it first):** Agent 1's contract (`7389acf`, 01-security §4.1) now redirects a
+  refused sign-in to `vgames://auth/callback?error=<code>&client_state=…`. Today `servers::auth::parse_callback_link`
+  and `deeplink::parse` reject the `error` parameter, so the launcher just lets that flow expire. Accept exactly
+  `error` + `client_state` (no `code`), look up the pending flow by `client_state`, drop it, and publish
+  `AuthFinished { Failed }` mapping `registration_closed`, `not_allowlisted`, `user_disabled`, `access_denied`
+  (→ `cancelled`), and any other code → `server { code }`. Add a test next to `a_refused_refresh_signs_out_locally`.
 - Building blocks for A2-T08:
   - HTTP: `state.servers.api(server_id)` → `ApiClient::{public, authed, authed_empty}`. Never build another client.
   - Trust: `state.servers.trust_state(id)` for `vgames_transfer::install::fetch_release`; on an unknown signing
@@ -34,8 +44,7 @@
     New desktop migrations go after `0003_servers_trust`.
   - UI contract to fulfil: `apps/desktop/src/ipc/contract/{core,library,catalog}.ts` (Agent 3). When a command
     lands in `bindings.ts`, delete it from the contract file; `AppError` is re-exported from `core.ts`.
-- Open questions for others are under "Needs from others" (Agent 3: an `internal` error kind; Agent 1: a
-  `vgames://auth/callback?error=` redirect).
+- Open question for others is under "Needs from others" (Agent 3: an `internal` error kind).
 - Old branch `claude/optimistic-fermat-gwfhvh` on the remote still holds a superseded commit from closed PR #43.
   Ignore it (do not merge it); A2-T05 on `main` replaces it.
 - Workflow: GitHub CI runs again (the repo is public); merge with rebase when the required checks are green.
@@ -141,9 +150,6 @@
 - From Agent 3: `ServerError` and `AuthError` have no "local failure" kind, so a local database error shows as
   `unreachable` / `server{code:"internal"}`. If you want an `internal { detail }` kind, add the case to
   `onboarding/messages.ts` and tell me; I will add the variant. `auth_token_storage().fallback_file` → Settings warning.
-- From Agent 1 (FYI): a registration refusal (`not_allowlisted`, `registration_closed`) is only shown on the browser
-  callback page, so the launcher sees the flow expire. A `vgames://auth/callback?error=<code>&client_state=…`
-  redirect would let the launcher show it; I would accept it in the parser.
 
 ## Blockers / contract questions
 - A2-T04 follow-up: directory components can be swapped for symlinks between validation and later file access; a directory-handle based path traversal is needed to close this local race across platforms. The non-racy uninstall traversal and atomic-write symlink cases are fixed with regressions.
