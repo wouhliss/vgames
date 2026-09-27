@@ -130,7 +130,7 @@ export function settingsHandlers(
     social_settings_set: (args) => {
       const next = args.settings as SocialSettings;
       if (next.overlay_hotkey !== state.socialSettings.overlay_hotkey) {
-        if (!/^((Ctrl|Alt|Shift|Meta)\+)*[A-Z0-9]\w*$/.test(next.overlay_hotkey))
+        if (!/^((Ctrl|Alt|Shift|Super)\+)*[A-Za-z0-9`\-=[\];',./]\w*$/.test(next.overlay_hotkey))
           fail({ kind: "invalid" } satisfies SocialSettingsError);
         if (next.overlay_hotkey in state.takenHotkeys)
           fail({
