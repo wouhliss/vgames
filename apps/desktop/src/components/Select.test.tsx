@@ -1,8 +1,9 @@
 import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { renderWithProviders } from "../test/render";
+import { Dialog } from "./Dialog";
 import { Select } from "./Select";
 
 function Harness() {
@@ -62,5 +63,26 @@ describe("Select", () => {
     await user.click(screen.getByRole("combobox", { name: /Theme/ }));
     await user.click(screen.getByRole("option", { name: "System" }));
     expect(screen.getByRole("combobox", { name: /Theme/ })).toHaveTextContent("System");
+  });
+
+  it("inside a dialog, opens in the dialog's layer, and Escape closes only the list", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    renderWithProviders(
+      <Dialog open title="Settings" onClose={onClose}>
+        <Harness />
+      </Dialog>,
+    );
+    const combo = screen.getByRole("combobox", { name: /Theme/ });
+    await user.click(combo);
+    // Outside the layer it would stack under the dialog (and be made inert with the rest of <body>).
+    const layer = screen.getByRole("dialog").closest("[data-modal-layer]");
+    expect(layer).not.toBeNull();
+    expect(layer?.contains(screen.getByRole("listbox"))).toBe(true);
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+    await user.keyboard("{Escape}");
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
