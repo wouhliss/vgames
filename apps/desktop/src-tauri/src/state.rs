@@ -2,16 +2,20 @@
 //! command. Every member is a cheap handle, so background tasks clone what they
 //! need instead of holding the whole state.
 
+use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
 use crate::db::Db;
 use crate::events::EventBus;
+use crate::images::{ImageCache, ImageCacheError};
 use crate::paths::AppPaths;
 
 pub struct AppState {
     pub paths: AppPaths,
     /// Local SQLite database (see `db`).
     pub db: Db,
+    /// Native-only cover cache served by the `vgimg://` protocol.
+    pub images: Arc<ImageCache>,
     /// Internal typed event bus (see `events`).
     pub bus: EventBus,
     /// Root of every task's cancellation token; cancelled on exit.
@@ -23,13 +27,15 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(paths: AppPaths, db: Db) -> Self {
-        Self {
+    pub fn new(paths: AppPaths, db: Db) -> Result<Self, ImageCacheError> {
+        let images = Arc::new(ImageCache::open(paths.cache_dir.join("images"))?);
+        Ok(Self {
             paths,
             db,
+            images,
             bus: EventBus::new(),
             shutdown: CancellationToken::new(),
             ui_ready: CancellationToken::new(),
-        }
+        })
     }
 }

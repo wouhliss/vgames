@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::SystemTime;
 
+use tauri::http::{self, Method, Request, Response, StatusCode, header};
 use uuid::Uuid;
 
 /// Maximum response body accepted for one image (10 MiB).
@@ -46,6 +47,14 @@ impl ImageKey {
         hasher.update(&(asset_id.len() as u32).to_le_bytes());
         hasher.update(asset_id.as_bytes());
         Ok(Self(hasher.finalize().to_hex().to_string()))
+    }
+
+    fn from_cache_id(value: &str) -> Option<Self> {
+        (value.len() == 64
+            && value
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)))
+        .then(|| Self(value.to_owned()))
     }
 }
 
@@ -285,6 +294,71 @@ fn is_entry_name(path: &Path) -> bool {
         && matches!(extension, "jpg" | "png" | "webp")
 }
 
+/// Serves only an opaque cache id. The custom protocol never fetches a remote
+/// URL, follows a user-supplied path, or exposes a cache miss as a filesystem
+/// error. Its Tauri callback runs this function on a blocking pool.
+pub fn protocol_response(cache: &ImageCache, request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
+    if request.method() != Method::GET {
+        let mut response = empty_response(StatusCode::METHOD_NOT_ALLOWED);
+        response
+            .headers_mut()
+            .insert(header::ALLOW, http::HeaderValue::from_static("GET"));
+        return response;
+    }
+    let uri = request.uri();
+    let valid_origin = matches!(
+        (
+            uri.scheme_str(),
+            uri.authority().map(|authority| authority.host())
+        ),
+        (Some("vgimg"), Some("localhost")) | (Some("http"), Some("vgimg.localhost"))
+    );
+    let key = uri
+        .path()
+        .strip_prefix('/')
+        .and_then(ImageKey::from_cache_id);
+    if !valid_origin || uri.query().is_some() || key.is_none() {
+        return empty_response(StatusCode::NOT_FOUND);
+    }
+    let Some(key) = key else {
+        return empty_response(StatusCode::NOT_FOUND);
+    };
+    match cache.get(&key) {
+        Ok(Some(image)) => {
+            let mut response = Response::new(image.bytes);
+            response.headers_mut().insert(
+                header::CONTENT_TYPE,
+                http::HeaderValue::from_static(image.content_type),
+            );
+            secure_headers(&mut response);
+            response
+        }
+        Ok(None) => empty_response(StatusCode::NOT_FOUND),
+        Err(error) => {
+            tracing::warn!(%error, "cannot read cached image");
+            empty_response(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+pub fn empty_response(status: StatusCode) -> Response<Vec<u8>> {
+    let mut response = Response::new(Vec::new());
+    *response.status_mut() = status;
+    secure_headers(&mut response);
+    response
+}
+
+fn secure_headers(response: &mut Response<Vec<u8>>) {
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        http::HeaderValue::from_static("no-store"),
+    );
+    response.headers_mut().insert(
+        "x-content-type-options",
+        http::HeaderValue::from_static("nosniff"),
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -406,5 +480,50 @@ mod tests {
             ImageCache::open(alias),
             Err(ImageCacheError::InvalidDirectory)
         ));
+    }
+
+    #[test]
+    fn protocol_serves_only_gets_for_exact_opaque_local_urls() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = ImageCache::open(dir.path().join("images")).unwrap();
+        let key = ImageKey::for_asset(Uuid::now_v7(), "cover").unwrap();
+        cache.insert(&key, "image/png", PNG).unwrap();
+        let request = |method, uri: String| {
+            Request::builder()
+                .method(method)
+                .uri(uri)
+                .body(Vec::new())
+                .unwrap()
+        };
+        for uri in [
+            format!("vgimg://localhost/{}", key.0),
+            format!("http://vgimg.localhost/{}", key.0),
+        ] {
+            let response = protocol_response(&cache, &request("GET", uri));
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(response.body(), PNG);
+            assert_eq!(response.headers()[header::CONTENT_TYPE], "image/png");
+            assert_eq!(response.headers()["x-content-type-options"], "nosniff");
+        }
+        for uri in [
+            format!("vgimg://other/{}", key.0),
+            format!("vgimg://localhost/{}?x=1", key.0),
+            format!("vgimg://localhost/{}/extra", key.0),
+            "vgimg://localhost/../outside".to_owned(),
+            format!("https://vgimg.localhost/{}", key.0),
+        ] {
+            assert_eq!(
+                protocol_response(&cache, &request("GET", uri)).status(),
+                StatusCode::NOT_FOUND
+            );
+        }
+        assert_eq!(
+            protocol_response(
+                &cache,
+                &request("POST", format!("vgimg://localhost/{}", key.0))
+            )
+            .status(),
+            StatusCode::METHOD_NOT_ALLOWED
+        );
     }
 }
