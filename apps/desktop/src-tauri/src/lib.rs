@@ -76,6 +76,18 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         // Self-update (Agent 5, `updater/`): minisign-verified, driven from Rust only.
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .register_asynchronous_uri_scheme_protocol("vgimg", |context, request, responder| {
+            let Some(state) = context.app_handle().try_state::<AppState>() else {
+                responder.respond(images::empty_response(
+                    tauri::http::StatusCode::SERVICE_UNAVAILABLE,
+                ));
+                return;
+            };
+            let cache = state.images.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                responder.respond(images::protocol_response(&cache, &request));
+            });
+        })
         .invoke_handler(specta.invoke_handler())
         .setup(move |app| {
             specta.mount_events(app);
@@ -106,7 +118,7 @@ fn setup(app: &AppHandle, profile: Option<String>) -> Result<(), Box<dyn std::er
     );
 
     let db = db::Db::open(&paths.database_file())?;
-    let state = AppState::new(paths, db);
+    let state = AppState::new(paths, db)?;
     events::spawn_ui_bridge(app.clone(), &state.bus, state.shutdown.child_token());
     spawn_show_fallback(app.clone(), &state);
 
