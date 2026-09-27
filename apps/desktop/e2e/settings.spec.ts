@@ -26,6 +26,7 @@ test("every section has no serious accessibility violations", async ({ page }) =
     "Account",
     "Storage",
     "Downloads",
+    "Compatibility",
     "Privacy",
     "Overlay",
     "Updates",
@@ -94,4 +95,58 @@ test("records the overlay shortcut from the keyboard", async ({ page }) => {
   await page.keyboard.press("Control+Shift+KeyO");
   await expect(page.locator("kbd")).toHaveText("Ctrl+Shift+O");
   await expect(change).toBeFocused();
+});
+
+test("customizes how a Windows game runs, with the keyboard only", async ({ page }) => {
+  await toSettings(page);
+  await sections(page).getByRole("link", { name: "Compatibility" }).click();
+  const customize = page.getByRole("button", { name: /^Customize how / }).first();
+  await customize.focus();
+  await page.keyboard.press("Enter");
+  const dialog = page.getByRole("dialog", { name: /^How .* runs$/ });
+  await expect(dialog).toBeVisible();
+  const results = await new AxeBuilder({ page }).include("[role=dialog]").analyze();
+  const serious = results.violations.filter(
+    (v) => v.impact === "serious" || v.impact === "critical",
+  );
+  expect(serious, JSON.stringify(serious, null, 2)).toEqual([]);
+
+  // The version list opens and chooses with arrows; the text box takes NAME=value lines.
+  const version = dialog.getByRole("combobox", { name: "Proton version" });
+  await version.focus();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  await expect(version).toHaveText(/UMU-Proton 10\.0-2/);
+  await dialog.getByRole("textbox", { name: /Extra environment variables/ }).focus();
+  await page.keyboard.type("DXVK_HUD=fps");
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
+  await expect(dialog.getByRole("button", { name: "Save" })).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(dialog).toBeHidden();
+  await expect(
+    page.getByText("Customized: UMU-Proton 10.0-2 · 1 environment variable"),
+  ).toBeVisible();
+  await expect(customize).toBeFocused();
+});
+
+test("a list inside a dialog opens above it and works with the mouse", async ({ page }) => {
+  await toSettings(page);
+  await sections(page).getByRole("link", { name: "Compatibility" }).click();
+  await page
+    .getByRole("button", { name: /^Customize how / })
+    .first()
+    .click();
+  const dialog = page.getByRole("dialog", { name: /^How .* runs$/ });
+  const version = dialog.getByRole("combobox", { name: "Proton version" });
+  await version.click();
+  // Playwright refuses to click an option that the dialog covers.
+  await page.getByRole("option", { name: /^GE-Proton10-4/ }).click({ timeout: 3000 });
+  await expect(version).toHaveText(/GE-Proton10-4/);
+  // Escape closes the list, not the dialog.
+  await version.click();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("listbox")).toBeHidden();
+  await expect(dialog).toBeVisible();
 });

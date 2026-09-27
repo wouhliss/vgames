@@ -20,6 +20,7 @@ import { createPortal } from "react-dom";
 import { focusElement } from "../nav/focus";
 import { useOptionalNav } from "../nav/NavProvider";
 import { Icon, type IconName } from "./Icon";
+import { popoverContainer } from "./layers";
 import styles from "./Menu.module.css";
 import { type Anchor, type PopoverPosition, placeBelow, useDismissPopover } from "./popover";
 
@@ -184,7 +185,7 @@ function MenuPopup({ id, label, entries, anchor, focusLast, onClose, triggerRef 
         ),
       )}
     </div>,
-    document.body,
+    popoverContainer(triggerRef.current),
   );
 }
 
