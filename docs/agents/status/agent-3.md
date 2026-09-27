@@ -105,12 +105,20 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   every package of a library), Downloads (speed limit 0.1–1000 MB/s with validation, 1–3 installs at once),
   Updates (version, check now) and About (version, third-party licenses as plain text, copy diagnostics). Every
   setting is tested to survive a restart of the mock (disabling persistence fails 4 tests).
-  **Part 2 (this PR):** Privacy (show what I'm playing, do not disturb) and Overlay (on/off; the shortcut is recorded by
+  **Part 2** ([#62](https://github.com/wouhliss/vgames/pull/62), merged): Privacy (show what I'm playing, do not disturb) and Overlay (on/off; the shortcut is recorded by
   pressing it: keys named by position, a plain key or Shift + key refused locally, the Rust core's `invalid` and
   `in_use {by}` shown; Escape cancels; Reset to Shift+F3; a switch per game, with the date and reason when the
   crash safety valve turned it off). Tested to persist through a restart. Also fixes a unit-test teardown race
   (`clearMocks()` before a late `listen` settled) that made about half of the PackagePage runs report an unhandled error.
-  **Next parts:** Compatibility, Controllers, Cloud saves (with A3-T08). What's new comes with A3-T10.
+  **Part 3 (this PR):** Compatibility (09-compatibility): how Windows games run here (Proton, Wine, or natively on Windows);
+  Rosetta 2 on Apple silicon (install after confirming, and Apple's "limited after macOS 27" note from the runtime
+  catalog); the default Proton/Wine version (automatic or a catalog version); downloaded runtimes with their size,
+  what uses them and Remove for unused ones; per-game overrides (runner version, graphics backend on Macs with
+  D3DMetal only on Apple silicon, extra `NAME=value` environment lines checked locally and by the core; saving the
+  defaults removes the override; Reset); runtime licenses as plain text, including Apple's for D3DMetal. The
+  default and the overrides are tested to persist through a restart. Also: select lists and menus opened inside a
+  dialog now render in the dialog's layer (they were drawn under it and couldn't be clicked).
+  **Next parts:** Controllers, Cloud saves (with A3-T08). What's new comes with A3-T10.
 
 ## Interfaces delivered (other agents may now rely on these)
 - `apps/desktop/src/ipc/contract/`: the command/event surface the UI is built against, in exact
@@ -119,6 +127,8 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   once the same name exists in `src/bindings.ts` (generated entries already win).
 - `apps/desktop/src/ipc/contract/settings.ts`: account sessions, credential storage, library default/remove,
   download settings, social/overlay settings and licenses (see "Needs from others").
+- `apps/desktop/src/ipc/contract/compat.ts`: runtimes, the default runner, per-package overrides and runtime
+  licenses for Settings → Compatibility (see "Needs from others").
 - `apps/desktop/src/ipc/contract/downloads.ts`: the install queue commands and `downloads-changed` (see
   "Needs from others").
 - `apps/desktop/src/ipc/contract/catalog.ts`: catalog, package details, install plan/start and Rosetta 2
@@ -227,6 +237,22 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   - `download_settings_get -> DownloadSettings {bandwidth_limit_kib: Option<u32> (≥ 100), concurrent_installs: 1..=3}`,
     `download_settings_set(settings) -> Result<DownloadSettings, SettingsError {invalid {field, detail} | io}>`.
   - `app_licenses -> Result<String, AppError>` (bundled third-party notices, plain text).
+- **From Agent 2** (A2-T16/T17 runtime settings, for Settings → Compatibility, A3-T07). Full types in
+  `apps/desktop/src/ipc/contract/compat.ts`:
+  - `compat_overview -> Result<CompatOverview, AppError>`: `host` (`native` on Windows | `proton` |
+    `wine {apple_silicon, rosetta: installed | missing | null, rosetta_last_macos}` from the catalog's Rosetta
+    field), `runtimes` on disk (`{runtime, version, size_bytes, used_by}`), `runners` from the catalog for this
+    computer (newest first), `graphics` this Mac can use (D3DMetal only on Apple silicon), `default_runner`
+    (null = automatic).
+  - `compat_default_set(runner: Option<RunnerVersion>) -> Result<(), CompatSettingsError>`;
+    `runtime_remove(runtime, version) -> Result<(), RuntimeRemoveError {not_found | in_use {used_by} | io}>`.
+  - `compat_packages -> Result<Vec<PackageCompat {package, title, layer, override}>, AppError>` (installed
+    packages that launch through Proton/Wine); `compat_override_set(package, CompatOverride {runner, graphics,
+    env}) -> Result<(), CompatSettingsError>` (`not_found`, `unknown_runner`, `graphics_unavailable {backend}`,
+    `invalid_env {key, reason: format | denied}` per `vgames-core::compat` and the manifest env denylist, `io`);
+    `compat_override_reset(package)`.
+  - `compat_licenses -> Result<Vec<RuntimeLicense {runtime, name, spdx, text}>, AppError>` (the licenses shipped
+    next to the host's runtimes; Apple's for D3DMetal on Macs).
 - **From Agent 4** (Settings → Privacy and Overlay, A3-T07): `social_settings_get|set` are generated now and used
   as is. Still requested (A4-T10): `SocialError` variants for an overlay hotkey that can't be registered,
   `invalid` (not an accelerator) and `in_use {by: Option<String>}` (the OS or another app holds it); until then an
@@ -254,6 +280,11 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
 
 ## Blockers / contract questions
 - None blocking.
+- **For Agent 2 (library commands, A2-T08):** the generated `library_remove` returns `LibraryRemovalError` without
+  the requested `is_default`. Can the default library be removed? Settings → Storage offers Remove on it and says
+  "make another one the default first" only if the core refuses with `is_default`. My pending library entries in
+  `src/ipc/contract/{core,settings}.ts` are superseded by the generated ones; I'll switch the UI to `LibraryInfo`
+  / `LibraryActionError` / `LibraryRemovalError` and delete them in a follow-up.
 - **For Agent 1 (genres):** Browse filters by genre (`GET /v1/packages?genre=`), but the API has no way
   to list the genres that exist. Proposal: `GET /v1/genres -> [{genre, count}]` over published packages
   visible to the caller (or a `genres` facet on the first `PackagePage`). Until it exists, `catalog_genres` has

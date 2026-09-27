@@ -6,6 +6,7 @@ import { t } from "../../i18n";
 import { Page } from "../Page";
 import { AboutSection } from "./AboutSection";
 import { AccountSection } from "./AccountSection";
+import { CompatSection } from "./CompatSection";
 import { DownloadsSection } from "./DownloadsSection";
 import { GeneralSection } from "./GeneralSection";
 import { OverlaySection } from "./OverlaySection";
@@ -21,6 +22,7 @@ const SECTIONS = {
   account: AccountSection,
   storage: StorageSection,
   downloads: DownloadsSection,
+  compatibility: CompatSection,
   privacy: PrivacySection,
   overlay: OverlaySection,
   updates: UpdatesSection,
