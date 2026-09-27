@@ -127,7 +127,7 @@ enum Store {
     File(PathBuf),
 }
 
-fn config_dir() -> Result<PathBuf> {
+pub(crate) fn config_dir() -> Result<PathBuf> {
     if let Some(dir) = std::env::var_os("VGAMES_CONFIG_DIR") {
         return Ok(PathBuf::from(dir));
     }
@@ -153,7 +153,7 @@ fn keychain(origin: &str) -> Option<keyring::Entry> {
     keyring::Entry::new(SERVICE, origin).ok()
 }
 
-fn write_private(path: &PathBuf, bytes: &[u8]) -> Result<()> {
+pub(crate) fn write_private(path: &PathBuf, bytes: &[u8]) -> Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
     }
