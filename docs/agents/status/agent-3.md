@@ -97,7 +97,7 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   live progress from the simulator, keyboard-only reorder/pause/cancel, controller-only).
 
 ## In progress
-- A3-T07 — Settings, in parts. **Part 1 (this PR):** one URL per section (`/settings/<section>`, a section list that
+- A3-T07 — Settings, in parts. **Part 1** ([#52](https://github.com/wouhliss/vgames/pull/52), merged): one URL per section (`/settings/<section>`, a section list that
   works with arrows and the D-pad) with General (theme incl. "Same as system", reduce motion), Servers (address,
   fingerprint, signed-in account, switch, remove, add through the first-run flow), Account (sessions with "sign
   out this device", sign out, warning when tokens are kept in a file instead of the keychain), Storage (free space,
@@ -105,8 +105,12 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   every package of a library), Downloads (speed limit 0.1–1000 MB/s with validation, 1–3 installs at once),
   Updates (version, check now) and About (version, third-party licenses as plain text, copy diagnostics). Every
   setting is tested to survive a restart of the mock (disabling persistence fails 4 tests).
-  **Next parts:** Privacy and Overlay (hotkey capture with conflict check, per-package overlay switch and safety
-  valve), Compatibility, Controllers, Cloud saves (with A3-T08). What's new comes with A3-T10.
+  **Part 2 (this PR):** Privacy (show what I'm playing, do not disturb) and Overlay (on/off; the shortcut is recorded by
+  pressing it: keys named by position, a plain key or Shift + key refused locally, the Rust core's `invalid` and
+  `in_use {by}` shown; Escape cancels; Reset to Shift+F3; a switch per game, with the date and reason when the
+  crash safety valve turned it off). Tested to persist through a restart. Also fixes a unit-test teardown race
+  (`clearMocks()` before a late `listen` settled) that made about half of the PackagePage runs report an unhandled error.
+  **Next parts:** Compatibility, Controllers, Cloud saves (with A3-T08). What's new comes with A3-T10.
 
 ## Interfaces delivered (other agents may now rely on these)
 - `apps/desktop/src/ipc/contract/`: the command/event surface the UI is built against, in exact
