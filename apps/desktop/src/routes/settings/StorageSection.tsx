@@ -235,7 +235,7 @@ export function StorageSection() {
                 {t("settings.storage.installs", { count })}
               </p>
               <div className={styles.actions}>
-                {library.is_default ? null : (
+                {library.is_default || !library.online ? null : (
                   <Button
                     size="sm"
                     loading={busy === library.id}
@@ -245,7 +245,7 @@ export function StorageSection() {
                     {t("settings.storage.makeDefault")}
                   </Button>
                 )}
-                {count > 0 && list.length > 1 ? (
+                {count > 0 && list.length > 1 && library.online ? (
                   <Button
                     size="sm"
                     aria-label={t("settings.storage.moveAllTitle", { path: library.path })}
