@@ -24,6 +24,9 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
   update server with throwaway minisign keys; `requireSignedVersion` on.
 
 - A5-T06 part 2: `vgames login | logout`, `trust publish`, `trust re-sign` — https://github.com/wouhliss/vgames/pull/27.
+- A5-T06 part 3: `vgames publish` (pack, upload, sign, finalize, `--publish`; resumable; checks the key against the
+  server's verified trust bundle before uploading) on Agent 2's `vgames_transfer::upload::publish`. The end-to-end
+  acceptance script (publish → revoke → re-sign → launcher-side `verify_manifest`) follows.
 
 - A5-T07 part 1: `release-desktop.yml`, `desktop-matrix.yml`, `cargo xtask updater sign | manifest | verify`, actionlint
   in CI, `docs/security/release.md` — https://github.com/wouhliss/vgames/pull/30.
@@ -189,9 +192,10 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
   the `ui_ready` latch above).
 - From Agent 2: a way to pause active downloads at their next checkpoint (A2-T04/T08). `updater_install` waits until
   every install reports `InstallPhase::Paused` or finishes; today it just waits.
-- From Agent 2: the upload library (A2-T05) for `vgames publish` (A5-T06) and the end-to-end key-pipeline script.
-  It is finished on branch `claude/optimistic-fermat-gwfhvh` (commit 822ac49) but has no PR yet (the session hit its
-  usage limit on 2026-09-25): please open and merge it when you resume.
+- For Agent 2 (FYI, no action needed): `publish::run` always releases a `ready` version. `vgames publish` stops at
+  `ready` unless `--publish` by answering the library's publish step with the current version instead of calling
+  the API, and treating the resulting `PublishError::State(Ready)` as done. An option in `PublishOptions` (for
+  example `release: bool`) would make that explicit; the CLI would switch to it.
 - **From Agent 2 (found by the new desktop matrix on its first run, PR 30):** two `crates/vgames-transfer` tests are
   OS/timing-dependent. (1) macOS arm64: `tests/resilience.rs::killed_at_random_points_resumes_to_the_same_tree` — every
   resumed tree was byte-identical, but its own coverage assertion failed ("8 kills landed mid-run" < 25): on the faster

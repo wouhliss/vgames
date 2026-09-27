@@ -175,13 +175,42 @@ impl Api {
             .await
     }
 
+    /// POST with an `Idempotency-Key`: replaying the same key returns the first answer.
+    pub async fn post_idempotent<B: Serialize + ?Sized, T: DeserializeOwned>(
+        &self,
+        path: &str,
+        key: uuid::Uuid,
+        body: &B,
+    ) -> Result<T> {
+        let req = self
+            .request(reqwest::Method::POST, path)?
+            .header("Idempotency-Key", key.to_string())
+            .json(body);
+        self.send(req, path).await
+    }
+
+    /// POST without a request body, answered with JSON.
+    pub async fn post_no_body<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
+        self.send(self.request(reqwest::Method::POST, path)?, path)
+            .await
+    }
+
+    /// DELETE without a response body (`204`).
+    pub async fn delete(&self, path: &str) -> Result<()> {
+        self.no_content(reqwest::Method::DELETE, path).await
+    }
+
     /// POST without a response body (`204`).
     pub async fn post_empty(&self, path: &str) -> Result<()> {
+        self.no_content(reqwest::Method::POST, path).await
+    }
+
+    async fn no_content(&self, method: reqwest::Method, path: &str) -> Result<()> {
         let response = self
-            .request(reqwest::Method::POST, path)?
+            .request(method.clone(), path)?
             .send()
             .await
-            .with_context(|| format!("POST {path}"))?;
+            .with_context(|| format!("{method} {path}"))?;
         let status = response.status();
         let body = read_capped(response, path).await?;
         if !status.is_success() {
