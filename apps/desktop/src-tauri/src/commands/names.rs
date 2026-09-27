@@ -30,6 +30,19 @@ pub const MAIN_WINDOW_COMMANDS: &[&str] = &[
     "user_unblock",
     "blocks_list",
     "user_profile",
+    "conversations_list",
+    "conversation_open_direct",
+    "conversation_create_party",
+    "messages_list",
+    "message_send",
+    "message_retry",
+    "conversation_mark_read",
+    "typing_start",
+    "contact_security",
+    "contact_set_verified",
+    "contact_trust_device",
+    "devices_list",
+    "device_revoke",
 ];
 
 /// Commands the in-game overlay window may call. Only `overlay_*` commands

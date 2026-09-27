@@ -820,3 +820,72 @@ async fn plaintext_never_reaches_the_database(pool: PgPool) {
         .unwrap();
     assert_eq!(inbound.plaintext, canary.as_bytes());
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn typing_reaches_the_other_members_only(pool: PgPool) {
+    use futures_util::SinkExt;
+    use tokio_tungstenite::tungstenite::Message;
+
+    let inst = instance(&pool).await;
+    let app = inst.app();
+    let (a, b, c, d) = (
+        launcher(&pool, &app).await,
+        launcher(&pool, &app).await,
+        launcher(&pool, &app).await,
+        launcher(&pool, &app).await,
+    );
+    befriend(&pool, a.user, b.user, "accepted").await;
+    befriend(&pool, a.user, c.user, "accepted").await;
+    let (_, party) = post(
+        &app,
+        "/v1/conversations",
+        &a.token,
+        &json!({"kind": "party", "user_ids": [b.user, c.user]}),
+    )
+    .await;
+    let party = party["id"].as_str().unwrap().to_string();
+    // C blocked A: A's typing does not reach C.
+    sqlx::query("INSERT INTO user_blocks (blocker_id, blocked_id) VALUES ($1, $2)")
+        .bind(c.user)
+        .bind(a.user)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (mut wa, mut wb, mut wc, mut wd) = (
+        inst.connect(&a.token).await,
+        inst.connect(&b.token).await,
+        inst.connect(&c.token).await,
+        inst.connect(&d.token).await,
+    );
+    let typing = |conversation: &str| {
+        Message::Text(
+            json!({"v": 1, "type": "typing", "data": {"conversation_id": conversation}})
+                .to_string()
+                .into(),
+        )
+    };
+
+    wa.send(typing(&party)).await.unwrap();
+    let ev = next_event(&mut wb).await;
+    assert_eq!(ev["type"], "typing", "{ev}");
+    assert_eq!(
+        ev["data"],
+        json!({"conversation_id": party, "user_id": a.user})
+    );
+    assert_quiet(&inst.state, &mut wa, a.user).await;
+    assert_quiet(&inst.state, &mut wc, c.user).await;
+
+    // A non-member is refused on its socket and nobody hears about it.
+    wd.send(typing(&party)).await.unwrap();
+    let err = next_event(&mut wd).await;
+    assert_eq!(err["type"], "error", "{err}");
+    assert_quiet(&inst.state, &mut wb, b.user).await;
+    // Malformed data too.
+    wa.send(Message::Text(
+        r#"{"v":1,"type":"typing","data":{"conversation_id":"nope"}}"#.into(),
+    ))
+    .await
+    .unwrap();
+    assert_eq!(next_event(&mut wa).await["type"], "error");
+    assert_quiet(&inst.state, &mut wb, b.user).await;
+}
