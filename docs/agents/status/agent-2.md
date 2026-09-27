@@ -21,10 +21,11 @@
 - A2-T08 library Tauri commands ([PR #64](https://github.com/wouhliss/vgames/pull/64), merged): list with offline status and install counts, pick/add folders, select default, and remove.
 - A2-T08 collection and favorite storage ([PR #66](https://github.com/wouhliss/vgames/pull/66), merged): validated names, stable partial reorder, idempotent membership and favorite toggles.
 - A2-T08 install queue storage ([PR #67](https://github.com/wouhliss/vgames/pull/67), merged): persisted jobs, one atomic active claim, and startup requeue.
+- A2-T08 waiting-job reorder ([PR #70](https://github.com/wouhliss/vgames/pull/70), merged): atomic, exact-set queue ordering while an active transfer continues.
 
 ## In progress
 - A2-T07 servers, trust, and launcher authentication are assigned to another agent ([PR #47](https://github.com/wouhliss/vgames/pull/47)); avoid touching that workstream.
-- A2-T08 waiting-job reorder: atomic, exact-set queue ordering while an active transfer continues.
+- A2-T08 cover cache core: 10 MiB raster entries, 500 MB on-disk LRU, opaque server-scoped keys; `vgimg://` protocol hookup follows the T07 API client.
 - A2-T08 catalog, transfer orchestration, queue history, and collection/queue commands remain.
 
 ## Interfaces delivered (other agents may now rely on these)
