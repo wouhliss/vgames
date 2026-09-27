@@ -12,6 +12,7 @@
 //! lost on power failure, and every such row can be rebuilt from install
 //! records on disk).
 
+pub mod collections;
 pub mod libraries;
 pub mod migrations;
 pub mod settings;
