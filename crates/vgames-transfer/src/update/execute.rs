@@ -15,7 +15,8 @@ use crate::download::{
 };
 use crate::fsutil::{self, SafeRoot};
 use crate::install::{
-    self, InstallError, InstallOutcome, InstallReport, META_DIR, Release, SPACE_MARGIN, read_record,
+    self, InstallError, InstallOutcome, InstallReport, InstallState, META_DIR, Release,
+    SPACE_MARGIN, read_record,
 };
 use crate::sys;
 
@@ -158,6 +159,7 @@ fn prepare(
         || old_record.manifest_blake3 != old.verified.digest.to_hex()
         || old_record.server_id != old.manifest().server_id
         || old_record.package_id != old.manifest().package_id
+        || old_record.state != InstallState::Installed
     {
         return Err(InstallError::Conflict(
             "installed release changed before update".into(),
@@ -293,7 +295,7 @@ fn prepare(
     })
 }
 
-fn read_old_chunk(
+pub(super) fn read_old_chunk(
     safe: &SafeRoot,
     manifest: &vgames_core::manifest::Manifest,
     table: &ChunkTable,

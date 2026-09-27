@@ -2,5 +2,6 @@
 
 pub mod commit;
 pub mod execute;
+pub mod inplace;
 pub mod plan;
 pub mod verify;
