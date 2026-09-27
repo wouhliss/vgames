@@ -54,6 +54,23 @@ export const commands = {
 	 *  while a game runs.
 	 */
 	updaterInstall: () => typedError<null, CommandError>(__TAURI_INVOKE("updater_install")),
+	/**  Socket state for the active server. */
+	socialConnection: () => __TAURI_INVOKE<SocialConnection>("social_connection"),
+	socialSettingsGet: () => typedError<SocialSettings, SocialError>(__TAURI_INVOKE("social_settings_get")),
+	socialSettingsSet: (settings: SocialSettings) => typedError<SocialSettings, SocialError>(__TAURI_INVOKE("social_settings_set", { settings })),
+	friendsList: () => typedError<FriendList, SocialError>(__TAURI_INVOKE("friends_list")),
+	friendCodeCreate: () => typedError<FriendCode, SocialError>(__TAURI_INVOKE("friend_code_create")),
+	/**  Sends a request by friend code or user id (`accepted` if they had already asked you). */
+	friendRequestSend: (target: FriendTarget) => typedError<Friend, SocialError>(__TAURI_INVOKE("friend_request_send", { target })),
+	friendAccept: (userId: string) => typedError<Friend, SocialError>(__TAURI_INVOKE("friend_accept", { userId })),
+	friendDecline: (userId: string) => typedError<null, SocialError>(__TAURI_INVOKE("friend_decline", { userId })),
+	/**  Removes a friend or cancels an outgoing request. */
+	friendRemove: (userId: string) => typedError<null, SocialError>(__TAURI_INVOKE("friend_remove", { userId })),
+	userBlock: (userId: string) => typedError<null, SocialError>(__TAURI_INVOKE("user_block", { userId })),
+	userUnblock: (userId: string) => typedError<null, SocialError>(__TAURI_INVOKE("user_unblock", { userId })),
+	/**  Users blocked from this install on the active server (kept locally). */
+	blocksList: () => typedError<BlockedUser[], SocialError>(__TAURI_INVOKE("blocks_list")),
+	userProfile: (userId: string) => typedError<UserSummary, SocialError>(__TAURI_INVOKE("user_profile", { userId })),
 };
 
 /** Events */
@@ -61,13 +78,17 @@ export const events = {
 	authFinished: makeEvent<AuthFinished>("auth-finished"),
 	connectivityChanged: makeEvent<ConnectivityChanged>("connectivity-changed"),
 	controllerEvent: makeEvent<ControllerEvent>("controller-event"),
+	friendRequestReceived: makeEvent<FriendRequestReceived>("friend-request-received"),
+	friendsChanged: makeEvent<FriendsChanged>("friends-changed"),
 	gameStarted: makeEvent<GameStarted>("game-started"),
 	gameStopped: makeEvent<GameStopped>("game-stopped"),
 	installFinished: makeEvent<InstallFinished>("install-finished"),
 	installProgress: makeEvent<InstallProgress>("install-progress"),
+	presenceChanged: makeEvent<PresenceChanged>("presence-changed"),
 	serverAddRequested: makeEvent<ServerAddRequested>("server-add-requested"),
 	serverSwitched: makeEvent<ServerSwitched>("server-switched"),
 	serversChanged: makeEvent<ServersChanged>("servers-changed"),
+	socialConnectionChanged: makeEvent<SocialConnectionChanged>("social-connection-changed"),
 	trustProblem: makeEvent<TrustProblem>("trust-problem"),
 	updaterStatus: makeEvent<UpdaterStatus>("updater-status"),
 };
@@ -124,6 +145,12 @@ export type AuthOutcome = { kind: "signed_in"; account: Account } | { kind: "fai
 
 /**  Why an update check or install must wait. */
 export type Blocked = "game_running" | "downloads_active";
+
+export type BlockedUser = {
+	user_id: string,
+	username: string | null,
+	blocked_at: string,
+};
 
 export type ChangeEntry = {
 	type: ChangeType,
@@ -182,6 +209,36 @@ export type ErrorCode =
 /**  Anything else. Details are in the log. */
 "internal";
 
+export type Friend = {
+	user: UserSummary,
+	state: FriendState,
+	presence: Presence | null,
+	since: string | null,
+};
+
+export type FriendCode = {
+	code: string,
+	expires_at: string,
+};
+
+export type FriendList = {
+	friends: Friend[],
+	incoming: Friend[],
+	outgoing: Friend[],
+};
+
+/**  `friend-request-received`: someone sent you a request (toast). */
+export type FriendRequestReceived = {
+	user: UserSummary,
+};
+
+export type FriendState = "accepted" | "incoming" | "outgoing";
+
+export type FriendTarget = { kind: "code"; code: string } | { kind: "user"; user_id: string };
+
+/**  `friends-changed`: the friend list after a resync. */
+export type FriendsChanged = FriendList;
+
 /**  How a game session ended. */
 export type GameExit = {
 	/**  Exit code of the root process, when the OS reports one. */
@@ -235,6 +292,21 @@ export type PackageRef = {
 	server_id: string,
 	package_id: string,
 };
+
+export type Presence = {
+	status: PresenceStatus,
+	package_id: string | null,
+	package_title: string | null,
+	updated_at: string | null,
+};
+
+/**  `presence-changed`: a friend's presence changed. */
+export type PresenceChanged = {
+	user_id: string,
+	presence: Presence,
+};
+
+export type PresenceStatus = "online" | "away" | "in_game" | "offline";
 
 export type RegistrationMode = "open" | "allowlist" | "closed";
 
@@ -316,6 +388,29 @@ export type ServerSwitched = {
 /**  The list of servers or one of their accounts changed; re-read `servers_list`. */
 export type ServersChanged = Record<string, never>;
 
+export type SocialConnection = {
+	server_id: string | null,
+	state: SocialConnectionState,
+	retry_at: string | null,
+};
+
+/**  `social-connection-changed`: the socket state changed. */
+export type SocialConnectionChanged = SocialConnection;
+
+export type SocialConnectionState = "signed_out" | "connecting" | "connected" | "reconnecting";
+
+/**  Why a social command failed. */
+export type SocialError = { kind: "not_signed_in" } | { kind: "offline" } | { kind: "not_found" } | { kind: "invalid_input"; field: string; message: string } | { kind: "rate_limited"; retry_after_seconds: number } | { kind: "code_invalid" } | { kind: "limit_reached"; limit: SocialLimit } | { kind: "conflict"; code: string; message: string } | { kind: "key_changed"; user_id: string; device_ids: string[] } | { kind: "server"; code: string; message: string } | { kind: "internal"; detail: string };
+
+export type SocialLimit = "friends" | "pending_requests" | "party_members";
+
+export type SocialSettings = {
+	show_current_game: boolean,
+	do_not_disturb: boolean,
+	overlay_enabled: boolean,
+	overlay_hotkey: string,
+};
+
 /**  Where session tokens are stored. */
 export type TokenStorage = {
 	/**
@@ -356,6 +451,13 @@ export type UpdaterStatus = {
 	state: UpdaterState,
 	/**  Why checks and installs are waiting, if they are. */
 	blocked: Blocked | null,
+};
+
+export type UserSummary = {
+	id: string,
+	username: string,
+	display_name: string | null,
+	avatar_url: string | null,
 };
 
 /**  What the "What's new" dialog shows. */

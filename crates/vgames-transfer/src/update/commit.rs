@@ -34,6 +34,16 @@ struct CommitMarker {
     new_digest: String,
     #[serde(default)]
     damaged_files: Vec<u32>,
+    #[serde(default)]
+    mode: CommitMode,
+}
+
+#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum CommitMode {
+    #[default]
+    Safe,
+    InPlace,
 }
 
 fn marker_path(root: &Path) -> PathBuf {
@@ -202,6 +212,82 @@ pub fn begin_with_damaged(
         old_digest: old.verified.digest.to_hex(),
         new_digest: new.verified.digest.to_hex(),
         damaged_files: damaged_files.to_vec(),
+        mode: CommitMode::Safe,
+    };
+    let bytes =
+        serde_json::to_vec(&marker).map_err(|error| InstallError::Internal(error.to_string()))?;
+    fsutil::atomic_write(&marker_path(safe.root()), &bytes)
+        .map_err(|error| InstallError::io("write", &marker_path(safe.root()), error))?;
+    replay(root, old, new)?.ok_or_else(|| InstallError::Conflict("commit marker vanished".into()))
+}
+
+/// Commits an explicitly chosen in-place update after all new file bytes have
+/// been verified in their final paths. The install was already unplayable
+/// while transferring; the marker makes metadata replacement replayable.
+pub fn begin_inplace(
+    root: &Path,
+    old: &Release,
+    new: &Release,
+) -> Result<InstallRecord, InstallError> {
+    if read_marker(root)?.is_some() {
+        return replay(root, old, new)?
+            .ok_or_else(|| InstallError::Conflict("commit marker vanished".into()));
+    }
+    UpdatePlan::new(old, new, true)
+        .map_err(|error| InstallError::Conflict(format!("invalid update: {error}")))?;
+    ensure_record(root, old, new)?;
+    let record =
+        read_record(root)?.ok_or_else(|| InstallError::Conflict("missing update record".into()))?;
+    if record.state != InstallState::Updating {
+        return Err(InstallError::Conflict(
+            "in-place update was not started".into(),
+        ));
+    }
+    let safe = SafeRoot::open(root)?;
+    let current = safe
+        .existing_file(&format!("{META_DIR}/{MANIFEST_FILE}"))?
+        .ok_or_else(|| InstallError::Conflict("missing old manifest".into()))?;
+    if fs::read(&current).map_err(|error| InstallError::io("read", &current, error))?
+        != old.manifest_bytes
+    {
+        return Err(InstallError::Conflict(
+            "old manifest changed during update".into(),
+        ));
+    }
+    for file in &new.manifest().files {
+        let path = safe
+            .existing_file(&file.path)?
+            .ok_or_else(|| InstallError::Conflict(format!("{} is missing", file.path)))?;
+        verify_file(&path, file)?;
+        let handle = fsutil::open_for_write(&path)
+            .map_err(|error| InstallError::io("open", &path, error))?;
+        set_executable(&handle, file.executable)
+            .map_err(|error| InstallError::io("set permissions of", &path, error))?;
+        handle
+            .sync_all()
+            .map_err(|error| InstallError::io("flush", &path, error))?;
+    }
+    let meta = safe.ensure_dir(META_DIR)?;
+    for (path, bytes) in [
+        (NEXT_MANIFEST, new.manifest_bytes.as_slice()),
+        (OLD_MANIFEST, old.manifest_bytes.as_slice()),
+    ] {
+        fsutil::atomic_write(&safe.path_of(path), bytes)
+            .map_err(|error| InstallError::io("write", &meta, error))?;
+    }
+    for (path, bytes) in [
+        (NEXT_SIGNATURE, new.envelope.to_bytes()),
+        (OLD_SIGNATURE, old.envelope.to_bytes()),
+    ] {
+        fsutil::atomic_write(&safe.path_of(path), &bytes)
+            .map_err(|error| InstallError::io("write", &meta, error))?;
+    }
+    let marker = CommitMarker {
+        format: "vgames.commit/1".into(),
+        old_digest: old.verified.digest.to_hex(),
+        new_digest: new.verified.digest.to_hex(),
+        damaged_files: Vec::new(),
+        mode: CommitMode::InPlace,
     };
     let bytes =
         serde_json::to_vec(&marker).map_err(|error| InstallError::Internal(error.to_string()))?;
@@ -231,38 +317,47 @@ pub fn replay(
     let plan = UpdatePlan::new_with_damaged(old, new, true, &marker.damaged_files)
         .map_err(|error| InstallError::Conflict(format!("invalid update: {error}")))?;
     let safe = SafeRoot::open(root)?;
-    let staging = SafeRoot::open(&safe.path_of(STAGING_DIR))?;
     // Delete old files before replacements, allowing file-to-directory layout changes.
-    for path in &plan.remove_files {
-        delete_old_file(&safe, path)?;
-    }
-    for path in &plan.remove_files {
-        prune_empty_parents(&safe, path)?;
-    }
-    for &index in &plan.build_files {
-        let file = new
-            .manifest()
-            .files
-            .get(index as usize)
-            .ok_or_else(|| InstallError::Conflict("invalid update file index".into()))?;
-        let source = staging.existing_file(&file.path)?;
-        if let Some(source) = source {
-            verify_file(&source, file)?;
-            let target = safe.file_target(&file.path)?;
-            replace_file(&source, &target)?;
-            if let Some(parent) = source.parent() {
-                fsutil::sync_dir(parent)
-                    .map_err(|error| InstallError::io("flush", parent, error))?;
+    clear_removed(&safe, &plan.remove_files)?;
+    match marker.mode {
+        CommitMode::Safe => {
+            let staging = SafeRoot::open(&safe.path_of(STAGING_DIR))?;
+            for &index in &plan.build_files {
+                let file =
+                    new.manifest().files.get(index as usize).ok_or_else(|| {
+                        InstallError::Conflict("invalid update file index".into())
+                    })?;
+                let source = staging.existing_file(&file.path)?;
+                if let Some(source) = source {
+                    verify_file(&source, file)?;
+                    let target = safe.file_target(&file.path)?;
+                    replace_file(&source, &target)?;
+                    if let Some(parent) = source.parent() {
+                        fsutil::sync_dir(parent)
+                            .map_err(|error| InstallError::io("flush", parent, error))?;
+                    }
+                    if let Some(parent) = target.parent() {
+                        fsutil::sync_dir(parent)
+                            .map_err(|error| InstallError::io("flush", parent, error))?;
+                    }
+                } else {
+                    let target = safe.existing_file(&file.path)?.ok_or_else(|| {
+                        InstallError::Conflict(format!(
+                            "{} is missing from staging and install",
+                            file.path
+                        ))
+                    })?;
+                    verify_file(&target, file)?;
+                }
             }
-            if let Some(parent) = target.parent() {
-                fsutil::sync_dir(parent)
-                    .map_err(|error| InstallError::io("flush", parent, error))?;
+        }
+        CommitMode::InPlace => {
+            for file in &new.manifest().files {
+                let path = safe
+                    .existing_file(&file.path)?
+                    .ok_or_else(|| InstallError::Conflict(format!("{} is missing", file.path)))?;
+                verify_file(&path, file)?;
             }
-        } else {
-            let target = safe.existing_file(&file.path)?.ok_or_else(|| {
-                InstallError::Conflict(format!("{} is missing from staging and install", file.path))
-            })?;
-            verify_file(&target, file)?;
         }
     }
     for dir in &new.manifest().directories {
@@ -369,7 +464,7 @@ fn load_saved_next(safe: &SafeRoot, trust: &TrustState) -> Result<Release, Insta
 fn delete_old_file(safe: &SafeRoot, rel: &str) -> Result<(), InstallError> {
     let existing = match safe.existing_file(rel) {
         Ok(path) => path,
-        Err(SafePathError::NotADirectory(_)) => None, // an earlier replay installed a file here
+        Err(SafePathError::NotADirectory(_) | SafePathError::NotAFile(_)) => None,
         Err(error) => return Err(error.into()),
     };
     if let Some(path) = existing {
@@ -377,6 +472,16 @@ fn delete_old_file(safe: &SafeRoot, rel: &str) -> Result<(), InstallError> {
         if let Some(parent) = path.parent() {
             fsutil::sync_dir(parent).map_err(|error| InstallError::io("flush", parent, error))?;
         }
+    }
+    Ok(())
+}
+
+pub(crate) fn clear_removed(safe: &SafeRoot, paths: &[String]) -> Result<(), InstallError> {
+    for path in paths {
+        delete_old_file(safe, path)?;
+    }
+    for path in paths {
+        prune_empty_parents(safe, path)?;
     }
     Ok(())
 }
@@ -555,6 +660,7 @@ mod tests {
             old_digest: old.verified.digest.to_hex(),
             new_digest: new.verified.digest.to_hex(),
             damaged_files: Vec::new(),
+            mode: CommitMode::Safe,
         };
         fsutil::atomic_write(
             &dir.path()
@@ -651,6 +757,7 @@ mod tests {
             old_digest: release.verified.digest.to_hex(),
             new_digest: release.verified.digest.to_hex(),
             damaged_files: vec![0],
+            mode: CommitMode::Safe,
         };
         fsutil::atomic_write(
             &marker_path(dir.path()),
@@ -669,5 +776,57 @@ mod tests {
             fs::read(dir.path().join("good.bin")).unwrap(),
             files[1].bytes()
         );
+    }
+
+    #[test]
+    fn inplace_marker_replays_after_partial_metadata_replacement() {
+        let old_files = [FileSpec::random("game.bin", 32, 1)];
+        let new_files = [FileSpec::random("game.bin", 32, 2)];
+        let (dir, old, new) = setup(&old_files, &new_files);
+        fs::write(dir.path().join("game.bin"), new_files[0].bytes()).unwrap();
+        write_record(
+            dir.path(),
+            &InstallRecord::for_manifest(&old.verified, InstallState::Updating),
+        )
+        .unwrap();
+        for (path, bytes) in [
+            (NEXT_MANIFEST, new.manifest_bytes.as_slice()),
+            (OLD_MANIFEST, old.manifest_bytes.as_slice()),
+        ] {
+            fsutil::atomic_write(&dir.path().join(path), bytes).unwrap();
+        }
+        for (path, bytes) in [
+            (NEXT_SIGNATURE, new.envelope.to_bytes()),
+            (OLD_SIGNATURE, old.envelope.to_bytes()),
+        ] {
+            fsutil::atomic_write(&dir.path().join(path), &bytes).unwrap();
+        }
+        let marker = CommitMarker {
+            format: "vgames.commit/1".into(),
+            old_digest: old.verified.digest.to_hex(),
+            new_digest: new.verified.digest.to_hex(),
+            damaged_files: Vec::new(),
+            mode: CommitMode::InPlace,
+        };
+        fsutil::atomic_write(
+            &marker_path(dir.path()),
+            &serde_json::to_vec(&marker).unwrap(),
+        )
+        .unwrap();
+        fs::rename(
+            dir.path().join(NEXT_MANIFEST),
+            dir.path().join(META_DIR).join(MANIFEST_FILE),
+        )
+        .unwrap();
+        let record = recover_pending(dir.path(), &trust_state())
+            .unwrap()
+            .unwrap();
+        assert_eq!(record.version_id, new.manifest().version_id);
+        assert_eq!(record.state, InstallState::Installed);
+        assert_eq!(
+            fs::read(dir.path().join("game.bin")).unwrap(),
+            new_files[0].bytes()
+        );
+        assert!(!marker_path(dir.path()).exists());
     }
 }

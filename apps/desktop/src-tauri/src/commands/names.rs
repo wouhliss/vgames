@@ -28,6 +28,19 @@ pub const MAIN_WINDOW_COMMANDS: &[&str] = &[
     "updater_check",
     "updater_whats_new",
     "updater_install",
+    "social_connection",
+    "social_settings_get",
+    "social_settings_set",
+    "friends_list",
+    "friend_code_create",
+    "friend_request_send",
+    "friend_accept",
+    "friend_decline",
+    "friend_remove",
+    "user_block",
+    "user_unblock",
+    "blocks_list",
+    "user_profile",
 ];
 
 /// Commands the in-game overlay window may call. Only `overlay_*` commands

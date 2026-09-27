@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE game_invites SET state = 'cancelled', updated_at = now()\n         WHERE ((from_user_id = $1 AND to_user_id = $2) OR (from_user_id = $2 AND to_user_id = $1))\n           AND state = ANY($3)\n         RETURNING id",
+  "query": "SELECT id FROM game_invites\n                 WHERE from_user_id = $1 AND to_user_id = $2 AND package_id = $3 AND state = ANY($4)",
   "describe": {
     "columns": [
       {
@@ -19,6 +19,7 @@
       "Left": [
         "Uuid",
         "Uuid",
+        "Uuid",
         "TextArray"
       ]
     },
@@ -26,5 +27,5 @@
       false
     ]
   },
-  "hash": "0167ddb0b944db6d54ae3a96546a89a97cbefdaccd0e633972a82faf24d5fe9c"
+  "hash": "0a1aa8233dc609c13e18a57986926fae6db1cf3cc93a5cae544d908a968ea215"
 }

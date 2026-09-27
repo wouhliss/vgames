@@ -1,0 +1,114 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT e.id, e.conversation_id, e.sender_user_id, e.sender_device_id, e.olm_message_type,\n                  e.ciphertext, e.created_at, d.identity_key AS \"sender_identity_key!\"\n           FROM message_envelopes e JOIN devices d ON d.id = e.sender_device_id\n           WHERE e.recipient_device_id = $1 AND e.expires_at > now() AND d.identity_key IS NOT NULL\n             AND ($2::uuid IS NULL OR e.id > $2)\n           ORDER BY e.id\n           LIMIT $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "message_envelopes",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "conversation_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "message_envelopes",
+            "name": "conversation_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "sender_user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "message_envelopes",
+            "name": "sender_user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "sender_device_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "message_envelopes",
+            "name": "sender_device_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "olm_message_type",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "message_envelopes",
+            "name": "olm_message_type"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "ciphertext",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "message_envelopes",
+            "name": "ciphertext"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "message_envelopes",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "sender_identity_key!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "devices",
+            "name": "identity_key"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "955287a45c375999c425e8a623a2940c9d0d0df1aeed9b8534aa22bf3f4fab57"
+}

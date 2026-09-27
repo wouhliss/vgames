@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM message_envelopes WHERE id = ANY($1) AND recipient_device_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c9361b9222edeb0c23ee777c0ea0c0049f67dbf5fc850038e63291fd1d5fa502"
+}

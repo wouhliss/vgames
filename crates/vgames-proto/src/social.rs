@@ -404,12 +404,24 @@ pub enum ConversationCreate {
     Party { user_ids: Vec<Uuid> },
 }
 
+/// `type: integer, enum: [0, 1]` (0 = pre-key, 1 = normal Olm message).
+#[cfg(feature = "openapi")]
+fn olm_message_type() -> utoipa::openapi::schema::Object {
+    use utoipa::openapi::schema::{ObjectBuilder, Type};
+    ObjectBuilder::new()
+        .schema_type(Type::Integer)
+        .enum_values(Some([0, 1]))
+        .description(Some("0 = pre-key, 1 = normal"))
+        .build()
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(deny_unknown_fields)]
 pub struct OutgoingEnvelope {
     pub recipient_device_id: Uuid,
     /// 0 = pre-key, 1 = normal.
+    #[cfg_attr(feature = "openapi", schema(schema_with = olm_message_type))]
     pub olm_message_type: u8,
     /// Standard base64 of the Olm message bytes.
     pub ciphertext: String,
@@ -444,6 +456,7 @@ pub struct InboxEnvelope {
     pub sender_identity_key: String,
     /// Always `olm.v1`.
     pub algorithm: String,
+    #[cfg_attr(feature = "openapi", schema(schema_with = olm_message_type))]
     pub olm_message_type: u8,
     /// Standard base64 of the Olm message bytes.
     pub ciphertext: String,
@@ -578,7 +591,9 @@ pub struct Invite {
     pub progress: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+    /// Documented as a plain string so new reasons stay compatible with older clients.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "openapi", schema(value_type = Option<String>))]
     pub failure_reason: Option<InviteFailure>,
     #[serde(with = "time::serde::rfc3339")]
     #[cfg_attr(feature = "openapi", schema(value_type = String, format = DateTime))]
@@ -589,6 +604,13 @@ pub struct Invite {
     #[serde(with = "time::serde::rfc3339")]
     #[cfg_attr(feature = "openapi", schema(value_type = String, format = DateTime))]
     pub expires_at: OffsetDateTime,
+}
+
+/// `GET /v1/invites` response.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct InviteList {
+    pub items: Vec<Invite>,
 }
 
 /// `POST /v1/invites` body.

@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO message_envelopes\n                 (conversation_id, sender_user_id, sender_device_id, recipient_device_id, client_message_id,\n                  algorithm, olm_message_type, ciphertext)\n               VALUES ($1, $2, $3, $4, $5, 'olm.v1', $6, $7)\n               ON CONFLICT (sender_device_id, client_message_id, recipient_device_id) DO NOTHING\n               RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "message_envelopes",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Int2",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "640386ea5a98a2259fc86f469aad4d8646abe6d134e4379a6e66c0d9438070be"
+}

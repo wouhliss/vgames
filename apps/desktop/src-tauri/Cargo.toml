@@ -72,11 +72,15 @@ tauri = { workspace = true, features = ["test"] }
 wiremock.workspace = true
 minisign.workspace = true
 proptest.workspace = true
+# A fake realtime gateway for the social client tests.
+axum.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 # Virtual Xbox 360 pad through ViGEmBus (retired upstream, still the de-facto
 # driver). Keep behind the `VirtualPadBackend` trait so it can be swapped.
 vigem-client = "0.1"
+# Input idle time for `away` presence (social::idle).
+windows-sys = { workspace = true, features = ["Win32_UI_Input_KeyboardAndMouse", "Win32_System_SystemInformation"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # Virtual pads through /dev/uinput.

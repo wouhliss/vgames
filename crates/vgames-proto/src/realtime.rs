@@ -78,6 +78,8 @@ pub mod kinds {
     pub const DEVICE_ADDED: &str = "device.added";
     pub const DEVICE_REVOKED: &str = "device.revoked";
     pub const TYPING: &str = "typing";
+    /// Sent right before the server closes a revoked session's socket with 4001.
+    pub const SESSION_REVOKED: &str = "session.revoked";
     /// Client → server.
     pub const PRESENCE_SET: &str = "presence.set";
 }

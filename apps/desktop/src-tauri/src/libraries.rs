@@ -122,11 +122,37 @@ pub fn create_root(path: &Path, existing: &[PathBuf]) -> Result<LibraryRoot, Lib
         Err(error) => return Err(LibraryError::io("create", &marker_path, error)),
     };
     if let Err(error) = file.write_all(&bytes).and_then(|()| file.sync_all()) {
+        drop(file);
         let _ = fs::remove_file(&marker_path);
         return Err(LibraryError::io("write", &marker_path, error));
     }
-    fsutil::sync_dir(&path).map_err(|error| LibraryError::io("flush", &path, error))?;
+    drop(file);
+    if let Err(error) = fsutil::sync_dir(&path) {
+        let _ = fs::remove_file(&marker_path);
+        return Err(LibraryError::io("flush", &path, error));
+    }
     Ok(LibraryRoot { id, path })
+}
+
+/// Undo a marker we just created if database registration fails. Refuses to
+/// remove a marker whose identity changed in the meantime.
+pub fn remove_marker_if_matches(root: &LibraryRoot) -> Result<(), LibraryError> {
+    let metadata = fs::symlink_metadata(&root.path)
+        .map_err(|error| LibraryError::io("inspect", &root.path, error))?;
+    if !metadata.is_dir()
+        || metadata.file_type().is_symlink()
+        || fs::canonicalize(&root.path)
+            .map_err(|error| LibraryError::io("open", &root.path, error))?
+            != root.path
+    {
+        return Err(LibraryError::InvalidMarker);
+    }
+    if read_marker(&root.path)? != Some(root.id) {
+        return Err(LibraryError::InvalidMarker);
+    }
+    let path = root.path.join(MARKER);
+    fs::remove_file(&path).map_err(|error| LibraryError::io("remove", &path, error))?;
+    fsutil::sync_dir(&root.path).map_err(|error| LibraryError::io("flush", &root.path, error))
 }
 
 /// Checks a stored library at startup. A missing drive is shown offline;
@@ -277,6 +303,24 @@ mod tests {
             inspect_root(&library).unwrap(),
             LibraryPresence::MarkerChanged
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn marker_cleanup_does_not_follow_a_replaced_library_link() {
+        use std::os::unix::fs::symlink;
+        let dir = worktree_tempdir();
+        let path = dir.path().join("library");
+        let moved = dir.path().join("moved");
+        fs::create_dir(&path).unwrap();
+        let library = create_root(&path, &[]).unwrap();
+        fs::rename(&path, &moved).unwrap();
+        symlink(&moved, &path).unwrap();
+        assert!(matches!(
+            remove_marker_if_matches(&library),
+            Err(LibraryError::InvalidMarker)
+        ));
+        assert!(moved.join(MARKER).exists());
     }
 
     #[test]

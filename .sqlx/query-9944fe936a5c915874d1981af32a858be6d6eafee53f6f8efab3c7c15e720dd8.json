@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (\n             SELECT 1 FROM packages p\n             WHERE p.id = $1 AND p.status = 'published' AND p.deleted_at IS NULL\n               AND EXISTS (SELECT 1 FROM package_releases r WHERE r.package_id = p.id)\n           ) AS \"e!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "e!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "9944fe936a5c915874d1981af32a858be6d6eafee53f6f8efab3c7c15e720dd8"
+}

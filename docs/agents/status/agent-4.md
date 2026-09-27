@@ -38,10 +38,51 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   Evidence: 6 API tests (`tests/it/social_devices.rs`) incl. 100 parallel claims → 100 distinct keys and every bad
   signature case; mutation-checked (locking, signature check, relationship check).
 
+- A4-T05 — Server: conversations and message relay. `apps/api/src/social/relay.rs`, migration
+  `20260925130000_social_relay.sql` (`conversations.last_message_at`): direct get-or-create (friends, no block),
+  parties (creator + 1–15 friends), activity-ordered list; sends need a device and membership, each envelope goes to
+  an active device of a member or the sender (block either way → not addressable; a DM with a block → 404), ≤ 64 ×
+  64 KiB (413), 120/min per device, idempotent per (sender device, client_message_id, recipient), `unknown_devices`;
+  per-device inbox (oldest first, cursor), ack deletes only the caller's envelopes, `inbox.new` per recipient,
+  expiry in `social.sweep`. `olm_message_type` now documents its `[0, 1]` enum in the generated OpenAPI.
+  Evidence: 7 API tests (`tests/it/social_relay.rs`) incl. a real vodozemac session through the relay and a scan of
+  every column of every table for the plaintext; mutation-checked (ack scope, membership, blocks).
+
+- A4-T06 — Server: invite state machine. `apps/api/src/social/invites.rs`, migration
+  `20260925140000_social_invites.sql` (sender index; the one-active unique index already existed): create (accepted
+  friends; strangers and blocks → 404; published package with a release; one active per triple returns it; 60/h),
+  accept/decline (invitee), cancel (sender), status (installing/ready/joined/failed per 04-database §3; progress
+  stored always, published ≤ every 2 s), every transition a guarded update (racing requests: one wins, the other
+  409), expiry (pending 10 min, 24 h after accept) in `social.sweep` and lazily in its own transaction, events to
+  both parties; blocks cancel live invites with `invite.updated`. All social operations of the contract are now
+  implemented (`openapi_unimplemented.txt` is empty).
+  Evidence: 7 API tests (`tests/it/social_invites.rs`): all 63 action × state cases, races, throttling over a real
+  socket, expiry, create rules, rate limit; mutation-checked (state guard, role guard, throttle).
+
+- A4-T07 — Launcher: realtime client, social state, presence (partly; see below). `social::{ports, api, realtime,
+  service, presence, netwatch, idle, commands}`: one socket per signed-in session (ticket → WebSocket → `hello` → REST
+  resync → events), 60 s silence = dead, 1–60 s full-jitter backoff reset after `hello`, immediate reconnect on a
+  network change (local-route sampling every 10 s) or a new session, token refreshes keep the socket, sign-out and
+  server switches close it, 4001 reports the token; friends/codes/blocks (local list)/profile/settings commands and
+  `social-connection-changed`, `friends-changed`, `presence-changed`, `friend-request-received`; presence from
+  `GameStarted/GameStopped`, OS idle (Windows, macOS; none on Linux) and "show what I'm playing", sent on change and
+  after every `hello`. Evidence: 7 tests against a fake gateway over real sockets (drops, restart on the same port,
+  network change skipping a 30 s backoff, silent socket, server switch, sign-out, revoked session, presence rules,
+  friend actions, local blocks, offline), mutation-checked. **Not yet:** tests against the real API across two
+  instances and the 24 h idle soak need a signed-in launcher session, i.e. Agent 2's session manager (A2-T07); they
+  move to A4-T12.
+
 ## In progress
-- A4-T05 — Server: conversations and message relay
+- A4-T08 — Launcher: messaging integration
 
 ## Interfaces delivered (other agents may now rely on these)
+- `vgames_desktop_lib::social::ports::SessionSlot` (A4-T07, **for Agent 2's A2-T07**): call `set(Some(ServerSession
+  { server_id, user_id, base_url, access_token }))` on sign-in, token refresh and server switch, `set(None)` on
+  sign-out; register `on_unauthorized(|server_id| …)` to refresh a refused token. Reach it through
+  `State<SocialService>` → `sessions()`. Social commands for Agent 3: the friends/presence rows of
+  05-social-notes §5 (`social_connection`, `social_settings_get/set`, `friends_list`, `friend_code_create`,
+  `friend_request_send`, `friend_accept/decline/remove`, `user_block/unblock`, `blocks_list`, `user_profile`) and
+  the four events above are in `bindings.ts`.
 - `vgames_proto::social::{DeviceList, DeviceKeysList, ClaimedKeyList, MAX_UNCLAIMED_ONE_TIME_KEYS, MAX_CLAIM_DEVICES}` (A4-T04).
 - `vgames_proto::social` (A4-T02): social/messaging/invite DTOs, `canonical::{device_keys, one_time_key}` (the exact
   signed strings; server and launcher share them), `normalize_friend_code`, `is_valid_join_secret`.
@@ -62,6 +103,13 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   failed once locally under a full `cargo test` run (line 211) and passed 3/3 alone; it looks timing-sensitive.
 
 ## Cross-area edits (small, for the owners' review)
+- Agent 3 (A4-T07): `src/ipc/contract/settings.ts` imports the generated `SocialSettings` instead of declaring
+  it (both exports collided in `src/ipc/index.ts`); the requested hotkey errors stay there for A4-T10.
+- Agent 2 (A4-T07): `lib.rs` `setup()` calls `social::commands::init`; `commands/mod.rs` registers the social
+  commands/events; `commands/names.rs` + `capabilities/main.json` list them; `bindings.ts` regenerated;
+  `Cargo.toml`: `windows-sys` (Windows target, idle time) and `axum` (dev, fake gateway).
+- Agent 1 (A4-T06): `packages.rs` `pub async fn summaries(state, ids)` (wraps the existing private helpers) for
+  the package in invites.
 - Agent 1 (A4-T03): `realtime/mod.rs` `start()` also starts `social::presence::start` (the presence heartbeat
   lives with the sockets); `realtime/hub.rs` `Hub::connected_users()`; `jobs/mod.rs` one `SCHEDULES` entry
   (`social.sweep`, 60 s, as `jobs/builtin.rs` anticipates).

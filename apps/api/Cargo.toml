@@ -63,6 +63,8 @@ serde_yaml_ng.workspace = true
 wiremock.workspace = true
 insta.workspace = true
 tempfile.workspace = true
+# Real Olm messages for the relay's plaintext-scan test (A4-T05).
+vodozemac.workspace = true
 
 [lints]
 workspace = true

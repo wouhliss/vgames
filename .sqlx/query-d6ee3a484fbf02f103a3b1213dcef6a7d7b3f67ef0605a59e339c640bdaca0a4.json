@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO conversation_members (conversation_id, user_id, role) SELECT $1, unnest($2::uuid[]), 'member'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d6ee3a484fbf02f103a3b1213dcef6a7d7b3f67ef0605a59e339c640bdaca0a4"
+}
