@@ -66,7 +66,8 @@ export function Tooltip({
 
   useEffect(() => () => clearTimeout(timer.current), []);
 
-  useEffect(() => {
+  // Registered while committing, not after paint: Escape must work from the moment the tooltip shows.
+  useLayoutEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
