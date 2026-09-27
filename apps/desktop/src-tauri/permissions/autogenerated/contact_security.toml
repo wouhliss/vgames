@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-contact-security"
+description = "Enables the contact_security command without any pre-configured scope."
+commands.allow = ["contact_security"]
+
+[[permission]]
+identifier = "deny-contact-security"
+description = "Denies the contact_security command without any pre-configured scope."
+commands.deny = ["contact_security"]

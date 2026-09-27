@@ -10,6 +10,8 @@
 //! - `api`, `realtime`: REST calls and the realtime socket to the active server.
 //! - `service`, `presence`, `commands`: friends, blocks, settings, presence publishing,
 //!   and the Tauri commands and events over them.
+//! - `messaging`: device registration, key top-ups, the inbox, the outbox and device
+//!   notices on top of `store` (part of `SocialService`).
 //!
 //! All crypto runs here, in Rust. The WebView only receives decrypted messages for display.
 
@@ -17,6 +19,7 @@ pub mod api;
 pub mod commands;
 pub mod crypto;
 mod idle;
+mod messaging;
 pub mod model;
 mod netwatch;
 pub mod payload;

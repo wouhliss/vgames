@@ -43,20 +43,44 @@ export const commands = {
 	/**  Users blocked from this install on the active server (kept locally). */
 	blocksList: () => typedError<BlockedUser[], SocialError>(__TAURI_INVOKE("blocks_list")),
 	userProfile: (userId: string) => typedError<UserSummary, SocialError>(__TAURI_INVOKE("user_profile", { userId })),
+	/**  Conversations, most recent first. */
+	conversationsList: () => typedError<Conversation[], SocialError>(__TAURI_INVOKE("conversations_list")),
+	conversationOpenDirect: (userId: string) => typedError<Conversation, SocialError>(__TAURI_INVOKE("conversation_open_direct", { userId })),
+	/**  A party chat with 1–15 friends. */
+	conversationCreateParty: (userIds: string[]) => typedError<Conversation, SocialError>(__TAURI_INVOKE("conversation_create_party", { userIds })),
+	/**  Messages before `before` (a message id), oldest first; `limit` is 1–200. */
+	messagesList: (conversationId: string, before: string | null, limit: number) => typedError<Message[], SocialError>(__TAURI_INVOKE("messages_list", { conversationId, before, limit })),
+	/**  Returns the message as `pending`; `message-status-changed` follows. */
+	messageSend: (conversationId: string, text: string) => typedError<Message, SocialError>(__TAURI_INVOKE("message_send", { conversationId, text })),
+	messageRetry: (messageId: string) => typedError<Message, SocialError>(__TAURI_INVOKE("message_retry", { messageId })),
+	conversationMarkRead: (conversationId: string) => typedError<null, SocialError>(__TAURI_INVOKE("conversation_mark_read", { conversationId })),
+	/**  Throttled in Rust: call it on every keystroke. */
+	typingStart: (conversationId: string) => typedError<null, SocialError>(__TAURI_INVOKE("typing_start", { conversationId })),
+	contactSecurity: (userId: string) => typedError<ContactSecurity, SocialError>(__TAURI_INVOKE("contact_security", { userId })),
+	contactSetVerified: (userId: string, verified: boolean) => typedError<ContactSecurity, SocialError>(__TAURI_INVOKE("contact_set_verified", { userId, verified })),
+	/**  Accepts a changed key and unblocks sending to it. */
+	contactTrustDevice: (userId: string, deviceId: string) => typedError<ContactSecurity, SocialError>(__TAURI_INVOKE("contact_trust_device", { userId, deviceId })),
+	devicesList: () => typedError<MyDevice[], SocialError>(__TAURI_INVOKE("devices_list")),
+	deviceRevoke: (deviceId: string) => typedError<null, SocialError>(__TAURI_INVOKE("device_revoke", { deviceId })),
 };
 
 /** Events */
 export const events = {
 	controllerEvent: makeEvent<ControllerEvent>("controller-event"),
+	conversationsChanged: makeEvent<ConversationsChanged>("conversations-changed"),
+	deviceNotice: makeEvent<DeviceNoticeEvent>("device-notice"),
 	friendRequestReceived: makeEvent<FriendRequestReceived>("friend-request-received"),
 	friendsChanged: makeEvent<FriendsChanged>("friends-changed"),
 	gameStarted: makeEvent<GameStarted>("game-started"),
 	gameStopped: makeEvent<GameStopped>("game-stopped"),
 	installFinished: makeEvent<InstallFinished>("install-finished"),
 	installProgress: makeEvent<InstallProgress>("install-progress"),
+	messageReceived: makeEvent<MessageReceived>("message-received"),
+	messageStatusChanged: makeEvent<MessageStatusChanged>("message-status-changed"),
 	presenceChanged: makeEvent<PresenceChanged>("presence-changed"),
 	serverSwitched: makeEvent<ServerSwitched>("server-switched"),
 	socialConnectionChanged: makeEvent<SocialConnectionChanged>("social-connection-changed"),
+	typing: makeEvent<TypingEvent>("typing"),
 	updaterStatus: makeEvent<UpdaterStatus>("updater-status"),
 };
 
@@ -97,6 +121,25 @@ export type CommandError = {
 	message: string,
 };
 
+export type ContactDevice = {
+	device_id: string,
+	display_name: string | null,
+	first_seen_at: string,
+	key_fingerprint: string,
+	state: ContactDeviceState,
+};
+
+export type ContactDeviceState = "trusted" | "new" | "key_changed" | "revoked";
+
+export type ContactSecurity = {
+	user_id: string,
+	verified: boolean,
+	needs_reverification: boolean,
+	safety_number: string,
+	safety_number_groups: string[],
+	devices: ContactDevice[],
+};
+
 /**  What happened to a controller. */
 export type ControllerChange = { kind: "connected"; controller: ControllerKind; name: string } | { kind: "disconnected" } | 
 /**  Guide/PS held for 1 s (opens the in-game overlay, 05-social §6). */
@@ -111,6 +154,31 @@ export type ControllerEvent = {
 
 /**  Controller family, as classified by the input thread (07-controllers §2). */
 export type ControllerKind = "xinput" | "dualshock4" | "dualsense" | "switch_pro" | "generic";
+
+export type Conversation = {
+	id: string,
+	kind: ConversationKind,
+	members: UserSummary[],
+	last_message: Message | null,
+	unread: number,
+	created_at: string,
+};
+
+export type ConversationKind = "direct" | "party";
+
+/**  `conversations-changed`: membership, ordering or unread counts changed. */
+export type ConversationsChanged = Conversation[];
+
+export type DeviceNotice = { kind: "new_device"; user_id: string; device_id: string; device_name: string } | { kind: "key_changed"; user_id: string; device_id: string } | { kind: "device_revoked"; user_id: string; device_id: string };
+
+/**  `device-notice`: a contact's new device, key change or revocation. */
+export type DeviceNoticeEvent = {
+	conversation_id: string | null,
+	notice: DeviceNotice,
+};
+
+/**  The OS of one of your devices (`MyDevice`). Not the build-target `Platform` of packages. */
+export type DevicePlatform = "windows" | "linux" | "macos";
 
 /**  Stable, closed set of error codes for the UI. */
 export type ErrorCode = 
@@ -211,6 +279,40 @@ export type InstallProgress = {
 	connections: number,
 };
 
+export type Message = {
+	id: string,
+	conversation_id: string,
+	sender_user_id: string,
+	mine: boolean,
+	body: MessageBody,
+	sent_at: string,
+	received_at: string | null,
+	status: MessageStatus,
+};
+
+export type MessageBody = { kind: "text"; text: string } | { kind: "invite_join"; invite_id: string } | { kind: "notice"; notice: DeviceNotice } | { kind: "unsupported" };
+
+/**  `message-received`: a decrypted incoming message (or a device notice) was stored. */
+export type MessageReceived = Message;
+
+export type MessageStatus = "pending" | "sent" | "failed" | "received";
+
+/**  `message-status-changed`: one of your messages was sent or failed. */
+export type MessageStatusChanged = {
+	message_id: string,
+	conversation_id: string,
+	status: MessageStatus,
+};
+
+export type MyDevice = {
+	id: string,
+	display_name: string,
+	platform: DevicePlatform,
+	current: boolean,
+	created_at: string,
+	last_seen_at: string | null,
+};
+
 /**  A package on a specific server (package ids are only unique per server). */
 export type PackageRef = {
 	server_id: string,
@@ -267,6 +369,12 @@ export type SocialSettings = {
 	do_not_disturb: boolean,
 	overlay_enabled: boolean,
 	overlay_hotkey: string,
+};
+
+/**  `typing`: show "… is typing" for 5 s. */
+export type TypingEvent = {
+	conversation_id: string,
+	user_id: string,
 };
 
 /**

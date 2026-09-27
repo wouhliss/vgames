@@ -1,24 +1,32 @@
 //! The social core for the active server (A4-T07): connection, friends, blocks, profiles,
 //! settings and presence. Commands call [`SocialService`]; realtime events and REST
-//! resyncs update its state and reach the UI through [`SocialEvents`].
+//! resyncs update its state and reach the UI through [`SocialEvents`]. Messaging (A4-T08)
+//! lives in [`super::messaging`] and shares this state.
 
-use std::sync::{Arc, Mutex, PoisonError};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
+use std::time::{Duration, Instant};
 
 use time::OffsetDateTime;
-use tokio::sync::mpsc;
+use tokio::sync::{Notify, mpsc};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
-use vgames_proto::realtime::{FriendEvent, PresenceChanged, kinds};
+use vgames_proto::realtime::{
+    DeviceEvent, FriendEvent, PresenceChanged, Typing, TypingStart, kinds,
+};
 use vgames_proto::social::{PresenceUpdate, normalize_friend_code};
 
 use super::api::{SocialApi, http_client};
+use super::messaging::Work;
 use super::model::{
-    BlockedUser, Friend, FriendCode, FriendList, FriendState, FriendTarget, Presence,
-    SocialConnection, SocialError, SocialSettings, UserSummary,
+    BlockedUser, Conversation, DeviceNotice, Friend, FriendCode, FriendList, FriendState,
+    FriendTarget, Message, MessageStatus, Presence, SocialConnection, SocialError, SocialSettings,
+    UserSummary,
 };
-use super::ports::{IdleSource, SessionSlot};
+use super::ports::{IdleSource, ServerSession, SessionSlot};
 use super::presence;
 use super::realtime::{self, Incoming, RealtimeHandle, Timing};
+use super::store::{self, Keys, StoreError};
 use crate::db::{Db, settings};
 use crate::events::{AppEvent, EventBus};
 
@@ -28,7 +36,26 @@ pub trait SocialEvents: Send + Sync + 'static {
     fn friends_changed(&self, friends: &FriendList);
     fn presence_changed(&self, user_id: Uuid, presence: &Presence);
     fn friend_request_received(&self, user: &UserSummary);
+    /// The conversation list (order, last message, unread counts) changed.
+    fn conversations_changed(&self, _conversations: &[Conversation]) {}
+    /// A message was received or a notice was added to a conversation.
+    fn message_received(&self, _message: &Message) {}
+    /// One of your messages was sent or failed.
+    fn message_status_changed(
+        &self,
+        _message_id: Uuid,
+        _conversation_id: Uuid,
+        _status: MessageStatus,
+    ) {
+    }
+    /// A contact's devices changed (`conversation_id` is `None` when you share no conversation).
+    fn device_notice(&self, _conversation_id: Option<Uuid>, _notice: &DeviceNotice) {}
+    /// Someone is typing in a conversation (show it for 5 s).
+    fn typing(&self, _conversation_id: Uuid, _user_id: Uuid) {}
 }
+
+/// At most one `typing` frame per conversation in this interval.
+const TYPING_INTERVAL: Duration = Duration::from_secs(3);
 
 /// The persisted social settings.
 pub struct SocialSettingsKey;
@@ -76,15 +103,23 @@ fn list_from(l: vgames_proto::social::FriendList) -> FriendList {
     }
 }
 
-fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+pub(super) fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-struct Inner {
-    sessions: SessionSlot,
+/// Maps a local store failure to a command error (`context` is logged, never shown).
+pub(super) fn store_error(context: &str, e: StoreError) -> SocialError {
+    match e {
+        StoreError::NoAccount => SocialError::NotSignedIn,
+        other => SocialError::internal(context, &other),
+    }
+}
+
+pub(super) struct Inner {
+    pub(super) sessions: SessionSlot,
     http: reqwest::Client,
-    db: Db,
-    events: Arc<dyn SocialEvents>,
+    pub(super) db: Db,
+    pub(super) events: Arc<dyn SocialEvents>,
     realtime: RealtimeHandle,
     idle: Arc<dyn IdleSource>,
     /// The friend list of the server it was fetched from.
@@ -92,16 +127,28 @@ struct Inner {
     inputs: Mutex<presence::Inputs>,
     /// What was last sent, and to which server.
     sent: Mutex<Option<(Uuid, PresenceUpdate)>>,
+    /// Keys for the Olm pickles and the message store, once loaded from the OS secret store
+    /// ([`SocialService::provide_keys`]). Until then friends and presence work and messaging
+    /// commands report an error.
+    pub(super) keys: OnceLock<Arc<Keys>>,
+    /// Work queued for the messaging loop, and its wake-up.
+    pub(super) work: Mutex<Work>,
+    pub(super) wake: Notify,
+    /// The server this device finished messaging setup on.
+    pub(super) device: Mutex<Option<Uuid>>,
+    /// When `typing` was last sent, per conversation.
+    typing_sent: Mutex<HashMap<Uuid, Instant>>,
 }
 
 /// Cheap to clone; every clone talks to the same state.
 #[derive(Clone)]
 pub struct SocialService {
-    inner: Arc<Inner>,
+    pub(super) inner: Arc<Inner>,
 }
 
 impl SocialService {
-    /// Starts the connection, event and presence tasks; they stop when `shutdown` fires.
+    /// Starts the connection, event, presence and messaging tasks; they stop when `shutdown`
+    /// fires. Messaging waits for [`Self::provide_keys`].
     pub async fn start(
         sessions: SessionSlot,
         db: Db,
@@ -134,6 +181,11 @@ impl SocialService {
                     ..presence::Inputs::default()
                 }),
                 sent: Mutex::new(None),
+                keys: OnceLock::new(),
+                work: Mutex::new(Work::default()),
+                wake: Notify::new(),
+                device: Mutex::new(None),
+                typing_sent: Mutex::new(HashMap::new()),
             }),
         };
         tokio::spawn(service.clone().incoming_loop(rx, shutdown.clone()));
@@ -143,8 +195,17 @@ impl SocialService {
             timing.idle_poll,
             shutdown.clone(),
         ));
+        tokio::spawn(service.clone().messaging_loop(shutdown.clone()));
         tokio::spawn(service.clone().network_loop(timing.network_poll, shutdown));
         Ok(service)
+    }
+
+    /// Hands over the message-store keys (loaded off the async runtime: keychains can block)
+    /// and starts messaging setup. Later calls are ignored.
+    pub fn provide_keys(&self, keys: Arc<Keys>) {
+        if self.inner.keys.set(keys).is_ok() {
+            self.queue(|w| w.setup = true);
+        }
     }
 
     /// Where the session manager puts the current session.
@@ -167,11 +228,33 @@ impl SocialService {
             .sessions
             .current()
             .ok_or(SocialError::NotSignedIn)?;
-        Ok(SocialApi {
+        Ok(self.api_for(session))
+    }
+
+    pub(super) fn api_for(&self, session: ServerSession) -> SocialApi<'_> {
+        SocialApi {
             http: &self.inner.http,
             session,
             sessions: &self.inner.sessions,
-        })
+        }
+    }
+
+    /// Runs `f` on the database thread (`context` names the step in logs).
+    pub(super) async fn with_store<T, F>(
+        &self,
+        context: &'static str,
+        f: F,
+    ) -> Result<T, SocialError>
+    where
+        F: FnOnce(&mut rusqlite::Connection) -> Result<T, StoreError> + Send + 'static,
+        T: Send + 'static,
+    {
+        self.inner
+            .db
+            .call(move |c| Ok(f(c)))
+            .await
+            .map_err(|e| SocialError::internal(context, &e))?
+            .map_err(|e| store_error(context, e))
     }
 
     // ---- friends --------------------------------------------------------------------------
@@ -242,18 +325,10 @@ impl SocialService {
         let username = self.known_username(server, user_id);
         api.block(user_id).await?;
         let blocked_at = OffsetDateTime::now_utc().unix_timestamp();
-        self.inner
-            .db
-            .call(move |c| {
-                c.execute(
-                    "INSERT INTO social_blocks (server_id, user_id, username, blocked_at) VALUES (?1, ?2, ?3, ?4)
-                     ON CONFLICT (server_id, user_id) DO UPDATE SET username = COALESCE(excluded.username, username)",
-                    rusqlite::params![server.to_string(), user_id.to_string(), username, blocked_at],
-                )?;
-                Ok(())
-            })
-            .await
-            .map_err(|e| SocialError::internal("saving a block", &e))?;
+        self.with_store("saving a block", move |c| {
+            store::block_add(c, server, user_id, username.as_deref(), blocked_at)
+        })
+        .await?;
         self.resync().await;
         Ok(())
     }
@@ -266,17 +341,10 @@ impl SocialService {
             Ok(()) | Err(SocialError::NotFound) => {}
             Err(e) => return Err(e),
         }
-        self.inner
-            .db
-            .call(move |c| {
-                c.execute(
-                    "DELETE FROM social_blocks WHERE server_id = ?1 AND user_id = ?2",
-                    rusqlite::params![server.to_string(), user_id.to_string()],
-                )?;
-                Ok(())
-            })
-            .await
-            .map_err(|e| SocialError::internal("removing a block", &e))?;
+        self.with_store("removing a block", move |c| {
+            store::block_remove(c, server, user_id)
+        })
+        .await?;
         Ok(())
     }
 
@@ -289,31 +357,13 @@ impl SocialService {
             .ok_or(SocialError::NotSignedIn)?
             .server_id;
         let rows = self
-            .inner
-            .db
-            .call(move |c| {
-                let mut stmt = c.prepare(
-                    "SELECT user_id, username, blocked_at FROM social_blocks WHERE server_id = ?1
-                     ORDER BY blocked_at DESC, user_id",
-                )?;
-                let rows = stmt
-                    .query_map([server.to_string()], |r| {
-                        Ok((
-                            r.get::<_, String>(0)?,
-                            r.get::<_, Option<String>>(1)?,
-                            r.get::<_, i64>(2)?,
-                        ))
-                    })?
-                    .collect::<Result<Vec<_>, _>>()?;
-                Ok(rows)
-            })
-            .await
-            .map_err(|e| SocialError::internal("reading blocks", &e))?;
+            .with_store("reading blocks", move |c| store::blocks_list(c, server))
+            .await?;
         Ok(rows
             .into_iter()
-            .filter_map(|(id, username, at)| {
+            .filter_map(|(user_id, username, at)| {
                 Some(BlockedUser {
-                    user_id: id.parse().ok()?,
+                    user_id,
                     username,
                     blocked_at: OffsetDateTime::from_unix_timestamp(at)
                         .ok()
@@ -373,6 +423,32 @@ impl SocialService {
         lock(&self.inner.inputs).show_current_game = value.show_current_game;
         self.publish_presence();
         Ok(value)
+    }
+
+    // ---- typing -----------------------------------------------------------------------------
+
+    /// Tells the conversation's other members you are typing (best effort, throttled).
+    pub fn typing_start(&self, conversation_id: Uuid) -> Result<(), SocialError> {
+        self.inner
+            .sessions
+            .current()
+            .ok_or(SocialError::NotSignedIn)?;
+        let now = Instant::now();
+        {
+            let mut sent = lock(&self.inner.typing_sent);
+            if sent
+                .get(&conversation_id)
+                .is_some_and(|at| now.duration_since(*at) < TYPING_INTERVAL)
+            {
+                return Ok(());
+            }
+            sent.retain(|_, at| now.duration_since(*at) < TYPING_INTERVAL);
+            sent.insert(conversation_id, now);
+        }
+        if let Ok(data) = serde_json::to_value(TypingStart { conversation_id }) {
+            self.inner.realtime.send(kinds::TYPING, data);
+        }
+        Ok(())
     }
 
     // ---- presence ---------------------------------------------------------------------------
@@ -476,6 +552,7 @@ impl SocialService {
             Incoming::Connected { .. } => {
                 *lock(&self.inner.sent) = None;
                 self.publish_presence();
+                self.queue(|w| w.setup = true);
                 self.resync().await;
             }
             Incoming::Event {
@@ -519,6 +596,22 @@ impl SocialService {
                     }
                 }
                 kinds::FRIEND_ACCEPTED | kinds::FRIEND_REMOVED => self.resync().await,
+                kinds::INBOX_NEW => self.queue(|w| w.inbox = true),
+                kinds::TYPING => {
+                    if let Ok(t) = serde_json::from_value::<Typing>(data) {
+                        self.inner.events.typing(t.conversation_id, t.user_id);
+                    }
+                }
+                kinds::DEVICE_ADDED => {
+                    if let Ok(e) = serde_json::from_value::<DeviceEvent>(data) {
+                        self.queue(|w| w.users(server_id, e.user_id));
+                    }
+                }
+                kinds::DEVICE_REVOKED => {
+                    if let Ok(e) = serde_json::from_value::<DeviceEvent>(data) {
+                        self.queue(|w| w.revoked(server_id, e.user_id, e.device_id));
+                    }
+                }
                 _ => {}
             },
         }

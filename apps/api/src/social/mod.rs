@@ -25,7 +25,10 @@ pub fn routes() -> OpenApiRouter<AppState> {
 
 /// Client→server realtime events this module handles (e.g. `presence.set`, `typing`).
 pub fn realtime_handlers() -> Vec<(&'static str, hub::InboundHandler)> {
-    vec![(kinds::PRESENCE_SET, hub::handler(presence::on_presence_set))]
+    vec![
+        (kinds::PRESENCE_SET, hub::handler(presence::on_presence_set)),
+        (kinds::TYPING, hub::handler(relay::on_typing)),
+    ]
 }
 
 /// Kind of the every-minute social sweep (05-social-notes §3).

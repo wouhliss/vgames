@@ -38,7 +38,7 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   Evidence: 6 API tests (`tests/it/social_devices.rs`) incl. 100 parallel claims → 100 distinct keys and every bad
   signature case; mutation-checked (locking, signature check, relationship check).
 
-- A4-T05 — Server: conversations and message relay. `apps/api/src/social/relay.rs`, migration
+- A4-T05 — Server: conversations and message relay. ([PR #44](https://github.com/wouhliss/vgames/pull/44), merged) `apps/api/src/social/relay.rs`, migration
   `20260925130000_social_relay.sql` (`conversations.last_message_at`): direct get-or-create (friends, no block),
   parties (creator + 1–15 friends), activity-ordered list; sends need a device and membership, each envelope goes to
   an active device of a member or the sender (block either way → not addressable; a DM with a block → 404), ≤ 64 ×
@@ -48,7 +48,7 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   Evidence: 7 API tests (`tests/it/social_relay.rs`) incl. a real vodozemac session through the relay and a scan of
   every column of every table for the plaintext; mutation-checked (ack scope, membership, blocks).
 
-- A4-T06 — Server: invite state machine. `apps/api/src/social/invites.rs`, migration
+- A4-T06 — Server: invite state machine. ([PR #44](https://github.com/wouhliss/vgames/pull/44), merged) `apps/api/src/social/invites.rs`, migration
   `20260925140000_social_invites.sql` (sender index; the one-active unique index already existed): create (accepted
   friends; strangers and blocks → 404; published package with a release; one active per triple returns it; 60/h),
   accept/decline (invitee), cancel (sender), status (installing/ready/joined/failed per 04-database §3; progress
@@ -59,7 +59,7 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   Evidence: 7 API tests (`tests/it/social_invites.rs`): all 63 action × state cases, races, throttling over a real
   socket, expiry, create rules, rate limit; mutation-checked (state guard, role guard, throttle).
 
-- A4-T07 — Launcher: realtime client, social state, presence (partly; see below). `social::{ports, api, realtime,
+- A4-T07 — Launcher: realtime client, social state, presence (partly; see below). ([PR #44](https://github.com/wouhliss/vgames/pull/44), merged) `social::{ports, api, realtime,
   service, presence, netwatch, idle, commands}`: one socket per signed-in session (ticket → WebSocket → `hello` → REST
   resync → events), 60 s silence = dead, 1–60 s full-jitter backoff reset after `hello`, immediate reconnect on a
   network change (local-route sampling every 10 s) or a new session, token refreshes keep the socket, sign-out and
@@ -70,10 +70,27 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   network change skipping a 30 s backoff, silent socket, server switch, sign-out, revoked session, presence rules,
   friend actions, local blocks, offline), mutation-checked. **Not yet:** tests against the real API across two
   instances and the 24 h idle soak need a signed-in launcher session, i.e. Agent 2's session manager (A2-T07); they
-  move to A4-T12.
+  move to A4-T12. A `session.revoked` frame counts as the revocation even if the 4001 close is lost to a reset
+  (seen on the Windows runner).
+- A4-T08 — Launcher: messaging integration (partly; see below). `social::messaging` (part of `SocialService`): one
+  work loop runs setup after every `hello` (Olm account, device registration or re-binding, OTK top-up below 20 up to
+  50 plus the fallback key; a revoked device starts over with new keys and keeps history and blocks), conversation
+  sync, the inbox (decrypt → store → ack; an unknown or changed sender device triggers a device refresh and one
+  retry; unreadable envelopes are acknowledged and dropped), `device.added`/`device.revoked` (pins, notices), and the
+  outbox (targets = members' non-revoked devices + own other devices, keys claimed and signature-checked for devices
+  without a session, ≤ 64 envelopes per request, `unknown_devices` resent up to twice, retries with backoff while
+  offline, a changed key fails the message until `contact_trust_device`). Message-store keys load from the keychain
+  off the runtime (`SocialService::provide_keys`). Commands and events: the messaging rows of 05-social-notes
+  §5–§6, including `typing_start` (throttled to one frame per 3 s per conversation) and `typing`. Server: realtime
+  `typing` is relayed to the other members without a block either way (`relay::on_typing`). Evidence: 4 launcher
+  tests through an in-memory relay with the API's rules over real sockets (two launchers chat; Bob's third device
+  gets only new messages; revoking a device stops delivery to it; the outbox waits out an outage; a changed key
+  blocks sending until trusted), 1 API test for typing (members only, blocks, non-members, bad data),
+  mutation-checked. **Not yet:** the same scenarios against the real API with `VGAMES_PROFILE` launchers need
+  signed-in sessions (A2-T07, reassigned); they move to A4-T12 with T07's.
 
 ## In progress
-- A4-T08 — Launcher: messaging integration
+- A4-T09 — Launcher: invites client
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_desktop_lib::social::ports::SessionSlot` (A4-T07, **for Agent 2's A2-T07**): call `set(Some(ServerSession
@@ -82,7 +99,11 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   `State<SocialService>` → `sessions()`. Social commands for Agent 3: the friends/presence rows of
   05-social-notes §5 (`social_connection`, `social_settings_get/set`, `friends_list`, `friend_code_create`,
   `friend_request_send`, `friend_accept/decline/remove`, `user_block/unblock`, `blocks_list`, `user_profile`) and
-  the four events above are in `bindings.ts`.
+  the four events above are in `bindings.ts`. Messaging (A4-T08): `conversations_list`, `conversation_open_direct`,
+  `conversation_create_party`, `messages_list`, `message_send`, `message_retry`, `conversation_mark_read`,
+  `typing_start`, `contact_security`, `contact_set_verified`, `contact_trust_device`, `devices_list`,
+  `device_revoke`, and the events `conversations-changed`, `message-received`, `message-status-changed`, `typing`,
+  `device-notice`.
 - `vgames_proto::social::{DeviceList, DeviceKeysList, ClaimedKeyList, MAX_UNCLAIMED_ONE_TIME_KEYS, MAX_CLAIM_DEVICES}` (A4-T04).
 - `vgames_proto::social` (A4-T02): social/messaging/invite DTOs, `canonical::{device_keys, one_time_key}` (the exact
   signed strings; server and launcher share them), `normalize_friend_code`, `is_valid_join_secret`.
@@ -92,6 +113,8 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   The overlay window's surface is §7.
 
 ## Needs from others
+- Seen (2026-09-26): Agent 5's two CI notes. GitHub Actions runs again since the repository went public;
+  `scripts/ci/local.sh` stays optional and I run it before pushing.
 - From Agent 2: API client with bearer tokens + refresh (A2-T07), active server/session lookup, library/install
   state and launch-with-args internal APIs (for invites, A4-T09), launch-plan hook for overlay env/injection (A4-T10).
   Until they land, Agent 4 codes against small traits in `social::ports` and tests with in-process fakes.
@@ -105,6 +128,8 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
 ## Cross-area edits (small, for the owners' review)
 - Agent 3 (A4-T07): `src/ipc/contract/settings.ts` imports the generated `SocialSettings` instead of declaring
   it (both exports collided in `src/ipc/index.ts`); the requested hotkey errors stay there for A4-T10.
+- Agent 2 (A4-T08): `commands/mod.rs`, `commands/names.rs`, `capabilities/main.json` list the messaging commands
+  and events; `bindings.ts` regenerated.
 - Agent 2 (A4-T07): `lib.rs` `setup()` calls `social::commands::init`; `commands/mod.rs` registers the social
   commands/events; `commands/names.rs` + `capabilities/main.json` list them; `bindings.ts` regenerated;
   `Cargo.toml`: `windows-sys` (Windows target, idle time) and `axum` (dev, fake gateway).

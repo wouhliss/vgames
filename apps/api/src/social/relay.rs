@@ -10,6 +10,8 @@
 //!   recipient device)`. `unknown_devices` lists addressable devices the send left out.
 //! - A device reads and acknowledges only its own inbox. Undelivered envelopes expire
 //!   after 30 days (`social.sweep`).
+//! - `typing` (realtime, from a member) reaches the other members without a block either
+//!   way; nothing is stored.
 
 use std::collections::{HashMap, HashSet};
 
@@ -26,7 +28,7 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 use uuid::Uuid;
 use vgames_proto::{
     FieldError,
-    realtime::{InboxNew, kinds},
+    realtime::{InboxNew, Typing, TypingStart, kinds},
     social::{
         Conversation, ConversationCreate, ConversationKind, ConversationPage, InboxAck,
         InboxEnvelope, InboxPage, MAX_ENVELOPE_CIPHERTEXT, MAX_ENVELOPES_PER_SEND,
@@ -551,6 +553,51 @@ pub async fn send_message(
             unknown_devices,
         },
     ))
+}
+
+/// Realtime `typing` handler: relays "… is typing" to the conversation's other members.
+pub async fn on_typing(
+    ctx: crate::realtime::hub::InboundContext,
+    data: serde_json::Value,
+) -> ApiResult<()> {
+    ctx.state
+        .limits
+        .check(Policy::User, &format!("typing:{}", ctx.user_id))?;
+    let TypingStart { conversation_id } =
+        crate::http::json::parse_json(data.to_string().as_bytes())?;
+    let mut conn = ctx.state.db.acquire().await?;
+    let member = sqlx::query_scalar!(
+        r#"SELECT EXISTS (SELECT 1 FROM conversation_members
+             WHERE conversation_id = $1 AND user_id = $2 AND left_at IS NULL) AS "e!""#,
+        conversation_id,
+        ctx.user_id
+    )
+    .fetch_one(&mut *conn)
+    .await?;
+    if !member {
+        return Err(ApiError::not_found());
+    }
+    let others = sqlx::query_scalar!(
+        r#"SELECT m.user_id FROM conversation_members m
+           WHERE m.conversation_id = $1 AND m.left_at IS NULL AND m.user_id <> $2
+             AND NOT EXISTS (
+               SELECT 1 FROM user_blocks b
+               WHERE (b.blocker_id = $2 AND b.blocked_id = m.user_id) OR (b.blocker_id = m.user_id AND b.blocked_id = $2))"#,
+        conversation_id,
+        ctx.user_id
+    )
+    .fetch_all(&mut *conn)
+    .await?;
+    events::publish(
+        &mut conn,
+        &others,
+        kinds::TYPING,
+        Typing {
+            conversation_id,
+            user_id: ctx.user_id,
+        },
+    )
+    .await
 }
 
 // ---------------------------------------------------------------------------------------
