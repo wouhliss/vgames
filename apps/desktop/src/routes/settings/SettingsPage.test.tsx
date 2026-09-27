@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { routes } from "../../app/router";
 import type { Library, ServerProfile } from "../../ipc";
 import {
+  fail,
   installMockBackend,
   MOCK_LIBRARY,
   MOCK_SERVER,
@@ -412,6 +413,20 @@ describe("settings", () => {
         expect(within(overlay).getByRole("alert")).toHaveTextContent(
           "Alt+Tab is already used by the operating system. Try another combination.",
         ),
+      );
+      expect(backend.state.socialSettings.overlay_hotkey).toBe("Shift+F3");
+    });
+
+    it("explains a shortcut the core refuses as invalid input", async () => {
+      const { user, backend } = start("/settings/overlay");
+      backend.on("social_settings_set", () =>
+        fail({ kind: "invalid_input", field: "overlay_hotkey", message: "not an accelerator" }),
+      );
+      await user.click(await change());
+      await user.keyboard("{Control>}{Alt>}k{/Alt}{/Control}");
+      const overlay = screen.getByRole("region", { name: "Overlay" });
+      expect(await within(overlay).findByRole("alert")).toHaveTextContent(
+        "That isn't a shortcut vgames can use. Try another combination.",
       );
       expect(backend.state.socialSettings.overlay_hotkey).toBe("Shift+F3");
     });

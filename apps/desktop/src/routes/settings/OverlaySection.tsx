@@ -26,7 +26,12 @@ function hotkeyError(error: SocialSettingsError | "failed", hotkey: string): str
       return error.by
         ? t("settings.overlay.inUse", { hotkey, by: error.by })
         : t("settings.overlay.inUseUnknown", { hotkey });
-    case "internal":
+    case "invalid_input":
+      // Until the hotkey errors are typed (A4-T10), the core refuses a shortcut as invalid input.
+      return error.field === "overlay_hotkey"
+        ? t("settings.overlay.invalid")
+        : t("settings.saveFailed");
+    default:
       return t("settings.saveFailed");
   }
 }
