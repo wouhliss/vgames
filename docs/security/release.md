@@ -111,6 +111,9 @@ Commit `runtime-catalog.pub` as `runtimes/runtime-catalog.pub` through a normal 
 Store the content of `runtime-catalog.key` as the secret `VGAMES_RUNTIME_CATALOG_KEY` and its password as
 `VGAMES_RUNTIME_CATALOG_KEY_PASSWORD`, in the `release` environment only, and keep two offline copies.
 
+**Repository setting (once):** Settings → Actions → General → Workflow permissions → "Allow GitHub Actions to
+create and approve pull requests". Without it (or the optional App below), the watcher cannot open its PR.
+
 **How a new runtime version gets to players:**
 
 1. [`runtimes.yml`](../../.github/workflows/runtimes.yml) runs daily. For each upstream in
