@@ -173,6 +173,6 @@ Periodic jobs are enqueued once per period cluster-wide.
   its own database via `#[sqlx::test]`). Needs `DATABASE_URL` pointing at a Postgres 18 where the test role
   can create databases.
 - `tests/openapi_contract.rs` fails when the generated OpenAPI document drifts from `openapi/openapi.yaml`.
-  `tests/openapi_unimplemented.txt` lists contract operations not implemented yet; it only shrinks.
+  `tests/openapi_unimplemented.txt` is empty: every contract operation has a handler.
 - `tests/it/limits.rs` walks every route and fails if one is not rate limited.
 - `apps/api/bench/`: seeded query plans and an `oha` load test (`README.md` there).

@@ -13,7 +13,7 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   `http::query::Query<T>`, problem catalogue snapshot.
 - A1-T03 — OpenAPI drift check: `apps/api/tests/openapi_contract.rs` compares the generated document
   (`vgames_api::http::openapi()`) with `openapi/openapi.yaml`; unimplemented contract operations are listed in
-  `apps/api/tests/openapi_unimplemented.txt` (83 today, must only shrink). Reusable problem responses for
+  `apps/api/tests/openapi_unimplemented.txt` (now empty). Reusable problem responses for
   handlers: `vgames_api::openapi_problems::{BadRequest, Unauthorized, NotFound, …}`.
 - A1-T04 — Discord sign-in and sessions: start/callback/token/logout/me/sessions per 01-security §4
   (PKCE, login codes, refresh rotation with reuse detection, web cookies + CSRF + Origin, registration modes,
@@ -127,19 +127,20 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
     plan. Browsing, filters and specific searches are well inside the budget. A faster broad
     search needs a product decision (ranked or capped results, or byte-order title sorting).
   - Inbox budget: Agent 4's endpoint (A4-T05); its query runs on `message_envelopes_inbox_idx` in 0.8 ms.
+- A1-T17 — Handoff: the OpenAPI drift allowlist is empty, `apps/api/README.md` covers operation,
+  roles, migrations, storage and workers, the interface inventory below is current, and the checked-in `.sqlx/`
+  metadata compiles offline. The generated document matches the contract (2 tests); the API integration suite
+  passes serially (141 passed, 1 GCS emulator test ignored because that emulator is not configured).
 
 ## In progress
-- A1-T17 — Handoff: `apps/api/README.md` written, interfaces listed below, `.sqlx/` current (CI checks it).
-  The drift allowlist (`apps/api/tests/openapi_unimplemented.txt`) holds only Agent 4's 11 conversation, inbox
-  and invite operations; it empties as Agent 4 implements them (A4-T05, A4-T06).
+- Broad catalog search still misses the T16 100 ms p99 load budget; see the measured results above.
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_api::error::ApiError` / `ApiResult` (problem+json), `vgames_api::http::json::{Json, Validate}`
   (rejects unknown fields, reports field paths) — for Agent 4's `social` handlers.
 - `vgames_api::social::routes() -> OpenApiRouter<AppState>` mount point (convert `social.rs` to `social/mod.rs`).
 - `state.limits.check(Policy::FriendRequests | Invites | Messages, key)` for Agent 4's per-action limits.
-- **Agent 4:** when you implement a social/messaging/invites operation, remove it from
-  `apps/api/tests/openapi_unimplemented.txt`; the drift test fails until the handler matches the contract.
+- **Agent 4:** all social/messaging/invites contract operations are registered; the drift allowlist is empty.
 - **Agent 5:** `cargo xtask openapi check` can run `cargo test -p vgames-api --test openapi_contract`.
 - **Auth for every handler (Agents 4, 1):** `vgames_api::auth::{CurrentUser, RequireAdmin, RequireOwner, RequestMeta}`.
   `CurrentUser { user_id, role, session_id, device_id, kind }` accepts `Bearer vga_…` or the admin-web cookie
@@ -245,10 +246,20 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
 - Root `clippy.toml` allows unwrap/expect/panic/indexing in tests (AGENTS.md §5).
 
 ## Needs from others
-- From Agent 4: the conversation, inbox and invite operations, to empty the drift allowlist (A1-T17).
+- From Agent 5 (CI): the full-history gitleaks job flags the historical planted-token scanner test
+  (`d679450`, `planted-token-test.txt`), so the local gate fails even when the handoff commit adds no secret.
+  Scope that gate to the commits under review while keeping the planted-token self-test.
+- From Agent 4: the socket-presence integration test's 10-second gateway startup wait timed out twice
+  under the parallel 142-test API run; it passed alone and in the serial suite.
 
 ## Blockers / contract questions
-- None. I merge my own PRs (rebase merge) once Agent 5's CI is green. Seen Agent 5's two CI notes (2026-09-26):
+- Release performance blocker: the broad catalog search mix measured 107–194 ms p99 at 200 rps,
+  above the 100 ms budget in 00-overview §7. Browsing, filters and specific searches met the budget.
+- Local CI on handoff commit `1755508`: SQLx, changelog, WASM, TypeScript, desktop E2E and workflows passed.
+  Rust failed on the parallel socket-presence timeout; desktop and supply-chain jobs could not start because
+  this machine lacks `pkg-config` and `cargo-deny` (sudo requires a password); gitleaks flagged the historical
+  planted-token test above. The API's serial suite passed (141 tests) and workspace clippy passed.
+- I merge my own PRs (rebase merge) once Agent 5's CI is green. Seen Agent 5's two CI notes (2026-09-26):
   Actions ran out of minutes, then the repo went public and GitHub CI is back as the merge gate;
   `scripts/ci/local.sh` is optional.
 - Contract commit (A1-T13, in the same PR as the feature): `prepareSaveBlobs` / `commitSaveSnapshot` answer 404 for an
