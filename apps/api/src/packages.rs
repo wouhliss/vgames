@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use axum::{
     extract::State,
-    http::StatusCode,
+    http::{StatusCode, header},
     response::{IntoResponse, Response},
 };
 use serde::{Deserialize, Serialize};
@@ -23,8 +23,8 @@ use vgames_proto::{
     jobs::{Job, JobState},
     packages::{
         AdminPackage, AdminPackageCreate, AdminPackagePage, AdminPackagePatch, Asset, AssetKind,
-        AssetSource, FieldSource, ImageType, PackageDetail, PackagePage, PackageStatus,
-        PackageSummary, Platform, ProtonDbTier, ReleaseInfo,
+        AssetSource, FieldSource, GenreCount, GenreList, ImageType, PackageDetail, PackagePage,
+        PackageStatus, PackageSummary, Platform, ProtonDbTier, ReleaseInfo,
     },
 };
 
@@ -50,6 +50,7 @@ use crate::{
 pub fn routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(list_catalog))
+        .routes(routes!(list_genres))
         .routes(routes!(get_package))
         .routes(routes!(admin_list, admin_create))
         .routes(routes!(admin_get, admin_update, admin_delete))
@@ -775,6 +776,62 @@ pub async fn list_catalog(
     }))
 }
 
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+#[serde(deny_unknown_fields)]
+pub struct GenresQuery {
+    /// Only packages with a release for this platform
+    #[param(inline)]
+    pub platform: Option<Platform>,
+}
+
+impl Validate for GenresQuery {
+    fn validate(&self, _errors: &mut Vec<FieldError>) {}
+}
+
+/// Genres of the published catalog, with package counts
+#[utoipa::path(
+    get,
+    path = "/v1/genres",
+    tag = "catalog",
+    operation_id = "listGenres",
+    params(GenresQuery),
+    responses((status = 200, description = "Genres", body = GenreList), BadRequest, Unauthorized)
+)]
+pub async fn list_genres(
+    State(state): State<AppState>,
+    _user: CurrentUser,
+    Query(q): Query<GenresQuery>,
+) -> ApiResult<Response> {
+    // Same visibility as `GET /v1/packages`. A full aggregate (~100 ms on 100k packages), so
+    // clients may cache it for a minute, as the contract allows.
+    let platform = q.platform.map(|p| p.as_str().to_string());
+    let items = sqlx::query!(
+        r#"SELECT g.genre AS "genre!", count(DISTINCT p.id) AS "count!"
+           FROM packages p CROSS JOIN LATERAL unnest(p.genres) AS g(genre)
+           WHERE p.deleted_at IS NULL AND p.status = 'published'
+             AND EXISTS (SELECT 1 FROM package_releases r WHERE r.package_id = p.id
+                         AND ($1::text IS NULL OR r.platform = $1))
+           GROUP BY g.genre
+           ORDER BY count(DISTINCT p.id) DESC, g.genre
+           LIMIT 200"#,
+        platform
+    )
+    .fetch_all(&state.db)
+    .await?
+    .into_iter()
+    .map(|r| GenreCount {
+        genre: r.genre,
+        count: r.count,
+    })
+    .collect();
+    Ok((
+        [(header::CACHE_CONTROL, "private, max-age=60")],
+        axum::Json(GenreList { items }),
+    )
+        .into_response())
+}
+
 /// Package details
 #[utoipa::path(
     get,
@@ -1208,7 +1265,7 @@ pub async fn admin_update(
     tag = "admin-packages",
     operation_id = "adminDeletePackage",
     params(("package_id" = Uuid, Path), ("If-Match" = String, Header)),
-    responses((status = 204, description = "Deleted"), Unauthorized, Forbidden, NotFound, PreconditionFailed)
+    responses((status = 204, description = "Deleted"), Unauthorized, Forbidden, NotFound, PreconditionFailed, PreconditionRequired)
 )]
 pub async fn admin_delete(
     State(state): State<AppState>,

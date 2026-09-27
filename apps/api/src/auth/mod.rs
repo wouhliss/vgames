@@ -34,7 +34,7 @@ use crate::{
     config::DiscordConfig,
     error::{ApiError, ApiResult},
     http::json::{Json, Validate, invalid},
-    openapi_problems::{BadRequest, Forbidden, NotFound, TooManyRequests, Unauthorized},
+    openapi_problems::{BadRequest, NotFound, TooManyRequests, Unauthorized},
     state::AppState,
 };
 
@@ -263,9 +263,8 @@ pub struct CallbackParams {
     security(()),
     params(CallbackParams),
     responses(
-        (status = 302, description = "Redirect to the launcher deep link or the admin UI", headers(("Location" = String))),
-        BadRequest,
-        Forbidden
+        (status = 302, description = "Redirect to the launcher deep link or the admin UI (also for a refused sign-in)", headers(("Location" = String))),
+        BadRequest
     )
 )]
 pub async fn callback(
@@ -289,18 +288,30 @@ pub async fn callback(
     .await?
     .ok_or_else(invalid_state)?;
 
+    // From here on the flow is known (and consumed): every refusal goes back to the client
+    // that started it, which shows the reason (01-security §4.1).
+    let refuse =
+        |why: Refusal| refused(&state, &flow.client_kind, flow.client_state.as_deref(), why);
     if params.error.is_some() {
-        return Err(ApiError::forbidden_code(
-            "discord_denied",
-            "Sign-in was cancelled in Discord",
-        ));
+        return refuse(Refusal::AccessDenied);
     }
-    let code = params
-        .code
-        .filter(|c| !c.is_empty() && c.len() <= 256)
-        .ok_or_else(|| ApiError::bad_request("invalid_code", "The sign-in code is missing"))?;
-    let profile = discord::fetch_profile(&state, &code).await?;
-    let user = admit_user(&state, &profile).await?;
+    let Some(code) = params.code.filter(|c| !c.is_empty() && c.len() <= 256) else {
+        return refuse(Refusal::SignInFailed);
+    };
+    let profile = match discord::fetch_profile(&state, &code).await {
+        Ok(p) => p,
+        // Our own failures stay 500s; Discord refusing the code or being unreachable goes back
+        // to the client.
+        Err(e) if e.status == StatusCode::INTERNAL_SERVER_ERROR => return Err(e),
+        Err(e) => {
+            tracing::warn!(error = %e, "discord sign-in failed");
+            return refuse(Refusal::SignInFailed);
+        }
+    };
+    let user = match admit_user(&state, &profile).await? {
+        Ok(user) => user,
+        Err(why) => return refuse(why),
+    };
 
     if flow.client_kind == "web" {
         let session = tokens::new_token(WEB_SESSION_PREFIX)?;
@@ -378,10 +389,99 @@ fn invalid_state() -> ApiError {
     )
 }
 
+/// Why a sign-in was turned away; `code()` is the `error` sent back to the client.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Refusal {
+    AccessDenied,
+    RegistrationClosed,
+    NotAllowlisted,
+    UserDisabled,
+    SignInFailed,
+}
+
+impl Refusal {
+    fn code(self) -> &'static str {
+        match self {
+            Refusal::AccessDenied => "access_denied",
+            Refusal::RegistrationClosed => "registration_closed",
+            Refusal::NotAllowlisted => "not_allowlisted",
+            Refusal::UserDisabled => "user_disabled",
+            Refusal::SignInFailed => "sign_in_failed",
+        }
+    }
+
+    fn message(self) -> &'static str {
+        match self {
+            Refusal::AccessDenied => "Sign-in was cancelled in Discord.",
+            Refusal::RegistrationClosed => "This server is not accepting new accounts.",
+            Refusal::NotAllowlisted => {
+                "This server only admits invited Discord accounts. Ask an admin to add yours."
+            }
+            Refusal::UserDisabled => "This account is disabled.",
+            Refusal::SignInFailed => "Discord could not complete the sign-in. Please start again.",
+        }
+    }
+}
+
+/// Sends a refused sign-in back to the client that started it, with `error=<code>`: the
+/// launcher's deep link (plus a page stating the reason) or the admin login page. No code,
+/// session or cookie is issued.
+fn refused(
+    state: &AppState,
+    client_kind: &str,
+    client_state: Option<&str>,
+    why: Refusal,
+) -> ApiResult<Response> {
+    let (location, body) = if client_kind == "web" {
+        let target = format!(
+            "{}/admin/login?error={}",
+            state.config.public_origin(),
+            why.code()
+        );
+        (target, None)
+    } else {
+        let mut deep_link =
+            url::Url::parse("vgames://auth/callback").map_err(ApiError::internal_from)?;
+        {
+            let mut q = deep_link.query_pairs_mut();
+            q.append_pair("error", why.code());
+            if let Some(cs) = client_state {
+                q.append_pair("client_state", cs);
+            }
+        }
+        let page = refused_page(deep_link.as_str(), why.message());
+        (deep_link.to_string(), Some(page))
+    };
+    let mut resp = match body {
+        Some(page) => (StatusCode::FOUND, Html(page)).into_response(),
+        None => StatusCode::FOUND.into_response(),
+    };
+    resp.headers_mut().insert(
+        header::LOCATION,
+        HeaderValue::from_str(&location).map_err(ApiError::internal_from)?,
+    );
+    resp.headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    Ok(resp)
+}
+
 fn append_cookie(headers: &mut HeaderMap, value: &str) {
     if let Ok(v) = HeaderValue::from_str(value) {
         headers.append(header::SET_COOKIE, v);
     }
+}
+
+/// Shown for a refused sign-in when the browser cannot hand the deep link to the launcher.
+/// `reason` is one of the fixed [`Refusal::message`] texts.
+fn refused_page(deep_link: &str, reason: &str) -> String {
+    format!(
+        r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Sign-in refused</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>body{{font:16px/1.5 system-ui,sans-serif;max-width:36rem;margin:3rem auto;padding:0 1rem}}</style>
+</head><body><h1>You're not signed in</h1>
+<p>{reason}</p>
+<p><a href="{deep_link}">Return to vgames</a></p></body></html>"#
+    )
 }
 
 /// Shown when the browser cannot hand the deep link to the launcher.
@@ -405,7 +505,7 @@ struct AdmittedUser {
 async fn admit_user(
     state: &AppState,
     profile: &discord::DiscordProfile,
-) -> ApiResult<AdmittedUser> {
+) -> ApiResult<Result<AdmittedUser, Refusal>> {
     if !(5..=25).contains(&profile.id.len()) || !profile.id.bytes().all(|b| b.is_ascii_digit()) {
         return Err(ApiError::internal_from(
             "discord returned an invalid user id",
@@ -421,10 +521,7 @@ async fn admit_user(
     .await?;
     match &existing {
         Some(u) if u.disabled_at.is_some() => {
-            return Err(ApiError::forbidden_code(
-                "user_disabled",
-                "This account is disabled",
-            ));
+            return Ok(Err(Refusal::UserDisabled));
         }
         Some(_) => {}
         None if is_bootstrap => {}
@@ -438,17 +535,11 @@ async fn admit_user(
                 .fetch_one(&state.db)
                 .await?;
                 if !listed {
-                    return Err(ApiError::forbidden_code(
-                        "not_allowlisted",
-                        "This server only admits invited Discord accounts",
-                    ));
+                    return Ok(Err(Refusal::NotAllowlisted));
                 }
             }
             RegistrationMode::Closed => {
-                return Err(ApiError::forbidden_code(
-                    "registration_closed",
-                    "This server is not accepting new accounts",
-                ));
+                return Ok(Err(Refusal::RegistrationClosed));
             }
         },
     }
@@ -508,7 +599,7 @@ async fn admit_user(
         }
     }
     tx.commit().await?;
-    Ok(AdmittedUser { id: row.id })
+    Ok(Ok(AdmittedUser { id: row.id }))
 }
 
 /// Exchange a login code or refresh token for tokens

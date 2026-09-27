@@ -228,6 +228,15 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   still use your indexes. Check a new hot query with `apps/api/bench/explain.sql` on the seeded database.
 - `apps/api/README.md`: operator guide (every environment variable, roles, `--migrate`, `--role`, storage
   backends, job kinds and schedules).
+- **Refused sign-ins for Agent 2 (launcher deep link) and Agent 3 (login views), contract commit below:** when
+  Discord or the registration policy turns a sign-in away, the callback now redirects to the client that
+  started it with `error=<code>` and no code: `vgames://auth/callback?error=<code>&client_state=…` (accept it
+  only with the pending `client_state`, then emit `auth-finished {outcome: failed}`) or
+  `/admin/login?error=<code>`. Codes: `access_denied`, `registration_closed`, `not_allowlisted`,
+  `user_disabled`, `sign_in_failed` (Discord rejected the code or was unreachable; offer to start again).
+- **Genres for Agent 3 (Browse filter):** `GET /v1/genres[?platform=]` → `{items: [{genre, count}]}` over the
+  packages `GET /v1/packages` lists, most common first, ≤ 200, `Cache-Control: private, max-age=60`. Types:
+  `vgames_proto::packages::{GenreList, GenreCount}` and the regenerated `packages/api-client`.
 - `Storage::sign_put_range(bucket, name, ttl, content_type, min, max)` (both backends).
 - Test harness: `apps/api/tests/it/common/mod.rs` (`app(pool)`, `send`, `body_json`, `json_request`) with
   `#[sqlx::test(migrations = "./migrations")]`.
@@ -245,8 +254,9 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
 - Contract commit (A1-T13, in the same PR as the feature): `prepareSaveBlobs` / `commitSaveSnapshot` answer 404 for an
   unknown package; 06 §4 now defines the quota as head + pushed + in-flight blobs, with commits trimming the oldest
   history (never the head) to fit, so a large save that changes every session never locks a player out.
-- Follow-up contract fix: `DELETE /v1/admin/packages/{id}` returns 428 without `If-Match` but does not list it;
-  I will add it (contract + handler) in a small `contract:` PR.
+- Contract commit (2026-09-27, in the same PR as its implementation, because the drift test fails on any
+  contract/code mismatch): refused sign-ins redirect with `error=<code>` (01-security §4.1, answers Agent 3's
+  question), new `GET /v1/genres` (answers Agent 3's genres request), `428` listed on package delete.
 
 ## Local environment notes
 - My tests use a dedicated Postgres 18 container on `127.0.0.1:55432` (`vgames-a1-pg`); ports 8080 and 4443

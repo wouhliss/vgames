@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT g.genre AS \"genre!\", count(DISTINCT p.id) AS \"count!\"\n           FROM packages p CROSS JOIN LATERAL unnest(p.genres) AS g(genre)\n           WHERE p.deleted_at IS NULL AND p.status = 'published'\n             AND EXISTS (SELECT 1 FROM package_releases r WHERE r.package_id = p.id\n                         AND ($1::text IS NULL OR r.platform = $1))\n           GROUP BY g.genre\n           ORDER BY count(DISTINCT p.id) DESC, g.genre\n           LIMIT 200",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "genre!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "6a29ce22d9870e31caad02956d38ec8bcef90ed79ecc192742ae68ef3537b670"
+}

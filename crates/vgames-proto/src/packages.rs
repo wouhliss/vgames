@@ -212,6 +212,24 @@ pub struct PackagePage {
     pub next_cursor: Option<String>,
 }
 
+/// One genre of the published catalog and how many listed packages carry it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct GenreCount {
+    #[cfg_attr(feature = "openapi", schema(max_length = 64))]
+    pub genre: String,
+    #[cfg_attr(feature = "openapi", schema(minimum = 1))]
+    pub count: i64,
+}
+
+/// `GET /v1/genres`: most common first, at most 200.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct GenreList {
+    #[cfg_attr(feature = "openapi", schema(max_items = 200))]
+    pub items: Vec<GenreCount>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AdminPackagePage {

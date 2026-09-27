@@ -746,3 +746,82 @@ async fn catalog_pages_visit_every_package_once_with_ties(pool: PgPool) {
             .is_empty()
     );
 }
+
+/// `GET /v1/genres` counts the packages `GET /v1/packages` would list: published, not deleted,
+/// with a release (for `platform`, a release on it), most common first, ties by name.
+#[sqlx::test(migrations = "./migrations")]
+async fn genres_count_the_listed_catalog(pool: PgPool) {
+    let app = app(pool.clone());
+    let (admin_id, _, admin) = seed_session(&pool, "admin").await;
+    let (_, _, user) = seed_session(&pool, "user").await;
+    // (title, genres, published, has a release)
+    let packages: [(&str, &[&str], bool, bool); 5] = [
+        ("One", &["rpg", "indie"], true, true),
+        ("Two", &["rpg"], true, true),
+        ("Three", &["puzzle"], true, true),
+        ("Draft", &["rpg", "horror"], false, true),
+        ("No Release", &["horror"], true, false),
+    ];
+    for (title, genres, published, release) in packages {
+        let (_, pkg, etag) = create(
+            &app,
+            &admin,
+            json!({ "title": title, "fetch_metadata": false }),
+        )
+        .await;
+        let id = pkg["id"].as_str().unwrap().to_string();
+        let status = if published { "published" } else { "draft" };
+        let resp = patch(
+            &app,
+            &admin,
+            &id,
+            etag.as_deref(),
+            json!({ "status": status, "genres": genres }),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        if release {
+            seed_release(&pool, id.parse().unwrap(), admin_id).await;
+        }
+    }
+
+    let resp = send(&app, get_req("/v1/genres")).await;
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+    let resp = send(&app, authed("GET", "/v1/genres", &user, None)).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(resp.headers()["cache-control"], "private, max-age=60");
+    assert_eq!(
+        body_json(resp).await,
+        json!({ "items": [
+            { "genre": "rpg", "count": 2 },
+            { "genre": "indie", "count": 1 },
+            { "genre": "puzzle", "count": 1 },
+        ]})
+    );
+    // seed_release publishes on linux only.
+    let linux = body_json(
+        send(
+            &app,
+            authed("GET", "/v1/genres?platform=linux-x86_64", &user, None),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(linux["items"].as_array().unwrap().len(), 3);
+    let windows = body_json(
+        send(
+            &app,
+            authed("GET", "/v1/genres?platform=windows-x86_64", &user, None),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(windows, json!({ "items": [] }));
+    let resp = send(
+        &app,
+        authed("GET", "/v1/genres?platform=amiga", &user, None),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+}
