@@ -9,6 +9,7 @@
 //! notifications or cancellation tokens.
 
 pub mod commands;
+pub mod compat;
 pub mod db;
 pub mod error;
 pub mod events;
