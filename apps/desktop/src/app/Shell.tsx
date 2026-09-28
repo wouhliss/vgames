@@ -9,7 +9,8 @@ import { events } from "../ipc";
 import { useTauriEvent } from "../ipc/events";
 import { useActiveServer, useOnboardingNeed, useServers } from "./queries";
 import styles from "./Shell.module.css";
-import { AccountMenu, DownloadIndicator, ServerSwitcher, UpdateBannerSlot } from "./TopBar";
+import { AccountMenu, DownloadIndicator, ServerSwitcher } from "./TopBar";
+import { UpdateBanner } from "./update/UpdateBanner";
 
 const NAV: { to: string; icon: IconName; label: () => string }[] = [
   { to: "/library", icon: "library", label: () => t("nav.library") },
@@ -97,7 +98,7 @@ export function Shell() {
           <DownloadIndicator />
           <AccountMenu server={server} />
         </header>
-        <UpdateBannerSlot />
+        <UpdateBanner />
         {offline.has(server.id) ? (
           <div className={styles.banner} role="status">
             <span className={styles.bannerIcon}>

@@ -40,6 +40,8 @@ export const queryKeys = {
   genres: ["catalog_genres"] as const,
   details: (packageId: string) => ["package_details", packageId] as const,
   downloads: ["downloads_list"] as const,
+  updater: ["updater_status"] as const,
+  whatsNew: (version: string) => ["updater_whats_new", version] as const,
 };
 
 export function createQueryClient(): QueryClient {

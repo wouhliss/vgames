@@ -30,6 +30,12 @@ function withInstalls(count: number, downloads = false): Partial<MockState> {
           downloadRate: 48 * 1024 ** 2,
         }
       : {}),
+    updater: {
+      current_version: "0.4.0",
+      state: { kind: "available", version: "0.9.1", date: "2026-09-20" },
+      blocked: null,
+    },
+    updateInstallMs: 4000,
   };
 }
 

@@ -96,6 +96,17 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   security failure fails 3 tests) and `e2e/downloads.spec.ts` (axe on the queue and the cancel dialog,
   live progress from the simulator, keyboard-only reorder/pause/cancel, controller-only).
 
+- A3-T10 — Update banner and What's new, on Agent 5's generated updater commands. A banner under the top bar
+  (non-blocking): "vgames X is available" → What's new / Later (Later hides that version for the session; a newer one
+  shows again), then download progress, then "Restarting…"; an install that failed is reported until dismissed, a
+  failed background check stays quiet. **What's new:** every release in `(installed, new]`, grouped New / Improved /
+  Fixed / Removed / Security, **plain text only**; a release with no entries is the single line "Stability and
+  performance improvements."; `latest.json` notes (fallback) as a plain list; the notes are a focusable scrolling
+  region, so long changelogs scroll with the keyboard or D-pad. **Install and restart** is disabled with its reason
+  while a game runs or while installing; while downloads are active it explains they pause first. Settings → Updates
+  opens the same dialog. Tests: 19 Vitest (incl. the zero-entries and long-changelog cases, markup shown as text) and
+  `e2e/update.spec.ts` (axe on banner and dialog, keyboard-only install, Escape/B return focus, long changelog scroll).
+
 ## In progress
 - A3-T07 — Settings, in parts. **Part 1** ([#52](https://github.com/wouhliss/vgames/pull/52), merged): one URL per section (`/settings/<section>`, a section list that
   works with arrows and the D-pad) with General (theme incl. "Same as system", reduce motion), Servers (address,

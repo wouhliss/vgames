@@ -1,11 +1,12 @@
-// Updates: the installed version and a manual check. (The update banner and What's new come with
-// A3-T10, on the same updater commands.)
-import { useQuery } from "@tanstack/react-query";
+// Updates: the installed version, a manual check, and What's new when an update is known (the same
+// dialog as the banner's).
 import { useState } from "react";
+import { updateVersion } from "../../app/update/model";
+import { useUpdaterStatus } from "../../app/update/useUpdater";
+import { WhatsNewDialog } from "../../app/update/WhatsNewDialog";
 import { Button } from "../../components/Button";
 import { t } from "../../i18n";
-import { commands, events, type UpdateCheck } from "../../ipc";
-import { useTauriEvent } from "../../ipc/events";
+import { commands, type UpdateCheck } from "../../ipc";
 import styles from "./Settings.module.css";
 import { Section } from "./SettingsPage";
 
@@ -21,11 +22,9 @@ function checkText(check: UpdateCheck): string {
 }
 
 export function UpdatesSection() {
-  const status = useQuery({
-    queryKey: ["updater_status"],
-    queryFn: () => commands.updaterStatus(),
-  });
-  useTauriEvent(events.updaterStatus, () => void status.refetch());
+  const status = useUpdaterStatus();
+  const version = updateVersion(status.data);
+  const [whatsNew, setWhatsNew] = useState(false);
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState<UpdateCheck | null>(null);
 
@@ -52,10 +51,23 @@ export function UpdatesSection() {
         <Button icon="refresh" loading={checking} onClick={() => void check()}>
           {checking ? t("settings.updates.checking") : t("settings.updates.check")}
         </Button>
+        {version ? (
+          <Button onClick={() => setWhatsNew(true)}>
+            {t("settings.updates.whatsNew", { version })}
+          </Button>
+        ) : null}
         <p role="status" className={styles.muted}>
           {result ? checkText(result) : ""}
         </p>
       </div>
+      {version ? (
+        <WhatsNewDialog
+          open={whatsNew}
+          onClose={() => setWhatsNew(false)}
+          version={version}
+          status={status.data}
+        />
+      ) : null}
     </Section>
   );
 }
