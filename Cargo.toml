@@ -103,7 +103,7 @@ tower-http = { version = "0.7", features = ["trace", "cors", "compression-gzip",
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring-webpki", "postgres", "macros", "migrate", "uuid", "time", "json", "derive"] }
 utoipa = { version = "5.5", features = ["axum_extras", "uuid", "time", "yaml"] }
 utoipa-axum = "0.2"
-utoipa-swagger-ui = { version = "9", features = ["axum", "vendored"] }
+utoipa-swagger-ui = { version = "10", features = ["axum", "vendored"] }
 google-cloud-storage = "1.18"
 google-cloud-auth = "1.16"
 google-cloud-gax = "1"
