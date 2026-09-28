@@ -89,8 +89,15 @@ SELECT (SELECT array_agg(id ORDER BY id) FROM users WHERE role = 'admin')[1 + g 
 FROM generate_series(1, 1000000) g;
 
 -- 2k devices (first 2k users), 20k direct conversations, 1M envelopes (~500 per device).
-INSERT INTO devices (user_id, display_name, platform)
-SELECT id, 'bench device', 'linux' FROM users ORDER BY id LIMIT 2000;
+-- The keys and signatures are synthetic and never used for cryptographic verification.
+INSERT INTO devices (user_id, display_name, platform, identity_key, signing_key, keys_signature)
+SELECT id, 'bench device', 'linux',
+       rtrim(encode(sha256(id::text::bytea), 'base64'), '='),
+       rtrim(encode(sha256(('signing:' || id)::bytea), 'base64'), '='),
+       rtrim(replace(encode(sha256(('signature:' || id)::bytea) || sha256(('signature2:' || id)::bytea), 'base64'), E'\n', ''), '=')
+FROM users ORDER BY id LIMIT 2000;
+
+UPDATE sessions s SET device_id = d.id FROM devices d WHERE s.user_id = d.user_id;
 
 INSERT INTO conversations (kind, direct_key, created_by)
 SELECT 'direct', 'bench:' || g, (SELECT id FROM users ORDER BY id LIMIT 1) FROM generate_series(1, 20000) g;

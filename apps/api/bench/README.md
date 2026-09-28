@@ -5,7 +5,9 @@ envelopes, 20k users and 200k jobs. The files are:
 
 - `seed.sql`: the synthetic data (fake digests and signatures).
 - `explain.sql`: `EXPLAIN (ANALYZE)` of the hot queries, written exactly as the handlers send them.
-- `load.sh`: the load test, a p99 < 100 ms budget at 200 rps.
+- `load.sh`: the catalog, release descriptor, inbox and download URL load tests, each with a
+  p99 < 100 ms budget at 200 rps. The seed binds the first 2,000 sessions to devices with
+  synthetic public keys so the inbox test exercises real envelope pages.
 
 ## Setup
 

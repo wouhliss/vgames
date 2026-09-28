@@ -86,10 +86,13 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   resolved file (after symlinks) must stay inside the canonical root. A missing directory or one without `index.html`
   fails config validation at startup.
 
-- A1-T16 — Hardening and performance (wouhliss/vgames#36, wouhliss/vgames#45, and the catalog follow-up PR).
+- A1-T16 — Hardening and performance (wouhliss/vgames#36, wouhliss/vgames#45, catalog PR #83,
+  and the inbox benchmark follow-up PR).
   - Rate limits on every route, problem+json for every error, property tests (#36).
-  - `apps/api/bench/`: seed (100k packages, 1M audit rows, 1M envelopes, 20k sessions, 200k jobs),
-    `explain.sql` (the handlers' SQL; `-v generic=1` for generic plans) and `load.sh` (`oha`).
+  - `apps/api/bench/`: seed (100k packages, 1M audit rows, 1M envelopes, 20k sessions, 2k bound
+    devices, 200k jobs), `explain.sql` (the handlers' SQL; `-v generic=1` for generic plans) and
+    `load.sh` (`oha`). The owner removed `cargo fuzz` in contract PR #12; the required no-panic
+    property tests run in the normal suite instead.
   - `db::connect` sets `plan_cache_mode = force_custom_plan`: list filters are `($n IS NULL OR …)`,
     which generic plans cannot index (catalog 39–173 ms, filtered audit 123–176 ms before).
   - Indexes: audit actor/action/target and job state on `(key, id DESC)`; GIN on `packages.genres`.
@@ -107,7 +110,7 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
     | Catalog, rare genre | 0.5 ms |
     | Catalog search: rare / two words / broad one word by recency / by title | 14 / 1.7 / 0.1 / 0.4 ms (warm, uncontended) |
     | Release descriptor, pack lookup | 0.2 ms |
-    | Inbox (Agent 4's query) | 0.8 ms |
+    | Inbox (Agent 4's query, 101 envelopes) | 0.3 ms |
     | Audit, any filter | ≤ 0.4 ms |
     | Job claim / admin job list | 0.07 / 0.1 ms |
 
@@ -116,15 +119,17 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
 
     | Endpoint | p50 | p99 | Budget (100 ms) |
     |---|---|---|---|
-    | Release descriptor | 2.6 ms | 4.4 ms | met |
-    | Download URLs | 2.7 ms | 4.2 ms | met |
-    | Catalog | 6.2 ms | 23.3 ms | met |
+    | Release descriptor | 2.7 ms | 3.8 ms | met |
+    | Download URLs | 2.8 ms | 7.9 ms | met |
+    | Catalog | 6.7 ms | 25.7 ms | met |
+    | Inbox (100 envelopes/page) | 6.7 ms | 19.4 ms | met |
 
-    Each follow-up run had 6,000 successful requests at 200 rps, with 25% catalog searches and
-    common words matching ~12% of 100k titles. Before the covering indexes, catalog p99 was
-    107–194 ms across four warm runs. The follow-up used a release build and the same seed and
-    load script; all three routes now meet the budget.
-  - Inbox budget: Agent 4's endpoint (A4-T05); its query runs on `message_envelopes_inbox_idx` in 0.8 ms.
+    Each route had 6,000 successful requests at 200 rps; the inbox returned 100 real seeded
+    envelopes per page. The catalog mix has 25% searches and common words matching ~12% of 100k
+    titles. Before the covering indexes, catalog p99 was 107–194 ms across four warm runs. The
+    follow-up used a release build and the same seed and load script; all four routes meet the budget.
+  - Inbox budget: Agent 4's endpoint (A4-T05); its query uses `message_envelopes_inbox_idx` and
+    takes 0.3 ms warm. Its full endpoint returned 100 envelopes per page at 19.4 ms p99, 200 rps.
 - A1-T17 — Handoff: the OpenAPI drift allowlist is empty, `apps/api/README.md` covers operation,
   roles, migrations, storage and workers, the interface inventory below is current, and the checked-in `.sqlx/`
   metadata compiles offline. The generated document matches the contract (2 tests); the API integration suite
@@ -251,7 +256,7 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   under the parallel 142-test API run; it passed alone and in the serial suite.
 
 ## Blockers / contract questions
-- No open Agent 1 release-performance blocker; the catalog follow-up brought p99 to 23.3 ms at 200 rps.
+- No open Agent 1 release-performance blocker; all four measured hot routes meet 100 ms p99 at 200 rps.
 - Catalog schema contract: `title_key` and its covering indexes are added by separate
   `contract: add catalog title key indexes` PR #82; the query change follows it.
 - Local CI on handoff commit `1755508`: SQLx, changelog, WASM, TypeScript, desktop E2E and workflows passed.
