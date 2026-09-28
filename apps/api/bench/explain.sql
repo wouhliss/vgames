@@ -120,10 +120,12 @@ EXECUTE packs(:'ver', '{0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15}');
 
 \echo '== 6. inbox (Agent 4, A4-T05: GET /v1/inbox for one device)'
 PREPARE inbox(uuid, uuid, bigint) AS
-SELECT id, conversation_id, sender_user_id, sender_device_id, olm_message_type, ciphertext, created_at
-FROM message_envelopes
-WHERE recipient_device_id = $1 AND ($2::uuid IS NULL OR id > $2) AND expires_at > now()
-ORDER BY id LIMIT $3;
+SELECT e.id, e.conversation_id, e.sender_user_id, e.sender_device_id, e.olm_message_type,
+       e.ciphertext, e.created_at, d.identity_key AS sender_identity_key
+FROM message_envelopes e JOIN devices d ON d.id = e.sender_device_id
+WHERE e.recipient_device_id = $1 AND e.expires_at > now() AND d.identity_key IS NOT NULL
+  AND ($2::uuid IS NULL OR e.id > $2)
+ORDER BY e.id LIMIT $3;
 EXPLAIN (ANALYZE, BUFFERS, COSTS OFF)
 EXECUTE inbox(:'dev', NULL, 101);
 

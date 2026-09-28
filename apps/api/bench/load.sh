@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Load test of the hot read paths (A1-T16): p99 < 100 ms at 200 rps on the catalog, the release
-# descriptor and download URLs. See README.md for the setup.
+# descriptor, inbox and download URLs. See README.md for the setup.
 #
 #   BENCH_DATABASE_URL=postgres://…/vgames_bench apps/api/bench/load.sh [base_url]
 #
@@ -31,10 +31,10 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
 # Bench user n has discord id 100000000000 + n and the access token below (seed.sql). Users 1-5
-# are admins. A run takes one of 16 blocks of 1,000 users by the minute (users 2,251-17,875),
-# and each scenario and phase uses its own 25 users in it. Back-to-back runs therefore do not
-# share users, and a block comes back at most every 16 minutes, so no user passes the
-# per-user limits (600 requests/min; 2,000 download URLs/hour = 4 runs x 240 calls x 2 packs).
+# are admins. Catalog/release/download runs rotate through users 2,251-17,875; inbox uses the
+# first 2,000 users, whose sessions are bound to seeded devices. Each scenario and phase uses
+# separate users, and no user reaches the per-user limits (600 requests/min; 2,000 download
+# URLs/hour).
 token() { printf 'vga_%s' "$(printf 'bench%d' $((100000000000 + $1)) | sed -e :a -e 's/^.\{1,42\}$/&A/;ta')"; }
 
 q() { psql "$DB" -XAtq -v ON_ERROR_STOP=1 -c "$1"; }
@@ -70,6 +70,11 @@ for _ in range(2000):
 EOF
 awk -v b="$BASE" -F'|' '{print b "/v1/packages/" $1 "/releases/" $2}' "$work/targets" > "$work/release.urls"
 awk -v b="$BASE" -F'|' '{print b "/v1/versions/" $3 "/download-urls"}' "$work/targets" > "$work/download.urls"
+printf '%s/v1/inbox?limit=100\n' "$BASE" > "$work/inbox.urls"
+
+bound=$(q "SELECT count(*) FROM sessions s JOIN devices d ON d.id = s.device_id
+            WHERE d.identity_key IS NOT NULL AND s.revoked_at IS NULL")
+(( bound >= 2000 )) || { echo "inbox devices are not seeded in $DB (run the current seed.sql)" >&2; exit 2; }
 
 per_caller=$((RATE / CALLERS))
 block=$(( ($(date +%s) / 60) % 16 ))
@@ -96,7 +101,12 @@ run() {
   shift 2
   scenario=$((scenario + 1))
   local dir="$work/$name"
-  local first=$((2000 + block * 1000 + 250 * scenario))
+  local first
+  if [[ $name == inbox ]]; then
+    first=$((100 + block * 100))
+  else
+    first=$((2000 + block * 1000 + 250 * scenario))
+  fi
   phase "$dir.warmup" "$WARMUP" $((first + 100)) "$urls" "$@"
   phase "$dir" "$DURATION" "$first" "$urls" "$@"
   python3 - "$name" "$BUDGET_MS" "$dir"/*.csv <<'EOF' || status=1
@@ -122,6 +132,7 @@ EOF
 echo "rate ${RATE} rps for ${DURATION} per scenario (after ${WARMUP} warm-up), ${CALLERS} callers, budget p99 < ${BUDGET_MS} ms"
 run catalog "$work/catalog.urls"
 run release-descriptor "$work/release.urls"
+run inbox "$work/inbox.urls"
 # Two packs per call: download URLs are limited per URL (2,000 per user per hour).
 run download-urls "$work/download.urls" -m POST -T application/json -d '{"packs":[0,1]}'
 exit $status
