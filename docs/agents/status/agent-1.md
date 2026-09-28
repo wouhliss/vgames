@@ -94,9 +94,10 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
     which generic plans cannot index (catalog 39–173 ms, filtered audit 123–176 ms before).
   - Indexes: audit actor/action/target and job state on `(key, id DESC)`; GIN on `packages.genres`.
   - Catalog: `sort=recent` pages by `(updated_at, id) DESC`, matching its cursor (it could repeat or
-    skip packages sharing an `updated_at`); genre filter `genres @> ARRAY[$genre]`; searches sort
-    their matches before checking for a release.
-  - **Plans** (`explain.sql`, custom plans, warm; no sequential scan on a hot path):
+    skip packages sharing an `updated_at`); genre filter `genres @> ARRAY[$genre]`. A stored, generated
+    lowercase title and two partial covering indexes let both catalog sorts scan in page order and
+    stop after enough matches, including broad searches (catalog follow-up PR).
+  - **Plans** (`explain.sql`, custom plans, warm; a rare search miss may scan the catalog):
 
     | Query | Time |
     |---|---|
@@ -104,7 +105,7 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
     | Catalog first or cursor page (title or recent) | 0.2–0.5 ms |
     | Catalog, linux only / genre + linux | 4 / 5 ms |
     | Catalog, rare genre | 0.5 ms |
-    | Catalog search: rare / two words / broad one word by recency / by title | 1 / 10 / 21–35 / ~40 ms |
+    | Catalog search: rare / two words / broad one word by recency / by title | 14 / 1.7 / 0.1 / 0.4 ms (warm, uncontended) |
     | Release descriptor, pack lookup | 0.2 ms |
     | Inbox (Agent 4's query) | 0.8 ms |
     | Audit, any filter | ≤ 0.4 ms |
@@ -115,17 +116,14 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
 
     | Endpoint | p50 | p99 | Budget (100 ms) |
     |---|---|---|---|
-    | Release descriptor | 4–5 ms | 10–12 ms | met |
-    | Download URLs | 4–5 ms | 9–10 ms | met |
-    | Catalog | 18–21 ms | 107–194 ms over four warm runs | **not met** |
+    | Release descriptor | 2.6 ms | 4.4 ms | met |
+    | Download URLs | 2.7 ms | 4.2 ms | met |
+    | Catalog | 6.2 ms | 23.3 ms | met |
 
-    The catalog mix is 25% searches, half of them one common word matching ~12% of 100k titles.
-    Such a search costs ~40 ms of CPU: a trigram recheck of ~12k rows plus a sort under the
-    `en_US` collation. Plans that walk the title index instead are faster for words spread
-    through titles, but can scan most of the index for a title's first word (its matches sit
-    in one alphabetical block): `'%shadow quest%'` took 235 ms that way. So I kept the bounded
-    plan. Browsing, filters and specific searches are well inside the budget. A faster broad
-    search needs a product decision (ranked or capped results, or byte-order title sorting).
+    Each follow-up run had 6,000 successful requests at 200 rps, with 25% catalog searches and
+    common words matching ~12% of 100k titles. Before the covering indexes, catalog p99 was
+    107–194 ms across four warm runs. The follow-up used a release build and the same seed and
+    load script; all three routes now meet the budget.
   - Inbox budget: Agent 4's endpoint (A4-T05); its query runs on `message_envelopes_inbox_idx` in 0.8 ms.
 - A1-T17 — Handoff: the OpenAPI drift allowlist is empty, `apps/api/README.md` covers operation,
   roles, migrations, storage and workers, the interface inventory below is current, and the checked-in `.sqlx/`
@@ -133,7 +131,7 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   passes serially (141 passed, 1 GCS emulator test ignored because that emulator is not configured).
 
 ## In progress
-- Broad catalog search still misses the T16 100 ms p99 load budget; see the measured results above.
+- None.
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_api::error::ApiError` / `ApiResult` (problem+json), `vgames_api::http::json::{Json, Validate}`
@@ -253,8 +251,9 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   under the parallel 142-test API run; it passed alone and in the serial suite.
 
 ## Blockers / contract questions
-- Release performance blocker: the broad catalog search mix measured 107–194 ms p99 at 200 rps,
-  above the 100 ms budget in 00-overview §7. Browsing, filters and specific searches met the budget.
+- No open Agent 1 release-performance blocker; the catalog follow-up brought p99 to 23.3 ms at 200 rps.
+- Catalog schema contract: `title_key` and its covering indexes are added by separate
+  `contract: add catalog title key indexes` PR #82; the query change follows it.
 - Local CI on handoff commit `1755508`: SQLx, changelog, WASM, TypeScript, desktop E2E and workflows passed.
   Rust failed on the parallel socket-presence timeout; desktop and supply-chain jobs could not start because
   this machine lacks `pkg-config` and `cargo-deny` (sudo requires a password); gitleaks flagged the historical
