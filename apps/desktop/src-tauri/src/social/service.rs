@@ -13,14 +13,19 @@ use vgames_proto::social::{PresenceUpdate, normalize_friend_code};
 
 use super::api::{SocialApi, http_client};
 use super::model::{
-    BlockedUser, Friend, FriendCode, FriendList, FriendState, FriendTarget, Presence,
-    SocialConnection, SocialError, SocialSettings, UserSummary,
+    BlockedUser, Conversation, DeviceNotice, Friend, FriendCode, FriendList, FriendState,
+    FriendTarget, Message, MessageStatus, Presence, SocialConnection, SocialError, SocialSettings,
+    UserSummary,
 };
 use super::ports::{IdleSource, SessionSlot};
 use super::presence;
 use super::realtime::{self, Incoming, RealtimeHandle, Timing};
+use super::store::Keys;
 use crate::db::{Db, settings};
 use crate::events::{AppEvent, EventBus};
+
+mod messaging;
+pub use messaging::{default_device_name, platform};
 
 /// Where UI notifications go (Tauri events in the app, a recorder in tests).
 pub trait SocialEvents: Send + Sync + 'static {
@@ -28,6 +33,16 @@ pub trait SocialEvents: Send + Sync + 'static {
     fn friends_changed(&self, friends: &FriendList);
     fn presence_changed(&self, user_id: Uuid, presence: &Presence);
     fn friend_request_received(&self, user: &UserSummary);
+    fn conversations_changed(&self, conversations: &[Conversation]);
+    fn message_received(&self, message: &Message);
+    fn message_status_changed(
+        &self,
+        message_id: Uuid,
+        conversation_id: Uuid,
+        status: MessageStatus,
+    );
+    fn typing(&self, conversation_id: Uuid, user_id: Uuid);
+    fn device_notice(&self, conversation_id: Option<Uuid>, notice: &DeviceNotice);
 }
 
 /// The persisted social settings.
@@ -92,6 +107,11 @@ struct Inner {
     inputs: Mutex<presence::Inputs>,
     /// What was last sent, and to which server.
     sent: Mutex<Option<(Uuid, PresenceUpdate)>>,
+    /// Keychain keys for the Olm pickles and the history at rest.
+    keys: Arc<Keys>,
+    /// The name this install registers its chat device under.
+    device_name: String,
+    messaging: messaging::MessagingState,
 }
 
 /// Cheap to clone; every clone talks to the same state.
@@ -101,13 +121,17 @@ pub struct SocialService {
 }
 
 impl SocialService {
-    /// Starts the connection, event and presence tasks; they stop when `shutdown` fires.
+    /// Starts the connection, event, presence and outbox tasks; they stop when `shutdown`
+    /// fires. `keys` come from the keychain ([`Keys::from_secret_store`]).
+    #[allow(clippy::too_many_arguments)]
     pub async fn start(
         sessions: SessionSlot,
         db: Db,
         bus: &EventBus,
         events: Arc<dyn SocialEvents>,
         idle: Arc<dyn IdleSource>,
+        keys: Arc<Keys>,
+        device_name: String,
         timing: Timing,
         shutdown: CancellationToken,
     ) -> Result<Self, SocialError> {
@@ -134,6 +158,9 @@ impl SocialService {
                     ..presence::Inputs::default()
                 }),
                 sent: Mutex::new(None),
+                keys,
+                device_name,
+                messaging: messaging::MessagingState::default(),
             }),
         };
         tokio::spawn(service.clone().incoming_loop(rx, shutdown.clone()));
@@ -143,6 +170,7 @@ impl SocialService {
             timing.idle_poll,
             shutdown.clone(),
         ));
+        tokio::spawn(service.clone().outbox_loop(shutdown.clone()));
         tokio::spawn(service.clone().network_loop(timing.network_poll, shutdown));
         Ok(service)
     }
@@ -473,10 +501,11 @@ impl SocialService {
 
     async fn handle(&self, event: Incoming) {
         match event {
-            Incoming::Connected { .. } => {
+            Incoming::Connected { hello, .. } => {
                 *lock(&self.inner.sent) = None;
                 self.publish_presence();
                 self.resync().await;
+                self.messaging_connected(&hello).await;
             }
             Incoming::Event {
                 server_id,
@@ -519,6 +548,9 @@ impl SocialService {
                     }
                 }
                 kinds::FRIEND_ACCEPTED | kinds::FRIEND_REMOVED => self.resync().await,
+                kinds::INBOX_NEW | kinds::DEVICE_ADDED | kinds::DEVICE_REVOKED | kinds::TYPING => {
+                    self.messaging_event(server_id, &kind, data).await;
+                }
                 _ => {}
             },
         }

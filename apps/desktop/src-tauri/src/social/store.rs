@@ -33,6 +33,9 @@ use super::model::{
 use super::payload::{self, Content, Decoded, Payload, PayloadError};
 use super::secrets::{CHAT_KEY, PICKLE_KEY, SecretError, SecretStore};
 
+mod conversations;
+pub use conversations::*;
+
 /// Give up on an outgoing message after this many failed attempts (it shows as failed and
 /// can be retried by the user).
 pub const OUTBOX_MAX_ATTEMPTS: u32 = 12;
@@ -208,6 +211,36 @@ pub fn ensure_account(
     Ok(out)
 }
 
+/// Replaces the Olm account of `server` with a fresh one (the server refused the old keys:
+/// the device was revoked from another install). Sessions made with the old account are
+/// dropped; pins, verification and history stay. The new account needs registering.
+pub fn replace_account(
+    conn: &mut Connection,
+    keys: &Keys,
+    server: Uuid,
+    now: i64,
+) -> Result<AccountInfo, StoreError> {
+    let tx = conn.transaction()?;
+    let old = require_account(&tx, keys, server)?;
+    let account = OlmAccount::new();
+    tx.execute(
+        "UPDATE social_accounts SET device_id = NULL, account_pickle = ?2, updated_at = ?3 WHERE server_id = ?1",
+        params![text(server), account.pickle(&keys.pickle), now],
+    )?;
+    tx.execute(
+        "DELETE FROM social_olm_sessions WHERE server_id = ?1",
+        [text(server)],
+    )?;
+    let row = AccountRow {
+        user_id: old.user_id,
+        device_id: None,
+        account,
+    };
+    let out = info(&row);
+    tx.commit()?;
+    Ok(out)
+}
+
 /// Deletes every social row of `server` (sign-out of a user, server removed by hand).
 pub fn wipe_server(conn: &Connection, server: Uuid) -> Result<(), StoreError> {
     for table in [
@@ -281,6 +314,29 @@ pub fn prepare_key_upload(
         one_time_keys,
         fallback_key,
     })
+}
+
+/// Keys to upload so the server holds [`crypto::INITIAL_ONE_TIME_KEYS`] unclaimed one-time
+/// keys again (`available` is the server's count), plus a fallback key when the server has
+/// none. Keys of an earlier failed upload are sent again first; the total never exceeds
+/// the server's cap.
+pub fn prepare_top_up(
+    conn: &mut Connection,
+    keys: &Keys,
+    server: Uuid,
+    available: usize,
+    rotate_fallback: bool,
+    now: i64,
+) -> Result<OneTimeKeysUpload, StoreError> {
+    let pending = {
+        let row = require_account(conn, keys, server)?;
+        row.account.unpublished_keys().0.len()
+    };
+    let have = available.saturating_add(pending);
+    let new = crypto::INITIAL_ONE_TIME_KEYS
+        .saturating_sub(have)
+        .min(vgames_proto::social::MAX_UNCLAIMED_ONE_TIME_KEYS.saturating_sub(have));
+    prepare_key_upload(conn, keys, server, new, rotate_fallback, now)
 }
 
 /// Call after the server stored the keys from [`prepare_key_upload`].
@@ -638,6 +694,45 @@ fn save_session(
         ],
     )?;
     Ok(())
+}
+
+/// Where a message to `users` goes: their pinned, non-revoked devices (this install's own
+/// device excluded), split into sendable ones and ones whose key changed.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Targets {
+    /// `(user, device)` pairs that can receive.
+    pub trusted: Vec<(Uuid, Uuid)>,
+    /// `(user, device)` pairs whose key changed: sending is blocked until the user trusts them.
+    pub key_changed: Vec<(Uuid, Uuid)>,
+    /// Users with no pinned device at all (their device list was never fetched).
+    pub never_synced: Vec<Uuid>,
+}
+
+pub fn targets(
+    conn: &Connection,
+    keys: &Keys,
+    server: Uuid,
+    users: &[Uuid],
+) -> Result<Targets, StoreError> {
+    let me = require_account(conn, keys, server)?;
+    let mut out = Targets::default();
+    for user in users {
+        let pins = pinned_devices(conn, server, *user)?;
+        if pins.is_empty() {
+            out.never_synced.push(*user);
+        }
+        for p in pins {
+            if Some(p.device.device_id) == me.device_id {
+                continue;
+            }
+            match p.state {
+                PinState::Trusted => out.trusted.push((*user, p.device.device_id)),
+                PinState::KeyChanged => out.key_changed.push((*user, p.device.device_id)),
+                PinState::Revoked => {}
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// Devices (of `candidates`) with no Olm session yet: claim a key for each before sending.
