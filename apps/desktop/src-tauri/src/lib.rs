@@ -144,6 +144,7 @@ fn setup(app: &AppHandle, profile: Option<String>) -> Result<(), Box<dyn std::er
         state.shutdown.child_token(),
     );
     spawn_connect_active(Arc::clone(&servers));
+    launch::session::spawn_reattach(state.db.clone(), state.games.clone());
 
     // Deep links: from the first launch's arguments, and later from the OS
     // (macOS open-url) or a second instance (forwarded by single-instance).
@@ -243,6 +244,8 @@ fn on_run_event(app: &AppHandle, event: RunEvent) {
     if let RunEvent::Exit = event {
         if let Some(state) = app.try_state::<AppState>() {
             state.shutdown.cancel();
+            // Games keep running; the next launcher run re-attaches.
+            state.games.detach_all();
         }
         tracing::info!("vgames exiting");
         if let Some(slot) = app.try_state::<LogGuardSlot>() {

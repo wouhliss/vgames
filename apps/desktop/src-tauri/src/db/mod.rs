@@ -14,6 +14,7 @@
 
 pub mod collections;
 pub mod download_jobs;
+pub mod installs;
 pub mod libraries;
 pub mod migrations;
 pub mod settings;
