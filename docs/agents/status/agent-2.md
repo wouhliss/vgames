@@ -37,6 +37,9 @@
   (suspended spawn + pre-resume hook, Job Object + completion port) and macOS (kqueue `NOTE_EXIT`) trackers,
   the cloud-save and controller hooks, and the launch commands (these need T07's trust state).
 
+- A2-T12 controllers: mapping tables and the emulation decision are done (below). Still to do: the SDL3 input thread,
+  ViGEmBus/uinput/CoreHID backends, physical-pad hiding, rumble, the tester events, the latency benchmark and the soak test.
+
 ## Interfaces delivered (other agents may now rely on these)
 - **Event bus** (A2-T01, for Agents 3, 4, 5): `vgames_desktop_lib::events::{EventBus, AppEvent}`,
   reached through `State<AppState>` (`state.bus.subscribe()` / `publish()`). Variants: `GameStarted`,
@@ -128,6 +131,9 @@
   install folder until the catalog title cache exists. Uninstall calls `commands::shortcuts::remove_for_package`,
   which never deletes a file the player changed. Icons (`.ico`/PNG from the cover) and the `vgames://launch` route come
   with T10's parser, after #47.
+- **Controller mapping** (A2-T12): `controllers::mapping::{Mapper::new(kind, &Profile), Mapper::map(&PadState) ->
+  XReport, Profile::parse(json)}` (the profile is the JSON in `controller_profiles.profile`) and
+  `controllers::decision::{decide(&LaunchControllers, pad_kind) -> PadDecision, EmulationMode}`.
 - **Pre-launch checks** (A2-T09): `launch::prelaunch::{Prelaunch::{check, forget}, Checked {manifest, target},
   PrelaunchError::{NotInstalled, Reverify, Integrity, ExecutableModified, …}}`. Call `forget(root)` after an
   update, repair, move or uninstall. Test support: `vgames_transfer::testkit::{TestPackage::build_executable,
