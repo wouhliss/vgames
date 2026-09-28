@@ -19,7 +19,7 @@ pub enum LibraryError {
     #[error("library path is a system folder or home folder")]
     SystemFolder,
     #[error("library path overlaps an existing library")]
-    Overlap,
+    Overlap { other: PathBuf, nested: bool },
     #[error("library path is not a directory")]
     NotDirectory,
     #[error("library already has a marker")]
@@ -53,7 +53,7 @@ pub struct LibraryRoot {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LibraryPresence {
-    Online { free_bytes: u64 },
+    Online { free_bytes: u64, total_bytes: u64 },
     Offline,
     MarkerChanged,
 }
@@ -78,11 +78,17 @@ pub fn validate_new_root(path: &Path, existing: &[PathBuf]) -> Result<PathBuf, L
     if is_system_folder(&root) {
         return Err(LibraryError::SystemFolder);
     }
-    if existing
+    if let Some(other) = existing
         .iter()
-        .any(|other| root.starts_with(other) || other.starts_with(&root))
+        .find(|other| root.starts_with(other) || other.starts_with(&root))
     {
-        return Err(LibraryError::Overlap);
+        if &root == other {
+            return Err(LibraryError::AlreadyRegistered);
+        }
+        return Err(LibraryError::Overlap {
+            other: other.clone(),
+            nested: root.starts_with(other),
+        });
     }
     let probe = root.join(format!(".vgames-probe-{}", Uuid::now_v7()));
     let file = OpenOptions::new()
@@ -169,13 +175,22 @@ pub fn inspect_root(root: &LibraryRoot) -> Result<LibraryPresence, LibraryError>
         || !fs::metadata(&canonical)
             .map_err(|error| LibraryError::io("inspect", &canonical, error))?
             .is_dir()
-        || read_marker(&canonical)? != Some(root.id)
     {
         return Ok(LibraryPresence::MarkerChanged);
     }
+    match read_marker(&canonical) {
+        Ok(Some(id)) if id == root.id => {}
+        Ok(_) | Err(LibraryError::InvalidMarker) => return Ok(LibraryPresence::MarkerChanged),
+        Err(error) => return Err(error),
+    }
     let free_bytes = sys::available_space(&canonical)
         .map_err(|error| LibraryError::io("inspect free space of", &canonical, error))?;
-    Ok(LibraryPresence::Online { free_bytes })
+    let total_bytes = sys::total_space(&canonical)
+        .map_err(|error| LibraryError::io("inspect capacity of", &canonical, error))?;
+    Ok(LibraryPresence::Online {
+        free_bytes,
+        total_bytes,
+    })
 }
 
 fn read_marker(root: &Path) -> Result<Option<Uuid>, LibraryError> {
@@ -253,11 +268,11 @@ mod tests {
         let first = fs::canonicalize(first).unwrap();
         assert!(matches!(
             validate_new_root(&child, std::slice::from_ref(&first)),
-            Err(LibraryError::Overlap)
+            Err(LibraryError::Overlap { nested: true, .. })
         ));
         assert!(matches!(
             validate_new_root(dir.path(), &[first]),
-            Err(LibraryError::Overlap)
+            Err(LibraryError::Overlap { nested: false, .. })
         ));
     }
 
@@ -274,10 +289,10 @@ mod tests {
             Err(LibraryError::AlreadyRegistered)
         ));
         fs::write(library.path.join(MARKER), b"wrong").unwrap();
-        assert!(matches!(
-            inspect_root(&library),
-            Err(LibraryError::InvalidMarker)
-        ));
+        assert_eq!(
+            inspect_root(&library).unwrap(),
+            LibraryPresence::MarkerChanged
+        );
         fs::remove_file(library.path.join(MARKER)).unwrap();
         assert_eq!(
             inspect_root(&library).unwrap(),

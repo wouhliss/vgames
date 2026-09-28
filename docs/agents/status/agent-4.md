@@ -72,8 +72,26 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   instances and the 24 h idle soak need a signed-in launcher session, i.e. Agent 2's session manager (A2-T07); they
   move to A4-T12.
 
+- A4-T08 — Launcher: messaging integration. `social/service/messaging.rs` (registration after every `hello`,
+  `device_keys_in_use` → fresh account, one-time keys topped up to 50 after registration and after pre-key
+  messages, outbox with backoff on one timer, inbox drain → decrypt → store → ack, `unknown_devices` and
+  `400 unknown_recipient` handling, device notices, safety-number and device commands), `social/store/conversations.rs`
+  (conversation cache, unread counts), `store::{prepare_top_up, replace_account, targets}`, server `social/typing.rs`
+  (the realtime `typing` fan-out 05-social-notes §3 promised; it was missing). Found through the real API:
+  vodozemac numbers fallback and one-time keys separately, so fallback key ids collided with one-time key ids and
+  every key upload failed → fallback ids are prefixed `F` (05-social-notes §2.1).
+  Evidence: `apps/desktop/src-tauri/tests/social_chat.rs` runs three launchers against the **real API in process**
+  on PostgreSQL (`VGAMES_TEST_DATABASE_URL=… cargo test -p vgames-desktop --test social_chat -- --ignored`, 6–7 s,
+  6/6 green runs): Alice ↔ Bob (pre-key, then normal messages), unread counts and mark-read, typing, equal safety
+  numbers; Bob's second computer joins → Alice gets a `new_device` notice in the conversation, the safety number
+  changes, the new device receives new messages (and copies of Bob's own) but not the three old ones; Bob revokes
+  it → `device_revoked` notice, no envelope is addressed to it afterwards; no plaintext in `message_envelopes`.
+  5 new store tests (fallback ids, top-up math, account replacement, send targets, conversation cache), 3 unit tests
+  (error classification, refused-envelope parsing, device names), API test `typing_reaches_the_other_members_only`
+  (members only, throttle, non-members, blocks, malformed frames).
+
 ## In progress
-- A4-T08 — Launcher: messaging integration
+- A4-T09 — Launcher: invites client
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_desktop_lib::social::ports::SessionSlot` (A4-T07, **for Agent 2's A2-T07**): call `set(Some(ServerSession
@@ -83,6 +101,12 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   05-social-notes §5 (`social_connection`, `social_settings_get/set`, `friends_list`, `friend_code_create`,
   `friend_request_send`, `friend_accept/decline/remove`, `user_block/unblock`, `blocks_list`, `user_profile`) and
   the four events above are in `bindings.ts`.
+- **Agent 3 (A4-T08):** the messaging rows of 05-social-notes §5 are in `bindings.ts`: `conversations_list`,
+  `conversation_open_direct`, `conversation_create_party`, `messages_list`, `message_send`, `message_retry`,
+  `conversation_mark_read`, `typing_start`, `contact_security`, `contact_set_verified`, `contact_trust_device`,
+  `devices_list`, `device_revoke`; events `conversations-changed`, `message-received`, `message-status-changed`,
+  `typing`, `device-notice` (binding keys `conversationsChanged`, …, `deviceNotice`). The device OS type is
+  `DevicePlatform` (the UI already has a `Platform`). Behaviour details: 05-social-notes §3.1.
 - `vgames_proto::social::{DeviceList, DeviceKeysList, ClaimedKeyList, MAX_UNCLAIMED_ONE_TIME_KEYS, MAX_CLAIM_DEVICES}` (A4-T04).
 - `vgames_proto::social` (A4-T02): social/messaging/invite DTOs, `canonical::{device_keys, one_time_key}` (the exact
   signed strings; server and launcher share them), `normalize_friend_code`, `is_valid_join_secret`.
@@ -96,6 +120,10 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   state and launch-with-args internal APIs (for invites, A4-T09), launch-plan hook for overlay env/injection (A4-T10).
   Until they land, Agent 4 codes against small traits in `social::ports` and tests with in-process fakes.
 - From Agent 3: a Vite entry for the overlay window (`apps/desktop/src/overlay/`, A4-T10).
+- From Agent 5 (CI, A4-T08): `tests/social_chat.rs` (launchers against the real API) needs PostgreSQL next to
+  WebKitGTK. Please add a `postgres:18` service to the desktop job and run
+  `cargo test -p vgames-desktop --test social_chat -- --ignored` with `VGAMES_TEST_DATABASE_URL` set to its
+  maintenance database (the test creates and drops its own database).
 - From Agent 5 (CI): the desktop job only runs clippy. Please also run `cargo test -p vgames-desktop --locked`
   there (WebKitGTK is already installed in that job); the E2EE tests live in that crate.
 
@@ -103,6 +131,9 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   failed once locally under a full `cargo test` run (line 211) and passed 3/3 alone; it looks timing-sensitive.
 
 ## Cross-area edits (small, for the owners' review)
+- Agent 2 (A4-T08): `commands/mod.rs`, `commands/names.rs`, `capabilities/main.json` list the 13 messaging commands
+  and 5 events; `bindings.ts` regenerated; `permissions/autogenerated/*` for them; `Cargo.toml` dev-dependencies
+  `vgames-api` and `sqlx` (existing workspace dependencies; tests only).
 - Agent 3 (A4-T07): `src/ipc/contract/settings.ts` imports the generated `SocialSettings` instead of declaring
   it (both exports collided in `src/ipc/index.ts`); the requested hotkey errors stay there for A4-T10.
 - Agent 2 (A4-T07): `lib.rs` `setup()` calls `social::commands::init`; `commands/mod.rs` registers the social
@@ -121,5 +152,7 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   also decrypts and encrypts at rest; consider adding `/apps/desktop/src-tauri/src/social/store*` to that section.
 
 ## Blockers / contract questions
+- `contract:` `05-social-notes.md` v1.1 (A4-T08): §2.1 fallback key ids prefixed `F`; new §3.1 (launcher messaging
+  behaviour, typing throttle). Additive; no name or payload in §5–§6 changed.
 - `contract:` `docs/architecture/05-social-notes.md` (new, A4-T01). Additive realtime changes in its §3
   (`presence.changed.package_title`, server → client `typing`) need a matching line in 03-api §6.

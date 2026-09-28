@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-library-pick-folder"
+description = "Enables the library_pick_folder command without any pre-configured scope."
+commands.allow = ["library_pick_folder"]
+
+[[permission]]
+identifier = "deny-library-pick-folder"
+description = "Denies the library_pick_folder command without any pre-configured scope."
+commands.deny = ["library_pick_folder"]

@@ -98,6 +98,23 @@ pub fn available_space(path: &Path) -> io::Result<u64> {
     Ok((st.f_bavail as u64).saturating_mul(st.f_frsize as u64))
 }
 
+/// Total bytes on the filesystem holding `path`.
+#[cfg(unix)]
+#[allow(unsafe_code)]
+pub fn total_space(path: &Path) -> io::Result<u64> {
+    let c = c_path(path)?;
+    let mut st = std::mem::MaybeUninit::<libc::statvfs>::zeroed();
+    // SAFETY: `c` is NUL-terminated and `st` is a writable statvfs.
+    let rc = unsafe { libc::statvfs(c.as_ptr(), st.as_mut_ptr()) };
+    if rc != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: statvfs succeeded, so it initialized `st`.
+    let st = unsafe { st.assume_init() };
+    #[allow(clippy::unnecessary_cast)]
+    Ok((st.f_blocks as u64).saturating_mul(st.f_frsize as u64))
+}
+
 #[cfg(windows)]
 #[allow(unsafe_code)]
 pub fn available_space(path: &Path) -> io::Result<u64> {
@@ -117,6 +134,27 @@ pub fn available_space(path: &Path) -> io::Result<u64> {
         return Err(io::Error::last_os_error());
     }
     Ok(available)
+}
+
+#[cfg(windows)]
+#[allow(unsafe_code)]
+pub fn total_space(path: &Path) -> io::Result<u64> {
+    use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+    let wide = wide_path(path);
+    let mut total = 0u64;
+    // SAFETY: `wide` is NUL-terminated; the out pointer is valid, the others may be null.
+    let ok = unsafe {
+        GetDiskFreeSpaceExW(
+            wide.as_ptr(),
+            std::ptr::null_mut(),
+            &mut total,
+            std::ptr::null_mut(),
+        )
+    };
+    if ok == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(total)
 }
 
 /// The largest file the filesystem holding `path` accepts, when it is small
@@ -265,6 +303,7 @@ mod tests {
     fn free_space_and_limits_are_readable() {
         let dir = tempfile::tempdir().unwrap();
         assert!(available_space(dir.path()).unwrap() > 0);
+        assert!(total_space(dir.path()).unwrap() >= available_space(dir.path()).unwrap());
         assert_eq!(max_file_size(dir.path()).unwrap(), None);
     }
 

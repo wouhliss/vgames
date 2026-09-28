@@ -16,7 +16,7 @@ SET plan_cache_mode = force_custom_plan;
 -- Sample ids (EXECUTE cannot take subqueries).
 SELECT r.package_id AS pkg, r.version_id AS ver FROM package_releases r ORDER BY r.package_id OFFSET 777 LIMIT 1 \gset
 SELECT array_agg(id)::text AS page_ids
-FROM (SELECT id FROM packages WHERE status = 'published' ORDER BY lower(title) LIMIT 50) x \gset
+FROM (SELECT id FROM packages WHERE status = 'published' ORDER BY title_key LIMIT 50) x \gset
 SELECT id AS dev FROM devices ORDER BY id OFFSET 500 LIMIT 1 \gset
 SELECT id AS admin_id FROM users WHERE role = 'admin' ORDER BY id OFFSET 2 LIMIT 1 \gset
 
@@ -31,7 +31,7 @@ EXPLAIN (ANALYZE, BUFFERS, COSTS OFF) EXECUTE session_lookup(sha256(('vga_' || r
 \echo '== 2. catalog page (GET /v1/packages)'
 -- (genre, cursor key, platform, recent, cursor id, limit + 1)
 PREPARE catalog(text, text, text, boolean, uuid, bigint) AS
-SELECT p.id, lower(p.title) AS title_key, p.updated_at
+SELECT p.id, p.title_key, p.updated_at
 FROM packages p
 WHERE p.deleted_at IS NULL AND p.status = 'published'
   AND EXISTS (SELECT 1 FROM package_releases r WHERE r.package_id = p.id
@@ -39,39 +39,30 @@ WHERE p.deleted_at IS NULL AND p.status = 'published'
   AND ($1::text IS NULL OR p.genres @> ARRAY[$1::text])
   AND ($2::text IS NULL OR
        CASE WHEN $4 THEN (p.updated_at, p.id) < ($2::timestamptz, $5)
-            ELSE (lower(p.title), p.id) > ($2, $5) END)
+            ELSE (p.title_key, p.id) > ($2, $5) END)
 ORDER BY
-  CASE WHEN NOT $4 THEN lower(p.title) END,
+  CASE WHEN NOT $4 THEN p.title_key END,
   CASE WHEN NOT $4 THEN p.id END,
   CASE WHEN $4 THEN p.updated_at END DESC,
   CASE WHEN $4 THEN p.id END DESC
 LIMIT $6;
--- The same with a title search ($7): matches are sorted before the release check.
+-- The same with a title search ($7): the covering index scans in page order.
 PREPARE catalog_search(text, text, text, boolean, uuid, bigint, text) AS
-SELECT m.id, m.title_key, m.updated_at
-FROM (
-  SELECT p.id, lower(p.title) AS title_key, p.updated_at
-  FROM packages p
-  WHERE p.deleted_at IS NULL AND p.status = 'published'
-    AND lower(p.title) LIKE $7 ESCAPE '\'
-    AND ($1::text IS NULL OR p.genres @> ARRAY[$1::text])
-    AND ($2::text IS NULL OR
-         CASE WHEN $4 THEN (p.updated_at, p.id) < ($2::timestamptz, $5)
-              ELSE (lower(p.title), p.id) > ($2, $5) END)
-  ORDER BY
-    CASE WHEN NOT $4 THEN lower(p.title) END,
-    CASE WHEN NOT $4 THEN p.id END,
-    CASE WHEN $4 THEN p.updated_at END DESC,
-    CASE WHEN $4 THEN p.id END DESC
-  OFFSET 0
-) m
-WHERE EXISTS (SELECT 1 FROM package_releases r WHERE r.package_id = m.id
+SELECT p.id, p.title_key, p.updated_at
+FROM packages p
+WHERE p.deleted_at IS NULL AND p.status = 'published'
+  AND p.title_key LIKE $7 ESCAPE '\'
+  AND EXISTS (SELECT 1 FROM package_releases r WHERE r.package_id = p.id
               AND ($3::text IS NULL OR r.platform = $3))
+  AND ($1::text IS NULL OR p.genres @> ARRAY[$1::text])
+  AND ($2::text IS NULL OR
+       CASE WHEN $4 THEN (p.updated_at, p.id) < ($2::timestamptz, $5)
+            ELSE (p.title_key, p.id) > ($2, $5) END)
 ORDER BY
-  CASE WHEN NOT $4 THEN m.title_key END,
-  CASE WHEN NOT $4 THEN m.id END,
-  CASE WHEN $4 THEN m.updated_at END DESC,
-  CASE WHEN $4 THEN m.id END DESC
+  CASE WHEN NOT $4 THEN p.title_key END,
+  CASE WHEN NOT $4 THEN p.id END,
+  CASE WHEN $4 THEN p.updated_at END DESC,
+  CASE WHEN $4 THEN p.id END DESC
 LIMIT $6;
 \echo '-- 2a. first page, by title'
 EXPLAIN (ANALYZE, BUFFERS, COSTS OFF) EXECUTE catalog(NULL, NULL, NULL, false, '00000000-0000-0000-0000-000000000000', 51);
@@ -129,10 +120,12 @@ EXECUTE packs(:'ver', '{0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15}');
 
 \echo '== 6. inbox (Agent 4, A4-T05: GET /v1/inbox for one device)'
 PREPARE inbox(uuid, uuid, bigint) AS
-SELECT id, conversation_id, sender_user_id, sender_device_id, olm_message_type, ciphertext, created_at
-FROM message_envelopes
-WHERE recipient_device_id = $1 AND ($2::uuid IS NULL OR id > $2) AND expires_at > now()
-ORDER BY id LIMIT $3;
+SELECT e.id, e.conversation_id, e.sender_user_id, e.sender_device_id, e.olm_message_type,
+       e.ciphertext, e.created_at, d.identity_key AS sender_identity_key
+FROM message_envelopes e JOIN devices d ON d.id = e.sender_device_id
+WHERE e.recipient_device_id = $1 AND e.expires_at > now() AND d.identity_key IS NOT NULL
+  AND ($2::uuid IS NULL OR e.id > $2)
+ORDER BY e.id LIMIT $3;
 EXPLAIN (ANALYZE, BUFFERS, COSTS OFF)
 EXECUTE inbox(:'dev', NULL, 101);
 

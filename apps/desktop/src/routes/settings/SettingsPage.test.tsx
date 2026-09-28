@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { routes } from "../../app/router";
 import type { Library, ServerProfile } from "../../ipc";
 import {
+  fail,
   installMockBackend,
   MOCK_LIBRARY,
   MOCK_SERVER,
@@ -345,6 +346,129 @@ describe("settings", () => {
         "2.5",
       );
       expect(screen.getByRole("radio", { name: /2 at a time/ })).toBeChecked();
+    });
+  });
+
+  describe("privacy", () => {
+    it("keeps both switches after a restart", async () => {
+      const { user, backend } = start("/settings/privacy");
+      await user.click(await screen.findByRole("switch", { name: "Show what I'm playing" }));
+      await user.click(screen.getByRole("switch", { name: "Do not disturb" }));
+      await waitFor(() =>
+        expect(backend.state.socialSettings).toMatchObject({
+          show_current_game: false,
+          do_not_disturb: true,
+        }),
+      );
+      restart("/settings/privacy");
+      expect(await screen.findByRole("switch", { name: "Show what I'm playing" })).toHaveAttribute(
+        "aria-checked",
+        "false",
+      );
+      expect(screen.getByRole("switch", { name: "Do not disturb" })).toHaveAttribute(
+        "aria-checked",
+        "true",
+      );
+    });
+  });
+
+  describe("overlay", () => {
+    const change = () => screen.findByRole("button", { name: /^Change the overlay shortcut/ });
+
+    it("records a new shortcut by pressing it, and keeps it after a restart", async () => {
+      const { user, backend } = start("/settings/overlay");
+      await user.click(await change());
+      const field = screen.getByRole("textbox", { name: "New overlay shortcut" });
+      expect(field).toHaveFocus();
+      await user.keyboard("{Control>}{Shift>}o{/Shift}{/Control}");
+      expect(await screen.findByText("Overlay shortcut is now Ctrl+Shift+O")).toBeVisible();
+      expect(backend.state.socialSettings.overlay_hotkey).toBe("Ctrl+Shift+O");
+      expect(screen.getByText("Ctrl+Shift+O", { selector: "kbd" })).toBeVisible();
+      await waitFor(async () => expect(await change()).toHaveFocus());
+
+      restart("/settings/overlay");
+      expect(await screen.findByText("Ctrl+Shift+O", { selector: "kbd" })).toBeVisible();
+      // Reset brings back the default.
+      const again = userEvent.setup();
+      await again.click(
+        screen.getByRole("button", { name: "Reset the overlay shortcut to Shift+F3" }),
+      );
+      expect(await screen.findByText("Shift+F3", { selector: "kbd" })).toBeVisible();
+    });
+
+    it("refuses a key that would fire while typing, and one the system uses", async () => {
+      const { user, backend } = start("/settings/overlay");
+      await user.click(await change());
+      await user.keyboard("a");
+      const overlay = screen.getByRole("region", { name: "Overlay" });
+      expect(await within(overlay).findByRole("alert")).toHaveTextContent(
+        "Use Ctrl, Alt, Shift or a function key (F1–F12), so it doesn't fire while you type.",
+      );
+      expect(screen.getByRole("textbox", { name: "New overlay shortcut" })).toHaveAttribute(
+        "aria-invalid",
+        "true",
+      );
+      await user.keyboard("{Alt>}{Tab}{/Alt}");
+      await waitFor(() =>
+        expect(within(overlay).getByRole("alert")).toHaveTextContent(
+          "Alt+Tab is already used by the operating system. Try another combination.",
+        ),
+      );
+      expect(backend.state.socialSettings.overlay_hotkey).toBe("Shift+F3");
+    });
+
+    it("explains a shortcut the core refuses as invalid input", async () => {
+      const { user, backend } = start("/settings/overlay");
+      backend.on("social_settings_set", () =>
+        fail({ kind: "invalid_input", field: "overlay_hotkey", message: "not an accelerator" }),
+      );
+      await user.click(await change());
+      await user.keyboard("{Control>}{Alt>}k{/Alt}{/Control}");
+      const overlay = screen.getByRole("region", { name: "Overlay" });
+      expect(await within(overlay).findByRole("alert")).toHaveTextContent(
+        "That isn't a shortcut vgames can use. Try another combination.",
+      );
+      expect(backend.state.socialSettings.overlay_hotkey).toBe("Shift+F3");
+    });
+
+    it("Escape cancels recording and returns to the Change button", async () => {
+      const { user, backend } = start("/settings/overlay");
+      await user.click(await change());
+      await user.keyboard("{Escape}");
+      expect(screen.queryByRole("textbox", { name: "New overlay shortcut" })).toBeNull();
+      await waitFor(async () => expect(await change()).toHaveFocus());
+      expect(backend.callsTo("social_settings_set")).toHaveLength(0);
+    });
+
+    it("switches the overlay per game and explains the safety valve", async () => {
+      const ref = { server_id: MOCK_SERVER.id, package_id: "0192a6f0-1c2d-7e3f-8a9b-000000000001" };
+      const { user, backend } = start("/settings/overlay", {
+        overlayPackages: [
+          {
+            package: ref,
+            title: "Hollow Harbor",
+            enabled: false,
+            disabled_by_safety_valve_at: "2026-09-20T10:00:00Z",
+          },
+          {
+            package: { ...ref, package_id: "0192a6f0-1c2d-7e3f-8a9b-000000000002" },
+            title: "Crimson Canyon",
+            enabled: true,
+            disabled_by_safety_valve_at: null,
+          },
+        ],
+      });
+      const harbor = await screen.findByRole("switch", { name: "Overlay in Hollow Harbor" });
+      expect(harbor).toHaveAttribute("aria-checked", "false");
+      expect(screen.getByText(/closed unexpectedly twice right after starting/)).toHaveTextContent(
+        "Sep 20, 2026",
+      );
+      await user.click(harbor);
+      await waitFor(() => expect(harbor).toHaveAttribute("aria-checked", "true"));
+      expect(screen.queryByText(/closed unexpectedly twice/)).toBeNull();
+      expect(backend.state.overlayPackages[0]?.disabled_by_safety_valve_at).toBeNull();
+      await user.click(screen.getByRole("switch", { name: "In-game overlay" }));
+      await waitFor(() => expect(backend.state.socialSettings.overlay_enabled).toBe(false));
     });
   });
 

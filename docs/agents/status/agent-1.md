@@ -13,7 +13,7 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   `http::query::Query<T>`, problem catalogue snapshot.
 - A1-T03 — OpenAPI drift check: `apps/api/tests/openapi_contract.rs` compares the generated document
   (`vgames_api::http::openapi()`) with `openapi/openapi.yaml`; unimplemented contract operations are listed in
-  `apps/api/tests/openapi_unimplemented.txt` (83 today, must only shrink). Reusable problem responses for
+  `apps/api/tests/openapi_unimplemented.txt` (now empty). Reusable problem responses for
   handlers: `vgames_api::openapi_problems::{BadRequest, Unauthorized, NotFound, …}`.
 - A1-T04 — Discord sign-in and sessions: start/callback/token/logout/me/sessions per 01-security §4
   (PKCE, login codes, refresh rotation with reuse detection, web cookies + CSRF + Origin, registration modes,
@@ -86,17 +86,21 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   resolved file (after symlinks) must stay inside the canonical root. A missing directory or one without `index.html`
   fails config validation at startup.
 
-- A1-T16 — Hardening and performance (wouhliss/vgames#36, wouhliss/vgames#45, and the catalog follow-up PR).
+- A1-T16 — Hardening and performance (wouhliss/vgames#36, wouhliss/vgames#45, catalog PR #83,
+  and the inbox benchmark follow-up PR).
   - Rate limits on every route, problem+json for every error, property tests (#36).
-  - `apps/api/bench/`: seed (100k packages, 1M audit rows, 1M envelopes, 20k sessions, 200k jobs),
-    `explain.sql` (the handlers' SQL; `-v generic=1` for generic plans) and `load.sh` (`oha`).
+  - `apps/api/bench/`: seed (100k packages, 1M audit rows, 1M envelopes, 20k sessions, 2k bound
+    devices, 200k jobs), `explain.sql` (the handlers' SQL; `-v generic=1` for generic plans) and
+    `load.sh` (`oha`). The owner removed `cargo fuzz` in contract PR #12; the required no-panic
+    property tests run in the normal suite instead.
   - `db::connect` sets `plan_cache_mode = force_custom_plan`: list filters are `($n IS NULL OR …)`,
     which generic plans cannot index (catalog 39–173 ms, filtered audit 123–176 ms before).
   - Indexes: audit actor/action/target and job state on `(key, id DESC)`; GIN on `packages.genres`.
   - Catalog: `sort=recent` pages by `(updated_at, id) DESC`, matching its cursor (it could repeat or
-    skip packages sharing an `updated_at`); genre filter `genres @> ARRAY[$genre]`; searches sort
-    their matches before checking for a release.
-  - **Plans** (`explain.sql`, custom plans, warm; no sequential scan on a hot path):
+    skip packages sharing an `updated_at`); genre filter `genres @> ARRAY[$genre]`. A stored, generated
+    lowercase title and two partial covering indexes let both catalog sorts scan in page order and
+    stop after enough matches, including broad searches (catalog follow-up PR).
+  - **Plans** (`explain.sql`, custom plans, warm; a rare search miss may scan the catalog):
 
     | Query | Time |
     |---|---|
@@ -104,9 +108,9 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
     | Catalog first or cursor page (title or recent) | 0.2–0.5 ms |
     | Catalog, linux only / genre + linux | 4 / 5 ms |
     | Catalog, rare genre | 0.5 ms |
-    | Catalog search: rare / two words / broad one word by recency / by title | 1 / 10 / 21–35 / ~40 ms |
+    | Catalog search: rare / two words / broad one word by recency / by title | 14 / 1.7 / 0.1 / 0.4 ms (warm, uncontended) |
     | Release descriptor, pack lookup | 0.2 ms |
-    | Inbox (Agent 4's query) | 0.8 ms |
+    | Inbox (Agent 4's query, 101 envelopes) | 0.3 ms |
     | Audit, any filter | ≤ 0.4 ms |
     | Job claim / admin job list | 0.07 / 0.1 ms |
 
@@ -115,31 +119,31 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
 
     | Endpoint | p50 | p99 | Budget (100 ms) |
     |---|---|---|---|
-    | Release descriptor | 4–5 ms | 10–12 ms | met |
-    | Download URLs | 4–5 ms | 9–10 ms | met |
-    | Catalog | 18–21 ms | 107–194 ms over four warm runs | **not met** |
+    | Release descriptor | 2.7 ms | 3.8 ms | met |
+    | Download URLs | 2.8 ms | 7.9 ms | met |
+    | Catalog | 6.7 ms | 25.7 ms | met |
+    | Inbox (100 envelopes/page) | 6.7 ms | 19.4 ms | met |
 
-    The catalog mix is 25% searches, half of them one common word matching ~12% of 100k titles.
-    Such a search costs ~40 ms of CPU: a trigram recheck of ~12k rows plus a sort under the
-    `en_US` collation. Plans that walk the title index instead are faster for words spread
-    through titles, but can scan most of the index for a title's first word (its matches sit
-    in one alphabetical block): `'%shadow quest%'` took 235 ms that way. So I kept the bounded
-    plan. Browsing, filters and specific searches are well inside the budget. A faster broad
-    search needs a product decision (ranked or capped results, or byte-order title sorting).
-  - Inbox budget: Agent 4's endpoint (A4-T05); its query runs on `message_envelopes_inbox_idx` in 0.8 ms.
+    Each route had 6,000 successful requests at 200 rps; the inbox returned 100 real seeded
+    envelopes per page. The catalog mix has 25% searches and common words matching ~12% of 100k
+    titles. Before the covering indexes, catalog p99 was 107–194 ms across four warm runs. The
+    follow-up used a release build and the same seed and load script; all four routes meet the budget.
+  - Inbox budget: Agent 4's endpoint (A4-T05); its query uses `message_envelopes_inbox_idx` and
+    takes 0.3 ms warm. Its full endpoint returned 100 envelopes per page at 19.4 ms p99, 200 rps.
+- A1-T17 — Handoff: the OpenAPI drift allowlist is empty, `apps/api/README.md` covers operation,
+  roles, migrations, storage and workers, the interface inventory below is current, and the checked-in `.sqlx/`
+  metadata compiles offline. The generated document matches the contract (2 tests); the API integration suite
+  passes serially (141 passed, 1 GCS emulator test ignored because that emulator is not configured).
 
 ## In progress
-- A1-T17 — Handoff: `apps/api/README.md` written, interfaces listed below, `.sqlx/` current (CI checks it).
-  The drift allowlist (`apps/api/tests/openapi_unimplemented.txt`) holds only Agent 4's 11 conversation, inbox
-  and invite operations; it empties as Agent 4 implements them (A4-T05, A4-T06).
+- None.
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_api::error::ApiError` / `ApiResult` (problem+json), `vgames_api::http::json::{Json, Validate}`
   (rejects unknown fields, reports field paths) — for Agent 4's `social` handlers.
 - `vgames_api::social::routes() -> OpenApiRouter<AppState>` mount point (convert `social.rs` to `social/mod.rs`).
 - `state.limits.check(Policy::FriendRequests | Invites | Messages, key)` for Agent 4's per-action limits.
-- **Agent 4:** when you implement a social/messaging/invites operation, remove it from
-  `apps/api/tests/openapi_unimplemented.txt`; the drift test fails until the handler matches the contract.
+- **Agent 4:** all social/messaging/invites contract operations are registered; the drift allowlist is empty.
 - **Agent 5:** `cargo xtask openapi check` can run `cargo test -p vgames-api --test openapi_contract`.
 - **Auth for every handler (Agents 4, 1):** `vgames_api::auth::{CurrentUser, RequireAdmin, RequireOwner, RequestMeta}`.
   `CurrentUser { user_id, role, session_id, device_id, kind }` accepts `Bearer vga_…` or the admin-web cookie
@@ -245,10 +249,21 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
 - Root `clippy.toml` allows unwrap/expect/panic/indexing in tests (AGENTS.md §5).
 
 ## Needs from others
-- From Agent 4: the conversation, inbox and invite operations, to empty the drift allowlist (A1-T17).
+- From Agent 5 (CI): the full-history gitleaks job flags the historical planted-token scanner test
+  (`d679450`, `planted-token-test.txt`), so the local gate fails even when the handoff commit adds no secret.
+  Scope that gate to the commits under review while keeping the planted-token self-test.
+- From Agent 4: the socket-presence integration test's 10-second gateway startup wait timed out twice
+  under the parallel 142-test API run; it passed alone and in the serial suite.
 
 ## Blockers / contract questions
-- None. I merge my own PRs (rebase merge) once Agent 5's CI is green. Seen Agent 5's two CI notes (2026-09-26):
+- No open Agent 1 release-performance blocker; all four measured hot routes meet 100 ms p99 at 200 rps.
+- Catalog schema contract: `title_key` and its covering indexes are added by separate
+  `contract: add catalog title key indexes` PR #82; the query change follows it.
+- Local CI on handoff commit `1755508`: SQLx, changelog, WASM, TypeScript, desktop E2E and workflows passed.
+  Rust failed on the parallel socket-presence timeout; desktop and supply-chain jobs could not start because
+  this machine lacks `pkg-config` and `cargo-deny` (sudo requires a password); gitleaks flagged the historical
+  planted-token test above. The API's serial suite passed (141 tests) and workspace clippy passed.
+- I merge my own PRs (rebase merge) once Agent 5's CI is green. Seen Agent 5's two CI notes (2026-09-26):
   Actions ran out of minutes, then the repo went public and GitHub CI is back as the merge gate;
   `scripts/ci/local.sh` is optional.
 - Contract commit (A1-T13, in the same PR as the feature): `prepareSaveBlobs` / `commitSaveSnapshot` answer 404 for an

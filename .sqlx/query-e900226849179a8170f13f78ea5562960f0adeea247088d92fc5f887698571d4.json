@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT p.id, p.title_key AS \"title_key!\", p.updated_at\n               FROM packages p\n               WHERE p.deleted_at IS NULL AND p.status = 'published'\n                 AND p.title_key LIKE $7 ESCAPE '\\'\n                 AND EXISTS (SELECT 1 FROM package_releases r WHERE r.package_id = p.id\n                             AND ($3::text IS NULL OR r.platform = $3))\n                 AND ($1::text IS NULL OR p.genres @> ARRAY[$1::text])\n                 AND ($2::text IS NULL OR\n                      CASE WHEN $4 THEN (p.updated_at, p.id) < ($2::timestamptz, $5)\n                           ELSE (p.title_key, p.id) > ($2, $5) END)\n               ORDER BY\n                 CASE WHEN NOT $4 THEN p.title_key END,\n                 CASE WHEN NOT $4 THEN p.id END,\n                 CASE WHEN $4 THEN p.updated_at END DESC,\n                 CASE WHEN $4 THEN p.id END DESC\n               LIMIT $6",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "packages",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title_key!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "packages",
+            "name": "title_key"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "packages",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Bool",
+        "Uuid",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "e900226849179a8170f13f78ea5562960f0adeea247088d92fc5f887698571d4"
+}

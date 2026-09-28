@@ -8,6 +8,8 @@ import { AboutSection } from "./AboutSection";
 import { AccountSection } from "./AccountSection";
 import { DownloadsSection } from "./DownloadsSection";
 import { GeneralSection } from "./GeneralSection";
+import { OverlaySection } from "./OverlaySection";
+import { PrivacySection } from "./PrivacySection";
 import { ServersSection } from "./ServersSection";
 import styles from "./Settings.module.css";
 import { StorageSection } from "./StorageSection";
@@ -19,6 +21,8 @@ const SECTIONS = {
   account: AccountSection,
   storage: StorageSection,
   downloads: DownloadsSection,
+  privacy: PrivacySection,
+  overlay: OverlaySection,
   updates: UpdatesSection,
   about: AboutSection,
 } as const;

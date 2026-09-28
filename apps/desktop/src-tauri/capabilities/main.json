@@ -18,6 +18,11 @@
     "allow-auth-cancel",
     "allow-auth-sign-out",
     "allow-auth-token-storage",
+    "allow-libraries-list",
+    "allow-library-pick-folder",
+    "allow-library-add",
+    "allow-library-set-default",
+    "allow-library-remove",
     "allow-updater-status",
     "allow-updater-check",
     "allow-updater-whats-new",
@@ -34,6 +39,19 @@
     "allow-user-block",
     "allow-user-unblock",
     "allow-blocks-list",
-    "allow-user-profile"
+    "allow-user-profile",
+    "allow-conversations-list",
+    "allow-conversation-open-direct",
+    "allow-conversation-create-party",
+    "allow-messages-list",
+    "allow-message-send",
+    "allow-message-retry",
+    "allow-conversation-mark-read",
+    "allow-typing-start",
+    "allow-contact-security",
+    "allow-contact-set-verified",
+    "allow-contact-trust-device",
+    "allow-devices-list",
+    "allow-device-revoke"
   ]
 }

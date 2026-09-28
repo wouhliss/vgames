@@ -89,7 +89,7 @@ pub struct ReSignArgs {
 }
 
 /// The root to verify bundles against: `--root`, else the pin from `vgames login`.
-fn pin_for(session: &Session, root: Option<&str>, info: &ServerInfo) -> Result<RootPin> {
+pub(crate) fn pin_for(session: &Session, root: Option<&str>, info: &ServerInfo) -> Result<RootPin> {
     let advertised = PublicKey::from_base64(&info.root_public_key)
         .context("the server advertises an invalid root key")?;
     let pin = match (root, &session.creds) {
@@ -108,7 +108,7 @@ fn pin_for(session: &Session, root: Option<&str>, info: &ServerInfo) -> Result<R
 }
 
 /// The server's current bundle, verified. `None` when it has none yet.
-async fn current_bundle(
+pub(crate) async fn current_bundle(
     api: &Api,
     pin: &RootPin,
     server_id: Uuid,

@@ -97,7 +97,7 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   live progress from the simulator, keyboard-only reorder/pause/cancel, controller-only).
 
 ## In progress
-- A3-T07 — Settings, in parts. **Part 1 (this PR):** one URL per section (`/settings/<section>`, a section list that
+- A3-T07 — Settings, in parts. **Part 1** ([#52](https://github.com/wouhliss/vgames/pull/52), merged): one URL per section (`/settings/<section>`, a section list that
   works with arrows and the D-pad) with General (theme incl. "Same as system", reduce motion), Servers (address,
   fingerprint, signed-in account, switch, remove, add through the first-run flow), Account (sessions with "sign
   out this device", sign out, warning when tokens are kept in a file instead of the keychain), Storage (free space,
@@ -105,8 +105,12 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   every package of a library), Downloads (speed limit 0.1–1000 MB/s with validation, 1–3 installs at once),
   Updates (version, check now) and About (version, third-party licenses as plain text, copy diagnostics). Every
   setting is tested to survive a restart of the mock (disabling persistence fails 4 tests).
-  **Next parts:** Privacy and Overlay (hotkey capture with conflict check, per-package overlay switch and safety
-  valve), Compatibility, Controllers, Cloud saves (with A3-T08). What's new comes with A3-T10.
+  **Part 2 (this PR):** Privacy (show what I'm playing, do not disturb) and Overlay (on/off; the shortcut is recorded by
+  pressing it: keys named by position, a plain key or Shift + key refused locally, the Rust core's `invalid` and
+  `in_use {by}` shown; Escape cancels; Reset to Shift+F3; a switch per game, with the date and reason when the
+  crash safety valve turned it off). Tested to persist through a restart. Also fixes a unit-test teardown race
+  (`clearMocks()` before a late `listen` settled) that made about half of the PackagePage runs report an unhandled error.
+  **Next parts:** Compatibility, Controllers, Cloud saves (with A3-T08). What's new comes with A3-T10.
 
 ## Interfaces delivered (other agents may now rely on these)
 - `apps/desktop/src/ipc/contract/`: the command/event surface the UI is built against, in exact
@@ -223,9 +227,10 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   - `download_settings_get -> DownloadSettings {bandwidth_limit_kib: Option<u32> (≥ 100), concurrent_installs: 1..=3}`,
     `download_settings_set(settings) -> Result<DownloadSettings, SettingsError {invalid {field, detail} | io}>`.
   - `app_licenses -> Result<String, AppError>` (bundled third-party notices, plain text).
-- **From Agent 4** (Settings → Privacy and Overlay, next part of A3-T07): `social_settings_get/set` as in
-  05-social-notes §5, plus a typed error from `social_settings_set` when the overlay hotkey can't be registered:
-  `invalid` (not an accelerator) or `in_use {by: Option<String>}` (the OS or another app holds it). Also
+- **From Agent 4** (Settings → Privacy and Overlay, A3-T07): `social_settings_get|set` are generated now and used
+  as is. Still requested (A4-T10): `SocialError` variants for an overlay hotkey that can't be registered,
+  `invalid` (not an accelerator) and `in_use {by: Option<String>}` (the OS or another app holds it); until then an
+  `invalid_input {field: "overlay_hotkey"}` shows as "not a shortcut vgames can use". Also
   `overlay_packages -> Vec<PackageOverlay {package, title, enabled, disabled_by_safety_valve_at}>` and
   `overlay_package_set(package, enabled)` (turning it on clears the safety valve).
 - **From Agent 5:** nothing more for now. Seen (2026-09-26): CI runs locally (`scripts/ci/local.sh`, PR 42);

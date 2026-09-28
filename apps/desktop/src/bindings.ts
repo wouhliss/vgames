@@ -42,6 +42,15 @@ export const commands = {
 	/**  Revokes this device's session on the server and deletes its tokens. */
 	authSignOut: (serverId: string) => typedError<null, AppError>(__TAURI_INVOKE("auth_sign_out", { serverId })),
 	authTokenStorage: () => __TAURI_INVOKE<TokenStorage>("auth_token_storage"),
+	librariesList: () => typedError<LibraryInfo[], CommandError>(__TAURI_INVOKE("libraries_list")),
+	libraryPickFolder: () => typedError<{
+	path: string,
+	free_bytes: number,
+	total_bytes: number,
+} | null, LibraryActionError>(__TAURI_INVOKE("library_pick_folder")),
+	libraryAdd: (path: string, makeDefault: boolean) => typedError<LibraryInfo, LibraryActionError>(__TAURI_INVOKE("library_add", { path, makeDefault })),
+	librarySetDefault: (libraryId: string) => typedError<null, LibraryActionError>(__TAURI_INVOKE("library_set_default", { libraryId })),
+	libraryRemove: (libraryId: string) => typedError<null, LibraryRemovalError>(__TAURI_INVOKE("library_remove", { libraryId })),
 	/**  Current updater status. */
 	updaterStatus: () => __TAURI_INVOKE<UpdaterStatus>("updater_status"),
 	/**  Checks for an update now. Refused while a game runs. */
@@ -71,6 +80,28 @@ export const commands = {
 	/**  Users blocked from this install on the active server (kept locally). */
 	blocksList: () => typedError<BlockedUser[], SocialError>(__TAURI_INVOKE("blocks_list")),
 	userProfile: (userId: string) => typedError<UserSummary, SocialError>(__TAURI_INVOKE("user_profile", { userId })),
+	/**  Conversations, most recent first (the cached list when offline). */
+	conversationsList: () => typedError<Conversation[], SocialError>(__TAURI_INVOKE("conversations_list")),
+	/**  The direct conversation with a friend (created on first use). */
+	conversationOpenDirect: (userId: string) => typedError<Conversation, SocialError>(__TAURI_INVOKE("conversation_open_direct", { userId })),
+	/**  A party with 1–15 friends. */
+	conversationCreateParty: (userIds: string[]) => typedError<Conversation, SocialError>(__TAURI_INVOKE("conversation_create_party", { userIds })),
+	/**  Messages oldest first; `limit` 1–200, before the message `before` if given. */
+	messagesList: (conversationId: string, before: string | null, limit: number) => typedError<Message[], SocialError>(__TAURI_INVOKE("messages_list", { conversationId, before, limit })),
+	/**  Sends a text message (`pending`, then `message-status-changed`). */
+	messageSend: (conversationId: string, text: string) => typedError<Message, SocialError>(__TAURI_INVOKE("message_send", { conversationId, text })),
+	messageRetry: (messageId: string) => typedError<Message, SocialError>(__TAURI_INVOKE("message_retry", { messageId })),
+	conversationMarkRead: (conversationId: string) => typedError<null, SocialError>(__TAURI_INVOKE("conversation_mark_read", { conversationId })),
+	/**  "I am typing" (throttled to one frame every 3 s per conversation). */
+	typingStart: (conversationId: string) => typedError<null, SocialError>(__TAURI_INVOKE("typing_start", { conversationId })),
+	/**  Safety number, verification state and devices of a contact. */
+	contactSecurity: (userId: string) => typedError<ContactSecurity, SocialError>(__TAURI_INVOKE("contact_security", { userId })),
+	contactSetVerified: (userId: string, verified: boolean) => typedError<ContactSecurity, SocialError>(__TAURI_INVOKE("contact_set_verified", { userId, verified })),
+	/**  Accepts a contact device's changed key and unblocks sending to it. */
+	contactTrustDevice: (userId: string, deviceId: string) => typedError<ContactSecurity, SocialError>(__TAURI_INVOKE("contact_trust_device", { userId, deviceId })),
+	/**  This account's devices on the active server. */
+	devicesList: () => typedError<MyDevice[], SocialError>(__TAURI_INVOKE("devices_list")),
+	deviceRevoke: (deviceId: string) => typedError<null, SocialError>(__TAURI_INVOKE("device_revoke", { deviceId })),
 };
 
 /** Events */
@@ -78,18 +109,23 @@ export const events = {
 	authFinished: makeEvent<AuthFinished>("auth-finished"),
 	connectivityChanged: makeEvent<ConnectivityChanged>("connectivity-changed"),
 	controllerEvent: makeEvent<ControllerEvent>("controller-event"),
+	conversationsChanged: makeEvent<ConversationsChanged>("conversations-changed"),
+	deviceNotice: makeEvent<DeviceNoticeEvent>("device-notice"),
 	friendRequestReceived: makeEvent<FriendRequestReceived>("friend-request-received"),
 	friendsChanged: makeEvent<FriendsChanged>("friends-changed"),
 	gameStarted: makeEvent<GameStarted>("game-started"),
 	gameStopped: makeEvent<GameStopped>("game-stopped"),
 	installFinished: makeEvent<InstallFinished>("install-finished"),
 	installProgress: makeEvent<InstallProgress>("install-progress"),
+	messageReceived: makeEvent<MessageReceived>("message-received"),
+	messageStatusChanged: makeEvent<MessageStatusChanged>("message-status-changed"),
 	presenceChanged: makeEvent<PresenceChanged>("presence-changed"),
 	serverAddRequested: makeEvent<ServerAddRequested>("server-add-requested"),
 	serverSwitched: makeEvent<ServerSwitched>("server-switched"),
 	serversChanged: makeEvent<ServersChanged>("servers-changed"),
 	socialConnectionChanged: makeEvent<SocialConnectionChanged>("social-connection-changed"),
 	trustProblem: makeEvent<TrustProblem>("trust-problem"),
+	typing: makeEvent<Typing>("typing"),
 	updaterStatus: makeEvent<UpdaterStatus>("updater-status"),
 };
 
@@ -161,6 +197,12 @@ export type ChangeEntry = {
 /**  Kind of a player-facing change, in the order the dialog groups them. */
 export type ChangeType = "added" | "changed" | "fixed" | "removed" | "security";
 
+export type ChosenLibraryFolder = {
+	path: string,
+	free_bytes: number,
+	total_bytes: number,
+};
+
 /**  Error payload of every command. */
 export type CommandError = {
 	code: ErrorCode,
@@ -171,6 +213,25 @@ export type CommandError = {
 export type ConnectivityChanged = {
 	server_id: string,
 	online: boolean,
+};
+
+export type ContactDevice = {
+	device_id: string,
+	display_name: string | null,
+	first_seen_at: string,
+	key_fingerprint: string,
+	state: ContactDeviceState,
+};
+
+export type ContactDeviceState = "trusted" | "new" | "key_changed" | "revoked";
+
+export type ContactSecurity = {
+	user_id: string,
+	verified: boolean,
+	needs_reverification: boolean,
+	safety_number: string,
+	safety_number_groups: string[],
+	devices: ContactDevice[],
 };
 
 /**  What happened to a controller. */
@@ -187,6 +248,30 @@ export type ControllerEvent = {
 
 /**  Controller family, as classified by the input thread (07-controllers §2). */
 export type ControllerKind = "xinput" | "dualshock4" | "dualsense" | "switch_pro" | "generic";
+
+export type Conversation = {
+	id: string,
+	kind: ConversationKind,
+	members: UserSummary[],
+	last_message: Message | null,
+	unread: number,
+	created_at: string,
+};
+
+export type ConversationKind = "direct" | "party";
+
+/**  `conversations-changed`: membership, ordering or unread counts changed. */
+export type ConversationsChanged = Conversation[];
+
+export type DeviceNotice = { kind: "new_device"; user_id: string; device_id: string; device_name: string } | { kind: "key_changed"; user_id: string; device_id: string } | { kind: "device_revoked"; user_id: string; device_id: string };
+
+/**  `device-notice`: a contact's (or your own) new device, key change or revocation. */
+export type DeviceNoticeEvent = {
+	conversation_id: string | null,
+	notice: DeviceNotice,
+};
+
+export type DevicePlatform = "windows" | "linux" | "macos";
 
 /**  Stable, closed set of error codes for the UI. */
 export type ErrorCode = 
@@ -285,6 +370,57 @@ export type InstallProgress = {
 	bytes_per_second: number,
 	eta_seconds: number | null,
 	connections: number,
+};
+
+/**  Errors expected by the launcher's library screens. */
+export type LibraryActionError = { kind: "not_writable" } | { kind: "system_directory" } | { kind: "nested_in_library"; library_path: string } | { kind: "contains_library"; library_path: string } | { kind: "already_added" } | { kind: "not_found" } | { kind: "io"; detail: string };
+
+export type LibraryInfo = {
+	id: string,
+	path: string,
+	label: string | null,
+	is_default: boolean,
+	online: boolean,
+	free_bytes: number | null,
+	/**  Reserved for a filesystem capacity measurement; absent when unavailable. */
+	total_bytes: number | null,
+	install_count: number,
+};
+
+export type LibraryRemovalError = { kind: "not_writable" } | { kind: "system_directory" } | { kind: "nested_in_library"; library_path: string } | { kind: "contains_library"; library_path: string } | { kind: "already_added" } | { kind: "not_found" } | { kind: "io"; detail: string } | { kind: "not_empty"; install_count: number };
+
+export type Message = {
+	id: string,
+	conversation_id: string,
+	sender_user_id: string,
+	mine: boolean,
+	body: MessageBody,
+	sent_at: string,
+	received_at: string | null,
+	status: MessageStatus,
+};
+
+export type MessageBody = { kind: "text"; text: string } | { kind: "invite_join"; invite_id: string } | { kind: "notice"; notice: DeviceNotice } | { kind: "unsupported" };
+
+/**  `message-received`: a decrypted incoming message (or a device notice) was stored. */
+export type MessageReceived = Message;
+
+export type MessageStatus = "pending" | "sent" | "failed" | "received";
+
+/**  `message-status-changed`: an outgoing message was sent or failed. */
+export type MessageStatusChanged = {
+	message_id: string,
+	conversation_id: string,
+	status: MessageStatus,
+};
+
+export type MyDevice = {
+	id: string,
+	display_name: string,
+	platform: DevicePlatform,
+	current: boolean,
+	created_at: string,
+	last_seen_at: string | null,
 };
 
 /**  A package on a specific server (package ids are only unique per server). */
@@ -433,6 +569,12 @@ export type TrustProblem = {
 };
 
 export type TrustProblemKind = "fingerprint_mismatch";
+
+/**  `typing`: show "… is typing" for 5 s. */
+export type Typing = {
+	conversation_id: string,
+	user_id: string,
+};
 
 /**
  *  Result of a check the user asked for (onboarding's "launcher too old" prompt,

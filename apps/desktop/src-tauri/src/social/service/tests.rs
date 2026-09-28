@@ -291,6 +291,20 @@ impl SocialEvents for Recorder {
     fn friend_request_received(&self, u: &UserSummary) {
         let _ = self.0.send(Seen::Request(u.clone()));
     }
+    fn conversations_changed(&self, _: &[Conversation]) {}
+    fn message_received(&self, _: &Message) {}
+    fn message_status_changed(&self, _: Uuid, _: Uuid, _: MessageStatus) {}
+    fn typing(&self, _: Uuid, _: Uuid) {}
+    fn device_notice(&self, _: Option<Uuid>, _: &DeviceNotice) {}
+}
+
+fn test_keys() -> Keys {
+    use crate::social::crypto::SecretKey32;
+    Keys::new(
+        SecretKey32::from_bytes([1; 32]),
+        &SecretKey32::from_bytes([2; 32]),
+    )
+    .unwrap()
 }
 
 struct Idle(Mutex<Option<Duration>>);
@@ -332,6 +346,8 @@ async fn harness_with(timing: Timing) -> Harness {
         &bus,
         Arc::new(Recorder(tx)),
         idle.clone(),
+        Arc::new(test_keys()),
+        "Test PC".to_owned(),
         timing,
         shutdown.clone(),
     )

@@ -5,6 +5,7 @@
 //! `VGAMES_UPDATE_BINDINGS=1 cargo test -p vgames-desktop bindings`).
 
 mod app;
+mod libraries;
 pub mod names;
 mod servers;
 
@@ -39,6 +40,11 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             servers::auth_cancel,
             servers::auth_sign_out,
             servers::auth_token_storage,
+            libraries::libraries_list,
+            libraries::library_pick_folder,
+            libraries::library_add,
+            libraries::library_set_default,
+            libraries::library_remove,
             crate::updater::updater_status,
             crate::updater::updater_check,
             crate::updater::updater_whats_new,
@@ -55,7 +61,20 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             crate::social::commands::user_block,
             crate::social::commands::user_unblock,
             crate::social::commands::blocks_list,
-            crate::social::commands::user_profile
+            crate::social::commands::user_profile,
+            crate::social::commands::conversations_list,
+            crate::social::commands::conversation_open_direct,
+            crate::social::commands::conversation_create_party,
+            crate::social::commands::messages_list,
+            crate::social::commands::message_send,
+            crate::social::commands::message_retry,
+            crate::social::commands::conversation_mark_read,
+            crate::social::commands::typing_start,
+            crate::social::commands::contact_security,
+            crate::social::commands::contact_set_verified,
+            crate::social::commands::contact_trust_device,
+            crate::social::commands::devices_list,
+            crate::social::commands::device_revoke
         ])
         .events(tauri_specta::collect_events![
             GameStarted,
@@ -73,7 +92,12 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             crate::social::commands::SocialConnectionChanged,
             crate::social::commands::FriendsChanged,
             crate::social::commands::PresenceChanged,
-            crate::social::commands::FriendRequestReceived
+            crate::social::commands::FriendRequestReceived,
+            crate::social::commands::ConversationsChanged,
+            crate::social::commands::MessageReceived,
+            crate::social::commands::MessageStatusChanged,
+            crate::social::commands::Typing,
+            crate::social::commands::DeviceNoticeEvent
         ])
         .error_handling(tauri_specta::ErrorHandlingMode::Result)
         // Byte counts and ids that are u64 in Rust stay below 2^53.

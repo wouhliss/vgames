@@ -13,45 +13,26 @@
 - A2-T06 read-only verifier ([PR #41](https://github.com/wouhliss/vgames/pull/41), merged): hashes installed files on bounded blocking workers and reports damaged file indices.
 - A2-T06 durable update commit ([PR #50](https://github.com/wouhliss/vgames/pull/50), merged): replays interrupted signed-manifest replacements before an install becomes playable.
 - A2-T06 safe transfer execution ([PR #51](https://github.com/wouhliss/vgames/pull/51), merged): stages changed files, reuses verified old chunks, and downloads only missing chunks.
-
+- A2-T06 uninstall preview ([PR #55](https://github.com/wouhliss/vgames/pull/55), merged): lists leftovers before removal and preserves them unless the player chooses to delete them.
+- A2-T06 install move ([PR #56](https://github.com/wouhliss/vgames/pull/56), merged): renames on one filesystem or copies and verifies signed files across filesystems, preserving user files and refusing links.
+- A2-T06 repair and in-place update ([PR #57](https://github.com/wouhliss/vgames/pull/57), [PR #58](https://github.com/wouhliss/vgames/pull/58), merged): rebuilds damaged files and supports explicit low-space updates with crash replay.
 - A2-T07 Servers, trust and sign-in in the launcher ([PR #47](https://github.com/wouhliss/vgames/pull/47)): see Interfaces.
   Mock-server tests cover TOFU pin, fingerprint-mismatch block (persisted, survives restart, lifts only when the
   pinned key returns), trust rollback and forged bundles refused, root rotation via `next_root`, refresh-token
   rotation (5 concurrent callers → one refresh), 401 → one refresh then one retry, refused refresh → local sign-out.
+- A2-T08 library roots and registration ([PR #59](https://github.com/wouhliss/vgames/pull/59), [PR #60](https://github.com/wouhliss/vgames/pull/60), merged): validates and marks writable folders, detects offline drives, and stores libraries and their default choice on the SQLite thread.
+- A2-T08 library removal ([PR #61](https://github.com/wouhliss/vgames/pull/61), merged): refuses libraries with installs or downloads, keeps player files, removes only its own marker, and promotes another default.
+- A2-T08 library Tauri commands ([PR #64](https://github.com/wouhliss/vgames/pull/64), merged): list with offline status and install counts, pick/add folders, select default, and remove.
+- A2-T08 collection and favorite storage ([PR #66](https://github.com/wouhliss/vgames/pull/66), merged): validated names, stable partial reorder, idempotent membership and favorite toggles.
+- A2-T08 install queue storage ([PR #67](https://github.com/wouhliss/vgames/pull/67), merged): persisted jobs, one atomic active claim, and startup requeue.
+- A2-T08 waiting-job reorder ([PR #70](https://github.com/wouhliss/vgames/pull/70), merged): atomic, exact-set queue ordering while an active transfer continues.
+- A2-T08 cover cache core ([PR #71](https://github.com/wouhliss/vgames/pull/71), merged): 10 MiB raster entries, 500 MB on-disk LRU, opaque server-scoped keys, and Windows-safe recency updates.
+- A2-T08 cache-only `vgimg://` protocol ([PR #72](https://github.com/wouhliss/vgames/pull/72), merged): strict opaque URL parsing and native cache reads on a blocking pool.
 
 ## In progress
-- A2-T06 uninstall preview: `install::preview_uninstall(root, manifest)` lists unknown files, links, and empty user folders before removal; `remove_install` still keeps those leftovers by default. UI confirmation wiring remains for A2-T08/Agent 3.
-- A2-T06 install move: `move_install::move_install(source, destination, manifest)` renames on one filesystem; across filesystems it copies all regular files (including user settings), verifies the copy and signed package files, then deletes the source. Links and special files are refused without following them.
-- A2-T06 repair execution: `update::execute::repair_safe` rebuilds damaged files on the same signed release, downloads chunks that touched them, and stores the damaged-file indices in the commit marker so crash replay finishes the repair.
-- A2-T06 in-place execution: `update::inplace::update_in_place` requires explicit choice, marks the install unplayable before replacing old bytes, resumes with chunk verification, and commits through a replayable marker. Startup must call `update::commit::recover_pending(root, trust)` before offering Launch.
-- A2-T08 library roots: validate canonical writable folders, reject system folders and overlapping libraries, write `.vgames-library.json`, and detect missing or changed drives. Database registration and Tauri commands follow in this workstream.
-- A2-T08 library registration: add, list, and set-default operations use the dedicated SQLite thread; concurrent additions cannot register nested roots. Tauri commands and removal follow.
-- A2-T08 library removal: refuses libraries with installs or downloads, keeps the folder and player files, removes only its own marker, and promotes another default. Tauri commands follow.
-
-### Handoff for the next Agent 2 session
-- A2-T07 is done (PR #47). A2-T06 and A2-T08 continue in the other Agent 2 session (see the items above).
-  Whoever picks up next: finish A2-T06's remaining items, then continue A2-T08, then A2-T09 onward in order.
-- **A2-T07 follow-up (small, do it first):** Agent 1's contract (`7389acf`, 01-security §4.1) now redirects a
-  refused sign-in to `vgames://auth/callback?error=<code>&client_state=…`. Today `servers::auth::parse_callback_link`
-  and `deeplink::parse` reject the `error` parameter, so the launcher just lets that flow expire. Accept exactly
-  `error` + `client_state` (no `code`), look up the pending flow by `client_state`, drop it, and publish
-  `AuthFinished { Failed }` mapping `registration_closed`, `not_allowlisted`, `user_disabled`, `access_denied`
-  (→ `cancelled`), and any other code → `server { code }`. Add a test next to `a_refused_refresh_signs_out_locally`.
-- Building blocks for A2-T08:
-  - HTTP: `state.servers.api(server_id)` → `ApiClient::{public, authed, authed_empty}`. Never build another client.
-  - Trust: `state.servers.trust_state(id)` for `vgames_transfer::install::fetch_release`; on an unknown signing
-    key, call `state.servers.refresh_trust(id)` once, then retry.
-  - Downloads: `vgames_transfer::{install, download, update}` (see Interfaces below); implement `PackUrlSource`
-    on top of `ApiClient` (`POST v1/versions/{vid}/download-urls`, integrity reports).
-  - DB: `download_jobs`, `installs`, `libraries`, `favorites`, `collections` already exist in `0001_init`.
-    New desktop migrations go after `0003_servers_trust`.
-  - UI contract to fulfil: `apps/desktop/src/ipc/contract/{core,library,catalog}.ts` (Agent 3). When a command
-    lands in `bindings.ts`, delete it from the contract file; `AppError` is re-exported from `core.ts`.
-- Open question for others is under "Needs from others" (Agent 3: an `internal` error kind).
-- Old branch `claude/optimistic-fermat-gwfhvh` on the remote still holds a superseded commit from closed PR #43.
-  Ignore it (do not merge it); A2-T05 on `main` replaces it.
-- Workflow: GitHub CI runs again (the repo is public); merge with rebase when the required checks are green.
-  `scripts/ci/local.sh` runs the same jobs locally (optional).
+- A2-T08 queue state transitions: atomic pause, resume, retry, failure and waiting-job removal; active jobs cannot be removed before worker shutdown.
+- A2-T08 remote image fetch can now use the T07 API client.
+- A2-T08 catalog, transfer orchestration, queue history, and collection/queue commands remain.
 
 ## Interfaces delivered (other agents may now rely on these)
 - **Event bus** (A2-T01, for Agents 3, 4, 5): `vgames_desktop_lib::events::{EventBus, AppEvent}`,
@@ -121,6 +102,7 @@
     `ServerProfile.blocked_fingerprint` (optional) is set while a server is blocked, so a block found before the
     UI listened is still visible. Landed items were removed from `src/ipc/contract/core.ts` as its header asks.
   - Deep links: `deeplink::parse` (strict grammar) routes `server/add` and `auth/callback`; A2-T10 adds the rest.
+  - DB: migration `0003_servers_trust`; new desktop migrations go after it.
 
 ## Measurements
 - A2-T01 idle, Linux (WSLg, debug build, Vite dev server, software GL), 60 s window
@@ -145,6 +127,8 @@
 ## Needs from others
 - From Agent 3: call `commands.appReady()` once the first screen has rendered (until then the window shows
   after a 15 s fallback).
+- From Agent 3 (A2-T08): add a generic failure variant to the pending `CollectionError` UI contract so collection commands can report SQLite failures without mislabeling them as a missing collection.
+- From Agent 1 (A2-T08): queue history needs a new migration; `download_jobs` has no finished state or history table. Please agree on a durable history shape before the launcher exposes history commands.
 - From Agent 5 (manifest format): `vgames-pack` writes compact JSON in the 02 §5 field order, with
   `directories` always present (possibly `[]`) and `launch`/`controllers`/`saves`/`multiplayer` omitted when
   absent; `launch.targets[].args` always present, `working_dir`/`env` omitted when empty. Please make

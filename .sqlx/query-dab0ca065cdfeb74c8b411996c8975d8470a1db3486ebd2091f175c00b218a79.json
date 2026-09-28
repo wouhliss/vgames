@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT m.user_id FROM conversation_members m\n           WHERE m.conversation_id = $1 AND m.left_at IS NULL AND m.user_id <> $2\n             AND EXISTS (SELECT 1 FROM conversation_members me\n                         WHERE me.conversation_id = $1 AND me.user_id = $2 AND me.left_at IS NULL)\n             AND NOT EXISTS (SELECT 1 FROM user_blocks b\n                             WHERE (b.blocker_id = $2 AND b.blocked_id = m.user_id)\n                                OR (b.blocker_id = m.user_id AND b.blocked_id = $2))",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "conversation_members",
+            "name": "user_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "dab0ca065cdfeb74c8b411996c8975d8470a1db3486ebd2091f175c00b218a79"
+}

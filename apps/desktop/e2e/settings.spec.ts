@@ -26,6 +26,8 @@ test("every section has no serious accessibility violations", async ({ page }) =
     "Account",
     "Storage",
     "Downloads",
+    "Privacy",
+    "Overlay",
     "Updates",
     "About",
   ]) {
@@ -76,4 +78,20 @@ test("works with a controller only: move through sections and toggle a setting",
   await pad(page, "accept");
   await expect(limit).toHaveAttribute("aria-checked", "true");
   await expect(page.getByRole("textbox", { name: "Maximum speed (MB/s)" })).toHaveValue("10");
+});
+
+test("records the overlay shortcut from the keyboard", async ({ page }) => {
+  await toSettings(page);
+  await sections(page).getByRole("link", { name: "Overlay" }).click();
+  const change = page.getByRole("button", { name: /^Change the overlay shortcut/ });
+  await change.focus();
+  await page.keyboard.press("Enter");
+  const field = page.getByRole("textbox", { name: "New overlay shortcut" });
+  await expect(field).toBeFocused();
+  // Arrow keys are captured too: the launcher's spatial navigation must not move focus away.
+  await page.keyboard.press("ArrowDown");
+  await expect(field).toBeFocused();
+  await page.keyboard.press("Control+Shift+KeyO");
+  await expect(page.locator("kbd")).toHaveText("Ctrl+Shift+O");
+  await expect(change).toBeFocused();
 });

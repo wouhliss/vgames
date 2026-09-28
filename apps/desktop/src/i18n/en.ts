@@ -557,6 +557,8 @@ export const en = {
       account: "Account",
       storage: "Storage",
       downloads: "Downloads",
+      privacy: "Privacy",
+      overlay: "Overlay",
       updates: "Updates",
       about: "About",
     },
@@ -667,6 +669,38 @@ export const en = {
       concurrentOption: { one: "{count} at a time", other: "{count} at a time" },
       concurrentText:
         "More than one can be slower for each game, and faster overall on fast connections.",
+    },
+    privacy: {
+      showGame: "Show what I'm playing",
+      showGameText: "Friends see the game you're playing next to your name.",
+      dnd: "Do not disturb",
+      dndText: "Hides message and invite pop-ups, except invites from favorites.",
+    },
+    overlay: {
+      enabled: "In-game overlay",
+      enabledText: "Messages and invites over your game, without leaving it.",
+      hotkey: "Overlay shortcut",
+      hotkeyText:
+        "Opens the overlay while you play. Holding the controller's guide button for a second works too.",
+      hotkeyChange: "Change",
+      hotkeyChangeTitle: "Change the overlay shortcut ({current})",
+      hotkeyReset: "Reset",
+      hotkeyResetTitle: "Reset the overlay shortcut to {default}",
+      recording: "Press the new shortcut, or Escape to cancel",
+      recordingField: "New overlay shortcut",
+      saved: "Overlay shortcut is now {hotkey}",
+      needsModifier:
+        "Use Ctrl, Alt, Shift or a function key (F1–F12), so it doesn't fire while you type.",
+      invalid: "That isn't a shortcut vgames can use. Try another combination.",
+      inUse: "{hotkey} is already used by {by}. Try another combination.",
+      inUseUnknown: "{hotkey} is already used by another app. Try another combination.",
+      games: "Per game",
+      gamesText: "Turn the overlay off for a game that doesn't get along with it.",
+      gamesEmpty: "Games you play show up here.",
+      gameSwitch: "Overlay in {title}",
+      safetyValve:
+        "Turned off on {date} because the game closed unexpectedly twice right after starting. Turn it on to try again.",
+      gamesLoadFailed: "Couldn't load your games",
     },
     updates: {
       version: "vgames {version}",

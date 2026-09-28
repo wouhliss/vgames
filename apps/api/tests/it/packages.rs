@@ -747,6 +747,49 @@ async fn catalog_pages_visit_every_package_once_with_ties(pool: PgPool) {
     );
 }
 
+#[sqlx::test(migrations = "./migrations")]
+async fn catalog_search_follows_a_published_title_change(pool: PgPool) {
+    let app = app(pool.clone());
+    let (admin_id, _, admin) = seed_session(&pool, "admin").await;
+    let (_, _, user) = seed_session(&pool, "user").await;
+    let (_, pkg, etag) = create(
+        &app,
+        &admin,
+        json!({ "title": "Amber Garden", "fetch_metadata": false }),
+    )
+    .await;
+    let id = pkg["id"].as_str().unwrap();
+    let resp = patch(
+        &app,
+        &admin,
+        id,
+        etag.as_deref(),
+        json!({ "status": "published" }),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let etag = resp.headers().get(header::ETAG).unwrap().to_str().unwrap();
+    seed_release(&pool, id.parse().unwrap(), admin_id).await;
+
+    let before =
+        body_json(send(&app, authed("GET", "/v1/packages?q=amber", &user, None)).await).await;
+    assert_eq!(before["items"][0]["id"], id);
+
+    let resp = patch(
+        &app,
+        &admin,
+        id,
+        Some(etag),
+        json!({ "title": "Blue Garden" }),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let old = body_json(send(&app, authed("GET", "/v1/packages?q=amber", &user, None)).await).await;
+    assert!(old["items"].as_array().unwrap().is_empty());
+    let new = body_json(send(&app, authed("GET", "/v1/packages?q=blue", &user, None)).await).await;
+    assert_eq!(new["items"][0]["id"], id);
+}
+
 /// `GET /v1/genres` counts the packages `GET /v1/packages` would list: published, not deleted,
 /// with a release (for `platform`, a release on it), most common first, ties by name.
 #[sqlx::test(migrations = "./migrations")]
