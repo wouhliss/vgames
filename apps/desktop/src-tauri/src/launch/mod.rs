@@ -11,9 +11,11 @@
 //! (`Native`, `Proton` or `Wine`) turns it into a [`plan::PreparedLaunch`].
 
 pub mod plan;
+pub mod process;
 pub mod target;
 
 pub use plan::{LaunchPlan, PreparedLaunch, ProtonPlan, WinePlan};
+pub use process::{GameExit, ProcessIdentity, RunningGame};
 pub use target::{JoinSecret, ResolvedTarget, TargetChoice};
 
 use std::path::PathBuf;

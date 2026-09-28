@@ -88,6 +88,8 @@ windows-sys = { workspace = true, features = ["Win32_UI_Input_KeyboardAndMouse",
 [target.'cfg(target_os = "linux")'.dependencies]
 # Virtual pads through /dev/uinput.
 evdev = "0.13"
+# Game process tracking (pidfd, poll, eventfd, process groups).
+libc.workspace = true
 
 [lints]
 workspace = true
