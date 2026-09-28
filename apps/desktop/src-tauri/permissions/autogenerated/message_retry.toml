@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-message-retry"
+description = "Enables the message_retry command without any pre-configured scope."
+commands.allow = ["message_retry"]
+
+[[permission]]
+identifier = "deny-message-retry"
+description = "Denies the message_retry command without any pre-configured scope."
+commands.deny = ["message_retry"]

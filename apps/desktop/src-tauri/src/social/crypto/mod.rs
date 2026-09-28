@@ -31,6 +31,10 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 pub const INITIAL_ONE_TIME_KEYS: usize = 50;
 /// Top up when the server reports fewer than this many unclaimed keys.
 pub const ONE_TIME_KEY_LOW_WATER: usize = 20;
+/// vodozemac numbers fallback keys and one-time keys with separate counters, so their ids
+/// collide; the server keys both by `(device, key_id)`. Fallback key ids get this prefix
+/// (the id is only a label: sessions find the private key by its public key).
+pub const FALLBACK_KEY_ID_PREFIX: &str = "F";
 
 #[derive(Debug, thiserror::Error)]
 pub enum CryptoError {
@@ -187,7 +191,13 @@ impl OlmAccount {
             .fallback_key()
             .into_iter()
             .next()
-            .map(|(id, key)| self.signed_key(true, &id.to_base64(), &key.to_base64()));
+            .map(|(id, key)| {
+                self.signed_key(
+                    true,
+                    &format!("{FALLBACK_KEY_ID_PREFIX}{}", id.to_base64()),
+                    &key.to_base64(),
+                )
+            });
         (otks, fallback)
     }
 

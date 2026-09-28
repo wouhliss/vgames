@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-conversation-create-party"
+description = "Enables the conversation_create_party command without any pre-configured scope."
+commands.allow = ["conversation_create_party"]
+
+[[permission]]
+identifier = "deny-conversation-create-party"
+description = "Denies the conversation_create_party command without any pre-configured scope."
+commands.deny = ["conversation_create_party"]

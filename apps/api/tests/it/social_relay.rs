@@ -820,3 +820,76 @@ async fn plaintext_never_reaches_the_database(pool: PgPool) {
         .unwrap();
     assert_eq!(inbound.plaintext, canary.as_bytes());
 }
+
+async fn send_frame(ws: &mut crate::social_presence::Ws, kind: &str, data: Value) {
+    use futures_util::SinkExt as _;
+    let frame = json!({"v": 1, "type": kind, "data": data});
+    ws.send(tokio_tungstenite::tungstenite::Message::Text(
+        frame.to_string().into(),
+    ))
+    .await
+    .unwrap();
+}
+
+/// 05-social-notes §3: `typing` goes to the other members' sockets only, once per 3 s, never
+/// across a block and never from a non-member.
+#[sqlx::test(migrations = "./migrations")]
+async fn typing_reaches_the_other_members_only(pool: PgPool) {
+    let inst = instance(&pool).await;
+    let app = inst.app();
+    let a = launcher(&pool, &app).await;
+    let b = launcher(&pool, &app).await;
+    let c = launcher(&pool, &app).await;
+    let outsider = launcher(&pool, &app).await;
+    for other in [&b, &c, &outsider] {
+        befriend(&pool, a.user, other.user, "accepted").await;
+    }
+    let (s, conv) = post(
+        &app,
+        "/v1/conversations",
+        &a.token,
+        &json!({"kind": "party", "user_ids": [b.user, c.user]}),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CREATED, "{conv}");
+    let conv_id = conv["id"].as_str().unwrap().to_owned();
+    let mut wa = inst.connect(&a.token).await;
+    let mut wb = inst.connect(&b.token).await;
+    let mut wc = inst.connect(&c.token).await;
+    let mut wo = inst.connect(&outsider.token).await;
+
+    send_frame(&mut wa, "typing", json!({"conversation_id": conv_id})).await;
+    for ws in [&mut wb, &mut wc] {
+        let ev = next_event(ws).await;
+        assert_eq!(ev["type"], "typing", "{ev}");
+        assert_eq!(ev["data"]["conversation_id"], conv_id.as_str());
+        assert_eq!(ev["data"]["user_id"], a.user.to_string());
+    }
+    // Throttled: a second frame right away is not fanned out.
+    send_frame(&mut wa, "typing", json!({"conversation_id": conv_id})).await;
+    // A non-member cannot type into the conversation.
+    send_frame(&mut wo, "typing", json!({"conversation_id": conv_id})).await;
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert_quiet(&inst.state, &mut wb, b.user).await;
+    assert_quiet(&inst.state, &mut wa, a.user).await;
+    assert_quiet(&inst.state, &mut wo, outsider.user).await;
+
+    // C blocks B: B's typing reaches A only.
+    let resp = common::send(
+        &app,
+        bearer_request("POST", &format!("/v1/blocks/{}", b.user), &c.token),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+    send_frame(&mut wb, "typing", json!({"conversation_id": conv_id})).await;
+    let ev = next_event(&mut wa).await;
+    assert_eq!(ev["type"], "typing", "{ev}");
+    assert_eq!(ev["data"]["user_id"], b.user.to_string());
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert_quiet(&inst.state, &mut wc, c.user).await;
+
+    // Malformed data is refused with an error frame.
+    send_frame(&mut wa, "typing", json!({"conversation": conv_id})).await;
+    let ev = next_event(&mut wa).await;
+    assert_eq!(ev["type"], "error", "{ev}");
+}

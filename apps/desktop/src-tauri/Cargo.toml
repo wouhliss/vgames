@@ -73,6 +73,9 @@ minisign.workspace = true
 proptest.workspace = true
 # A fake realtime gateway for the social client tests.
 axum.workspace = true
+# The real API in process for the launcher-to-launcher chat test (tests/social_chat.rs).
+vgames-api.workspace = true
+sqlx.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 # Virtual Xbox 360 pad through ViGEmBus (retired upstream, still the de-facto

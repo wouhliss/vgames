@@ -8,6 +8,7 @@ pub mod invites;
 pub mod presence;
 pub mod relations;
 pub mod relay;
+pub mod typing;
 
 use utoipa_axum::router::OpenApiRouter;
 use vgames_proto::realtime::kinds;
@@ -25,7 +26,10 @@ pub fn routes() -> OpenApiRouter<AppState> {
 
 /// Client→server realtime events this module handles (e.g. `presence.set`, `typing`).
 pub fn realtime_handlers() -> Vec<(&'static str, hub::InboundHandler)> {
-    vec![(kinds::PRESENCE_SET, hub::handler(presence::on_presence_set))]
+    vec![
+        (kinds::PRESENCE_SET, hub::handler(presence::on_presence_set)),
+        (kinds::TYPING, hub::handler(typing::on_typing)),
+    ]
 }
 
 /// Kind of the every-minute social sweep (05-social-notes §3).

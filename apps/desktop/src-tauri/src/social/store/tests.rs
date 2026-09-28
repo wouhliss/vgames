@@ -1128,3 +1128,235 @@ fn oversized_ciphertext_is_refused_before_decoding() {
         Err(ReceiveError::Undecryptable(CryptoError::BadMessage))
     ));
 }
+
+// ---- A4-T08: key top-up, account replacement, targets, conversation cache -------------------
+
+#[test]
+fn fallback_key_ids_never_collide_with_one_time_key_ids() {
+    let mut l = Launcher::new("ana", Uuid::now_v7());
+    set_device_id(&l.db, SERVER, Uuid::now_v7(), NOW).unwrap();
+    let up = prepare_key_upload(&mut l.db, &l.keys, SERVER, 50, true, NOW).unwrap();
+    let fallback = up.fallback_key.unwrap();
+    assert!(fallback.key_id.starts_with(crypto::FALLBACK_KEY_ID_PREFIX));
+    let mut ids: Vec<&str> = up.one_time_keys.iter().map(|k| k.key_id.as_str()).collect();
+    ids.push(&fallback.key_id);
+    let unique: std::collections::HashSet<&str> = ids.iter().copied().collect();
+    assert_eq!(unique.len(), 51, "{ids:?}");
+    // The prefixed id is what the fallback signature covers.
+    let info = account_info(&l.db, &l.keys, SERVER).unwrap().unwrap();
+    crypto::verify_one_time_key(&info.signing_key, &claimed(Uuid::nil(), &fallback, true)).unwrap();
+    // A peer still opens a session with it (the id is only a label).
+    let (ub, _, _) = users();
+    let mut relay = Relay::default();
+    let mut bob = Launcher::new("bob", ub);
+    let mut ana = Launcher::new("ana2", l.user);
+    relay.register(&mut ana);
+    relay.register(&mut bob);
+    relay.otks.get_mut(&ana.device).unwrap().clear();
+    let conv = Uuid::now_v7();
+    bob.send(&mut relay, conv, &[ana.user], "on the fallback key");
+    ana.learn(&relay, &[ub]);
+    assert_eq!(
+        text_of(&ana.receive_all(&mut relay)[0]),
+        "on the fallback key"
+    );
+}
+
+#[test]
+fn top_up_refills_to_fifty_and_resends_unpublished_keys() {
+    let mut l = Launcher::new("ana", Uuid::now_v7());
+    set_device_id(&l.db, SERVER, Uuid::now_v7(), NOW).unwrap();
+    let first = prepare_top_up(&mut l.db, &l.keys, SERVER, 0, true, NOW).unwrap();
+    assert_eq!(first.one_time_keys.len(), crypto::INITIAL_ONE_TIME_KEYS);
+    assert!(first.fallback_key.is_some());
+    // The upload failed: the same keys go again, nothing new is generated.
+    let again = prepare_top_up(&mut l.db, &l.keys, SERVER, 0, false, NOW).unwrap();
+    assert_eq!(again.one_time_keys, first.one_time_keys);
+    mark_keys_published(&mut l.db, &l.keys, SERVER, NOW).unwrap();
+    // 45 left on the server: 5 more.
+    let more = prepare_top_up(&mut l.db, &l.keys, SERVER, 45, false, NOW).unwrap();
+    assert_eq!(more.one_time_keys.len(), 5);
+    assert!(more.fallback_key.is_none());
+    mark_keys_published(&mut l.db, &l.keys, SERVER, NOW).unwrap();
+    // Enough on the server: nothing.
+    let none = prepare_top_up(&mut l.db, &l.keys, SERVER, 60, false, NOW).unwrap();
+    assert!(none.one_time_keys.is_empty() && none.fallback_key.is_none());
+    // Never above the server's cap of 100 unclaimed keys.
+    let capped = prepare_top_up(&mut l.db, &l.keys, SERVER, 99, false, NOW).unwrap();
+    assert!(capped.one_time_keys.is_empty());
+}
+
+#[test]
+fn replacing_the_account_keeps_history_and_drops_sessions() {
+    let (ua, ub, _) = users();
+    let mut relay = Relay::default();
+    let mut alice = Launcher::new("alice", ua);
+    let mut bob = Launcher::new("bob", ub);
+    relay.register(&mut alice);
+    relay.register(&mut bob);
+    let conv = Uuid::now_v7();
+    alice.send(&mut relay, conv, &[ub], "before");
+    bob.learn(&relay, &[ua]);
+    bob.receive_all(&mut relay);
+    let old = account_info(&bob.db, &bob.keys, SERVER).unwrap().unwrap();
+
+    let new = replace_account(&mut bob.db, &bob.keys, SERVER, NOW).unwrap();
+    assert_eq!(new.user_id, ub);
+    assert_eq!(new.device_id, None);
+    assert_ne!(new.identity_key, old.identity_key);
+    assert_ne!(new.signing_key, old.signing_key);
+    let sessions: i64 = bob
+        .db
+        .query_row("SELECT count(*) FROM social_olm_sessions", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(sessions, 0);
+    let history = list_messages(&bob.db, &bob.keys, SERVER, conv, None, 10).unwrap();
+    assert_eq!(history.len(), 1, "history stays readable");
+    // Registered again, Bob receives on the new account.
+    relay.devices.retain(|_, (u, _)| *u != ub);
+    relay.register(&mut bob);
+    alice.send(&mut relay, conv, &[ub], "after");
+    assert_eq!(text_of(&bob.receive_all(&mut relay)[0]), "after");
+}
+
+#[test]
+fn targets_split_trusted_and_changed_devices_and_skip_this_one() {
+    let (ua, ub, _) = users();
+    let mut relay = Relay::default();
+    let mut alice = Launcher::new("alice", ua);
+    let mut alice2 = Launcher::second_device("alice2", &alice);
+    let mut bob = Launcher::new("bob", ub);
+    relay.register(&mut alice);
+    relay.register(&mut alice2);
+    relay.register(&mut bob);
+    let carol = Uuid::now_v7();
+
+    let t = targets(&alice.db, &alice.keys, SERVER, &[ua, ub, carol]).unwrap();
+    assert_eq!(t.never_synced, vec![ua, ub, carol]);
+    alice.learn(&relay, &[ua, ub]);
+    let t = targets(&alice.db, &alice.keys, SERVER, &[ua, ub]).unwrap();
+    assert_eq!(t.trusted, vec![(ua, alice2.device), (ub, bob.device)]);
+    assert!(t.key_changed.is_empty() && t.never_synced.is_empty());
+
+    // Bob's device shows up with other keys: it moves to key_changed.
+    let other = Launcher::new("impostor", ub);
+    let forged = signed_device_keys(&other.db, &other.keys, SERVER).unwrap();
+    let entry = relay.devices.get_mut(&bob.device).unwrap();
+    entry.1.identity_key = forged.identity_key;
+    entry.1.signing_key = forged.signing_key;
+    entry.1.keys_signature = forged.keys_signature;
+    alice.learn(&relay, &[ub]);
+    let t = targets(&alice.db, &alice.keys, SERVER, &[ua, ub]).unwrap();
+    assert_eq!(t.trusted, vec![(ua, alice2.device)]);
+    assert_eq!(t.key_changed, vec![(ub, bob.device)]);
+}
+
+fn summary(id: Uuid, name: &str) -> crate::social::model::UserSummary {
+    crate::social::model::UserSummary {
+        id,
+        username: name.to_owned(),
+        display_name: None,
+        avatar_url: None,
+    }
+}
+
+#[test]
+fn the_conversation_cache_orders_counts_unread_and_finds_members() {
+    use crate::social::model::ConversationKind;
+    let (ua, ub, uc) = users();
+    let mut relay = Relay::default();
+    let mut alice = Launcher::new("alice", ua);
+    let mut bob = Launcher::new("bob", ub);
+    relay.register(&mut alice);
+    relay.register(&mut bob);
+    let direct = Uuid::now_v7();
+    let party = Uuid::now_v7();
+    let list = vec![
+        CachedConversation {
+            id: direct,
+            kind: ConversationKind::Direct,
+            members: vec![summary(ua, "alice"), summary(ub, "bob")],
+            created_at: NOW - 100,
+            last_activity_at: NOW - 100,
+        },
+        CachedConversation {
+            id: party,
+            kind: ConversationKind::Party,
+            members: vec![
+                summary(ua, "alice"),
+                summary(ub, "bob"),
+                summary(uc, "carol"),
+            ],
+            created_at: NOW - 50,
+            last_activity_at: NOW - 50,
+        },
+    ];
+    replace_conversations(&mut bob.db, SERVER, &list).unwrap();
+    let got = list_conversations(&bob.db, &bob.keys, SERVER).unwrap();
+    assert_eq!(
+        got.iter().map(|c| c.id).collect::<Vec<_>>(),
+        vec![party, direct]
+    );
+    assert!(
+        got.iter()
+            .all(|c| c.unread == 0 && c.last_message.is_none())
+    );
+
+    // Two messages in the direct conversation move it up and count as unread.
+    alice.send(&mut relay, direct, &[ub], "one");
+    alice.send(&mut relay, direct, &[ub], "two");
+    bob.learn(&relay, &[ua]);
+    bob.receive_all(&mut relay);
+    let got = list_conversations(&bob.db, &bob.keys, SERVER).unwrap();
+    assert_eq!(got[0].id, direct);
+    assert_eq!(got[0].unread, 2);
+    assert_eq!(
+        got[0].last_message.as_ref().map(|m| m.body.clone()),
+        Some(MessageBody::Text { text: "two".into() })
+    );
+    assert!(mark_read(&bob.db, SERVER, direct).unwrap());
+    assert_eq!(
+        get_conversation(&bob.db, &bob.keys, SERVER, direct)
+            .unwrap()
+            .unwrap()
+            .unread,
+        0
+    );
+    // Own messages never count as unread.
+    bob.send(&mut relay, direct, &[ua], "three");
+    assert_eq!(
+        get_conversation(&bob.db, &bob.keys, SERVER, direct)
+            .unwrap()
+            .unwrap()
+            .unread,
+        0
+    );
+
+    let (kind, members) = conversation_members(&bob.db, SERVER, party)
+        .unwrap()
+        .unwrap();
+    assert_eq!(kind, ConversationKind::Party);
+    assert_eq!(members.len(), 3);
+    let mut with_carol = conversations_with(&bob.db, SERVER, uc).unwrap();
+    with_carol.sort();
+    assert_eq!(with_carol, vec![party]);
+    assert_eq!(conversations_with(&bob.db, SERVER, ua).unwrap().len(), 2);
+
+    // Left the party: it leaves the list, its history stays.
+    replace_conversations(&mut bob.db, SERVER, &list[..1]).unwrap();
+    assert!(!is_cached(&bob.db, SERVER, party).unwrap());
+    assert!(is_cached(&bob.db, SERVER, direct).unwrap());
+    assert!(!mark_read(&bob.db, SERVER, party).unwrap());
+    assert_eq!(
+        list_conversations(&bob.db, &bob.keys, SERVER)
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        list_messages(&bob.db, &bob.keys, SERVER, direct, None, 10)
+            .unwrap()
+            .len(),
+        3
+    );
+}
