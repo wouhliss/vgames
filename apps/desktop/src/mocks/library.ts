@@ -557,7 +557,7 @@ export function libraryHandlers(
       return null;
     },
     shortcut_create: (args) => {
-      const pkg = find(args.package);
+      const pkg = find(args.pkg);
       return `/home/sam/Desktop/${pkg.title}.desktop`;
     },
   };
