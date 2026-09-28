@@ -161,6 +161,30 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   timeout, abort) and `e2e/metadata.spec.ts` (axe on both tabs, failed job + retry, 412 on apply, too big / wrong type
   refused locally, a real multipart upload through the service worker, broken image, delete dialog).
 
+- A3-T16 (part 1: versions and browser upload). **Versions tab:** state, sequence, label, platform, size and file
+  count, creator, current-release badge, verification progress (polled every 2 s while one verifies); publish
+  (confirmed), yank (reason 3–500 required), abort (confirmed), continue upload. **Upload wizard**
+  (`/packages/<id>/versions/new`, `…/versions/<vid>/upload` to resume): platform + label (`Idempotency-Key` per form) →
+  folder (`<input webkitdirectory>`, or the File System Access API when present, which also finds empty folders) with
+  every invalid path listed and its reason (02 §3 rules checked in TypeScript for the preview, again by pack-wasm), plan
+  summary and a virtualized file list → the executable to start (+ arguments, or "nothing to start") → key file +
+  passphrase, unlocked **only inside a dedicated key worker** that offers nothing but `sign(digest)` and is terminated
+  after finalize (a root key is refused) → upload. **Engine:** a pack worker reads and hashes chunks and streams pack
+  bytes from any offset; the page PUTs 16 MiB pieces to GCS resumable sessions, 4 packs in parallel; session URIs and
+  confirmed offsets go to IndexedDB after every piece; on resume the re-picked folder must match (paths, sizes, mtimes)
+  or it's refused with the differences; network loss waits for `online`/backoff and resumes by itself; an expired start
+  URL gets a new one; a vanished session restarts that pack; 5xx backs off; `beforeunload` and in-app navigation ask
+  while uploading; one tab per upload (Web Locks, BroadcastChannel fallback). Then the manifest is built, signed, PUT,
+  finalized (every 422 code has a human explanation; "use another key file" for key problems; `pack_missing` re-checks
+  the packs), verification is followed, and Publish. Tests: 34 new Vitest (engine against MSW + an emulated GCS: full
+  run, pause/resume without resending, network loss, expired start URLs, 503s, resume after "reload", untrusted and
+  someone else's key, a changed file, failed verification; path rules; versions tab; wizard end to end, invalid paths,
+  root key, changed folder on resume) and `e2e/upload.spec.ts` in Chromium with real Web Workers: **a network cut and a
+  page reload mid-upload, then resume and complete**, wrong passphrase, key not in the trust bundle (422
+  `publisher_key_untrusted`), **a 100,000-file folder** (planned in the worker, < 100 rows in the DOM, input stays
+  responsive). The 2 GB run against the real API + fs storage is for the nightly e2e workflow (not run here).
+  Next: the Compatibility tab (signed compat profiles).
+
 ## In progress
 - A3-T07 — Settings, in parts. **Part 1** ([#52](https://github.com/wouhliss/vgames/pull/52), merged): one URL per section (`/settings/<section>`, a section list that
   works with arrows and the D-pad) with General (theme incl. "Same as system", reduce motion), Servers (address,
@@ -324,6 +348,9 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   `invalid_input {field: "overlay_hotkey"}` shows as "not a shortcut vgames can use". Also
   `overlay_packages -> Vec<PackageOverlay {package, title, enabled, disabled_by_safety_valve_at}>` and
   `overlay_package_set(package, enabled)` (turning it on clears the safety valve).
+- **From Agent 5** (A3-T16): the admin release build must run `pnpm --filter @vgames/pack-wasm build` before
+  `pnpm --filter @vgames/admin-web build`; without it the uploader says its packing module is missing. The admin pages
+  bundle the `.wasm` (≈ 250 KB gzipped) through an optional glob, so CI builds without it keep working.
 - **From Agent 5:** nothing more for now. Seen (2026-09-26): CI runs locally (`scripts/ci/local.sh`, PR 42);
   my PRs carry its summary on the final commit and merge only when every job passes. The updater commands and the `updater-status` event now
   come from the generated `bindings.ts` (onboarding's "launcher too old" check uses `updater_check ->

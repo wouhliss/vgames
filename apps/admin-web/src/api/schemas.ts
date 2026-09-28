@@ -206,3 +206,58 @@ export const CandidatesSchema = z.object({
   items: z.array(MetadataCandidateSchema),
   job: JobSchema.optional(),
 });
+
+// ---------------------------------------------------------------- versions (A3-T16)
+
+export const VersionStateSchema = z.enum([
+  "uploading",
+  "verifying",
+  "ready",
+  "published",
+  "failed",
+  "yanked",
+  "aborted",
+]);
+export type VersionState = z.infer<typeof VersionStateSchema>;
+export type Platform = z.infer<typeof PlatformSchema>;
+
+export const VersionSchema = contract<Schemas["Version"]>()(
+  z.object({
+    id: Uuid,
+    package_id: Uuid,
+    server_id: Uuid,
+    platform: PlatformSchema,
+    sequence: z.number().int().min(1),
+    version_label: z.string(),
+    state: VersionStateSchema,
+    is_current_release: z.boolean().optional(),
+    failure_reason: z.string().optional(),
+    total_size: z.number().int().min(0).optional(),
+    file_count: z.number().int().min(0).optional(),
+    chunk_count: z.number().int().min(0).optional(),
+    pack_count: z.number().int().min(1).optional(),
+    publisher_key_id: z.string().optional(),
+    verify_progress: z.number().min(0).max(1).optional(),
+    created_at: Timestamp,
+    created_by: UserPublicSchema,
+    finalized_at: Timestamp.optional(),
+    verified_at: Timestamp.optional(),
+    published_at: Timestamp.optional(),
+    yanked_at: Timestamp.optional(),
+  }),
+);
+export type Version = z.infer<typeof VersionSchema>;
+
+export const VersionPageSchema = contract<Schemas["VersionPage"]>()(
+  z.object({ items: z.array(VersionSchema), next_cursor: z.string().optional() }),
+);
+
+export const UploadTargetSchema = contract<Schemas["UploadTarget"]>()(
+  z.object({
+    url: z.url(),
+    method: z.enum(["POST", "PUT"]),
+    headers: z.record(z.string(), z.string()),
+    expires_at: Timestamp,
+  }),
+);
+export type UploadTarget = z.infer<typeof UploadTargetSchema>;

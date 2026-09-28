@@ -33,6 +33,18 @@ export interface MockDb {
   brokenAssets: string[];
   /** Images uploaded but not (yet) used by a package. */
   uploadedAssets?: Record<string, Schemas["Asset"]>;
+  /** Versions per package id, newest first. */
+  versions: Record<string, Schemas["Version"][]>;
+  /** Emulated GCS: bytes received per `<version>/<pack>` (and the total once known). */
+  gcs: Record<string, { received: number; total: number | null; complete: boolean }>;
+  /** Emulated GCS: uploaded manifests per version id. */
+  manifests: Record<string, { size: number }>;
+  /** Publisher key ids in the trust bundle, with their holder. */
+  trustedKeys: Record<string, string>;
+  /** How verification of a version ends ("ok" by default). */
+  verifyOutcome: Record<string, "ok" | "fail">;
+  /** Test switches: the next N upload-session start URLs are already expired; GCS answers 503 N times. */
+  faults: { expiredStarts: number; gcsErrors: number; networkDown?: boolean };
 }
 
 export function createDb(role: Role | null = "admin"): MockDb {
@@ -82,6 +94,12 @@ export function createDb(role: Role | null = "admin"): MockDb {
     },
     lookupOutcome: {},
     brokenAssets: [assetId(3)],
+    versions: { [packageId(1)]: demoVersions() },
+    gcs: {},
+    manifests: {},
+    trustedKeys: { [MOCK_KEY_ID]: IDS.admin, [OTHER_KEY_ID]: IDS.owner },
+    verifyOutcome: {},
+    faults: { expiredStarts: 0, gcsErrors: 0 },
   };
 }
 
@@ -142,6 +160,67 @@ export function demoCandidates(): Schemas["MetadataCandidate"][] {
         external: { steam_app_id: 480, umu_id: "umu-480" },
       },
       fetched_at: fetched,
+    },
+  ];
+}
+
+/** The mock publisher key (see mocks/keyfile.ts), trusted and held by the admin. */
+export const MOCK_KEY_ID = "5a1ddc0a5e2e4a3c9f1b7d2e8c4a6b10";
+/** A trusted key held by the owner (finalizing with it as the admin is refused). */
+export const OTHER_KEY_ID = "0b7a1c3d5e7f90a1b2c3d4e5f6a7b8c9";
+export const SERVER_ID = "01920000-0000-7000-8000-000000000001";
+
+export const versionId = (n: number) =>
+  `01920000-0000-7000-8000-0000000e${n.toString(16).padStart(4, "0")}`;
+
+function demoVersions(): Schemas["Version"][] {
+  const base = {
+    package_id: `01920000-0000-7000-8000-0000000b0001`,
+    server_id: SERVER_ID,
+    created_by: { id: IDS.admin, username: "adrian", display_name: "Adrian" },
+  };
+  return [
+    {
+      ...base,
+      id: versionId(3),
+      platform: "linux-x86_64",
+      sequence: 3,
+      version_label: "1.2.0",
+      state: "ready",
+      total_size: 1_234_567_890,
+      file_count: 1432,
+      pack_count: 5,
+      publisher_key_id: MOCK_KEY_ID,
+      verify_progress: 1,
+      created_at: "2026-09-24T09:00:00Z",
+      finalized_at: "2026-09-24T09:30:00Z",
+      verified_at: "2026-09-24T09:40:00Z",
+    },
+    {
+      ...base,
+      id: versionId(2),
+      platform: "windows-x86_64",
+      sequence: 2,
+      version_label: "1.1.0",
+      state: "published",
+      is_current_release: true,
+      total_size: 1_100_000_000,
+      file_count: 1400,
+      pack_count: 5,
+      publisher_key_id: MOCK_KEY_ID,
+      created_at: "2026-09-10T09:00:00Z",
+      published_at: "2026-09-10T10:00:00Z",
+    },
+    {
+      ...base,
+      id: versionId(1),
+      platform: "windows-x86_64",
+      sequence: 1,
+      version_label: "1.0.0",
+      state: "yanked",
+      total_size: 1_000_000_000,
+      created_at: "2026-09-01T09:00:00Z",
+      yanked_at: "2026-09-10T10:00:00Z",
     },
   ];
 }

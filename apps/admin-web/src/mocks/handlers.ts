@@ -5,6 +5,7 @@ import { HttpResponse, http } from "msw";
 import { currentUser, IDS, type MockDb } from "./db";
 import { metadataHandlers } from "./metadata";
 import { packageHandlers } from "./packages";
+import { versionHandlers } from "./versions";
 
 type Problem = Schemas["Problem"];
 
@@ -83,5 +84,6 @@ export function createHandlers(db: MockDb) {
 
     ...packageHandlers(db),
     ...metadataHandlers(db),
+    ...versionHandlers(db),
   ];
 }

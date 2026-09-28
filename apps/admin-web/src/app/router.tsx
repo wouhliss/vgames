@@ -7,6 +7,8 @@ import { PackageCreate } from "../pages/packages/PackageCreate";
 import { PackageEditor } from "../pages/packages/PackageEditor";
 import { PackageLayout } from "../pages/packages/PackageLayout";
 import { PackagesList } from "../pages/packages/PackagesList";
+import { UploadWizard } from "../pages/packages/UploadWizard";
+import { VersionsTab } from "../pages/packages/VersionsTab";
 import { NotFoundPage } from "./ErrorView";
 import { Layout } from "./Layout";
 
@@ -26,6 +28,9 @@ export const routes: RouteObject[] = [
           { index: true, Component: PackageEditor },
           { path: "metadata", Component: MetadataTab },
           { path: "images", Component: ImagesTab },
+          { path: "versions", Component: VersionsTab },
+          { path: "versions/new", Component: UploadWizard },
+          { path: "versions/:versionId/upload", Component: UploadWizard },
         ],
       },
       { path: "users", element: <Placeholder title="Users" /> },

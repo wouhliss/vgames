@@ -2,6 +2,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { render } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { RequestHandler } from "msw";
+import type { ReactNode } from "react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { createQueryClient } from "../api/query";
 import { routes } from "../app/router";
@@ -13,7 +14,11 @@ import { server } from "./setup";
 export function renderAt(
   path: string,
   role: Role | null = "admin",
-  options: { overrides?: RequestHandler[]; db?: (db: MockDb) => void } = {},
+  options: {
+    overrides?: RequestHandler[];
+    db?: (db: MockDb) => void;
+    wrapper?: (props: { children: ReactNode }) => ReactNode;
+  } = {},
 ) {
   const db = createDb(role);
   options.db?.(db);
@@ -22,9 +27,12 @@ export function renderAt(
   server.use(...(options.overrides ?? []), ...createHandlers(db));
   const router = createMemoryRouter(routes, { initialEntries: [path] });
   const qc = createQueryClient({ onUnauthenticated: () => {}, onNetworkError: () => {} });
+  const Wrapper = options.wrapper ?? (({ children }: { children: ReactNode }) => children);
   render(
     <QueryClientProvider client={qc}>
-      <RouterProvider router={router} />
+      <Wrapper>
+        <RouterProvider router={router} />
+      </Wrapper>
     </QueryClientProvider>,
   );
   return { router, db, user: userEvent.setup() };

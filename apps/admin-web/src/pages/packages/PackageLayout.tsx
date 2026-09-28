@@ -21,6 +21,7 @@ const TABS = [
   { to: "", label: "Details", end: true },
   { to: "metadata", label: "Metadata", end: false },
   { to: "images", label: "Images", end: false },
+  { to: "versions", label: "Versions", end: false },
 ];
 
 export function PackageLayout() {
