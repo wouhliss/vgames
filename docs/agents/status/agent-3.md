@@ -131,6 +131,22 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   204 KB (< 256 KB), nodes and listeners flat. Found on the way: a query that fails refetches on every visit, so the
   mock now answers `social_connection` (a missing handler cost ~400 KB per 100 visits).
 
+- A3-T14 — Admin packages list and editor. **List** (`/admin/packages`): status and text filters kept in the URL
+  (back/forward and deep links work), table with sticky headers, cursor "Load more", empty / no-match / error (retry)
+  / forbidden states, "Deleted X." after a delete. **Create**: title (required, 1–200 code points), optional slug with a
+  live preview of the server's `slugify`, Steam/IGDB ids, "look up metadata"; one `Idempotency-Key` per form plus a
+  synchronous guard, so a double click or a retry after a lost answer creates one package; server field errors and
+  `slug_taken` land on the fields. **Editor**: every field with its source badge (admin / IGDB / Steam) and a counter,
+  client limits mirroring the API (code points after trimming: title 200, summary 500, description 20,000, developer
+  and publisher 200, ≤ 20 genres of ≤ 64, ids ≥ 1, slug pattern, date), focus to the first invalid field; saves send
+  only what changed as `application/merge-patch+json` with `If-Match`; **412** keeps the input and shows a
+  field-by-field diff (theirs / yours) with "keep mine, then save" (only my differences go over their version) or
+  "load theirs"; server `genres[i]` errors map onto Genres; dirty guard on in-app navigation (Stay / Leave) and tab
+  close; status change with a confirmation that says what it does; delete with the slug typed. Tests: 29 Vitest and
+  `e2e/packages.spec.ts` (axe on list, create, editor; double click = one package; concurrent edit 412 with diff, via
+  the mock server or, against the real stack, a second page; every field at 0 / max / max+1 with RTL, emoji and accents;
+  keyboard-only filter → open). The mock server now keeps its data across reloads in the tab (a `?mock=` URL starts over).
+
 ## In progress
 - A3-T07 — Settings, in parts. **Part 1** ([#52](https://github.com/wouhliss/vgames/pull/52), merged): one URL per section (`/settings/<section>`, a section list that
   works with arrows and the D-pad) with General (theme incl. "Same as system", reduce motion), Servers (address,

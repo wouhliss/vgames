@@ -253,3 +253,92 @@ thead th {
   margin: 10vh auto;
   padding: 24px;
 }
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgb(0 0 0 / 50%);
+}
+
+.modal {
+  width: min(560px, 100%);
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  padding: 16px 20px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.modal h2 {
+  margin-top: 0;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: flex-end;
+  margin-bottom: 12px;
+}
+
+.toolbar .field {
+  margin-bottom: 0;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.form-grid {
+  max-width: 760px;
+}
+
+.form-grid input:not([type="checkbox"]),
+.form-grid textarea,
+.form-grid select {
+  width: 100%;
+}
+
+.diff td {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.page-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.subnav ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0 0 16px;
+  padding: 0 0 8px;
+  border-bottom: 1px solid var(--border);
+  list-style: none;
+}
+
+.subnav a[aria-current="page"] {
+  font-weight: 650;
+}

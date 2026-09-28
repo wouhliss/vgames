@@ -1,6 +1,9 @@
 import { createBrowserRouter, Navigate, type RouteObject } from "react-router";
 import { LoginPage } from "../pages/LoginPage";
 import { Placeholder } from "../pages/Placeholder";
+import { PackageCreate } from "../pages/packages/PackageCreate";
+import { PackageEditor } from "../pages/packages/PackageEditor";
+import { PackagesList } from "../pages/packages/PackagesList";
 import { NotFoundPage } from "./ErrorView";
 import { Layout } from "./Layout";
 
@@ -11,7 +14,9 @@ export const routes: RouteObject[] = [
     Component: Layout,
     children: [
       { index: true, element: <Navigate to="/packages" replace /> },
-      { path: "packages/*", element: <Placeholder title="Packages" /> },
+      { path: "packages", Component: PackagesList },
+      { path: "packages/new", Component: PackageCreate },
+      { path: "packages/:packageId", Component: PackageEditor },
       { path: "users", element: <Placeholder title="Users" /> },
       { path: "allowlist", element: <Placeholder title="Allowlist" /> },
       { path: "settings", element: <Placeholder title="Settings" /> },

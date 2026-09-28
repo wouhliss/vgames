@@ -71,3 +71,95 @@ export type Me = z.infer<typeof MeSchema>;
 export const AuthStartResponseSchema = contract<Schemas["AuthStartResponse"]>()(
   z.object({ authorize_url: z.url(), expires_at: Timestamp }),
 );
+
+// ---------------------------------------------------------------- packages (A3-T14)
+
+export const PackageStatusSchema = z.enum(["draft", "published", "hidden", "archived"]);
+export type PackageStatus = z.infer<typeof PackageStatusSchema>;
+
+export const PlatformSchema = z.enum([
+  "windows-x86_64",
+  "windows-aarch64",
+  "linux-x86_64",
+  "linux-aarch64",
+  "macos-aarch64",
+  "macos-x86_64",
+]);
+
+export const AssetSchema = contract<Schemas["Asset"]>()(
+  z.object({
+    id: Uuid,
+    kind: z.enum(["cover", "hero", "logo", "screenshot", "icon"]),
+    url: z.string(),
+    width: z.number().int(),
+    height: z.number().int(),
+    content_type: z.enum(["image/jpeg", "image/png", "image/webp"]),
+    source: z.enum(["igdb", "steam", "upload"]).optional(),
+  }),
+);
+export type Asset = z.infer<typeof AssetSchema>;
+
+export const JobStateSchema = z.enum(["queued", "running", "succeeded", "failed", "dead"]);
+
+export const JobSchema = contract<Schemas["Job"]>()(
+  z.object({
+    id: Uuid,
+    kind: z.string(),
+    state: JobStateSchema,
+    attempts: z.number().int().min(0),
+    max_attempts: z.number().int().min(1),
+    last_error: z.string().optional(),
+    run_at: Timestamp.optional(),
+    created_at: Timestamp,
+    finished_at: Timestamp.optional(),
+  }),
+);
+export type Job = z.infer<typeof JobSchema>;
+
+export const FieldSourceSchema = z.enum(["admin", "igdb", "steam"]);
+export type FieldSource = z.infer<typeof FieldSourceSchema>;
+
+export const AdminPackageSchema = contract<Schemas["AdminPackage"]>()(
+  z.object({
+    id: Uuid,
+    slug: z.string(),
+    title: z.string(),
+    summary: z.string().optional(),
+    genres: z.array(z.string()).optional(),
+    cover: AssetSchema.optional(),
+    platforms: z.array(PlatformSchema),
+    updated_at: Timestamp,
+    description: z.string().optional(),
+    developer: z.string().optional(),
+    publisher: z.string().optional(),
+    release_date: z.iso.date().optional(),
+    protondb_tier: z.enum(["platinum", "gold", "silver", "bronze", "borked", "pending"]).optional(),
+    hero: AssetSchema.optional(),
+    logo: AssetSchema.optional(),
+    screenshots: z.array(AssetSchema).optional(),
+    releases: z
+      .array(
+        z.object({
+          platform: PlatformSchema,
+          version_id: Uuid,
+          version_label: z.string(),
+          sequence: z.number().int().min(1),
+          total_size: z.number().int().min(0),
+          published_at: Timestamp,
+        }),
+      )
+      .optional(),
+    status: PackageStatusSchema,
+    steam_app_id: z.number().int().min(1).optional(),
+    igdb_id: z.number().int().min(1).optional(),
+    field_sources: z.record(z.string(), FieldSourceSchema),
+    created_at: Timestamp,
+    created_by: UserPublicSchema,
+    metadata_job: JobSchema.optional(),
+  }),
+);
+export type AdminPackage = z.infer<typeof AdminPackageSchema>;
+
+export const AdminPackagePageSchema = contract<Schemas["AdminPackagePage"]>()(
+  z.object({ items: z.array(AdminPackageSchema), next_cursor: z.string().optional() }),
+);
