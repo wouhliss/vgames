@@ -10,6 +10,7 @@
 
 pub mod api;
 pub mod commands;
+pub mod controllers;
 pub mod db;
 pub mod deeplink;
 pub mod error;
