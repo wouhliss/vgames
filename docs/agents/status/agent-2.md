@@ -35,7 +35,8 @@
 - A2-T08 catalog, transfer orchestration, queue history, and collection/queue commands remain.
 - A2-T09 launch: target resolution, launch plans and Linux tracking are done (below). Still to do: Windows
   (suspended spawn + pre-resume hook, Job Object + completion port) and macOS (kqueue `NOTE_EXIT`) trackers,
-  pre-launch checks with the mtime+size cache, playtime, persisting running games, and the launch commands.
+  playtime, persisting running games, the cloud-save and controller hooks, and the launch commands. The pre-launch
+  timing budgets (< 300 ms, < 20 ms cached) are still to be measured.
 
 ## Interfaces delivered (other agents may now rely on these)
 - **Event bus** (A2-T01, for Agents 3, 4, 5): `vgames_desktop_lib::events::{EventBus, AppEvent}`,
@@ -117,6 +118,10 @@
   canceller, killer}, ProcessIdentity {pid, start_time}, GameExit, TreeKiller::terminate(force)}`. `wait` blocks on a
   dedicated thread until the whole process group has exited, with no timers. Processes that call `setsid`/`setpgid`
   leave tracking.
+- **Pre-launch checks** (A2-T09): `launch::prelaunch::{Prelaunch::{check, forget}, Checked {manifest, target},
+  PrelaunchError::{NotInstalled, Reverify, Integrity, ExecutableModified, …}}`. Call `forget(root)` after an
+  update, repair, move or uninstall. Test support: `vgames_transfer::testkit::{TestPackage::build_executable,
+  trust_state_with(version, revoke_publisher)}`.
 
 ## Measurements
 - A2-T01 idle, Linux (WSLg, debug build, Vite dev server, software GL), 60 s window

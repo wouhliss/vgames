@@ -11,6 +11,7 @@
 //! (`Native`, `Proton` or `Wine`) turns it into a [`plan::PreparedLaunch`].
 
 pub mod plan;
+pub mod prelaunch;
 pub mod process;
 pub mod target;
 

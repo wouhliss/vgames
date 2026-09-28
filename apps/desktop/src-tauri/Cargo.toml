@@ -67,6 +67,8 @@ sdl3.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+# Signed test packages for the pre-launch checks.
+vgames-transfer = { workspace = true, features = ["testkit"] }
 # Updater tests: a mock Tauri app, a local update server and throwaway minisign keys.
 tauri = { workspace = true, features = ["test"] }
 wiremock.workspace = true

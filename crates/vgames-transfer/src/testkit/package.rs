@@ -9,7 +9,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 use vgames_core::manifest::Platform;
 use vgames_core::trust::{
-    PublisherKey, RootPin, TrustBundle, TrustState, sign_bundle, verify_bundle,
+    PublisherKey, Revocation, RootPin, TrustBundle, TrustState, sign_bundle, verify_bundle,
 };
 use vgames_core::verify::{ExpectedRelease, VerifyMode};
 use vgames_core::{Context, Envelope, SecretKey, Timestamp};
@@ -156,13 +156,18 @@ pub fn publisher_key() -> SecretKey {
 
 /// A trust state (bundle v1) trusting [`publisher_key`].
 pub fn trust_state() -> TrustState {
+    trust_state_with(1, false)
+}
+
+/// Bundle `version`, optionally revoking [`publisher_key`].
+pub fn trust_state_with(version: u64, revoke_publisher: bool) -> TrustState {
     let root = root_key();
     let publisher = publisher_key();
     let ts = |s: &str| -> Timestamp { s.parse().unwrap() };
     let bundle = TrustBundle {
         format: "vgames.trust/1".into(),
         server_id: SERVER_ID,
-        version: 1,
+        version,
         issued_at: ts("2026-09-24T10:00:00Z"),
         expires_at: None,
         root_key_id: root.public_key().key_id(),
@@ -174,7 +179,15 @@ pub fn trust_state() -> TrustState {
             not_before: ts("2026-01-01T00:00:00Z"),
             not_after: ts("2036-01-01T00:00:00Z"),
         }],
-        revoked: vec![],
+        revoked: if revoke_publisher {
+            vec![Revocation {
+                key_id: publisher.public_key().key_id(),
+                revoked_at: ts("2026-09-25T10:00:00Z"),
+                reason: "test".into(),
+            }]
+        } else {
+            vec![]
+        },
         next_root: None,
     };
     let bytes = bundle.to_bytes();
@@ -213,6 +226,25 @@ impl TestPackage {
         compression: Compression,
         pack_size: u64,
         identity: &Identity,
+    ) -> Self {
+        Self::build_executable(
+            files,
+            dirs,
+            compression,
+            pack_size,
+            identity,
+            &Execution::default(),
+        )
+    }
+
+    /// Like [`Self::build_with`], with launch targets, saves and the like.
+    pub fn build_executable(
+        files: &[FileSpec],
+        dirs: &[&str],
+        compression: Compression,
+        pack_size: u64,
+        identity: &Identity,
+        execution: &Execution,
     ) -> Self {
         let source_dir = tempfile::tempdir().unwrap();
         write_tree(source_dir.path(), files, dirs);
@@ -253,7 +285,7 @@ impl TestPackage {
         };
         let manifest = manifest::build(
             &identity_out,
-            &Execution::default(),
+            execution,
             &plan,
             &pack_source.packing,
             &hashes,
