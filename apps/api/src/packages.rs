@@ -684,38 +684,25 @@ pub async fn list_catalog(
 
     // Optional filters stay `$n IS NULL OR …` and the sort a pair of CASE orders so the SQL is
     // static and compile-time checked; `db::connect` plans each call with its values
-    // (`force_custom_plan`), which folds them into plain index-backed conditions. Title pages
-    // go by (lower(title), id), recent pages by (updated_at, id) DESC: each order matches its
-    // keyset cursor and its index, and the id makes it total.
+    // (`force_custom_plan`). The stored lowercase title and covering indexes let both sorts
+    // scan in cursor order, checking releases only until the page is full.
     let keyed: Vec<(Uuid, String, OffsetDateTime)> = if let Some(pattern) = pattern {
-        // A search sorts its matches before checking for a release (OFFSET 0 keeps the
-        // subquery apart), so a broad word matching thousands of titles probes releases only
-        // until the page is full instead of once per match.
         sqlx::query!(
-            r#"SELECT m.id AS "id!", m.title_key AS "title_key!", m.updated_at AS "updated_at!"
-               FROM (
-                 SELECT p.id, lower(p.title) AS title_key, p.updated_at
-                 FROM packages p
-                 WHERE p.deleted_at IS NULL AND p.status = 'published'
-                   AND lower(p.title) LIKE $7 ESCAPE '\'
-                   AND ($1::text IS NULL OR p.genres @> ARRAY[$1::text])
-                   AND ($2::text IS NULL OR
-                        CASE WHEN $4 THEN (p.updated_at, p.id) < ($2::timestamptz, $5)
-                             ELSE (lower(p.title), p.id) > ($2, $5) END)
-                 ORDER BY
-                   CASE WHEN NOT $4 THEN lower(p.title) END,
-                   CASE WHEN NOT $4 THEN p.id END,
-                   CASE WHEN $4 THEN p.updated_at END DESC,
-                   CASE WHEN $4 THEN p.id END DESC
-                 OFFSET 0
-               ) m
-               WHERE EXISTS (SELECT 1 FROM package_releases r WHERE r.package_id = m.id
+            r#"SELECT p.id, p.title_key AS "title_key!", p.updated_at
+               FROM packages p
+               WHERE p.deleted_at IS NULL AND p.status = 'published'
+                 AND p.title_key LIKE $7 ESCAPE '\'
+                 AND EXISTS (SELECT 1 FROM package_releases r WHERE r.package_id = p.id
                              AND ($3::text IS NULL OR r.platform = $3))
+                 AND ($1::text IS NULL OR p.genres @> ARRAY[$1::text])
+                 AND ($2::text IS NULL OR
+                      CASE WHEN $4 THEN (p.updated_at, p.id) < ($2::timestamptz, $5)
+                           ELSE (p.title_key, p.id) > ($2, $5) END)
                ORDER BY
-                 CASE WHEN NOT $4 THEN m.title_key END,
-                 CASE WHEN NOT $4 THEN m.id END,
-                 CASE WHEN $4 THEN m.updated_at END DESC,
-                 CASE WHEN $4 THEN m.id END DESC
+                 CASE WHEN NOT $4 THEN p.title_key END,
+                 CASE WHEN NOT $4 THEN p.id END,
+                 CASE WHEN $4 THEN p.updated_at END DESC,
+                 CASE WHEN $4 THEN p.id END DESC
                LIMIT $6"#,
             q.genre,
             cursor_key,
@@ -731,10 +718,8 @@ pub async fn list_catalog(
         .map(|r| (r.id, r.title_key, r.updated_at))
         .collect()
     } else {
-        // Without a search the index order is the page order: releases are checked lazily
-        // while walking it.
         sqlx::query!(
-            r#"SELECT p.id, lower(p.title) AS "title_key!", p.updated_at
+            r#"SELECT p.id, p.title_key AS "title_key!", p.updated_at
                FROM packages p
                WHERE p.deleted_at IS NULL AND p.status = 'published'
                  AND EXISTS (SELECT 1 FROM package_releases r WHERE r.package_id = p.id
@@ -742,9 +727,9 @@ pub async fn list_catalog(
                  AND ($1::text IS NULL OR p.genres @> ARRAY[$1::text])
                  AND ($2::text IS NULL OR
                       CASE WHEN $4 THEN (p.updated_at, p.id) < ($2::timestamptz, $5)
-                           ELSE (lower(p.title), p.id) > ($2, $5) END)
+                           ELSE (p.title_key, p.id) > ($2, $5) END)
                ORDER BY
-                 CASE WHEN NOT $4 THEN lower(p.title) END,
+                 CASE WHEN NOT $4 THEN p.title_key END,
                  CASE WHEN NOT $4 THEN p.id END,
                  CASE WHEN $4 THEN p.updated_at END DESC,
                  CASE WHEN $4 THEN p.id END DESC
