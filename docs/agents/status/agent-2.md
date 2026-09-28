@@ -35,8 +35,7 @@
 - A2-T08 catalog, transfer orchestration, queue history, and collection/queue commands remain.
 - A2-T09 launch: target resolution, launch plans and Linux tracking are done (below). Still to do: Windows
   (suspended spawn + pre-resume hook, Job Object + completion port) and macOS (kqueue `NOTE_EXIT`) trackers,
-  the cloud-save and controller hooks, and the launch commands (these need T07's trust state). The pre-launch
-  timing budgets (< 300 ms, < 20 ms cached) are still to be measured.
+  the cloud-save and controller hooks, and the launch commands (these need T07's trust state).
 
 ## Interfaces delivered (other agents may now rely on these)
 - **Event bus** (A2-T01, for Agents 3, 4, 5): `vgames_desktop_lib::events::{EventBus, AppEvent}`,
@@ -144,6 +143,8 @@
   every tree byte-identical. Disk usage sampled every ms during an install never exceeded the final footprint plus
   3 blocks (journal, its temp file, the install record's temp file). No chunk is verified twice unless retried
   (asserted in every fault-free test and across pause/resume).
+- A2-T09 pre-launch check (`launch::prelaunch::tests::prelaunch_budget`, release, 4 vCPU Xeon, tmpfs-like temp dir,
+  warm page cache): 200 MiB executable, first check **62 ms** (budget 300 ms), cached **14 µs** (budget 20 ms).
 - Found and fixed: `blocking` 1.7 (via zbus ← single-instance/notification/keyring) wakes idle threads
   every 500 ms forever. `Cargo.lock` pins `blocking` 1.6.2 (idle threads exit). **Do not
   `cargo update` it back to 1.7** until upstream restores thread exit.

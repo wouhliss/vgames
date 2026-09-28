@@ -15,8 +15,12 @@ struct Installed {
 }
 
 fn installed(state: InstallState) -> Installed {
+    installed_sized(state, 64 * 1024)
+}
+
+fn installed_sized(state: InstallState, exe_size: u64) -> Installed {
     let files = [
-        FileSpec::random("bin/game", 64 * 1024, 1),
+        FileSpec::random("bin/game", exe_size, 1),
         FileSpec::random("data/level.pak", 1000, 2),
     ];
     let execution = Execution {
@@ -175,4 +179,24 @@ fn another_release_is_not_accepted() {
         &TargetChoice::Default,
     );
     assert!(matches!(result, Err(PrelaunchError::Integrity(_))));
+}
+
+/// 02 §11 budgets: < 300 ms for a typical package, < 20 ms when cached.
+/// `cargo test -p vgames-desktop --release --lib prelaunch_budget -- --ignored --nocapture`
+#[test]
+#[ignore = "benchmark"]
+fn prelaunch_budget() {
+    let install = installed_sized(InstallState::Installed, 200 * 1024 * 1024);
+    let cache = Prelaunch::default();
+    let started = std::time::Instant::now();
+    install.check(&cache).unwrap();
+    let cold = started.elapsed();
+    let started = std::time::Instant::now();
+    for _ in 0..100 {
+        install.check(&cache).unwrap();
+    }
+    let warm = started.elapsed() / 100;
+    println!("pre-launch check, 200 MiB executable: first {cold:?}, cached {warm:?}");
+    assert!(cold < std::time::Duration::from_millis(300), "{cold:?}");
+    assert!(warm < std::time::Duration::from_millis(20), "{warm:?}");
 }
