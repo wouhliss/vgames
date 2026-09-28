@@ -15,7 +15,7 @@ use url::Url;
 
 use crate::events::{AppEvent, EventBus, ServerAddRequested};
 use crate::servers::Servers;
-use crate::servers::auth::parse_callback_link;
+use crate::servers::auth::{parse_callback_error_link, parse_callback_link};
 use crate::servers::discovery::normalize_url;
 
 const MAX_LINK_CHARS: usize = 4096;
@@ -27,6 +27,8 @@ pub enum DeepLink {
     ServerAdd { url: String, fingerprint: String },
     /// `vgames://auth/callback?code=…&client_state=…`
     AuthCallback { code: String, client_state: String },
+    /// `vgames://auth/callback?error=…&client_state=…` (a refused sign-in)
+    AuthRefused { error: String, client_state: String },
 }
 
 /// Parses a deep link; `None` for anything not in the grammar.
@@ -60,8 +62,14 @@ pub fn parse(text: &str, allow_loopback_http: bool) -> Option<DeepLink> {
             })
         }
         ("auth", "/callback") => {
-            let (code, client_state) = parse_callback_link(text)?;
-            Some(DeepLink::AuthCallback { code, client_state })
+            if let Some((code, client_state)) = parse_callback_link(text) {
+                return Some(DeepLink::AuthCallback { code, client_state });
+            }
+            let (error, client_state) = parse_callback_error_link(text)?;
+            Some(DeepLink::AuthRefused {
+                error,
+                client_state,
+            })
         }
         _ => None,
     }
@@ -110,6 +118,10 @@ pub fn spawn_router(
                         servers.auth_callback(&code, &client_state).await;
                     });
                 }
+                Some(DeepLink::AuthRefused {
+                    error,
+                    client_state,
+                }) => servers.auth_callback_error(&error, &client_state),
                 None => {
                     let route = Url::parse(&url)
                         .ok()
@@ -172,6 +184,24 @@ mod tests {
                 code: "abc".into(),
                 client_state: "xyz".into()
             })
+        );
+    }
+
+    #[test]
+    fn refused_sign_ins_are_recognized() {
+        assert_eq!(
+            parse(
+                "vgames://auth/callback?error=user_disabled&client_state=xyz",
+                false
+            ),
+            Some(DeepLink::AuthRefused {
+                error: "user_disabled".into(),
+                client_state: "xyz".into()
+            })
+        );
+        assert_eq!(
+            parse("vgames://auth/callback?error=user_disabled", false),
+            None
         );
     }
 

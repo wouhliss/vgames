@@ -690,6 +690,48 @@ async fn the_paste_code_fallback_checks_code_and_state() {
 }
 
 #[tokio::test]
+async fn a_refused_sign_in_link_ends_only_its_own_flow() {
+    let mut h = Harness::new().await;
+    h.add(&key(1)).await;
+    Mock::given(method("POST"))
+        .and(path("/v1/auth/discord/start"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "authorize_url": "https://discord.example/oauth2/authorize",
+            "expires_at": "2099-01-01T00:00:00Z"
+        })))
+        .mount(&h.mock)
+        .await;
+    let flow = h.servers.auth_start(server_id()).await.unwrap();
+    let start = body_json(&requests_to(&h.mock, "/v1/auth/discord/start").await[0]);
+    let client_state = start["client_state"].as_str().unwrap().to_owned();
+    h.events();
+
+    // Another flow's state is ignored, and this flow stays usable.
+    h.servers
+        .auth_callback_error("not_allowlisted", "someone-else");
+    assert!(h.events().is_empty());
+    assert!(h.servers.auth_open_browser(flow.flow_id).is_ok());
+
+    h.servers
+        .auth_callback_error("not_allowlisted", &client_state);
+    assert!(h.events().iter().any(|e| matches!(
+        e,
+        AppEvent::AuthFinished(AuthFinished {
+            flow_id,
+            outcome: AuthOutcome::Failed {
+                error: AuthError::NotAllowlisted
+            },
+        }) if *flow_id == flow.flow_id
+    )));
+    // The flow is gone: no code exchange can follow.
+    assert_eq!(
+        h.servers.auth_open_browser(flow.flow_id).unwrap_err(),
+        AuthError::Expired
+    );
+    assert!(requests_to(&h.mock, "/v1/auth/token").await.is_empty());
+}
+
+#[tokio::test]
 async fn sign_out_revokes_and_forgets_the_session() {
     let mut h = Harness::new().await;
     h.add(&key(1)).await;

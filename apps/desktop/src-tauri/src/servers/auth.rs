@@ -63,6 +63,20 @@ pub enum AuthError {
 }
 
 impl AuthError {
+    /// The `error` code of a refused-sign-in redirect (01-security §4.1).
+    pub fn from_redirect(code: &str) -> Self {
+        match code {
+            "registration_closed" => Self::RegistrationClosed,
+            "not_allowlisted" => Self::NotAllowlisted,
+            "user_disabled" => Self::UserDisabled,
+            "access_denied" => Self::Cancelled,
+            _ => Self::Server {
+                code: code.to_owned(),
+                message: "The server could not complete the sign-in.".into(),
+            },
+        }
+    }
+
     fn from_api(error: ApiError) -> Self {
         match error {
             ApiError::Timeout => Self::Network {
@@ -277,6 +291,23 @@ impl Servers {
         self.publish_finished(flow_id, &result);
     }
 
+    /// The refused-sign-in deep link: ends the pending flow with this
+    /// `client_state` and reports why. Ignored without a matching flow.
+    pub fn auth_callback_error(&self, error: &str, client_state: &str) {
+        let removed = self.flows.lock().ok().and_then(|mut flows| {
+            let id = flows
+                .iter()
+                .find(|(_, f)| constant_time_eq(&f.client_state, client_state))
+                .map(|(id, _)| *id)?;
+            flows.remove(&id).map(|_| id)
+        });
+        let Some(flow_id) = removed else {
+            tracing::warn!("refused sign-in callback without a matching pending sign-in; ignored");
+            return;
+        };
+        self.publish_finished(flow_id, &Err(AuthError::from_redirect(error)));
+    }
+
     /// Cancels a pending flow (unknown ids are ignored).
     pub fn auth_cancel(&self, flow_id: Uuid) {
         let removed = self
@@ -373,15 +404,40 @@ impl Servers {
 
 /// `vgames://auth/callback?code=…&client_state=…` → `(code, client_state)`.
 pub fn parse_callback_link(text: &str) -> Option<(String, String)> {
+    match callback_params(text)? {
+        (Some(code), None, state) => Some((code, state)),
+        _ => None,
+    }
+}
+
+/// A refused sign-in (01-security §4.1):
+/// `vgames://auth/callback?error=<code>&client_state=…` → `(error, client_state)`.
+/// The error code must be `^[a-z_]{1,64}$`.
+pub fn parse_callback_error_link(text: &str) -> Option<(String, String)> {
+    match callback_params(text)? {
+        (None, Some(error), state)
+            if (1..=64).contains(&error.len())
+                && error.bytes().all(|c| c.is_ascii_lowercase() || c == b'_') =>
+        {
+            Some((error, state))
+        }
+        _ => None,
+    }
+}
+
+/// `(code, error, client_state)` of a callback link with no unknown or repeated keys.
+fn callback_params(text: &str) -> Option<(Option<String>, Option<String>, String)> {
     let url = Url::parse(text).ok()?;
     if url.scheme() != "vgames" || url.host_str() != Some("auth") || url.path() != "/callback" {
         return None;
     }
     let mut code = None;
+    let mut error = None;
     let mut state = None;
     for (key, value) in url.query_pairs() {
         let slot = match key.as_ref() {
             "code" => &mut code,
+            "error" => &mut error,
             "client_state" | "state" => &mut state,
             _ => return None,
         };
@@ -389,7 +445,7 @@ pub fn parse_callback_link(text: &str) -> Option<(String, String)> {
             return None;
         }
     }
-    Some((code?, state?))
+    Some((code, error, state?))
 }
 
 fn internal_state() -> AuthError {
@@ -437,6 +493,59 @@ mod tests {
         ] {
             assert_eq!(parse_callback_link(bad), None, "{bad}");
         }
+    }
+
+    #[test]
+    fn refused_sign_in_links_are_parsed_strictly() {
+        assert_eq!(
+            parse_callback_error_link(
+                "vgames://auth/callback?error=not_allowlisted&client_state=xyz"
+            ),
+            Some(("not_allowlisted".into(), "xyz".into()))
+        );
+        for bad in [
+            "vgames://auth/callback?error=not_allowlisted",
+            "vgames://auth/callback?error=x&code=a&client_state=s",
+            "vgames://auth/callback?error=x&error=y&client_state=s",
+            "vgames://auth/callback?error=Bad-Code&client_state=s",
+            "vgames://auth/callback?error=&client_state=s",
+            "vgames://auth/callback?error=x&client_state=s&extra=1",
+        ] {
+            assert_eq!(parse_callback_error_link(bad), None, "{bad}");
+        }
+        // A code link is not an error link and vice versa.
+        assert_eq!(
+            parse_callback_error_link("vgames://auth/callback?code=a&client_state=s"),
+            None
+        );
+        assert_eq!(
+            parse_callback_link("vgames://auth/callback?error=x&client_state=s"),
+            None
+        );
+    }
+
+    #[test]
+    fn redirect_codes_map_to_auth_errors() {
+        assert_eq!(
+            AuthError::from_redirect("registration_closed"),
+            AuthError::RegistrationClosed
+        );
+        assert_eq!(
+            AuthError::from_redirect("not_allowlisted"),
+            AuthError::NotAllowlisted
+        );
+        assert_eq!(
+            AuthError::from_redirect("user_disabled"),
+            AuthError::UserDisabled
+        );
+        assert_eq!(
+            AuthError::from_redirect("access_denied"),
+            AuthError::Cancelled
+        );
+        assert!(matches!(
+            AuthError::from_redirect("sign_in_failed"),
+            AuthError::Server { code, .. } if code == "sign_in_failed"
+        ));
     }
 
     #[test]
