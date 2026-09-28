@@ -35,7 +35,7 @@
 - A2-T08 catalog, transfer orchestration, queue history, and collection/queue commands remain.
 - A2-T09 launch: target resolution, launch plans and Linux tracking are done (below). Still to do: Windows
   (suspended spawn + pre-resume hook, Job Object + completion port) and macOS (kqueue `NOTE_EXIT`) trackers,
-  playtime, persisting running games, the cloud-save and controller hooks, and the launch commands. The pre-launch
+  the cloud-save and controller hooks, and the launch commands (these need T07's trust state). The pre-launch
   timing budgets (< 300 ms, < 20 ms cached) are still to be measured.
 
 ## Interfaces delivered (other agents may now rely on these)
@@ -118,6 +118,11 @@
   canceller, killer}, ProcessIdentity {pid, start_time}, GameExit, TreeKiller::terminate(force)}`. `wait` blocks on a
   dedicated thread until the whole process group has exited, with no timers. Processes that call `setsid`/`setpgid`
   leave tracking.
+- **Game sessions** (A2-T09, for Agents 3 and 4): `state.games: launch::GameSessions` with `start(package, root,
+  prepared) -> pid`, `stop(package, force)`, `is_running`, `reattach`, `detach_all` (on exit). Publishes `GameStarted`
+  and `GameStopped { code, stopped_by_user, session_seconds }`, adds playtime to `installs`
+  (`db::installs::{record_playtime, playtime, roots}`), and keeps `<install>/.vgames/session.json` while a game runs.
+  At startup every install is re-attached, and a game that runs across a launcher restart has its whole session credited.
 - **Pre-launch checks** (A2-T09): `launch::prelaunch::{Prelaunch::{check, forget}, Checked {manifest, target},
   PrelaunchError::{NotInstalled, Reverify, Integrity, ExecutableModified, …}}`. Call `forget(root)` after an
   update, repair, move or uninstall. Test support: `vgames_transfer::testkit::{TestPackage::build_executable,

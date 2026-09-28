@@ -9,6 +9,7 @@ use tokio_util::sync::CancellationToken;
 use crate::db::Db;
 use crate::events::EventBus;
 use crate::images::{ImageCache, ImageCacheError};
+use crate::launch::GameSessions;
 use crate::paths::AppPaths;
 use crate::servers::Servers;
 
@@ -20,6 +21,8 @@ pub struct AppState {
     pub images: Arc<ImageCache>,
     /// Internal typed event bus (see `events`).
     pub bus: EventBus,
+    /// Running games (see `launch::session`).
+    pub games: GameSessions,
     /// Root of every task's cancellation token; cancelled on exit.
     pub shutdown: CancellationToken,
     /// Cancelled (used as a one-shot latch) once the UI has rendered and called
@@ -40,6 +43,7 @@ impl AppState {
         let images = Arc::new(ImageCache::open(paths.cache_dir.join("images"))?);
         Ok(Self {
             paths,
+            games: GameSessions::new(db.clone(), bus.clone()),
             db,
             images,
             bus,

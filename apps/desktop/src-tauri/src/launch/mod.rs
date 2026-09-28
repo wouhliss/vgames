@@ -13,10 +13,12 @@
 pub mod plan;
 pub mod prelaunch;
 pub mod process;
+pub mod session;
 pub mod target;
 
 pub use plan::{LaunchPlan, PreparedLaunch, ProtonPlan, WinePlan};
 pub use process::{GameExit, ProcessIdentity, RunningGame};
+pub use session::{GameSessions, SessionError};
 pub use target::{JoinSecret, ResolvedTarget, TargetChoice};
 
 use std::path::PathBuf;
