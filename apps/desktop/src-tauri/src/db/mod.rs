@@ -18,6 +18,7 @@ pub mod installs;
 pub mod libraries;
 pub mod migrations;
 pub mod settings;
+pub mod shortcuts;
 
 use std::path::Path;
 use std::sync::mpsc;

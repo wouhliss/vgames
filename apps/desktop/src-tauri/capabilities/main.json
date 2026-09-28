@@ -23,6 +23,7 @@
     "allow-library-add",
     "allow-library-set-default",
     "allow-library-remove",
+    "allow-shortcut-create",
     "allow-updater-status",
     "allow-updater-check",
     "allow-updater-whats-new",

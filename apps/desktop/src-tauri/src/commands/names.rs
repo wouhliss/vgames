@@ -29,6 +29,7 @@ pub const MAIN_WINDOW_COMMANDS: &[&str] = &[
     "library_add",
     "library_set_default",
     "library_remove",
+    "shortcut_create",
     "updater_status",
     "updater_check",
     "updater_whats_new",

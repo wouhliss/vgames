@@ -84,3 +84,30 @@ pub async fn roots(db: &Db) -> Result<Vec<(PackageRef, std::path::PathBuf)>, DbE
     })
     .await
 }
+
+/// The install directory and its name inside the library, if registered.
+pub async fn find(
+    db: &Db,
+    package: PackageRef,
+) -> Result<Option<(std::path::PathBuf, String)>, DbError> {
+    db.call(move |conn| {
+        let mut statement = conn.prepare(
+            "SELECT l.path, i.dir_name
+               FROM installs i JOIN libraries l ON l.id = i.library_id
+              WHERE i.server_id = ?1 AND i.package_id = ?2",
+        )?;
+        let mut rows = statement.query([
+            package.server_id.to_string(),
+            package.package_id.to_string(),
+        ])?;
+        match rows.next()? {
+            Some(row) => {
+                let library: String = row.get(0)?;
+                let dir: String = row.get(1)?;
+                Ok(Some((std::path::Path::new(&library).join(&dir), dir)))
+            }
+            None => Ok(None),
+        }
+    })
+    .await
+}

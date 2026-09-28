@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-shortcut-create"
+description = "Enables the shortcut_create command without any pre-configured scope."
+commands.allow = ["shortcut_create"]
+
+[[permission]]
+identifier = "deny-shortcut-create"
+description = "Denies the shortcut_create command without any pre-configured scope."
+commands.deny = ["shortcut_create"]

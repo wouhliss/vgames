@@ -8,6 +8,7 @@ mod app;
 mod libraries;
 pub mod names;
 mod servers;
+pub mod shortcuts;
 
 use std::path::{Path, PathBuf};
 
@@ -45,6 +46,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             libraries::library_add,
             libraries::library_set_default,
             libraries::library_remove,
+            shortcuts::shortcut_create,
             crate::updater::updater_status,
             crate::updater::updater_check,
             crate::updater::updater_whats_new,

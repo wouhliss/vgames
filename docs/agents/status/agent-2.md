@@ -122,6 +122,12 @@
   and `GameStopped { code, stopped_by_user, session_seconds }`, adds playtime to `installs`
   (`db::installs::{record_playtime, playtime, roots}`), and keeps `<install>/.vgames/session.json` while a game runs.
   At startup every install is re-attached, and a game that runs across a launcher restart has its whole session credited.
+- **Desktop shortcuts** (A2-T10, for Agent 3): command `shortcutCreate(pkg)` → path. The argument is `pkg`, not
+  `package`, because `package` is reserved in strict TypeScript. I changed the one mock line in
+  `src/mocks/library.ts` and removed the pending entry from `src/ipc/contract/library.ts`. The shortcut is named after the
+  install folder until the catalog title cache exists. Uninstall calls `commands::shortcuts::remove_for_package`,
+  which never deletes a file the player changed. Icons (`.ico`/PNG from the cover) and the `vgames://launch` route come
+  with T10's parser, after #47.
 - **Pre-launch checks** (A2-T09): `launch::prelaunch::{Prelaunch::{check, forget}, Checked {manifest, target},
   PrelaunchError::{NotInstalled, Reverify, Integrity, ExecutableModified, …}}`. Call `forget(root)` after an
   update, repair, move or uninstall. Test support: `vgames_transfer::testkit::{TestPackage::build_executable,
@@ -143,7 +149,7 @@
   every tree byte-identical. Disk usage sampled every ms during an install never exceeded the final footprint plus
   3 blocks (journal, its temp file, the install record's temp file). No chunk is verified twice unless retried
   (asserted in every fault-free test and across pause/resume).
-- A2-T09 pre-launch check (`launch::prelaunch::tests::prelaunch_budget`, release, 4 vCPU Xeon, tmpfs-like temp dir,
+- A2-T09 pre-launch check (`launch::prelaunch::tests::prelaunch_budget`, release, 4 vCPU Xeon, system temp dir,
   warm page cache): 200 MiB executable, first check **62 ms** (budget 300 ms), cached **14 µs** (budget 20 ms).
 - Found and fixed: `blocking` 1.7 (via zbus ← single-instance/notification/keyring) wakes idle threads
   every 500 ms forever. `Cargo.lock` pins `blocking` 1.6.2 (idle threads exit). **Do not

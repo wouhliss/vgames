@@ -21,6 +21,7 @@ pub mod logging;
 pub mod paths;
 pub mod secrets;
 pub mod servers;
+pub mod shortcuts;
 pub mod social;
 pub mod state;
 pub mod updater;

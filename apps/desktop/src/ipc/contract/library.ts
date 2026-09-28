@@ -200,10 +200,6 @@ export const libraryCommands = {
   async installOpenFolder(pkg: PackageRef): Promise<Result<null, AppError>> {
     return call("install_open_folder", { package: pkg });
   },
-  /** Creates a desktop shortcut (`vgames://launch/…`, A2-T10). Returns the shortcut's path. */
-  async shortcutCreate(pkg: PackageRef): Promise<Result<string, AppError>> {
-    return call("shortcut_create", { package: pkg });
-  },
 };
 
 export const libraryEvents = makeEvents<{
