@@ -123,7 +123,8 @@ async function send(run: RawCall, signal: AbortSignal | undefined) {
   }
 }
 
-function failure(response: Response, error: unknown): ApiError {
+/** The typed error for a non-2xx response whose body was `error` (text or parsed). */
+export function failure(response: Response, error: unknown): ApiError {
   return new ApiError({
     kind: "http",
     status: response.status,

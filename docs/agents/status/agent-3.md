@@ -147,6 +147,20 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   the mock server or, against the real stack, a second page; every field at 0 / max / max+1 with RTL, emoji and accents;
   keyboard-only filter → open). The mock server now keeps its data across reloads in the tab (a `?mock=` URL starts over).
 
+- A3-T15 — Metadata review and images. The package page now has tabs (Details, Metadata, Images; own URLs) that share
+  the cached package and its ETag. **Metadata:** the lookup job's state in words, polled every 2 s while queued or
+  running and stopped at a terminal state (tested: no request after it ends); a failed/dead job shows its error and
+  attempts with "Try again"; candidates (source, title, year, score); a side-by-side comparison (current / candidate)
+  with a checkbox per field (differing values ticked by default, admin-edited fields marked and kept unless "Overwrite
+  fields an admin edited" is on, which warns); apply with `If-Match`, and a 412 asks to reload, then apply. Candidate
+  image URLs are shown as text (the admin page loads no third-party images). **Images:** cover, hero, logo and
+  screenshots from `/v1/assets/{id}` with a placeholder when one can't be loaded; upload checked before sending (content
+  sniffed as JPEG/PNG/WebP, 1 byte – 10 MiB), with progress (XHR: fetch has no upload progress), then a new
+  cover/hero/logo is set with `If-Match`; the server's 413/415 shown; delete with confirmation. Tests: 17 Vitest
+  (`metadata.test.tsx`, `api/upload.test.ts` with a fake XHR: CSRF, progress, 413/415, malformed, schema, network,
+  timeout, abort) and `e2e/metadata.spec.ts` (axe on both tabs, failed job + retry, 412 on apply, too big / wrong type
+  refused locally, a real multipart upload through the service worker, broken image, delete dialog).
+
 ## In progress
 - A3-T07 — Settings, in parts. **Part 1** ([#52](https://github.com/wouhliss/vgames/pull/52), merged): one URL per section (`/settings/<section>`, a section list that
   works with arrows and the D-pad) with General (theme incl. "Same as system", reduce motion), Servers (address,

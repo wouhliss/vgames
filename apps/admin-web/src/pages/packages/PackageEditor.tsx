@@ -3,14 +3,14 @@
 // by side, with "save mine over theirs" or "load theirs". Leaving with unsaved changes asks first
 // (in-app navigation and tab close). Status changes and delete are confirmed; delete needs the slug
 // typed. No optimistic updates: the page shows what the server confirmed.
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useRef, useState } from "react";
-import { Link, useBlocker, useNavigate, useParams } from "react-router";
+import { useBlocker, useNavigate } from "react-router";
 import { ApiError } from "../../api/errors";
 import type { ApiResponse } from "../../api/http";
 import { deletePackage, getPackage, packageKeys, updatePackage } from "../../api/packages";
 import type { AdminPackage, PackageStatus } from "../../api/schemas";
-import { ErrorView, Loading, QueryState } from "../../app/ErrorView";
+import { ErrorView } from "../../app/ErrorView";
 import { Field } from "../../components/Field";
 import { Modal } from "../../components/Modal";
 import {
@@ -28,6 +28,7 @@ import {
   STATUSES,
   validateAll,
 } from "./model";
+import { usePackageContext } from "./PackageLayout";
 
 const STATUS_EFFECT: Record<PackageStatus, string> = {
   draft: "Players can't see it. Use this while you prepare the package.",
@@ -48,17 +49,10 @@ function toFormErrors(errors: Record<string, string>): Partial<Record<FieldName,
   return out;
 }
 
+/** The Details tab: the form, status and delete. */
 export function PackageEditor() {
-  const id = useParams().packageId ?? "";
-  const query = useQuery({
-    queryKey: packageKeys.one(id),
-    queryFn: ({ signal }) => getPackage(id, signal),
-    // The form owns what is on screen; a background refetch would not replace it anyway.
-    staleTime: Number.POSITIVE_INFINITY,
-  });
-  if (query.isPending) return <Loading label="Loading package…" />;
-  if (query.isError) return <QueryState error={query.error} onRetry={() => void query.refetch()} />;
-  return <Editor key={id} initial={query.data} />;
+  const { response } = usePackageContext();
+  return <Editor key={response.data.id} initial={response} />;
 }
 
 function Editor({ initial }: { initial: ApiResponse<AdminPackage> }) {
@@ -203,21 +197,7 @@ function Editor({ initial }: { initial: ApiResponse<AdminPackage> }) {
   };
 
   return (
-    <section aria-labelledby="page-title" className="form-grid">
-      <p>
-        <Link to="/packages">← Packages</Link>
-      </p>
-      <div className="page-header">
-        <h1 id="page-title" dir="auto">
-          {pkg.title}
-        </h1>
-        <span className="badge">{STATUS_LABEL[pkg.status]}</span>
-      </div>
-      <p className="muted">
-        <span className="mono">{pkg.id}</span> · created by{" "}
-        {pkg.created_by.display_name ?? pkg.created_by.username}
-      </p>
-
+    <div className="form-grid">
       {failure ? <ErrorView error={failure} /> : null}
       {conflict ? (
         <ConflictPanel
@@ -349,7 +329,7 @@ function Editor({ initial }: { initial: ApiResponse<AdminPackage> }) {
           </div>
         </Modal>
       ) : null}
-    </section>
+    </div>
   );
 }
 

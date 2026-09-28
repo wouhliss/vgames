@@ -194,9 +194,20 @@ export function packageHandlers(db: MockDb) {
       const next: AdminPackage = { ...pkg, field_sources: { ...pkg.field_sources } };
       const record = next as unknown as Record<string, unknown>;
       for (const [key, value] of Object.entries(body)) {
-        if (value === null) delete record[key];
+        const slot = /^(cover|hero|logo)_asset_id$/.exec(key)?.[1] as
+          | "cover"
+          | "hero"
+          | "logo"
+          | undefined;
+        if (slot) {
+          const asset = value === null ? undefined : db.uploadedAssets?.[String(value)];
+          if (value !== null && !asset)
+            return badRequest([{ field: key, code: "unknown_asset", message: "no such image" }]);
+          if (asset) next[slot] = { ...asset, kind: slot };
+          else delete next[slot];
+        } else if (value === null) delete record[key];
         else record[key] = value;
-        if (key !== "status") next.field_sources[key] = "admin";
+        if (key !== "status") next.field_sources[slot ?? key] = "admin";
       }
       next.updated_at = new Date().toISOString();
       db.packages = db.packages.map((p) => (p.id === pkg.id ? next : p));

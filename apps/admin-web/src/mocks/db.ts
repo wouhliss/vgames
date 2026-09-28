@@ -23,6 +23,16 @@ export interface MockDb {
   etags: Record<string, number>;
   /** Package created per Idempotency-Key. */
   idempotency: Record<string, string>;
+  /** Metadata candidates per package id. */
+  candidates: Record<string, Schemas["MetadataCandidate"][]>;
+  /** The latest metadata job per package id. */
+  metadataJobs: Record<string, Schemas["Job"]>;
+  /** How the next lookup for a package ends (default: succeeds with the demo candidates). */
+  lookupOutcome: Record<string, "succeed" | "fail" | "empty">;
+  /** Asset ids whose image can't be served (broken-image placeholder). */
+  brokenAssets: string[];
+  /** Images uploaded but not (yet) used by a package. */
+  uploadedAssets?: Record<string, Schemas["Asset"]>;
 }
 
 export function createDb(role: Role | null = "admin"): MockDb {
@@ -58,7 +68,82 @@ export function createDb(role: Role | null = "admin"): MockDb {
     packages: makePackages(),
     etags: {},
     idempotency: {},
+    candidates: { [packageId(1)]: demoCandidates() },
+    metadataJobs: {
+      [packageId(1)]: {
+        id: "01920000-0000-7000-8000-0000000d0001",
+        kind: "metadata.fetch",
+        state: "succeeded",
+        attempts: 1,
+        max_attempts: 5,
+        created_at: t,
+        finished_at: t,
+      },
+    },
+    lookupOutcome: {},
+    brokenAssets: [assetId(3)],
   };
+}
+
+export const assetId = (n: number) =>
+  `01920000-0000-7000-8000-0000000a${n.toString(16).padStart(4, "0")}`;
+
+export function makeAsset(
+  n: number,
+  kind: Schemas["Asset"]["kind"],
+  source: "igdb" | "steam" | "upload" = "igdb",
+): Schemas["Asset"] {
+  return {
+    id: assetId(n),
+    kind,
+    url: `/v1/assets/${assetId(n)}`,
+    width: kind === "cover" ? 600 : 1280,
+    height: kind === "cover" ? 900 : 720,
+    content_type: "image/png",
+    source,
+  };
+}
+
+export function demoCandidates(): Schemas["MetadataCandidate"][] {
+  const fetched = "2026-09-24T10:05:00Z";
+  return [
+    {
+      source: "igdb",
+      external_id: 1942,
+      title: "Hollow Harbor",
+      release_year: 2024,
+      score: 0.97,
+      data: {
+        title: "Hollow Harbor",
+        summary: "A fishing town hides an old secret beneath the tide.",
+        description: "Fish, trade, explore and uncover what sleeps in the harbor.",
+        release_date: "2024-03-15",
+        developer: "Tidewater Games",
+        publisher: "Tidewater Publishing",
+        genres: ["Adventure", "Simulation", "Indie"],
+        images: {
+          cover: "https://images.igdb.example/cover.jpg",
+          screenshots: ["https://images.igdb.example/1.jpg", "https://images.igdb.example/2.jpg"],
+        },
+        external: { igdb_id: 1942, steam_app_id: 480 },
+      },
+      fetched_at: fetched,
+    },
+    {
+      source: "steam",
+      external_id: 480,
+      title: "Hollow Harbor: Deluxe",
+      release_year: 2024,
+      score: 0.81,
+      data: {
+        title: "Hollow Harbor: Deluxe",
+        summary: "The deluxe edition.",
+        genres: ["Adventure"],
+        external: { steam_app_id: 480, umu_id: "umu-480" },
+      },
+      fetched_at: fetched,
+    },
+  ];
 }
 
 export const packageId = (n: number) =>
@@ -96,6 +181,9 @@ function makePackages(): AdminPackage[] {
       steam_app_id: 480,
       igdb_id: 1942,
       platforms: ["windows-x86_64", "linux-x86_64"],
+      cover: makeAsset(1, "cover"),
+      hero: makeAsset(2, "hero"),
+      screenshots: [makeAsset(3, "screenshot"), makeAsset(4, "screenshot")],
       field_sources: {
         title: "igdb",
         summary: "igdb",

@@ -342,3 +342,35 @@ thead th {
 .subnav a[aria-current="page"] {
   font-weight: 650;
 }
+
+img.asset,
+.image-placeholder {
+  max-width: 320px;
+  height: auto;
+  border: 1px solid var(--border);
+}
+
+.image-placeholder {
+  display: grid;
+  place-items: center;
+  width: 240px;
+  height: 135px;
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.screenshots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.screenshots li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}

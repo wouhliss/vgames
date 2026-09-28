@@ -3,6 +3,7 @@
 import type { Schemas } from "@vgames/api-client";
 import { HttpResponse, http } from "msw";
 import { currentUser, IDS, type MockDb } from "./db";
+import { metadataHandlers } from "./metadata";
 import { packageHandlers } from "./packages";
 
 type Problem = Schemas["Problem"];
@@ -81,5 +82,6 @@ export function createHandlers(db: MockDb) {
     }),
 
     ...packageHandlers(db),
+    ...metadataHandlers(db),
   ];
 }

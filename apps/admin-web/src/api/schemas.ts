@@ -163,3 +163,46 @@ export type AdminPackage = z.infer<typeof AdminPackageSchema>;
 export const AdminPackagePageSchema = contract<Schemas["AdminPackagePage"]>()(
   z.object({ items: z.array(AdminPackageSchema), next_cursor: z.string().optional() }),
 );
+
+// ---------------------------------------------------------------- metadata (A3-T15)
+
+export const MetadataCandidateSchema = contract<Schemas["MetadataCandidate"]>()(
+  z.object({
+    source: z.enum(["igdb", "steam"]),
+    external_id: z.number().int().min(1),
+    title: z.string(),
+    release_year: z.number().int().optional(),
+    score: z.number().min(0).max(1),
+    data: z.object({
+      title: z.string().optional(),
+      summary: z.string().optional(),
+      description: z.string().optional(),
+      release_date: z.iso.date().optional(),
+      developer: z.string().optional(),
+      publisher: z.string().optional(),
+      genres: z.array(z.string()).optional(),
+      images: z
+        .object({
+          cover: z.url().optional(),
+          hero: z.url().optional(),
+          logo: z.url().optional(),
+          screenshots: z.array(z.url()).optional(),
+        })
+        .optional(),
+      external: z
+        .object({
+          steam_app_id: z.number().int().optional(),
+          igdb_id: z.number().int().optional(),
+          umu_id: z.string().optional(),
+        })
+        .optional(),
+    }),
+    fetched_at: Timestamp,
+  }),
+);
+export type MetadataCandidate = z.infer<typeof MetadataCandidateSchema>;
+
+export const CandidatesSchema = z.object({
+  items: z.array(MetadataCandidateSchema),
+  job: JobSchema.optional(),
+});

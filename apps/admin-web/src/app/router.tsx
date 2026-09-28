@@ -1,8 +1,11 @@
 import { createBrowserRouter, Navigate, type RouteObject } from "react-router";
 import { LoginPage } from "../pages/LoginPage";
 import { Placeholder } from "../pages/Placeholder";
+import { ImagesTab } from "../pages/packages/ImagesTab";
+import { MetadataTab } from "../pages/packages/MetadataTab";
 import { PackageCreate } from "../pages/packages/PackageCreate";
 import { PackageEditor } from "../pages/packages/PackageEditor";
+import { PackageLayout } from "../pages/packages/PackageLayout";
 import { PackagesList } from "../pages/packages/PackagesList";
 import { NotFoundPage } from "./ErrorView";
 import { Layout } from "./Layout";
@@ -16,7 +19,15 @@ export const routes: RouteObject[] = [
       { index: true, element: <Navigate to="/packages" replace /> },
       { path: "packages", Component: PackagesList },
       { path: "packages/new", Component: PackageCreate },
-      { path: "packages/:packageId", Component: PackageEditor },
+      {
+        path: "packages/:packageId",
+        Component: PackageLayout,
+        children: [
+          { index: true, Component: PackageEditor },
+          { path: "metadata", Component: MetadataTab },
+          { path: "images", Component: ImagesTab },
+        ],
+      },
       { path: "users", element: <Placeholder title="Users" /> },
       { path: "allowlist", element: <Placeholder title="Allowlist" /> },
       { path: "settings", element: <Placeholder title="Settings" /> },
