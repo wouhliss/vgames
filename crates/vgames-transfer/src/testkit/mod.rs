@@ -18,6 +18,6 @@ pub mod rig;
 pub use api::MockApi;
 pub use package::{
     Content, FileSpec, Identity, TestPackage, default_expected, empty_dirs, install_mode,
-    random_files, read_tree, trust_state, write_tree,
+    random_files, read_tree, trust_state, trust_state_with, write_tree,
 };
 pub use rig::{Fault, Links, Rig};
