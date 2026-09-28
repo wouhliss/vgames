@@ -1,6 +1,6 @@
 # 05 — Social: adaptation notes and launcher interface
 
-Status: **v1** (A4-T01, 2026-09-25). Companion to [05-social.md](05-social.md). It records how the
+Status: **v1.1** (A4-T01, 2026-09-25; messaging details A4-T08, 2026-09-28). Companion to [05-social.md](05-social.md). It records how the
 Arachnel mechanisms map onto vgames, the few protocol details 05-social left open, and the exact
 realtime events, Tauri commands and Tauri events Agent 4 delivers. **Agent 3 can build every social
 screen against mockIPC from §5 and §6 alone.** Changing a name or shape here needs a `contract:` PR.
@@ -42,6 +42,10 @@ One-time key and fallback key (signed by the same `signing_key`):
 ```
 
 - Keys and signatures are **unpadded standard base64** as vodozemac produces them (43 and 86 chars).
+- `key_id` is vodozemac's key id in base64. vodozemac counts fallback keys and one-time keys
+  separately, so their ids collide while the server keys both by `(device_id, key_id)`: a
+  **fallback key's id is prefixed with `F`** (it is only a label; sessions find the private key by
+  its public key, and the prefixed id is what the signature covers).
 - The server verifies both with Ed25519 strict verification before storing (`400 bad_signature`).
 - Launchers verify the device signature when they first see a device (`GET /v1/users/{id}/devices`),
   check `user_id`/`server_id` equal what they asked for, and verify every claimed key's signature
@@ -99,6 +103,41 @@ The server stores every `installing` report but publishes `invite.updated` for p
 - Realtime additions (additive to 03-api §6): `presence.changed` may carry `package_title`;
   server → client `typing {conversation_id, user_id}` (the fan-out of the client's `typing`, to the other
   members' sockets only, at most one per user per conversation every 3 s).
+
+### 3.1 Messaging behaviour of the launcher (A4-T08)
+
+- **Registration.** After every `hello` the launcher creates its Olm account for the signed-in user
+  (one per server; another user signing in on the same server discards the old social state) and,
+  unless `hello.device_id` already names its device, calls `POST /v1/devices` (which re-binds a new
+  session to the same keys). `409 device_keys_in_use` (the device was revoked from another install)
+  → a fresh account, registered once more. A `403 device_required` on the inbox or a send (a new
+  session on the same socket identity) registers again and retries.
+- **One-time keys.** Topped up to 50 unclaimed (fallback key uploaded when the server has none)
+  after registration and after any pre-key message arrives; never above the server's cap of 100.
+  Keys of a failed upload are sent again, not regenerated. No polling.
+- **Sending.** `message_send` stores the message (`pending`) and its payload in the outbox (both
+  encrypted at rest) and returns; `offline` if this install never registered on the server yet,
+  `key_changed` (nothing stored) if a member's device key changed. Delivery: every trusted device
+  of every member plus this user's other devices (device lists fetched once per run, then on
+  `device.added`/`device.revoked`, `unknown_devices` and `400 unknown_recipient`); keys claimed
+  for devices without a session, each claimed key's signature checked against the pinned signing
+  key; batches of 64 envelopes under one `client_message_id`; up to 3 rounds following
+  `unknown_devices`. A device with no key to claim, a network failure, `429` or a server error
+  retries with backoff (2 s, 4 s … 5 min, 12 attempts, then `failed`; `message_retry` starts
+  over). `404`, `413` and validation errors fail at once. One timer for the next due entry: no
+  polling while the outbox is empty.
+- **Receiving.** `inbox.new` and every `hello` drain `GET /v1/inbox` (100 per page): decrypt,
+  de-duplicate and store in one transaction, then `POST /v1/inbox/ack`. An envelope from an unknown
+  device (or a key that does not match the pin) fetches the sender's devices once; an envelope that
+  can still not be decrypted is acknowledged and dropped (logged), since it would block the inbox.
+  A local database failure leaves it on the server and stops the drain.
+- **Notices.** A new device, a changed key or a revocation of a contact is stored as a `notice`
+  message in each conversation with that user and emitted as `device-notice` (with
+  `conversation_id: null` for this user's own devices or a contact without a conversation).
+  Nothing is announced the first time a user's devices are seen.
+- **Typing.** `typing_start` sends at most one `typing` frame per conversation every 3 s; the server
+  fans it out to the other current members (none across a block, nothing from non-members), at
+  most once per user and conversation every 3 s.
 
 ## 4. Realtime events (server → launcher)
 
