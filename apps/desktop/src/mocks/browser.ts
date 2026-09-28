@@ -13,6 +13,7 @@ import {
 import { makeCatalog } from "./catalog";
 import { makeDownloads, startDownloadSimulation } from "./downloads";
 import { MOCK_COLLECTIONS, makeInstalls, OFFLINE_LIBRARY } from "./library";
+import { BEA, ME, makeInvite } from "./social";
 
 function withInstalls(count: number, downloads = false): Partial<MockState> {
   const libraries = [MOCK_LIBRARY, OFFLINE_LIBRARY];
@@ -36,6 +37,24 @@ function withInstalls(count: number, downloads = false): Partial<MockState> {
       blocked: null,
     },
     updateInstallMs: 4000,
+    socialDelayMs: 400,
+    // Bea is installing a game Sam invited her to.
+    invites: [
+      makeInvite({
+        id: "01920000-0000-7000-8000-00000000e0b1",
+        direction: "outgoing",
+        from: ME,
+        to: BEA,
+        package: {
+          id: installs[0]?.package.package_id ?? "",
+          title: installs[0]?.title ?? "",
+          cover_url: null,
+        },
+        state: "installing",
+        progress: 0.42,
+        message: null,
+      }),
+    ],
   };
 }
 

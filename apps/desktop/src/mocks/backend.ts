@@ -36,6 +36,7 @@ import {
   savePersisted,
   settingsHandlers,
 } from "./settings";
+import { defaultSocialState, type SocialState, socialHandlers } from "./social";
 
 export { fail, type Handler } from "./runtime";
 
@@ -80,7 +81,8 @@ export interface MockState
     CatalogState,
     DownloadsState,
     SettingsState,
-    CompatState {
+    CompatState,
+    SocialState {
   appInfo: AppInfo;
   appearance: AppearanceSettings;
   servers: ServerProfile[];
@@ -111,6 +113,7 @@ export function defaultState(): MockState {
     ...defaultDownloadsState(),
     ...defaultSettingsState(),
     ...defaultCompatState(),
+    ...defaultSocialState(),
     appInfo: {
       version: "0.4.0",
       profile: null,
@@ -492,6 +495,7 @@ export function installMockBackend(overrides: Partial<MockState> = {}): MockBack
     ...downloadHandlers(state),
     ...settingsHandlers(state),
     ...compatHandlers(state),
+    ...socialHandlers(state),
   };
 
   function signIn(serverId: string) {

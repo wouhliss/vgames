@@ -37,7 +37,7 @@ test("banner and What's new have no serious accessibility violations", async ({ 
 
 test("keyboard only: open What's new, scroll it, install and restart", async ({ page }) => {
   await open(page, "ready");
-  const whatsNew = await focusWhatsNew(page);
+  await focusWhatsNew(page);
   await page.keyboard.press("Enter");
   const notes = dialog(page).getByRole("region", { name: "What's new" });
   await expect(notes).toBeFocused();

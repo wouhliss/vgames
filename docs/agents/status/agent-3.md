@@ -107,6 +107,30 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   opens the same dialog. Tests: 19 Vitest (incl. the zero-entries and long-changelog cases, markup shown as text) and
   `e2e/update.spec.ts` (axe on banner and dialog, keyboard-only install, Escape/B return focus, long changelog scroll).
 
+- A3-T09 — Friends, chat and invites (05-social, 05-social-notes §5–6). `/friends` with tabs (LB/RB) that are URLs:
+  **Friends** grouped Playing / Online / Offline ("Playing X", or "Playing a game" when hidden; presence live from
+  `presence-changed`), Message, Invite to play, and a menu with Safety number, Remove (confirmed) and Block (confirmed);
+  **Add friend**: your code (single use, 15 min countdown, Copy, "expired → create a new code") and a friend's code
+  (Crockford normalization: lower case, O→0, I/L→1, dashes and spaces ignored; sent once 8 characters are there; every
+  `SocialError` has its sentence: code doesn't work, rate limited with the wait, limits, already friends, offline);
+  **Requests** (accept, decline, block; cancel outgoing); **Blocked** (unblock); a notice while the social socket
+  reconnects. **Messages** (`/friends/messages/<id>`): conversation list with unread counts, a virtualized history
+  (`role="log"`, focusable, follows new messages, "Load earlier messages"), plain text only, device-change notices,
+  delivery states (Sending…, Sent, Not sent + Try again), "… is typing" for 5 s, composer with the 4,000-character limit
+  (Enter sends, Shift+Enter new line); a key change pauses sending with "Review safety number". **Safety number:** 12
+  groups of 5, "Mark as verified", the contact's devices, "Trust new key" behind a confirmation, and "messages don't move
+  to new devices". **Invites:** "Invite to play" from a friend (pick an installed game) or a package page (pick a
+  friend), optional message (200) and join info (checked with 05-social §5's pattern, sent end-to-end encrypted);
+  **incoming invite cards** stacked under the top bar (Accept / Decline / Decide later; a card whose invite expired or
+  was cancelled says so); `invite-install-requested` opens the install dialog at once; the sender sees each state
+  (incl. the invitee's install progress bar and every failure reason) and can cancel while it makes sense; the invitee
+  sees theirs. Tests: 37 Vitest (every invite state for both sides, card accept/decline/later/expired/cancelled,
+  4,000 limit, key change, send/retry, typing, codes) and `e2e/friends.spec.ts` (axe on friends, requests, messages,
+  add friend, safety number, invite card and the install dialog it opens; keyboard-only and controller-only card →
+  Accept → install; keyboard-only add friend and send message). Memory test with Friends in the loop: steady window
+  204 KB (< 256 KB), nodes and listeners flat. Found on the way: a query that fails refetches on every visit, so the
+  mock now answers `social_connection` (a missing handler cost ~400 KB per 100 visits).
+
 ## In progress
 - A3-T07 — Settings, in parts. **Part 1** ([#52](https://github.com/wouhliss/vgames/pull/52), merged): one URL per section (`/settings/<section>`, a section list that
   works with arrows and the D-pad) with General (theme incl. "Same as system", reduce motion), Servers (address,
@@ -274,7 +298,11 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   my PRs carry its summary on the final commit and merge only when every job passes. The updater commands and the `updater-status` event now
   come from the generated `bindings.ts` (onboarding's "launcher too old" check uses `updater_check ->
   UpdateCheck`); A3-T10 builds the banner and What's new dialog on them.
-- **From Agent 4:** the social UI (A3-T09) will be built from your A4-T01 note
+- **From Agent 4** (A3-T09, built): the messaging commands and events of A4-T08 (types copied from your branch into
+  `apps/desktop/src/ipc/contract/social.ts`; delete them there when they land in `bindings.ts`) and the invite
+  commands `invites_list`, `invite_send`, `invite_accept|decline|cancel` with the events `invite-received`,
+  `invite-changed`, `invite-install-requested` exactly as 05-social-notes §5–6.
+- **From Agent 4 (history):** the social UI (A3-T09) was built from your A4-T01 note
   (`05-social-notes.md`). What the screens need, so the note can cover it: friends with presence
   ("Playing X", package title included), incoming/outgoing requests, friend codes with `expires_at`,
   remove/block; conversations list with unread counts and last message; a message list with delivery

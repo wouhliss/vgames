@@ -11,6 +11,7 @@ import { Tooltip } from "../../components/Tooltip";
 import { formatBytes, formatDate, t } from "../../i18n";
 import { type CatalogError, commands, type InstalledPackage, type PackageDetails } from "../../ipc";
 import { CommandError, queryKeys } from "../../ipc/query";
+import { InviteDialog } from "../friends/InviteDialog";
 import { LibraryActionsProvider } from "../library/actions";
 import { initials, placeholderHue } from "../library/model";
 import { MoreMenu, PackageBadges, PrimaryButton } from "../library/Tile";
@@ -114,6 +115,7 @@ function Hero({ pkg }: { pkg: PackageDetails }) {
 /** Summary, badges and what to do next: Install, or Play and the library actions when installed. */
 function Headline({ pkg, installed }: { pkg: PackageDetails; installed: InstalledPackage | null }) {
   const [installing, setInstalling] = useState(false);
+  const [inviting, setInviting] = useState(false);
   const blockers =
     pkg.compat.kind === "compat" || pkg.compat.kind === "rosetta" ? pkg.compat.blockers : [];
   const hardBlocker = blockers.find(isHardBlocker) ?? null;
@@ -159,6 +161,11 @@ function Headline({ pkg, installed }: { pkg: PackageDetails; installed: Installe
             {t("package.install")}
           </Button>
         )}
+        {pkg.release ? (
+          <Button icon="friends" onClick={() => setInviting(true)}>
+            {t("friends.inviteToPlay")}
+          </Button>
+        ) : null}
         {installed ? (
           <span className={styles.muted}>
             {t("package.installedIn", { version: installed.version_label })}
@@ -175,6 +182,12 @@ function Headline({ pkg, installed }: { pkg: PackageDetails; installed: Installe
           packageId={pkg.package_id}
           title={pkg.title}
           onClose={() => setInstalling(false)}
+        />
+      ) : null}
+      {inviting ? (
+        <InviteDialog
+          pkg={{ id: pkg.package_id, title: pkg.title }}
+          onClose={() => setInviting(false)}
         />
       ) : null}
     </>

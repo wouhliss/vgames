@@ -57,7 +57,7 @@ export const routes: RouteObject[] = [
             }),
           },
           {
-            path: "friends",
+            path: "friends/*",
             lazy: async () => ({
               Component: (await import("../routes/friends/FriendsPage")).FriendsPage,
             }),

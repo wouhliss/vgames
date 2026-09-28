@@ -7,6 +7,7 @@ import { Icon, type IconName } from "../components/Icon";
 import { t } from "../i18n";
 import { events } from "../ipc";
 import { useTauriEvent } from "../ipc/events";
+import { InviteHost } from "../routes/friends/invites";
 import { useActiveServer, useOnboardingNeed, useServers } from "./queries";
 import styles from "./Shell.module.css";
 import { AccountMenu, DownloadIndicator, ServerSwitcher } from "./TopBar";
@@ -22,12 +23,14 @@ const NAV: { to: string; icon: IconName; label: () => string }[] = [
 
 /**
  * After a navigation, focus the new page's title so keyboard, controller and screen reader users
- * start at the top of the page instead of on a link that no longer exists. Settings sections are
- * one page: moving between them keeps focus in the section list.
+ * start at the top of the page instead of on a link that no longer exists. Settings sections and the
+ * Friends tabs (and conversations) are one page each: moving inside them keeps focus where it is.
  */
+const ONE_PAGE = ["/settings", "/friends"];
+
 function useRouteFocus(): void {
   const { pathname } = useLocation();
-  const page = pathname.startsWith("/settings") ? "/settings" : pathname;
+  const page = ONE_PAGE.find((p) => pathname === p || pathname.startsWith(`${p}/`)) ?? pathname;
   const previous = useRef(page);
   useEffect(() => {
     if (previous.current === page) return;
@@ -113,6 +116,7 @@ export function Shell() {
         <main id="main-content" className={styles.content} tabIndex={-1} data-nav-group="">
           <Outlet />
         </main>
+        <InviteHost />
       </div>
     </div>
   );
