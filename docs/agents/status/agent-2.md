@@ -33,6 +33,9 @@
 - A2-T08 queue state transitions: atomic pause, resume, retry, failure and waiting-job removal; active jobs cannot be removed before worker shutdown.
 - A2-T08 remote image fetch can now use the T07 API client.
 - A2-T08 catalog, transfer orchestration, queue history, and collection/queue commands remain.
+- A2-T09 launch: target resolution and launch plans are done (below). Still to do: spawn with the Windows
+  suspended pre-resume hook, process tracking (Job Object / pidfd / kqueue), re-attach after a restart,
+  pre-launch checks with the mtime+size cache, playtime, and the launch commands.
 
 ## Interfaces delivered (other agents may now rely on these)
 - **Event bus** (A2-T01, for Agents 3, 4, 5): `vgames_desktop_lib::events::{EventBus, AppEvent}`,
@@ -103,6 +106,13 @@
     UI listened is still visible. Landed items were removed from `src/ipc/contract/core.ts` as its header asks.
   - Deep links: `deeplink::parse` (strict grammar) routes `server/add` and `auth/callback`; A2-T10 adds the rest.
   - DB: migration `0003_servers_trust`; new desktop migrations go after it.
+- **Launch plans** (A2-T09, for Agent 4's invites and overlay, and my own T16/T17):
+  `vgames_desktop_lib::launch::{target::resolve, TargetChoice, JoinSecret, LaunchPlan::{Native, Proton, Wine},
+  PreparedLaunch}`. `TargetChoice::for_invite(secret)` validates the join secret (05-social §5) and falls back
+  to a normal launch when it is absent or invalid. `resolve` (blocking: call it from `spawn_blocking`) confines the
+  executable and working directory to the install. `LaunchPlan::prepare(target, std::env::vars_os())` builds the
+  program, argv, cwd and the complete environment. `PreparedLaunch::inject_env(key, value)` is the hook for the
+  overlay endpoint, Vulkan layer or GL preload. It may not replace runner variables (`WINEPREFIX`, `PROTONPATH`, …).
 
 ## Measurements
 - A2-T01 idle, Linux (WSLg, debug build, Vite dev server, software GL), 60 s window

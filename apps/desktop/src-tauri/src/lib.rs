@@ -15,6 +15,7 @@ pub mod deeplink;
 pub mod error;
 pub mod events;
 pub mod images;
+pub mod launch;
 pub mod libraries;
 pub mod logging;
 pub mod paths;
