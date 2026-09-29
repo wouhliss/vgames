@@ -16,6 +16,10 @@
 - A2-T06 uninstall preview ([PR #55](https://github.com/wouhliss/vgames/pull/55), merged): lists leftovers before removal and preserves them unless the player chooses to delete them.
 - A2-T06 install move ([PR #56](https://github.com/wouhliss/vgames/pull/56), merged): renames on one filesystem or copies and verifies signed files across filesystems, preserving user files and refusing links.
 - A2-T06 repair and in-place update ([PR #57](https://github.com/wouhliss/vgames/pull/57), [PR #58](https://github.com/wouhliss/vgames/pull/58), merged): rebuilds damaged files and supports explicit low-space updates with crash replay.
+- A2-T07 Servers, trust and sign-in in the launcher ([PR #47](https://github.com/wouhliss/vgames/pull/47)): see Interfaces.
+  Mock-server tests cover TOFU pin, fingerprint-mismatch block (persisted, survives restart, lifts only when the
+  pinned key returns), trust rollback and forged bundles refused, root rotation via `next_root`, refresh-token
+  rotation (5 concurrent callers → one refresh), 401 → one refresh then one retry, refused refresh → local sign-out.
 - A2-T08 library roots and registration ([PR #59](https://github.com/wouhliss/vgames/pull/59), [PR #60](https://github.com/wouhliss/vgames/pull/60), merged): validates and marks writable folders, detects offline drives, and stores libraries and their default choice on the SQLite thread.
 - A2-T08 library removal ([PR #61](https://github.com/wouhliss/vgames/pull/61), merged): refuses libraries with installs or downloads, keeps player files, removes only its own marker, and promotes another default.
 - A2-T08 library Tauri commands ([PR #64](https://github.com/wouhliss/vgames/pull/64), merged): list with offline status and install counts, pick/add folders, select default, and remove.
@@ -26,9 +30,8 @@
 - A2-T08 cache-only `vgimg://` protocol ([PR #72](https://github.com/wouhliss/vgames/pull/72), merged): strict opaque URL parsing and native cache reads on a blocking pool.
 
 ## In progress
-- A2-T07 servers, trust, and launcher authentication are assigned to another agent ([PR #47](https://github.com/wouhliss/vgames/pull/47)); avoid touching that workstream.
 - A2-T08 queue state transitions: atomic pause, resume, retry, failure and waiting-job removal; active jobs cannot be removed before worker shutdown.
-- A2-T08 remote image fetch still awaits the T07 API client.
+- A2-T08 remote image fetch can now use the T07 API client.
 - A2-T08 catalog, transfer orchestration, queue history, and collection/queue commands remain.
 
 ## Interfaces delivered (other agents may now rely on these)
@@ -86,6 +89,21 @@
     storage with fault injection, `MockApi`).
 - **Upload engine (A2-T05, for Agent 5's CLI):** `vgames_transfer::upload::{run, UploadApi, UploadOptions, UploadControl}` streams `PackSource` packs through resumable sessions. `vgames_transfer::upload::publish::{create_version, run, PublishApi, PublishRequest, PublishOptions, PublishControl}` creates a version with a caller-persisted idempotency key, then resumes an existing version through signing, manifest upload, verification and publication. The caller must persist the returned `Version` before `publish::run` and place the private resume record in app data, outside the source tree.
 
+- **Servers, trust, sign-in** (A2-T07, for my A2-T08+ and Agents 3/4):
+  - `state.servers: Arc<servers::Servers>`. `servers.api(server_id) -> ApiClient` is the only HTTP client:
+    `public(method, "v1/…", body)` / `authed(…)` / `authed_empty(…)` return `api::ApiError` (`Problem{status, code,
+    message}`, `Unauthenticated`, `TrustBlocked`, `Timeout`, `Network`, `Tls`, `InvalidResponse`); `AppError: From<ApiError>`.
+  - `servers.trust_state(id)` (stored, no network) and `servers.refresh_trust(id)` (call it when the API or a
+    manifest reports an unknown signing key); `servers.connect(id)` = identity check + trust refresh.
+  - Commands (in `bindings.ts`): `serversList`, `serverPreview(url, expectedFingerprint)`, `serverConfirm(previewId)`,
+    `serverSwitch`, `serverRemove`, `authStart`, `authOpenBrowser`, `authSubmitCode`, `authCancel`, `authSignOut`,
+    `authTokenStorage` (→ `{ fallback_file }` for the Settings warning). Events: `serversChanged`,
+    `connectivityChanged`, `trustProblem`, `serverAddRequested` (sent after `appReady`), `authFinished`.
+    `ServerProfile.blocked_fingerprint` (optional) is set while a server is blocked, so a block found before the
+    UI listened is still visible. Landed items were removed from `src/ipc/contract/core.ts` as its header asks.
+  - Deep links: `deeplink::parse` (strict grammar) routes `server/add` and `auth/callback`; A2-T10 adds the rest.
+  - DB: migration `0003_servers_trust`; new desktop migrations go after it.
+
 ## Measurements
 - A2-T01 idle, Linux (WSLg, debug build, Vite dev server, software GL), 60 s window
   (`apps/desktop/perf/idle.py`): CPU 0.03% total (core 0.02%, WebKit web 0.02%, network 0.00%);
@@ -115,6 +133,10 @@
   `directories` always present (possibly `[]`) and `launch`/`controllers`/`saves`/`multiplayer` omitted when
   absent; `launch.targets[].args` always present, `working_dir`/`env` omitted when empty. Please make
   `vgames_core::manifest` accept exactly this (snapshot: `crates/vgames-pack/tests/snapshots/`).
+
+- From Agent 3: `ServerError` and `AuthError` have no "local failure" kind, so a local database error shows as
+  `unreachable` / `server{code:"internal"}`. If you want an `internal { detail }` kind, add the case to
+  `onboarding/messages.ts` and tell me; I will add the variant. `auth_token_storage().fallback_file` → Settings warning.
 
 ## Blockers / contract questions
 - A2-T04 follow-up: directory components can be swapped for symlinks between validation and later file access; a directory-handle based path traversal is needed to close this local race across platforms. The non-racy uninstall traversal and atomic-write symlink cases are fixed with regressions.

@@ -14,6 +14,34 @@ export const commands = {
 	 */
 	appReady: () => typedError<null, CommandError>(__TAURI_INVOKE("app_ready")),
 	appInfo: () => __TAURI_INVOKE<AppInfo>("app_info"),
+	/**
+	 *  Every stored server, the active one flagged. A database failure is logged
+	 *  and reads as an empty list (the UI then offers to add a server).
+	 */
+	serversList: () => __TAURI_INVOKE<ServerProfile_Serialize[]>("servers_list"),
+	/**
+	 *  Fetches `/.well-known/vgames.json`. `expected_fingerprint` comes from a
+	 *  `vgames://server/add` link and must match.
+	 */
+	serverPreview: (url: string, expectedFingerprint: string | null) => typedError<ServerPreview, ServerError>(__TAURI_INVOKE("server_preview", { url, expectedFingerprint })),
+	/**  Pins the previewed root key and makes the server active. */
+	serverConfirm: (previewId: string) => typedError<ServerProfile_Serialize, ServerError>(__TAURI_INVOKE("server_confirm", { previewId })),
+	/**
+	 *  Makes a server active, then checks its identity and trust bundle in the
+	 *  background (`connectivity-changed` / `trust-problem` report the result).
+	 */
+	serverSwitch: (serverId: string) => typedError<ServerProfile_Serialize, AppError>(__TAURI_INVOKE("server_switch", { serverId })),
+	/**  Signs out and forgets a server (refused while its games are installed). */
+	serverRemove: (serverId: string) => typedError<null, AppError>(__TAURI_INVOKE("server_remove", { serverId })),
+	/**  Starts Discord sign-in for a server and opens the system browser. */
+	authStart: (serverId: string) => typedError<AuthFlow, AuthError>(__TAURI_INVOKE("auth_start", { serverId })),
+	authOpenBrowser: (flowId: string) => typedError<null, AuthError>(__TAURI_INVOKE("auth_open_browser", { flowId })),
+	/**  The paste-code fallback when the `vgames://` callback cannot reach the launcher. */
+	authSubmitCode: (flowId: string, code: string) => typedError<Account, AuthError>(__TAURI_INVOKE("auth_submit_code", { flowId, code })),
+	authCancel: (flowId: string) => __TAURI_INVOKE<void>("auth_cancel", { flowId }),
+	/**  Revokes this device's session on the server and deletes its tokens. */
+	authSignOut: (serverId: string) => typedError<null, AppError>(__TAURI_INVOKE("auth_sign_out", { serverId })),
+	authTokenStorage: () => __TAURI_INVOKE<TokenStorage>("auth_token_storage"),
 	librariesList: () => typedError<LibraryInfo[], CommandError>(__TAURI_INVOKE("libraries_list")),
 	libraryPickFolder: () => typedError<{
 	path: string,
@@ -78,6 +106,8 @@ export const commands = {
 
 /** Events */
 export const events = {
+	authFinished: makeEvent<AuthFinished>("auth-finished"),
+	connectivityChanged: makeEvent<ConnectivityChanged>("connectivity-changed"),
 	controllerEvent: makeEvent<ControllerEvent>("controller-event"),
 	conversationsChanged: makeEvent<ConversationsChanged>("conversations-changed"),
 	deviceNotice: makeEvent<DeviceNoticeEvent>("device-notice"),
@@ -90,13 +120,30 @@ export const events = {
 	messageReceived: makeEvent<MessageReceived>("message-received"),
 	messageStatusChanged: makeEvent<MessageStatusChanged>("message-status-changed"),
 	presenceChanged: makeEvent<PresenceChanged>("presence-changed"),
+	serverAddRequested: makeEvent<ServerAddRequested>("server-add-requested"),
 	serverSwitched: makeEvent<ServerSwitched>("server-switched"),
+	serversChanged: makeEvent<ServersChanged>("servers-changed"),
 	socialConnectionChanged: makeEvent<SocialConnectionChanged>("social-connection-changed"),
+	trustProblem: makeEvent<TrustProblem>("trust-problem"),
 	typing: makeEvent<Typing>("typing"),
 	updaterStatus: makeEvent<UpdaterStatus>("updater-status"),
 };
 
 /* Types */
+/**  The account signed in on a server. */
+export type Account = {
+	user_id: string,
+	username: string,
+	display_name: string | null,
+	role: Role,
+};
+
+/**
+ *  Generic error of commands without a more specific error type (the UI's
+ *  `AppError`). Messages are English fallbacks; the UI switches on `kind`.
+ */
+export type AppError = { kind: "network"; detail: string } | { kind: "server"; code: string; message: string } | { kind: "unauthenticated" } | { kind: "not_found" } | { kind: "invalid_input"; field: string; message: string } | { kind: "io"; path: string | null; detail: string } | { kind: "internal"; detail: string };
+
 /**  Build information for the About screen and diagnostics. */
 export type AppInfo = {
 	version: string,
@@ -108,6 +155,29 @@ export type AppInfo = {
 	/**  `x86_64` or `aarch64`. */
 	arch: string,
 };
+
+export type AuthError = { kind: "registration_closed" } | { kind: "not_allowlisted" } | { kind: "user_disabled" } | { kind: "expired" } | { kind: "invalid_code" } | { kind: "cancelled" } | { kind: "browser_unavailable" } | { kind: "network"; detail: string } | { kind: "server"; code: string; message: string };
+
+/**  A sign-in finished (deep-link callback, pasted code, or cancel). */
+export type AuthFinished = {
+	flow_id: string,
+	outcome: AuthOutcome,
+};
+
+/**  A started sign-in, as the UI sees it. */
+export type AuthFlow = {
+	flow_id: string,
+	/**  RFC 3339. */
+	expires_at: string,
+	/**
+	 *  False when the system browser could not be opened; the UI then offers
+	 *  the paste-code fallback.
+	 */
+	browser_opened: boolean,
+};
+
+/**  How a sign-in ended (the `AuthFinished` event). */
+export type AuthOutcome = { kind: "signed_in"; account: Account } | { kind: "failed"; error: AuthError };
 
 /**  Why an update check or install must wait. */
 export type Blocked = "game_running" | "downloads_active";
@@ -137,6 +207,12 @@ export type ChosenLibraryFolder = {
 export type CommandError = {
 	code: ErrorCode,
 	message: string,
+};
+
+/**  Whether the launcher could reach a server on its last attempt. */
+export type ConnectivityChanged = {
+	server_id: string,
+	online: boolean,
 };
 
 export type ContactDevice = {
@@ -368,10 +444,73 @@ export type PresenceChanged = {
 
 export type PresenceStatus = "online" | "away" | "in_game" | "offline";
 
+export type RegistrationMode = "open" | "allowlist" | "closed";
+
 export type ReleaseNotes = {
 	version: string,
 	date: string,
 	entries: ChangeEntry[],
+};
+
+export type Role = "user" | "admin" | "owner";
+
+/**
+ *  A `vgames://server/add` link was opened; the UI starts onboarding with
+ *  these values (then calls `server_preview(url, fingerprint)`).
+ */
+export type ServerAddRequested = {
+	url: string,
+	fingerprint: string,
+};
+
+/**  Why a server cannot be previewed or added. */
+export type ServerError = { kind: "invalid_url" } | { kind: "insecure_scheme" } | { kind: "unreachable"; detail: string } | { kind: "timeout" } | { kind: "tls"; detail: string } | { kind: "not_vgames" } | { kind: "launcher_too_old"; min_version: string; current_version: string } | { kind: "fingerprint_mismatch"; expected: string; actual: string } | { kind: "already_added"; server_id: string } | { kind: "preview_expired" };
+
+/**  What `server_preview` shows before the user confirms. */
+export type ServerPreview = {
+	/**  Opaque handle for `server_confirm`; the preview itself stays in Rust. */
+	preview_id: string,
+	url: string,
+	server_id: string,
+	name: string,
+	motd: string | null,
+	fingerprint: string,
+	registration_mode: RegistrationMode | null,
+	/**  Set when the preview came from a `vgames://server/add` link (already checked equal). */
+	expected_fingerprint: string | null,
+};
+
+/**  A stored server as the UI sees it. */
+export type ServerProfile = ServerProfile_Serialize | ServerProfile_Deserialize;
+
+/**  A stored server as the UI sees it. */
+export type ServerProfile_Deserialize = {
+	id: string,
+	url: string,
+	name: string,
+	/**  `VG1-XXXX-…` root key fingerprint, pinned when the server was added. */
+	fingerprint: string,
+	active: boolean,
+	account: Account | null,
+	/**  RFC 3339. */
+	last_connected_at: string | null,
+	/**  Set while the server is blocked: the fingerprint it presented instead of the pinned one. */
+	blocked_fingerprint?: string | null,
+};
+
+/**  A stored server as the UI sees it. */
+export type ServerProfile_Serialize = {
+	id: string,
+	url: string,
+	name: string,
+	/**  `VG1-XXXX-…` root key fingerprint, pinned when the server was added. */
+	fingerprint: string,
+	active: boolean,
+	account: Account | null,
+	/**  RFC 3339. */
+	last_connected_at: string | null,
+	/**  Set while the server is blocked: the fingerprint it presented instead of the pinned one. */
+	blocked_fingerprint?: string | null,
 };
 
 /**
@@ -381,6 +520,9 @@ export type ReleaseNotes = {
 export type ServerSwitched = {
 	server_id: string | null,
 };
+
+/**  The list of servers or one of their accounts changed; re-read `servers_list`. */
+export type ServersChanged = Record<string, never>;
 
 export type SocialConnection = {
 	server_id: string | null,
@@ -404,6 +546,29 @@ export type SocialSettings = {
 	overlay_enabled: boolean,
 	overlay_hotkey: string,
 };
+
+/**  Where session tokens are stored. */
+export type TokenStorage = {
+	/**
+	 *  True when no OS keychain is available and tokens are in a private
+	 *  file; Settings shows a persistent warning.
+	 */
+	fallback_file: boolean,
+};
+
+/**
+ *  A server presented a root key other than the pinned one. It is blocked
+ *  until it presents the pinned key again; there is no "continue anyway".
+ */
+export type TrustProblem = {
+	server_id: string,
+	kind: TrustProblemKind,
+	server_name: string,
+	pinned_fingerprint: string,
+	presented_fingerprint: string,
+};
+
+export type TrustProblemKind = "fingerprint_mismatch";
 
 /**  `typing`: show "… is typing" for 5 s. */
 export type Typing = {

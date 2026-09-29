@@ -7,13 +7,16 @@
 mod app;
 mod libraries;
 pub mod names;
+mod servers;
 
 use std::path::{Path, PathBuf};
 
 pub(crate) use app::show_main_window;
+pub(crate) use servers::spawn_connect;
 
 use crate::events::{
-    ControllerEvent, GameStarted, GameStopped, InstallFinished, InstallProgress, ServerSwitched,
+    AuthFinished, ConnectivityChanged, ControllerEvent, GameStarted, GameStopped, InstallFinished,
+    InstallProgress, ServerAddRequested, ServerSwitched, ServersChanged, TrustProblem,
 };
 
 /// Header of the generated file.
@@ -26,6 +29,17 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         .commands(tauri_specta::collect_commands![
             app::app_ready,
             app::app_info,
+            servers::servers_list,
+            servers::server_preview,
+            servers::server_confirm,
+            servers::server_switch,
+            servers::server_remove,
+            servers::auth_start,
+            servers::auth_open_browser,
+            servers::auth_submit_code,
+            servers::auth_cancel,
+            servers::auth_sign_out,
+            servers::auth_token_storage,
             libraries::libraries_list,
             libraries::library_pick_folder,
             libraries::library_add,
@@ -69,6 +83,11 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             InstallFinished,
             ServerSwitched,
             ControllerEvent,
+            ServersChanged,
+            ConnectivityChanged,
+            TrustProblem,
+            ServerAddRequested,
+            AuthFinished,
             crate::updater::UpdaterStatus,
             crate::social::commands::SocialConnectionChanged,
             crate::social::commands::FriendsChanged,
