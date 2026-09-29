@@ -16,8 +16,9 @@ use vgames_proto::realtime::RealtimeTicket;
 use vgames_proto::social::{
     ClaimKeysRequest, ClaimedKeyList, Conversation, ConversationCreate, ConversationPage, Device,
     DeviceKeysList, DeviceList, DeviceRegister, Friend, FriendCode, FriendList,
-    FriendRequestByCode, FriendRequestByUser, FriendRequestCreate, InboxAck, InboxPage,
-    OneTimeKeysStored, OneTimeKeysUpload, PresenceUpdate, SendMessageRequest, SendMessageResponse,
+    FriendRequestByCode, FriendRequestByUser, FriendRequestCreate, InboxAck, InboxPage, Invite,
+    InviteCreate, InviteList, InviteStatusUpdate, OneTimeKeysStored, OneTimeKeysUpload,
+    PresenceUpdate, SendMessageRequest, SendMessageResponse,
 };
 
 use super::model::{SocialError, SocialLimit};
@@ -337,6 +338,36 @@ impl SocialApi<'_> {
 
     pub async fn ack(&self, body: &InboxAck) -> Result<(), SocialError> {
         self.empty(Method::POST, "v1/inbox/ack", Some(body)).await
+    }
+
+    // ---- invites (A4-T09) ---------------------------------------------------------------------
+
+    /// Active invites and those that ended recently, both directions.
+    pub async fn invites(&self) -> Result<InviteList, SocialError> {
+        self.json(Method::GET, "v1/invites", None::<&()>).await
+    }
+
+    pub async fn invite_create(&self, body: &InviteCreate) -> Result<Invite, SocialError> {
+        self.json(Method::POST, "v1/invites", Some(body)).await
+    }
+
+    /// `accept`, `decline` or `cancel`.
+    pub async fn invite_action(&self, id: Uuid, action: &str) -> Result<Invite, SocialError> {
+        self.json(
+            Method::POST,
+            &format!("v1/invites/{id}/{action}"),
+            None::<&()>,
+        )
+        .await
+    }
+
+    pub async fn invite_status(
+        &self,
+        id: Uuid,
+        body: &InviteStatusUpdate,
+    ) -> Result<Invite, SocialError> {
+        self.json(Method::POST, &format!("v1/invites/{id}/status"), Some(body))
+            .await
     }
 }
 

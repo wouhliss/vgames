@@ -111,6 +111,16 @@ export const commands = {
 	/**  This account's devices on the active server. */
 	devicesList: () => typedError<MyDevice[], SocialError>(__TAURI_INVOKE("devices_list")),
 	deviceRevoke: (deviceId: string) => typedError<null, SocialError>(__TAURI_INVOKE("device_revoke", { deviceId })),
+	/**  Active and recently ended invites, both directions. */
+	invitesList: () => typedError<Invite[], SocialError>(__TAURI_INVOKE("invites_list")),
+	/**
+	 *  Invites a friend. `joinSecret` ("server address / lobby code") stays on this computer and
+	 *  reaches the friend only end-to-end encrypted.
+	 */
+	inviteSend: (toUserId: string, packageId: string, message: string | null, joinSecret: string | null) => typedError<Invite, SocialError>(__TAURI_INVOKE("invite_send", { toUserId, packageId, message, joinSecret })),
+	inviteAccept: (inviteId: string) => typedError<Invite, SocialError>(__TAURI_INVOKE("invite_accept", { inviteId })),
+	inviteDecline: (inviteId: string) => typedError<Invite, SocialError>(__TAURI_INVOKE("invite_decline", { inviteId })),
+	inviteCancel: (inviteId: string) => typedError<Invite, SocialError>(__TAURI_INVOKE("invite_cancel", { inviteId })),
 };
 
 /** Events */
@@ -126,6 +136,9 @@ export const events = {
 	gameStopped: makeEvent<GameStopped>("game-stopped"),
 	installFinished: makeEvent<InstallFinished>("install-finished"),
 	installProgress: makeEvent<InstallProgress>("install-progress"),
+	inviteChanged: makeEvent<InviteChanged>("invite-changed"),
+	inviteInstallRequested: makeEvent<InviteInstallRequested>("invite-install-requested"),
+	inviteReceived: makeEvent<InviteReceived>("invite-received"),
 	messageReceived: makeEvent<MessageReceived>("message-received"),
 	messageStatusChanged: makeEvent<MessageStatusChanged>("message-status-changed"),
 	presenceChanged: makeEvent<PresenceChanged>("presence-changed"),
@@ -383,6 +396,53 @@ export type InstallProgress = {
 	eta_seconds: number | null,
 	connections: number,
 };
+
+export type Invite = {
+	id: string,
+	direction: InviteDirection,
+	from: UserSummary,
+	to: UserSummary,
+	package: InvitePackage,
+	state: InviteState,
+	progress: number | null,
+	message: string | null,
+	failure_reason: InviteFailure | null,
+	created_at: string,
+	updated_at: string,
+	expires_at: string,
+	has_join_secret: boolean,
+};
+
+/**  `invite-changed`: any invite update, both directions. */
+export type InviteChanged = Invite;
+
+export type InviteDirection = "incoming" | "outgoing";
+
+export type InviteFailure = "no_build_for_platform" | "install_failed" | "insufficient_space" | "cancelled_by_user";
+
+/**  Why the invite flow opens the install dialog. */
+export type InviteInstallReason = "missing" | "outdated";
+
+/**
+ *  `invite-install-requested`: open the install or update dialog at once (05-social §5) and
+ *  install through the normal commands.
+ */
+export type InviteInstallRequested = {
+	invite_id: string,
+	package: PackageRef,
+	reason: InviteInstallReason,
+};
+
+export type InvitePackage = {
+	id: string,
+	title: string,
+	cover_url: string | null,
+};
+
+/**  `invite-received`: a new incoming invite (show the suggestion-style card). */
+export type InviteReceived = Invite;
+
+export type InviteState = "pending" | "accepted" | "installing" | "ready" | "joined" | "declined" | "cancelled" | "expired" | "failed";
 
 /**  Why a launch did not start (the UI's `LaunchError`). */
 export type LaunchError = { kind: "not_installed" } | { kind: "incomplete" } | { kind: "busy"; state: BusyState } | { kind: "library_offline"; library_path: string } | { kind: "already_running" } | { kind: "target_not_found" } | 

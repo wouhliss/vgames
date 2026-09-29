@@ -49,6 +49,16 @@ impl ImageKey {
         Ok(Self(hasher.finalize().to_hex().to_string()))
     }
 
+    /// The URL the WebView loads this image from (`http://vgimg.localhost/…` on Windows,
+    /// where WebView2 maps custom schemes that way; `vgimg://localhost/…` elsewhere).
+    pub fn url(&self) -> String {
+        if cfg!(windows) {
+            format!("http://vgimg.localhost/{}", self.0)
+        } else {
+            format!("vgimg://localhost/{}", self.0)
+        }
+    }
+
     fn from_cache_id(value: &str) -> Option<Self> {
         (value.len() == 64
             && value

@@ -11,13 +11,14 @@ use uuid::Uuid;
 
 use super::model::{
     BlockedUser, ContactSecurity, Conversation, DeviceNotice, Friend, FriendCode, FriendList,
-    FriendTarget, Message, MessageStatus, MyDevice, Presence, SocialConnection, SocialError,
-    SocialSettings, UserSummary,
+    FriendTarget, Invite, InviteInstallReason, Message, MessageStatus, MyDevice, Presence,
+    SocialConnection, SocialError, SocialSettings, UserSummary,
 };
 use super::ports::SystemIdle;
 use super::realtime::Timing;
 use super::service::{SocialEvents, SocialService, default_device_name};
 use super::{secrets, store::Keys};
+use crate::events::PackageRef;
 use crate::state::AppState;
 
 // ---- events ---------------------------------------------------------------------------------
@@ -74,6 +75,23 @@ pub struct DeviceNoticeEvent {
     pub notice: DeviceNotice,
 }
 
+/// `invite-received`: a new incoming invite (show the suggestion-style card).
+#[derive(Debug, Clone, Serialize, Deserialize, Type, tauri_specta::Event)]
+pub struct InviteReceived(pub Invite);
+
+/// `invite-changed`: any invite update, both directions.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, tauri_specta::Event)]
+pub struct InviteChanged(pub Invite);
+
+/// `invite-install-requested`: open the install or update dialog at once (05-social §5) and
+/// install through the normal commands.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, tauri_specta::Event)]
+pub struct InviteInstallRequested {
+    pub invite_id: Uuid,
+    pub package: PackageRef,
+    pub reason: InviteInstallReason,
+}
+
 /// Emits social events to the WebView.
 struct TauriEvents(AppHandle);
 
@@ -124,6 +142,25 @@ impl SocialEvents for TauriEvents {
         let _ = DeviceNoticeEvent {
             conversation_id,
             notice: notice.clone(),
+        }
+        .emit(&self.0);
+    }
+    fn invite_received(&self, invite: &Invite) {
+        let _ = InviteReceived(invite.clone()).emit(&self.0);
+    }
+    fn invite_changed(&self, invite: &Invite) {
+        let _ = InviteChanged(invite.clone()).emit(&self.0);
+    }
+    fn invite_install_requested(
+        &self,
+        invite_id: Uuid,
+        package: PackageRef,
+        reason: InviteInstallReason,
+    ) {
+        let _ = InviteInstallRequested {
+            invite_id,
+            package,
+            reason,
         }
         .emit(&self.0);
     }
@@ -406,4 +443,56 @@ pub async fn device_revoke(
     device_id: Uuid,
 ) -> Result<(), SocialError> {
     social.device_revoke(device_id).await
+}
+
+// ---- invites (A4-T09) -----------------------------------------------------------------------
+
+/// Active and recently ended invites, both directions.
+#[tauri::command]
+#[specta::specta]
+pub async fn invites_list(social: State<'_, SocialService>) -> Result<Vec<Invite>, SocialError> {
+    social.invites_list().await
+}
+
+/// Invites a friend. `joinSecret` ("server address / lobby code") stays on this computer and
+/// reaches the friend only end-to-end encrypted.
+#[tauri::command]
+#[specta::specta]
+pub async fn invite_send(
+    social: State<'_, SocialService>,
+    to_user_id: Uuid,
+    package_id: Uuid,
+    message: Option<String>,
+    join_secret: Option<String>,
+) -> Result<Invite, SocialError> {
+    social
+        .invite_send(to_user_id, package_id, message, join_secret)
+        .await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn invite_accept(
+    social: State<'_, SocialService>,
+    invite_id: Uuid,
+) -> Result<Invite, SocialError> {
+    social.invite_accept(invite_id).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn invite_decline(
+    social: State<'_, SocialService>,
+    invite_id: Uuid,
+) -> Result<Invite, SocialError> {
+    social.invite_decline(invite_id).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn invite_cancel(
+    social: State<'_, SocialService>,
+    invite_id: Uuid,
+) -> Result<Invite, SocialError> {
+    social.invite_cancel(invite_id).await
 }

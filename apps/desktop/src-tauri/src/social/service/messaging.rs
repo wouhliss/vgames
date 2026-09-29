@@ -79,7 +79,7 @@ pub(super) struct MessagingState {
     /// One inbox drain at a time.
     drain: tokio::sync::Mutex<()>,
     /// Wakes the outbox task.
-    outbox: Notify,
+    pub(super) outbox: Notify,
     /// Users whose device list was fetched during this run, per server.
     synced: Mutex<HashSet<(Uuid, Uuid)>>,
     typing_sent: Mutex<HashMap<Uuid, Instant>>,
@@ -180,12 +180,16 @@ fn store_error(context: &'static str) -> impl Fn(StoreError) -> SocialError {
 }
 
 impl SocialService {
-    fn keys(&self) -> std::sync::Arc<Keys> {
+    pub(super) fn keys(&self) -> std::sync::Arc<Keys> {
         self.inner.keys.clone()
     }
 
     /// Runs `f` on the database thread with the social keys.
-    async fn with_store<T, F>(&self, context: &'static str, f: F) -> Result<T, SocialError>
+    pub(super) async fn with_store<T, F>(
+        &self,
+        context: &'static str,
+        f: F,
+    ) -> Result<T, SocialError>
     where
         F: FnOnce(&mut Connection, &Keys) -> Result<T, StoreError> + Send + 'static,
         T: Send + 'static,
@@ -208,7 +212,7 @@ impl SocialService {
             .server_id)
     }
 
-    fn ready_device(&self, api: &SocialApi<'_>) -> Option<Uuid> {
+    pub(super) fn ready_device(&self, api: &SocialApi<'_>) -> Option<Uuid> {
         let ready = *lock(&self.inner.messaging.ready);
         ready
             .filter(|r| r.server == api.session.server_id && r.user == api.session.user_id)
@@ -1213,8 +1217,22 @@ impl SocialService {
             };
             match result {
                 Ok(Received::Message(m)) => return Some(Some(m)),
-                Ok(Received::InviteJoin { message, .. }) => {
-                    // Acted on by the invites client (A4-T09); the secret is never stored.
+                Ok(Received::InviteJoin {
+                    message,
+                    invite_id,
+                    join_secret,
+                    ..
+                }) => {
+                    // The invites client checks it and may launch the game; the secret is only
+                    // handed over, never stored. Off the drain, so launching never blocks it.
+                    if !message.mine {
+                        let this = self.clone();
+                        let sender = message.sender_user_id;
+                        tokio::spawn(async move {
+                            this.on_invite_join(server, sender, invite_id, join_secret)
+                                .await;
+                        });
+                    }
                     return Some(Some(message));
                 }
                 Ok(Received::Receipt { .. } | Received::Duplicate) => return Some(None),

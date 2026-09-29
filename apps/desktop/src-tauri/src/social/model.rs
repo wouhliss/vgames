@@ -409,6 +409,55 @@ pub struct Invite {
     pub has_join_secret: bool,
 }
 
+/// Why the invite flow opens the install dialog.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum InviteInstallReason {
+    Missing,
+    Outdated,
+}
+
+impl Invite {
+    /// The UI model of a server invite, seen by `me`. `has_join_secret` is known locally.
+    pub fn from_proto(
+        i: vgames_proto::social::Invite,
+        me: Uuid,
+        server: Uuid,
+        has_join_secret: bool,
+    ) -> Self {
+        let direction = if i.from.id == me {
+            InviteDirection::Outgoing
+        } else {
+            InviteDirection::Incoming
+        };
+        let cover_url = i
+            .package
+            .cover
+            .as_ref()
+            .and_then(|a| crate::images::ImageKey::for_asset(server, &a.id.to_string()).ok())
+            .map(|k| k.url());
+        Self {
+            id: i.id,
+            direction,
+            from: i.from.into(),
+            to: i.to.into(),
+            package: InvitePackage {
+                id: i.package.id,
+                title: i.package.title,
+                cover_url,
+            },
+            state: i.state.into(),
+            progress: i.progress,
+            message: i.message,
+            failure_reason: i.failure_reason.map(Into::into),
+            created_at: rfc3339(i.created_at),
+            updated_at: rfc3339(i.updated_at),
+            expires_at: rfc3339(i.expires_at),
+            has_join_secret: direction == InviteDirection::Outgoing && has_join_secret,
+        }
+    }
+}
+
 /// RFC 3339 rendering for UI payloads.
 pub fn rfc3339(t: time::OffsetDateTime) -> String {
     t.format(&time::format_description::well_known::Rfc3339)
