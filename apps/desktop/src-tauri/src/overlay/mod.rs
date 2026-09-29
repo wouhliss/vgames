@@ -19,6 +19,7 @@ pub mod hotkey;
 pub mod hub;
 pub mod model;
 pub mod valve;
+pub mod vulkan_layer;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};

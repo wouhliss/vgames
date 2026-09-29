@@ -146,7 +146,10 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   gives up after 3 refusals or a protocol error; the frame hook reads one atomic when hidden, no allocation or
   lock), toast expiry, bounded action queue; `guarded` catches a hook panic and turns the overlay off for the
   process. Tests against a fake broker (views/panel/actions, drop → hidden → reconnect, refusals, oversized frame).
-  Next: Vulkan implicit layer (manifest + registration, `enable_environment VGAMES_OVERLAY=1`), Linux GL preload,
+  Launcher `overlay::vulkan_layer`: per-user implicit layer manifest (`$XDG_DATA_HOME/vulkan/implicit_layer.d`,
+  `enable_environment VGAMES_OVERLAY=1`, `disable_environment VGAMES_OVERLAY_DISABLE=1`), written only while the
+  renderer library ships next to the launcher, removed otherwise (tests: manifest, XDG paths, write/keep/move/remove).
+  Next: the layer library itself (`vkQueuePresentKHR`), Linux GL preload,
   Windows hudhook DLL (needs a Windows machine to build and verify).
 
 ## Interfaces delivered (other agents may now rely on these)
