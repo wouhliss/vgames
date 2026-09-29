@@ -261,6 +261,11 @@ impl std::io::Write for Capture {
 async fn signed_urls_are_never_logged(pool: PgPool) {
     let w = world(&pool).await;
     let p = published(&w, &pool).await;
+    // With a single registered dispatcher, tracing-core caches each callsite's interest from
+    // whichever thread hits it first, so a callsite a parallel test reaches first is cached as
+    // `never` and this test captures nothing. A second registered dispatcher makes the cached
+    // interest `sometimes`: every thread then asks its own subscriber.
+    let _second = tracing::Dispatch::new(tracing::subscriber::NoSubscriber::default());
     let capture = Capture::default();
     let sink = capture.clone();
     let subscriber = tracing_subscriber::fmt()
