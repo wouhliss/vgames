@@ -192,6 +192,8 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
 - Agent 2 (A4-T10): `lib.rs` `pub mod overlay;`; `names.rs` (`OVERLAY_WINDOW_COMMANDS = overlay_view,
   overlay_action`; two main-window commands), `capabilities/{main,overlay}.json`, `commands/mod.rs`, bindings; root
   `Cargo.toml` new workspace dependency `postcard` (add-only).
+- Agent 3 (A4-T09, after #86): removed `src/ipc/contract/social.ts` (every invite type, command and event in it is
+  now generated with the same names and shapes) and its lines in `contract/index.ts`.
 - Agent 3 (A4-T10): `src/ipc/contract/settings.ts` (removed `PackageOverlay`, now generated; wrappers call the
   renamed commands), `src/mocks/settings.ts` (handler names, `packageRef` argument).
 - Agent 2 (A4-T09): `images.rs` `ImageKey::url()` (the `vgimg` URL for a key; used for invite covers);

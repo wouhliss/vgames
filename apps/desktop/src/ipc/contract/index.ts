@@ -5,7 +5,6 @@ import { coreCommands, coreEvents } from "./core";
 import { downloadCommands, downloadEvents } from "./downloads";
 import { libraryCommands, libraryEvents } from "./library";
 import { settingsCommands } from "./settings";
-import { socialCommands, socialEvents } from "./social";
 
 export const pendingCommands = {
   ...coreCommands,
@@ -14,14 +13,12 @@ export const pendingCommands = {
   ...downloadCommands,
   ...settingsCommands,
   ...compatCommands,
-  ...socialCommands,
 };
 
 export const pendingEvents = {
   ...coreEvents,
   ...libraryEvents,
   ...downloadEvents,
-  ...socialEvents,
 };
 
 export type * from "./catalog";
@@ -30,4 +27,3 @@ export type * from "./core";
 export type * from "./downloads";
 export type * from "./library";
 export type * from "./settings";
-export type * from "./social";
