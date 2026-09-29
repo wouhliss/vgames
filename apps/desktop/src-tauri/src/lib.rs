@@ -81,6 +81,7 @@ pub fn run() {
         // Used from Rust only: no capability grants these to the WebView.
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(overlay::hotkey::plugin())
         .plugin(tauri_plugin_process::init())
         // Self-update (Agent 5, `updater/`): minisign-verified, driven from Rust only.
         .plugin(tauri_plugin_updater::Builder::new().build())
