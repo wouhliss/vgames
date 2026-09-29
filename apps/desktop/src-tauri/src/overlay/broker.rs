@@ -32,6 +32,9 @@ use super::model::OverlayView;
 pub const HELLO_TIMEOUT: Duration = Duration::from_secs(5);
 /// Failed handshakes before the broker gives up.
 pub const MAX_AUTH_FAILURES: u32 = 5;
+/// Attempts to listen again on the same port after a renderer left.
+const REBIND_TRIES: u32 = 10;
+const REBIND_PAUSE: Duration = Duration::from_millis(100);
 
 /// What a game launched with the overlay gets in its environment.
 #[derive(Clone)]
@@ -148,14 +151,14 @@ impl Task {
         let mut failures = 0u32;
         loop {
             let Some(l) = listener.take() else {
-                // Serve again on the same port after a renderer left.
-                match TcpListener::bind(self.addr).await {
-                    Ok(l) => {
+                // Serve again on the same port after a renderer left (a few tries: the old
+                // connection may still be closing).
+                match self.rebind().await {
+                    Some(l) => {
                         listener = Some(l);
                         continue;
                     }
-                    Err(error) => {
-                        tracing::warn!(%error, "overlay broker cannot listen again; overlay off for this game");
+                    None => {
                         let _ = self.events.send(BrokerEvent::Stopped);
                         return;
                     }
@@ -196,6 +199,24 @@ impl Task {
                 }
             }
         }
+    }
+
+    async fn rebind(&self) -> Option<TcpListener> {
+        let mut last = None;
+        for _ in 0..REBIND_TRIES {
+            match TcpListener::bind(self.addr).await {
+                Ok(l) => return Some(l),
+                Err(error) => last = Some(error),
+            }
+            tokio::select! {
+                () = self.stop.cancelled() => return None,
+                () = tokio::time::sleep(REBIND_PAUSE) => {}
+            }
+        }
+        if let Some(error) = last {
+            tracing::warn!(%error, "overlay broker cannot listen again; overlay off for this game");
+        }
+        None
     }
 
     async fn handshake(&self, stream: &mut TcpStream) -> Result<RendererKind, FrameError> {
@@ -362,6 +383,21 @@ mod tests {
         }
     }
 
+    /// Like a renderer coming back: retries while the broker is not listening yet.
+    fn reconnect(addr: SocketAddr, token: [u8; TOKEN_LEN]) -> std::net::TcpStream {
+        let until = std::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            match connect(addr, token) {
+                Ok(s) => return s,
+                Err(e) if std::time::Instant::now() < until => {
+                    let _ = e;
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+                Err(e) => panic!("the broker never listened again: {e}"),
+            }
+        }
+    }
+
     /// A fake renderer on a blocking socket (like the in-game side).
     fn connect(addr: SocketAddr, token: [u8; TOKEN_LEN]) -> std::io::Result<std::net::TcpStream> {
         let mut s = std::net::TcpStream::connect(addr)?;
@@ -433,12 +469,17 @@ mod tests {
         r.views.send_replace(view);
         r.panel.send_replace(true);
         let (v, panel, s2) = tokio::task::spawn_blocking(move || {
-            let v = next_view(&mut s);
-            let panel = loop {
-                if let ToRenderer::Panel { open } = read(&mut s) {
-                    break open;
+            // The view and the panel change may arrive in either order.
+            let (mut v, mut panel) = (None, None);
+            while v.is_none() || panel.is_none() {
+                match read(&mut s) {
+                    ToRenderer::View(view) => v = Some(view),
+                    ToRenderer::Panel { open } => panel = Some(open),
+                    ToRenderer::Heartbeat => {}
+                    other => panic!("{other:?}"),
                 }
-            };
+            }
+            let (v, panel) = (v.unwrap(), panel.unwrap());
             protocol::write_frame(
                 &mut s,
                 &ToBroker::Action(Action::QuickReply {
@@ -533,9 +574,8 @@ mod tests {
         assert_eq!(r.event().await, BrokerEvent::Disconnected);
 
         // The game recreated its swapchain: the renderer comes back on the same endpoint.
-        tokio::time::sleep(Duration::from_millis(100)).await;
         tokio::task::spawn_blocking(move || {
-            let mut s = connect(addr, token).unwrap();
+            let mut s = reconnect(addr, token);
             assert!(matches!(read(&mut s), ToRenderer::Welcome { .. }));
             next_view(&mut s);
             // An invalid action (empty reply) also drops the link.
