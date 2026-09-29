@@ -152,6 +152,19 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   Next: the layer library itself (`vkQueuePresentKHR`), Linux GL preload,
   Windows hudhook DLL (needs a Windows machine to build and verify).
 
+- A4-T12 — Resilience, abuse and soak. **Started.** Chaos (`tests/social_chaos.rs`, real API in process):
+  launchers on two API instances chat and see typing across instances; an API restart while a message is written
+  (it waits in the outbox, then arrives once); a database connection reset (failover). **Found and fixed:** after the
+  API's `LISTEN` connection dropped, `PgListener::recv` reconnected silently and every realtime event sent meanwhile
+  was lost with no resync, so messages stayed undelivered until the next reconnect. `realtime/bus.rs` now detects
+  the loss (`try_recv`) and closes the instance's sockets with 1012 once it listens again; clients resync after
+  `hello`. Evidence: `apps/api/tests/it/realtime.rs::a_lost_listen_connection_makes_clients_resync` (runs in CI) and
+  the chaos test; both fail without the fix. Bounded queues: the overlay broker's event channel was unbounded, now
+  16 with drop (test); the in-game action queue has a drop test. Abuse already covered by the A4-T03..T06 server
+  tests: per-route rate limits, friend-code/request, invite and message spam limits, oversized and malformed
+  envelopes, blocked-user probes (look like unknown users), 1 GiB overlay frame headers.
+  Next: the soak runs (1 h chat at 2 msg/s with RSS, 24 h idle socket).
+
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_desktop_lib::social::ports::SessionSlot` (A4-T07): now filled by `social::session_bridge` from
   `state.servers` (nothing for Agent 2 to call). Reach it through `State<SocialService>` → `sessions()`. Social commands for Agent 3: the friends/presence rows of
@@ -195,6 +208,9 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   failed once locally under a full `cargo test` run (line 211) and passed 3/3 alone; it looks timing-sensitive.
 
 ## Cross-area edits (small, for the owners' review)
+- Agent 1 (A4-T12): `realtime/bus.rs` `listen`/`listen_once` (lost LISTEN connection → reconnect, then
+  `close_all(1012)` so clients resync; before, events sent during the gap were lost silently) and one test in
+  `tests/it/realtime.rs`.
 - Agent 2 (A4-T09/T10 launch wiring): `launch/orchestrate.rs` gains `LaunchHooks` (+ `HookEnv`) and
   `Launcher::set_hooks`; hook variables go through `inject_env` after `prepare` (a refused key is logged and
   skipped), `aborted` is called when the session does not start. `orchestrate/tests.rs`: the test game exits with

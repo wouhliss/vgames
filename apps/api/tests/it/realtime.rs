@@ -221,3 +221,52 @@ async fn plain_http_requests_to_the_socket_are_rejected(pool: PgPool) {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     assert_eq!(body_json(resp).await["code"], "websocket_required");
 }
+
+/// A4-T12: notifications sent while the `LISTEN` connection is down are lost, so when it comes
+/// back the instance closes its sockets with 1012 and clients resync after `hello`.
+#[sqlx::test(migrations = "./migrations")]
+async fn a_lost_listen_connection_makes_clients_resync(pool: PgPool) {
+    let a = instance(&pool).await;
+    let (user, _session, token) = seed_session(&pool, "user").await;
+    let t = ticket(&a, &token).await;
+    let mut ws = connect(&a, &t).await.unwrap();
+    assert_eq!(next_event(&mut ws).await["type"], "hello");
+
+    // The database drops the listener's connection (failover, connection reset).
+    let killed: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM (SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+          WHERE datname = current_database() AND query ILIKE 'LISTEN%'
+            AND pid <> pg_backend_pid()) t",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(killed, 1);
+    let close = loop {
+        let msg = tokio::time::timeout(Duration::from_secs(15), ws.next())
+            .await
+            .expect("the socket is closed in time")
+            .expect("a close frame")
+            .unwrap();
+        match msg {
+            Message::Close(frame) => break frame,
+            Message::Ping(_) | Message::Pong(_) => {}
+            other => panic!("unexpected frame {other:?}"),
+        }
+    };
+    assert_eq!(close.map(|f| f.code), Some(CloseCode::Restart));
+
+    // Reconnected clients get events again.
+    let t = ticket(&a, &token).await;
+    let mut ws = connect(&a, &t).await.unwrap();
+    assert_eq!(next_event(&mut ws).await["type"], "hello");
+    bus::publish(
+        &a.state.db,
+        &Target::users(&[user]),
+        "invite.created",
+        json!({"n": 2}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(next_event(&mut ws).await["type"], "invite.created");
+}

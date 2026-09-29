@@ -181,6 +181,11 @@ Envelope as 03-api §6. The launcher treats every event as a nudge; REST stays t
 
 Client → server: `presence.set {status, package_id?}`, `typing {conversation_id}`, `ping`.
 
+Events are nudges and may be lost (a database failover drops the API's `LISTEN` connection and
+whatever it would have announced meanwhile). The API then closes its sockets with **1012**, like a
+restart; the launcher reconnects with backoff and resyncs after `hello`. Clients need no other
+recovery path (A4-T12).
+
 ## 5. Tauri commands (main window)
 
 Conventions as in `apps/desktop/src/ipc/contract.ts`: snake_case command names and payload fields,
