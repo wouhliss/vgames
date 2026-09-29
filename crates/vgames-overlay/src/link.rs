@@ -438,7 +438,11 @@ mod tests {
     }
 
     fn wait(what: &str, f: impl Fn() -> bool) {
-        let until = Instant::now() + Duration::from_secs(5);
+        wait_for(what, Duration::from_secs(5), f);
+    }
+
+    fn wait_for(what: &str, limit: Duration, f: impl Fn() -> bool) {
+        let until = Instant::now() + limit;
         while !f() {
             assert!(Instant::now() < until, "timed out waiting for {what}");
             thread::sleep(Duration::from_millis(10));
@@ -553,7 +557,11 @@ mod tests {
             },
             RendererKind::D3d11,
         );
-        wait("the link to give up", || link.is_stopped());
+        // Windows retries a refused connect for about 2 s, so three attempts plus backoff
+        // take up to ~8 s there.
+        wait_for("the link to give up", Duration::from_secs(20), || {
+            link.is_stopped()
+        });
         assert!(!link.should_draw());
         link.act(Action::OpenLauncher);
 
