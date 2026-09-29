@@ -19,6 +19,11 @@ renderer = []
 [dependencies]
 serde.workspace = true
 thiserror.workspace = true
+postcard.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
 
 [lints]
 workspace = true

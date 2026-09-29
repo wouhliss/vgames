@@ -172,11 +172,15 @@ pub fn init(app: &AppHandle, state: &AppState) -> Result<(), SocialError> {
     let secrets = secrets::open(&app.config().identifier, &state.paths.data_dir);
     let keys = Keys::from_secret_store(secrets.as_ref())
         .map_err(|e| SocialError::internal("loading the chat keys", &e))?;
+    let hub = Arc::new(crate::overlay::hub::Hub::new());
     let service = tauri::async_runtime::block_on(SocialService::start(
         super::ports::SessionSlot::new(),
         state.db.clone(),
         &state.bus,
-        Arc::new(TauriEvents(app.clone())),
+        Arc::new(super::service::FanOut(vec![
+            Arc::new(TauriEvents(app.clone())),
+            hub.clone(),
+        ])),
         Arc::new(SystemIdle),
         Arc::new(keys),
         default_device_name(),
@@ -198,6 +202,7 @@ pub fn init(app: &AppHandle, state: &AppState) -> Result<(), SocialError> {
         &state.bus,
         state.shutdown.child_token(),
     );
+    crate::overlay::commands::init(app, state, service.clone(), hub);
     app.manage(service);
     Ok(())
 }
@@ -223,9 +228,12 @@ pub async fn social_settings_get(
 #[specta::specta]
 pub async fn social_settings_set(
     social: State<'_, SocialService>,
+    overlay: State<'_, crate::overlay::OverlayService>,
     settings: SocialSettings,
 ) -> Result<SocialSettings, SocialError> {
-    social.settings_set(settings).await
+    let saved = social.settings_set(settings).await?;
+    overlay.hub().set_do_not_disturb(saved.do_not_disturb);
+    Ok(saved)
 }
 
 #[tauri::command]

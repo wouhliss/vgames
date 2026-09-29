@@ -60,6 +60,8 @@
     "allow-invite-send",
     "allow-invite-accept",
     "allow-invite-decline",
-    "allow-invite-cancel"
+    "allow-invite-cancel",
+    "allow-package-overlays-list",
+    "allow-package-overlay-set"
   ]
 }

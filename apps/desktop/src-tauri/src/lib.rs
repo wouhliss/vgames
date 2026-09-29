@@ -19,6 +19,7 @@ pub mod images;
 pub mod launch;
 pub mod libraries;
 pub mod logging;
+pub mod overlay;
 pub mod paths;
 pub mod secrets;
 pub mod servers;

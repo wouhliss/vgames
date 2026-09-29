@@ -84,7 +84,11 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             crate::social::commands::invite_send,
             crate::social::commands::invite_accept,
             crate::social::commands::invite_decline,
-            crate::social::commands::invite_cancel
+            crate::social::commands::invite_cancel,
+            crate::overlay::commands::package_overlays_list,
+            crate::overlay::commands::package_overlay_set,
+            crate::overlay::commands::overlay_view,
+            crate::overlay::commands::overlay_action
         ])
         .events(tauri_specta::collect_events![
             GameStarted,
@@ -110,7 +114,9 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             crate::social::commands::DeviceNoticeEvent,
             crate::social::commands::InviteReceived,
             crate::social::commands::InviteChanged,
-            crate::social::commands::InviteInstallRequested
+            crate::social::commands::InviteInstallRequested,
+            crate::overlay::commands::OverlayViewChanged,
+            crate::overlay::commands::OverlayPackageDisabled
         ])
         .error_handling(tauri_specta::ErrorHandlingMode::Result)
         // Byte counts and ids that are u64 in Rust stay below 2^53.

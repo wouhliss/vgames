@@ -56,6 +56,52 @@ pub trait SocialEvents: Send + Sync + 'static {
     );
 }
 
+/// Sends every social event to several sinks (the WebView and the overlay hub).
+pub struct FanOut(pub Vec<Arc<dyn SocialEvents>>);
+
+impl SocialEvents for FanOut {
+    fn connection_changed(&self, c: &SocialConnection) {
+        self.0.iter().for_each(|s| s.connection_changed(c));
+    }
+    fn friends_changed(&self, f: &FriendList) {
+        self.0.iter().for_each(|s| s.friends_changed(f));
+    }
+    fn presence_changed(&self, u: Uuid, p: &Presence) {
+        self.0.iter().for_each(|s| s.presence_changed(u, p));
+    }
+    fn friend_request_received(&self, u: &UserSummary) {
+        self.0.iter().for_each(|s| s.friend_request_received(u));
+    }
+    fn conversations_changed(&self, c: &[Conversation]) {
+        self.0.iter().for_each(|s| s.conversations_changed(c));
+    }
+    fn message_received(&self, m: &Message) {
+        self.0.iter().for_each(|s| s.message_received(m));
+    }
+    fn message_status_changed(&self, m: Uuid, c: Uuid, st: MessageStatus) {
+        self.0
+            .iter()
+            .for_each(|s| s.message_status_changed(m, c, st));
+    }
+    fn typing(&self, c: Uuid, u: Uuid) {
+        self.0.iter().for_each(|s| s.typing(c, u));
+    }
+    fn device_notice(&self, c: Option<Uuid>, n: &DeviceNotice) {
+        self.0.iter().for_each(|s| s.device_notice(c, n));
+    }
+    fn invite_received(&self, i: &Invite) {
+        self.0.iter().for_each(|s| s.invite_received(i));
+    }
+    fn invite_changed(&self, i: &Invite) {
+        self.0.iter().for_each(|s| s.invite_changed(i));
+    }
+    fn invite_install_requested(&self, i: Uuid, p: PackageRef, r: InviteInstallReason) {
+        self.0
+            .iter()
+            .for_each(|s| s.invite_install_requested(i, p, r));
+    }
+}
+
 /// The persisted social settings.
 pub struct SocialSettingsKey;
 impl settings::Setting for SocialSettingsKey {

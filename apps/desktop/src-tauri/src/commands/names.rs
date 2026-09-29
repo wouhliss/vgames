@@ -67,8 +67,10 @@ pub const MAIN_WINDOW_COMMANDS: &[&str] = &[
     "invite_accept",
     "invite_decline",
     "invite_cancel",
+    "package_overlays_list",
+    "package_overlay_set",
 ];
 
 /// Commands the in-game overlay window may call. Only `overlay_*` commands
 /// belong here (Agent 4 adds them).
-pub const OVERLAY_WINDOW_COMMANDS: &[&str] = &[];
+pub const OVERLAY_WINDOW_COMMANDS: &[&str] = &["overlay_view", "overlay_action"];
