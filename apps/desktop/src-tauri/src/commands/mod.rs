@@ -7,13 +7,16 @@
 mod app;
 mod libraries;
 pub mod names;
+mod servers;
 
 use std::path::{Path, PathBuf};
 
 pub(crate) use app::show_main_window;
+pub(crate) use servers::spawn_connect;
 
 use crate::events::{
-    ControllerEvent, GameStarted, GameStopped, InstallFinished, InstallProgress, ServerSwitched,
+    AuthFinished, ConnectivityChanged, ControllerEvent, GameStarted, GameStopped, InstallFinished,
+    InstallProgress, ServerAddRequested, ServerSwitched, ServersChanged, TrustProblem,
 };
 
 /// Header of the generated file.
@@ -26,6 +29,17 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         .commands(tauri_specta::collect_commands![
             app::app_ready,
             app::app_info,
+            servers::servers_list,
+            servers::server_preview,
+            servers::server_confirm,
+            servers::server_switch,
+            servers::server_remove,
+            servers::auth_start,
+            servers::auth_open_browser,
+            servers::auth_submit_code,
+            servers::auth_cancel,
+            servers::auth_sign_out,
+            servers::auth_token_storage,
             libraries::libraries_list,
             libraries::library_pick_folder,
             libraries::library_add,
@@ -47,7 +61,20 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             crate::social::commands::user_block,
             crate::social::commands::user_unblock,
             crate::social::commands::blocks_list,
-            crate::social::commands::user_profile
+            crate::social::commands::user_profile,
+            crate::social::commands::conversations_list,
+            crate::social::commands::conversation_open_direct,
+            crate::social::commands::conversation_create_party,
+            crate::social::commands::messages_list,
+            crate::social::commands::message_send,
+            crate::social::commands::message_retry,
+            crate::social::commands::conversation_mark_read,
+            crate::social::commands::typing_start,
+            crate::social::commands::contact_security,
+            crate::social::commands::contact_set_verified,
+            crate::social::commands::contact_trust_device,
+            crate::social::commands::devices_list,
+            crate::social::commands::device_revoke
         ])
         .events(tauri_specta::collect_events![
             GameStarted,
@@ -56,11 +83,21 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             InstallFinished,
             ServerSwitched,
             ControllerEvent,
+            ServersChanged,
+            ConnectivityChanged,
+            TrustProblem,
+            ServerAddRequested,
+            AuthFinished,
             crate::updater::UpdaterStatus,
             crate::social::commands::SocialConnectionChanged,
             crate::social::commands::FriendsChanged,
             crate::social::commands::PresenceChanged,
-            crate::social::commands::FriendRequestReceived
+            crate::social::commands::FriendRequestReceived,
+            crate::social::commands::ConversationsChanged,
+            crate::social::commands::MessageReceived,
+            crate::social::commands::MessageStatusChanged,
+            crate::social::commands::Typing,
+            crate::social::commands::DeviceNoticeEvent
         ])
         .error_handling(tauri_specta::ErrorHandlingMode::Result)
         // Byte counts and ids that are u64 in Rust stay below 2^53.

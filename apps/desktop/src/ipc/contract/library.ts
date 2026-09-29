@@ -1,7 +1,7 @@
 // Installed packages, favorites, collections, launching and per-install actions (Agent 2,
 // A2-T06/T08/T09/T10). Requested shapes; see core.ts for the conventions.
-import type { PackageRef } from "../../bindings";
-import type { AppError, Platform } from "./core";
+import type { AppError, PackageRef } from "../../bindings";
+import type { Platform } from "./core";
 import { call, makeEvents, type Result } from "./runtime";
 
 /**

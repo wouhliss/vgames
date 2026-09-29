@@ -14,8 +14,10 @@ use uuid::Uuid;
 use vgames_proto::auth::UserPublic;
 use vgames_proto::realtime::RealtimeTicket;
 use vgames_proto::social::{
-    Friend, FriendCode, FriendList, FriendRequestByCode, FriendRequestByUser, FriendRequestCreate,
-    PresenceUpdate,
+    ClaimKeysRequest, ClaimedKeyList, Conversation, ConversationCreate, ConversationPage, Device,
+    DeviceKeysList, DeviceList, DeviceRegister, Friend, FriendCode, FriendList,
+    FriendRequestByCode, FriendRequestByUser, FriendRequestCreate, InboxAck, InboxPage,
+    OneTimeKeysStored, OneTimeKeysUpload, PresenceUpdate, SendMessageRequest, SendMessageResponse,
 };
 
 use super::model::{SocialError, SocialLimit};
@@ -233,6 +235,97 @@ impl SocialApi<'_> {
     pub async fn realtime_ticket(&self) -> Result<RealtimeTicket, SocialError> {
         self.json(Method::POST, "v1/realtime/ticket", None::<&()>)
             .await
+    }
+
+    // ---- devices and keys (A4-T08) ------------------------------------------------------------
+
+    /// Registers this install's keys and binds the session to the device.
+    pub async fn register_device(&self, body: &DeviceRegister) -> Result<Device, SocialError> {
+        self.json(Method::POST, "v1/devices", Some(body)).await
+    }
+
+    pub async fn my_devices(&self) -> Result<DeviceList, SocialError> {
+        self.json(Method::GET, "v1/devices", None::<&()>).await
+    }
+
+    pub async fn revoke_device(&self, device_id: Uuid) -> Result<(), SocialError> {
+        self.empty(
+            Method::DELETE,
+            &format!("v1/devices/{device_id}"),
+            None::<&()>,
+        )
+        .await
+    }
+
+    pub async fn upload_keys(
+        &self,
+        device_id: Uuid,
+        body: &OneTimeKeysUpload,
+    ) -> Result<OneTimeKeysStored, SocialError> {
+        self.json(
+            Method::POST,
+            &format!("v1/devices/{device_id}/one-time-keys"),
+            Some(body),
+        )
+        .await
+    }
+
+    pub async fn user_devices(&self, user_id: Uuid) -> Result<DeviceKeysList, SocialError> {
+        self.json(
+            Method::GET,
+            &format!("v1/users/{user_id}/devices"),
+            None::<&()>,
+        )
+        .await
+    }
+
+    pub async fn claim_keys(&self, body: &ClaimKeysRequest) -> Result<ClaimedKeyList, SocialError> {
+        self.json(Method::POST, "v1/keys/claim", Some(body)).await
+    }
+
+    // ---- conversations and the relay (A4-T08) -------------------------------------------------
+
+    pub async fn conversations(
+        &self,
+        cursor: Option<&str>,
+    ) -> Result<ConversationPage, SocialError> {
+        let mut path = "v1/conversations?limit=100".to_owned();
+        if let Some(c) = cursor {
+            path.push_str("&cursor=");
+            path.push_str(&url::form_urlencoded::byte_serialize(c.as_bytes()).collect::<String>());
+        }
+        self.json(Method::GET, &path, None::<&()>).await
+    }
+
+    pub async fn create_conversation(
+        &self,
+        body: &ConversationCreate,
+    ) -> Result<Conversation, SocialError> {
+        self.json(Method::POST, "v1/conversations", Some(body))
+            .await
+    }
+
+    pub async fn send_message(
+        &self,
+        conversation_id: Uuid,
+        body: &SendMessageRequest,
+    ) -> Result<SendMessageResponse, SocialError> {
+        self.json(
+            Method::POST,
+            &format!("v1/conversations/{conversation_id}/messages"),
+            Some(body),
+        )
+        .await
+    }
+
+    /// The oldest undelivered envelopes for this session's device.
+    pub async fn inbox(&self) -> Result<InboxPage, SocialError> {
+        self.json(Method::GET, "v1/inbox?limit=100", None::<&()>)
+            .await
+    }
+
+    pub async fn ack(&self, body: &InboxAck) -> Result<(), SocialError> {
+        self.empty(Method::POST, "v1/inbox/ack", Some(body)).await
     }
 }
 

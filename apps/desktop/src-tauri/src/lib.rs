@@ -8,19 +8,23 @@
 //! Idle means idle: no polling timers. Background work waits on channels, OS
 //! notifications or cancellation tokens.
 
+pub mod api;
 pub mod commands;
 pub mod db;
+pub mod deeplink;
 pub mod error;
 pub mod events;
 pub mod images;
 pub mod libraries;
 pub mod logging;
 pub mod paths;
+pub mod secrets;
+pub mod servers;
 pub mod social;
 pub mod state;
 pub mod updater;
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use tauri::{AppHandle, Manager, RunEvent};
@@ -118,9 +122,27 @@ fn setup(app: &AppHandle, profile: Option<String>) -> Result<(), Box<dyn std::er
     );
 
     let db = db::Db::open(&paths.database_file())?;
-    let state = AppState::new(paths, db)?;
+    let bus = events::EventBus::new();
+    let vault = secrets::open_default(&app.config().identifier, paths.data_dir.join("secrets"));
+    let servers = Arc::new(servers::Servers::new(
+        db.clone(),
+        bus.clone(),
+        api::http_client()?,
+        secrets::VaultHandle(vault),
+        servers::ServersConfig::for_this_build(device_name()),
+    ));
+    let state = AppState::new(paths, db, bus, Arc::clone(&servers))?;
     events::spawn_ui_bridge(app.clone(), &state.bus, state.shutdown.child_token());
     spawn_show_fallback(app.clone(), &state);
+    // Before the first deep link is published: `server/add` and `auth/callback`.
+    deeplink::spawn_router(
+        Arc::clone(&servers),
+        state.bus.clone(),
+        state.ui_ready.clone(),
+        cfg!(debug_assertions),
+        state.shutdown.child_token(),
+    );
+    spawn_connect_active(Arc::clone(&servers));
 
     // Deep links: from the first launch's arguments, and later from the OS
     // (macOS open-url) or a second instance (forwarded by single-instance).
@@ -144,6 +166,35 @@ fn setup(app: &AppHandle, profile: Option<String>) -> Result<(), Box<dyn std::er
     social::commands::init(app, &state)?;
     app.manage(state);
     Ok(())
+}
+
+/// Startup: identity check and trust refresh for the active server.
+fn spawn_connect_active(servers: Arc<servers::Servers>) {
+    tauri::async_runtime::spawn(async move {
+        match servers.active_id().await {
+            Ok(Some(id)) => commands::spawn_connect(servers, id),
+            Ok(None) => {}
+            Err(error) => {
+                tracing::error!(error = %error::DisplayChain(&error), "cannot read the active server")
+            }
+        }
+    });
+}
+
+/// Shown in the user's session list on the server (1–64 characters).
+fn device_name() -> String {
+    let name: String = sysinfo::System::host_name()
+        .unwrap_or_default()
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(64)
+        .collect();
+    let name = name.trim();
+    if name.is_empty() {
+        "vgames launcher".to_owned()
+    } else {
+        name.to_owned()
+    }
 }
 
 fn publish_deep_link(bus: &events::EventBus, url: &url::Url) {

@@ -103,6 +103,49 @@ pub struct ServerSwitched {
     pub server_id: Option<Uuid>,
 }
 
+/// The list of servers or one of their accounts changed; re-read `servers_list`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Type, tauri_specta::Event)]
+pub struct ServersChanged {}
+
+/// Whether the launcher could reach a server on its last attempt.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, tauri_specta::Event)]
+pub struct ConnectivityChanged {
+    pub server_id: Uuid,
+    pub online: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum TrustProblemKind {
+    FingerprintMismatch,
+}
+
+/// A server presented a root key other than the pinned one. It is blocked
+/// until it presents the pinned key again; there is no "continue anyway".
+#[derive(Debug, Clone, Serialize, Deserialize, Type, tauri_specta::Event)]
+pub struct TrustProblem {
+    pub server_id: Uuid,
+    pub kind: TrustProblemKind,
+    pub server_name: String,
+    pub pinned_fingerprint: String,
+    pub presented_fingerprint: String,
+}
+
+/// A `vgames://server/add` link was opened; the UI starts onboarding with
+/// these values (then calls `server_preview(url, fingerprint)`).
+#[derive(Debug, Clone, Serialize, Deserialize, Type, tauri_specta::Event)]
+pub struct ServerAddRequested {
+    pub url: String,
+    pub fingerprint: String,
+}
+
+/// A sign-in finished (deep-link callback, pasted code, or cancel).
+#[derive(Debug, Clone, Serialize, Deserialize, Type, tauri_specta::Event)]
+pub struct AuthFinished {
+    pub flow_id: Uuid,
+    pub outcome: crate::servers::auth::AuthOutcome,
+}
+
 /// Controller family, as classified by the input thread (07-controllers §2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "snake_case")]
@@ -144,6 +187,11 @@ pub enum AppEvent {
     InstallFinished(InstallFinished),
     ServerSwitched(ServerSwitched),
     Controller(ControllerEvent),
+    ServersChanged(ServersChanged),
+    ConnectivityChanged(ConnectivityChanged),
+    TrustProblem(TrustProblem),
+    ServerAddRequested(ServerAddRequested),
+    AuthFinished(AuthFinished),
     /// A `vgames://` URL arrived from the OS (first launch, second instance or
     /// open-url event). Untrusted: the deep-link router parses it (A2-T10).
     DeepLinkReceived {
@@ -196,6 +244,11 @@ pub fn spawn_ui_bridge<R: Runtime>(app: AppHandle<R>, bus: &EventBus, shutdown: 
                 Ok(AppEvent::InstallFinished(e)) => e.emit(&app),
                 Ok(AppEvent::ServerSwitched(e)) => e.emit(&app),
                 Ok(AppEvent::Controller(e)) => e.emit(&app),
+                Ok(AppEvent::ServersChanged(e)) => e.emit(&app),
+                Ok(AppEvent::ConnectivityChanged(e)) => e.emit(&app),
+                Ok(AppEvent::TrustProblem(e)) => e.emit(&app),
+                Ok(AppEvent::ServerAddRequested(e)) => e.emit(&app),
+                Ok(AppEvent::AuthFinished(e)) => e.emit(&app),
                 Ok(AppEvent::DeepLinkReceived { .. }) => Ok(()),
                 Err(broadcast::error::RecvError::Lagged(skipped)) => {
                     tracing::warn!(skipped, "UI event bridge lagged");

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-messages-list"
+description = "Enables the messages_list command without any pre-configured scope."
+commands.allow = ["messages_list"]
+
+[[permission]]
+identifier = "deny-messages-list"
+description = "Denies the messages_list command without any pre-configured scope."
+commands.deny = ["messages_list"]

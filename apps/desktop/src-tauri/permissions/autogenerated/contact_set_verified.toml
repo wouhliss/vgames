@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-contact-set-verified"
+description = "Enables the contact_set_verified command without any pre-configured scope."
+commands.allow = ["contact_set_verified"]
+
+[[permission]]
+identifier = "deny-contact-set-verified"
+description = "Denies the contact_set_verified command without any pre-configured scope."
+commands.deny = ["contact_set_verified"]

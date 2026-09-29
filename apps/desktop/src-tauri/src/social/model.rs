@@ -308,7 +308,7 @@ pub struct ContactSecurity {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "snake_case")]
-pub enum Platform {
+pub enum DevicePlatform {
     Windows,
     Linux,
     Macos,
@@ -318,7 +318,7 @@ pub enum Platform {
 pub struct MyDevice {
     pub id: Uuid,
     pub display_name: String,
-    pub platform: Platform,
+    pub platform: DevicePlatform,
     pub current: bool,
     pub created_at: String,
     pub last_seen_at: Option<String>,
