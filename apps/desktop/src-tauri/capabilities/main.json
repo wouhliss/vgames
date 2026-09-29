@@ -24,6 +24,8 @@
     "allow-library-set-default",
     "allow-library-remove",
     "allow-shortcut-create",
+    "allow-game-launch",
+    "allow-game-stop",
     "allow-updater-status",
     "allow-updater-check",
     "allow-updater-whats-new",

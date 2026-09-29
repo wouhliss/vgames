@@ -10,6 +10,7 @@ use crate::db::Db;
 use crate::events::EventBus;
 use crate::images::{ImageCache, ImageCacheError};
 use crate::launch::GameSessions;
+use crate::launch::orchestrate::Launcher;
 use crate::paths::AppPaths;
 use crate::servers::Servers;
 
@@ -23,6 +24,8 @@ pub struct AppState {
     pub bus: EventBus,
     /// Running games (see `launch::session`).
     pub games: GameSessions,
+    /// Checks and starts games (see `launch::orchestrate`).
+    pub launcher: Arc<Launcher<Servers>>,
     /// Root of every task's cancellation token; cancelled on exit.
     pub shutdown: CancellationToken,
     /// Cancelled (used as a one-shot latch) once the UI has rendered and called
@@ -41,9 +44,16 @@ impl AppState {
         servers: Arc<Servers>,
     ) -> Result<Self, ImageCacheError> {
         let images = Arc::new(ImageCache::open(paths.cache_dir.join("images"))?);
+        let games = GameSessions::new(db.clone(), bus.clone());
+        let launcher = Arc::new(Launcher::new(
+            db.clone(),
+            Arc::clone(&servers),
+            games.clone(),
+        ));
         Ok(Self {
             paths,
-            games: GameSessions::new(db.clone(), bus.clone()),
+            games,
+            launcher,
             db,
             images,
             bus,

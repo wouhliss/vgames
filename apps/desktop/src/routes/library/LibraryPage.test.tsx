@@ -207,7 +207,7 @@ describe("library", () => {
     const { user, backend } = setup();
     await user.click(await screen.findByRole("button", { name: "Play Hollow Harbor" }));
     expect(backend.callsTo("game_launch")[0]?.args).toEqual({
-      package: HOLLOW.package,
+      pkg: HOLLOW.package,
       targetId: null,
     });
     const stop = await screen.findByRole("button", { name: "Stop Hollow Harbor" });
@@ -216,7 +216,7 @@ describe("library", () => {
     // The safe choice has focus.
     expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveFocus();
     await user.click(within(dialog).getByRole("button", { name: "Stop game" }));
-    expect(backend.callsTo("game_stop")[0]?.args).toEqual({ package: HOLLOW.package });
+    expect(backend.callsTo("game_stop")[0]?.args).toEqual({ pkg: HOLLOW.package });
     expect(await screen.findByRole("button", { name: "Play Hollow Harbor" })).toBeVisible();
   });
 
@@ -226,7 +226,7 @@ describe("library", () => {
     const menu = await openMenu(user, "Hollow Harbor");
     await user.click(within(menu).getByRole("menuitem", { name: "Launch: Level editor" }));
     expect(backend.callsTo("game_launch")[0]?.args).toEqual({
-      package: HOLLOW.package,
+      pkg: HOLLOW.package,
       targetId: "editor",
     });
   });

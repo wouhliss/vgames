@@ -116,13 +116,13 @@ fn denied_or_runner_keys_are_refused() {
     let mut bad = target();
     bad.env.insert("LD_PRELOAD".into(), "x".into());
     assert!(
-        matches!(LaunchPlan::Native.prepare(bad, host()), Err(LaunchError::EnvKey(k)) if k == "LD_PRELOAD")
+        matches!(LaunchPlan::Native.prepare(bad, host()), Err(TargetError::EnvKey(k)) if k == "LD_PRELOAD")
     );
 
     let mut plan = proton();
     plan.env.insert("WINEPREFIX".into(), "/elsewhere".into());
     let result = LaunchPlan::Proton(plan).prepare(target(), host());
-    assert!(matches!(result, Err(LaunchError::EnvKey(k)) if k == "WINEPREFIX"));
+    assert!(matches!(result, Err(TargetError::EnvKey(k)) if k == "WINEPREFIX"));
 }
 
 #[test]

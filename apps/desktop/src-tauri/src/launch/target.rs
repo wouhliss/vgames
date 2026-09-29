@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use vgames_core::manifest::{LaunchTarget, Manifest};
 
-use super::LaunchError;
+use super::TargetError;
 
 /// The placeholder a manifest's `multiplayer.join.args` may contain as a whole argument.
 const JOIN_PLACEHOLDER: &str = "{join_secret}";
@@ -73,14 +73,14 @@ pub fn resolve(
     install_root: &Path,
     manifest: &Manifest,
     choice: &TargetChoice,
-) -> Result<ResolvedTarget, LaunchError> {
-    let launch = manifest.launch.as_ref().ok_or(LaunchError::NoTargets)?;
+) -> Result<ResolvedTarget, TargetError> {
+    let launch = manifest.launch.as_ref().ok_or(TargetError::NoTargets)?;
     let find = |id: &str| {
         launch
             .targets
             .iter()
             .find(|t| t.id == id)
-            .ok_or_else(|| LaunchError::UnknownTarget(id.to_owned()))
+            .ok_or_else(|| TargetError::UnknownTarget(id.to_owned()))
     };
     let join = match choice {
         TargetChoice::Join(secret) => manifest.multiplayer.as_ref().map(|m| (&m.join, secret)),
@@ -114,14 +114,14 @@ fn confine(
     install_root: &Path,
     target: &LaunchTarget,
     args: Vec<String>,
-) -> Result<ResolvedTarget, LaunchError> {
-    let root = fs::canonicalize(install_root).map_err(|_| LaunchError::OutsideInstall {
+) -> Result<ResolvedTarget, TargetError> {
+    let root = fs::canonicalize(install_root).map_err(|_| TargetError::OutsideInstall {
         what: "install",
         path: install_root.to_owned(),
     })?;
     let executable = inside(&root, &target.executable, "executable")?;
     if !fs::metadata(&executable).is_ok_and(|m| m.is_file()) {
-        return Err(LaunchError::OutsideInstall {
+        return Err(TargetError::OutsideInstall {
             what: "executable",
             path: executable,
         });
@@ -133,7 +133,7 @@ fn confine(
             .map_or_else(|| root.clone(), Path::to_path_buf),
     };
     if !fs::metadata(&working_dir).is_ok_and(|m| m.is_dir()) {
-        return Err(LaunchError::OutsideInstall {
+        return Err(TargetError::OutsideInstall {
             what: "working directory",
             path: working_dir,
         });
@@ -149,13 +149,13 @@ fn confine(
 
 /// Joins a validated package path (`/`-separated) to `root` and canonicalizes
 /// it, refusing anything a symlink moved outside `root`.
-fn inside(root: &Path, package_path: &str, what: &'static str) -> Result<PathBuf, LaunchError> {
+fn inside(root: &Path, package_path: &str, what: &'static str) -> Result<PathBuf, TargetError> {
     let joined = package_path
         .split('/')
         .fold(root.to_path_buf(), |path, part| path.join(part));
     match fs::canonicalize(&joined) {
         Ok(real) if real.starts_with(root) && real != root => Ok(real),
-        _ => Err(LaunchError::OutsideInstall { what, path: joined }),
+        _ => Err(TargetError::OutsideInstall { what, path: joined }),
     }
 }
 

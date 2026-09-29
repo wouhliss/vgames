@@ -55,7 +55,11 @@ export const commands = {
 	 *  Creates a desktop shortcut that opens `vgames://launch/<package id>`.
 	 *  Returns the shortcut's path.
 	 */
-	shortcutCreate: (pkg: PackageRef) => typedError<string, ShortcutActionError>(__TAURI_INVOKE("shortcut_create", { pkg })),
+	shortcutCreate: (pkg: PackageRef) => typedError<string, AppError>(__TAURI_INVOKE("shortcut_create", { pkg })),
+	/**  Pre-launch checks, then spawn. `target_id` null = the default target. */
+	gameLaunch: (pkg: PackageRef, targetId: string | null) => typedError<null, LaunchError>(__TAURI_INVOKE("game_launch", { pkg, targetId })),
+	/**  Ends the game's whole process tree. The UI confirms first. */
+	gameStop: (pkg: PackageRef) => typedError<null, AppError>(__TAURI_INVOKE("game_stop", { pkg })),
 	/**  Current updater status. */
 	updaterStatus: () => __TAURI_INVOKE<UpdaterStatus>("updater_status"),
 	/**  Checks for an update now. Refused while a game runs. */
@@ -192,6 +196,9 @@ export type BlockedUser = {
 	username: string | null,
 	blocked_at: string,
 };
+
+/**  An install that is busy with something else. */
+export type BusyState = "installing" | "updating" | "repairing" | "moving" | "uninstalling";
 
 export type ChangeEntry = {
 	type: ChangeType,
@@ -377,6 +384,15 @@ export type InstallProgress = {
 	connections: number,
 };
 
+/**  Why a launch did not start (the UI's `LaunchError`). */
+export type LaunchError = { kind: "not_installed" } | { kind: "incomplete" } | { kind: "busy"; state: BusyState } | { kind: "library_offline"; library_path: string } | { kind: "already_running" } | { kind: "target_not_found" } | 
+/**  A file no longer matches the signed manifest; "Verify" repairs it. */
+{ kind: "integrity"; path: string } | 
+/**  The publisher key was revoked; "Verify" fetches a re-signed manifest. */
+{ kind: "key_revoked" } | { kind: "compat_unavailable"; detail: string } | { kind: "rate_limited" } | 
+/**  A cloud save conflict must be resolved first (A2-T11 sends the conflict). */
+{ kind: "save_conflict"; conflict_id: string } | { kind: "io"; detail: string };
+
 /**  Errors expected by the launcher's library screens. */
 export type LibraryActionError = { kind: "not_writable" } | { kind: "system_directory" } | { kind: "nested_in_library"; library_path: string } | { kind: "contains_library"; library_path: string } | { kind: "already_added" } | { kind: "not_found" } | { kind: "io"; detail: string };
 
@@ -528,9 +544,6 @@ export type ServerSwitched = {
 
 /**  The list of servers or one of their accounts changed; re-read `servers_list`. */
 export type ServersChanged = Record<string, never>;
-
-/**  The subset of the UI's `AppError` these commands produce. */
-export type ShortcutActionError = { kind: "not_found" } | { kind: "io"; path: string | null; detail: string } | { kind: "internal"; detail: string };
 
 export type SocialConnection = {
 	server_id: string | null,

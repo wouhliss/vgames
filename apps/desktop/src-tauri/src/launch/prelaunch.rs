@@ -18,7 +18,7 @@ use vgames_transfer::install::{
     self, InstallError, InstallState, MANIFEST_FILE, META_DIR, RECORD_FILE, SIGNATURE_FILE,
 };
 
-use super::LaunchError;
+use super::TargetError;
 use super::target::{self, ResolvedTarget, TargetChoice};
 
 #[derive(Debug, thiserror::Error)]
@@ -30,10 +30,11 @@ pub enum PrelaunchError {
     Reverify,
     #[error("the installed package failed its integrity check: {0}")]
     Integrity(String),
-    #[error("the game executable was modified; repair the package")]
-    ExecutableModified,
+    /// `path` is the executable's package path (`/`-separated).
+    #[error("the game executable {path} was modified; repair the package")]
+    ExecutableModified { path: String },
     #[error(transparent)]
-    Launch(#[from] LaunchError),
+    Launch(#[from] TargetError),
     #[error("cannot read {path}")]
     Io {
         path: PathBuf,
@@ -154,7 +155,7 @@ impl Prelaunch {
             .as_ref()
             .and_then(|l| l.targets.iter().find(|t| t.id == target.id))
             .map(|t| t.executable.as_str())
-            .ok_or_else(|| LaunchError::UnknownTarget(target.id.clone()))?;
+            .ok_or_else(|| TargetError::UnknownTarget(target.id.clone()))?;
         let entry = manifest
             .files
             .iter()
@@ -178,7 +179,9 @@ impl Prelaunch {
         // A file changed while hashing is not trusted either.
         if hasher.finalize().as_bytes() != entry.blake3.as_bytes() || stamp(path)? != before {
             lock(&self.executables).remove(path);
-            return Err(PrelaunchError::ExecutableModified);
+            return Err(PrelaunchError::ExecutableModified {
+                path: relative.to_owned(),
+            });
         }
         lock(&self.executables).insert(path.clone(), before);
         Ok(())

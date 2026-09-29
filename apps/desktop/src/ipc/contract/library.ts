@@ -79,25 +79,6 @@ export type CollectionError =
   | { kind: "name_taken" }
   | { kind: "not_found" };
 
-export type LaunchError =
-  | { kind: "not_installed" }
-  | { kind: "incomplete" }
-  | { kind: "busy"; state: InstallState }
-  | { kind: "library_offline"; library_path: string }
-  | { kind: "already_running" }
-  | { kind: "target_not_found" }
-  /** A file no longer matches the signed manifest (02 §11). "Verify" repairs it. */
-  | { kind: "integrity"; path: string }
-  /** The publisher key was revoked; "Verify" fetches a re-signed manifest. */
-  | { kind: "key_revoked" }
-  /** Proton/Wine, Vulkan, Rosetta or another compat prerequisite is missing. */
-  | { kind: "compat_unavailable"; detail: string }
-  /** One launch per 3 s (01-security §7). */
-  | { kind: "rate_limited" }
-  /** A cloud save conflict must be resolved first (the `save-conflict` event carries it). */
-  | { kind: "save_conflict"; conflict_id: string }
-  | { kind: "io"; detail: string };
-
 export type InstallActionError =
   | { kind: "not_found" }
   | { kind: "busy"; state: InstallState }
@@ -160,15 +141,6 @@ export const libraryCommands = {
   },
   async favoriteSet(pkg: PackageRef, favorite: boolean): Promise<Result<null, AppError>> {
     return call("favorite_set", { package: pkg, favorite });
-  },
-
-  /** Pre-launch checks, cloud-save pull, then spawn (A2-T09). `targetId` null = default target. */
-  async gameLaunch(pkg: PackageRef, targetId: string | null): Promise<Result<null, LaunchError>> {
-    return call("game_launch", { package: pkg, targetId });
-  },
-  /** Terminates the game's process tree (the UI confirms first). */
-  async gameStop(pkg: PackageRef): Promise<Result<null, AppError>> {
-    return call("game_stop", { package: pkg });
   },
 
   /** Queues the available update; it shows up in Downloads. */

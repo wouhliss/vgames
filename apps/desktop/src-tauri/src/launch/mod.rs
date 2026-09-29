@@ -10,6 +10,7 @@
 //! [`target::resolve`] picks the launch target; a [`plan::LaunchPlan`]
 //! (`Native`, `Proton` or `Wine`) turns it into a [`plan::PreparedLaunch`].
 
+pub mod orchestrate;
 pub mod plan;
 pub mod prelaunch;
 pub mod process;
@@ -24,7 +25,7 @@ pub use target::{JoinSecret, ResolvedTarget, TargetChoice};
 use std::path::PathBuf;
 
 #[derive(Debug, thiserror::Error)]
-pub enum LaunchError {
+pub enum TargetError {
     #[error("the package has no launch targets")]
     NoTargets,
     #[error("launch target {0:?} does not exist")]

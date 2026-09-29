@@ -30,6 +30,8 @@ pub enum Content {
     Random(u64),
     /// A repeating pattern (stored as zstd with `Compression::Auto`).
     Compressible,
+    /// Exactly these bytes (`size` must match), for example a shell script.
+    Literal(&'static [u8]),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,6 +52,16 @@ impl FileSpec {
         }
     }
 
+    /// An executable file with exactly `bytes` (for example `#!/bin/sh …`).
+    pub fn script(path: &str, bytes: &'static [u8]) -> Self {
+        Self {
+            path: path.to_owned(),
+            size: bytes.len() as u64,
+            content: Content::Literal(bytes),
+            executable: true,
+        }
+    }
+
     pub fn bytes(&self) -> Vec<u8> {
         content_bytes(self.content, self.size)
     }
@@ -57,6 +69,10 @@ impl FileSpec {
 
 pub fn content_bytes(content: Content, size: u64) -> Vec<u8> {
     match content {
+        Content::Literal(bytes) => {
+            assert_eq!(bytes.len() as u64, size, "literal content size");
+            bytes.to_vec()
+        }
         Content::Compressible => (0..size)
             .map(|i| b"vgames-save-data-"[(i % 17) as usize])
             .collect(),

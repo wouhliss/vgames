@@ -10,7 +10,7 @@ use std::process::Command;
 use vgames_core::compat::{Graphics, is_launcher_owned_env_key};
 use vgames_core::manifest::{is_denied_env_key, is_valid_env_key};
 
-use super::{LaunchError, ResolvedTarget};
+use super::{ResolvedTarget, TargetError};
 
 /// `GAMEID` when the compat profile names no umu id (umu's generic default).
 const UMU_DEFAULT_GAME_ID: &str = "0";
@@ -72,7 +72,7 @@ impl LaunchPlan {
         &self,
         target: ResolvedTarget,
         host_env: impl IntoIterator<Item = (OsString, OsString)>,
-    ) -> Result<PreparedLaunch, LaunchError> {
+    ) -> Result<PreparedLaunch, TargetError> {
         let mut env: BTreeMap<String, OsString> = host_env
             .into_iter()
             .filter_map(|(k, v)| Some((fold_key(k.to_str()?), v)))
@@ -133,10 +133,10 @@ impl PreparedLaunch {
     /// Extra variables from the launcher itself (Agent 4: overlay endpoint,
     /// Vulkan layer, GL preload). Never package or network data. Runner
     /// variables cannot be replaced.
-    pub fn inject_env(&mut self, key: &str, value: impl Into<OsString>) -> Result<(), LaunchError> {
+    pub fn inject_env(&mut self, key: &str, value: impl Into<OsString>) -> Result<(), TargetError> {
         let folded = fold_key(key);
         if !is_valid_env_key(key) || self.owned.contains(&folded) {
-            return Err(LaunchError::EnvKey(key.to_owned()));
+            return Err(TargetError::EnvKey(key.to_owned()));
         }
         self.env.insert(folded, value.into());
         Ok(())
@@ -155,24 +155,24 @@ impl PreparedLaunch {
     }
 }
 
-fn check_package_key(key: &str) -> Result<(), LaunchError> {
+fn check_package_key(key: &str) -> Result<(), TargetError> {
     // The manifest was validated already; checked again because this is the
     // last step before the value reaches a process.
     if is_valid_env_key(key) && !is_denied_env_key(key) {
         Ok(())
     } else {
-        Err(LaunchError::EnvKey(key.to_owned()))
+        Err(TargetError::EnvKey(key.to_owned()))
     }
 }
 
 fn add_compat_env(
     env: &mut BTreeMap<String, OsString>,
     profile: &BTreeMap<String, String>,
-) -> Result<(), LaunchError> {
+) -> Result<(), TargetError> {
     for (key, value) in profile {
         check_package_key(key)?;
         if is_launcher_owned_env_key(key) {
-            return Err(LaunchError::EnvKey(key.clone()));
+            return Err(TargetError::EnvKey(key.clone()));
         }
         env.insert(fold_key(key), value.into());
     }

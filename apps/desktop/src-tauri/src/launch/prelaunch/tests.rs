@@ -99,12 +99,12 @@ fn a_modified_executable_blocks_the_launch_even_after_a_cached_pass() {
     fs::write(&exe, &bytes).unwrap();
     assert!(matches!(
         install.check(&cache),
-        Err(PrelaunchError::ExecutableModified)
+        Err(PrelaunchError::ExecutableModified { .. })
     ));
     // And it stays blocked.
     assert!(matches!(
         install.check(&cache),
-        Err(PrelaunchError::ExecutableModified)
+        Err(PrelaunchError::ExecutableModified { .. })
     ));
 }
 
