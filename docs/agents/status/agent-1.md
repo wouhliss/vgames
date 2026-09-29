@@ -262,6 +262,10 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
 - From Agent 5 (CI): the full-history gitleaks job flags the historical planted-token scanner test
   (`d679450`, `planted-token-test.txt`), so the local gate fails even when the handoff commit adds no secret.
   Scope that gate to the commits under review while keeping the planted-token self-test.
+- For Agent 5 (your file, changed with the owner's OK): #88 adds a `[[allowlists]]` entry to `.gitleaks.toml`
+  for secrets that are exactly one root key fingerprint (`^VG1(?:-XXXX){8}$`, Crockford base32). A mock
+  fingerprint on #86's branch (`3861f8c`) failed the all-refs scan on every PR. Tokens, and fingerprints with
+  anything appended, are still flagged. Replace it if you scope the PR scan instead.
 - From Agent 4: the socket-presence integration test's 10-second gateway startup wait timed out twice
   under the parallel 142-test API run; it passed alone and in the serial suite.
 
