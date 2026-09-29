@@ -99,7 +99,7 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
 
 - A4-T09 — Launcher: invites client. `social/service/invites.rs`, `social/store/invites.rs`, desktop migration
   `0004_social_invites` (sender's join secret sealed with the chat key, accepted-here flag, join-sent flag, progress
-  throttle), `ports::{Games, GameCheck, LaunchError, LocalLibrary, join_args}`. Commands `invites_list`,
+  throttle), `ports::{Games, GameCheck, LaunchError, LocalLibrary, LauncherGames}`. Commands `invites_list`,
   `invite_send`, `invite_accept`, `invite_decline`, `invite_cancel`; events `invite-received`, `invite-changed`,
   `invite-install-requested` (05-social-notes §5–§6, behaviour §3.2). Received `invite.join` with an invalid secret →
   normal launch (it was ignored before).
@@ -109,9 +109,11 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   secret → normal launch; install failing its signature check → `failed/install_failed`, nothing launched; sender
   cancels → invitee sees `cancelled`, accepting then is a conflict; invalid secret refused before sending; the secret
   is in no server table. Store tests (secret sealed at rest and delivered over Olm, queued once, throttle every
-  ≥ 5 s / 5 %, roles), `join_args` (whole-argument substitution, invalid → none), outcome mapping.
-  **Not yet:** the real launch and update detection are Agent 2's (A2-T08/T09); until then `LocalLibrary` reads the
-  `installs` table (installed = current) and cannot launch (`LaunchError::Unavailable`, logged).
+  ≥ 5 s / 5 %, roles), outcome mapping.
+  Launching now goes through Agent 2's `Launcher` (`ports::LauncherGames`: rate limit, pre-launch checks,
+  `TargetChoice::for_invite` → `multiplayer.join` with the secret as a whole argument); `join_args` was removed in
+  favour of A2-T09's substitution. **Not yet:** update detection (A2-T08's platform choice); until then an installed
+  row counts as current.
 
 ## In progress
 - A4-T10 — Overlay broker, macOS panel and fallbacks. **Part 1 done:** `vgames_overlay::protocol` (versioned
@@ -137,8 +139,15 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   `GameStopped`, disabled package → no env, re-enable).
   **Still open in A4-T10:** the macOS `NSPanel` (non-activating, `.fullScreenAuxiliary`) and transparency need
   `app.macOSPrivateApi` (contract PR) and a Mac to verify "visible over a fullscreen Space without taking focus";
-  wiring `prepare_launch` into Agent 2's launch plan once A2-T09 lands.
-  **Next:** A4-T11 (in-game renderers) while the macOS items wait.
+  Launch wiring done: `OverlayService` implements Agent 2's `launch::orchestrate::LaunchHooks` (env through
+  `PreparedLaunch::inject_env`, broker dropped when the start fails; tests on both sides).
+- A4-T11 — In-game renderers. **Started:** `vgames_overlay::{link, guard}` (feature `renderer`), shared by every
+  backend: link thread (loopback-only endpoint from the environment, token, heartbeats, reconnect with backoff,
+  gives up after 3 refusals or a protocol error; the frame hook reads one atomic when hidden, no allocation or
+  lock), toast expiry, bounded action queue; `guarded` catches a hook panic and turns the overlay off for the
+  process. Tests against a fake broker (views/panel/actions, drop → hidden → reconnect, refusals, oversized frame).
+  Next: Vulkan implicit layer (manifest + registration, `enable_environment VGAMES_OVERLAY=1`), Linux GL preload,
+  Windows hudhook DLL (needs a Windows machine to build and verify).
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_desktop_lib::social::ports::SessionSlot` (A4-T07): now filled by `social::session_bridge` from
@@ -161,21 +170,15 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   The overlay window's surface is §7.
 
 ## Needs from others
-- From Agent 2 (A4-T10): in the launch plan (A2-T09), call `State<OverlayService>.prepare_launch(package, title)`
-  before spawning and merge the returned variables into the game's environment (empty = overlay off). For the
-  Windows DLL injection (A4-T11) I will need a "start suspended, run hook, resume" step in the launch plan.
+- From Agent 2 (A4-T11): for the Windows DLL injection, a "start suspended, run hook, resume" step in
+  `launch::process` (a second `LaunchHooks` method is the natural place).
 - From Agent 3 (A4-T10): the Settings overlay commands are generated as `packageOverlaysList()` and
   `packageOverlaySet(packageRef, enabled)` (main-window commands may not start with `overlay_`, Agent 2's rule);
   I pointed your contract wrappers and mocks at them and removed the now-generated `PackageOverlay` type from
   `contract/settings.ts`. Show `overlay-package-disabled` as a notice with "Turn it back on".
-- From Agent 2 (A4-T09): implement `social::ports::Games` over your library and launcher and install it with
-  `State<SocialService>.set_games(Arc::new(…))`: `check(server, package)` → `Current | Missing | Outdated |
-  NoBuildForPlatform` (your platform choice), `launch_join(server, package, secret)` → launch the manifest's
-  `multiplayer.join.target` with `social::ports::join_args(&args, secret.as_deref())` (whole-argument substitution;
-  `None` → normal launch). Publish `InstallProgress`/`InstallFinished` for installs the UI starts from
-  `invite-install-requested` as for any install (the invite follows them). Failure codes containing `space`/`disk_full`
-  map to `insufficient_space`.
-- From Agent 2: launch-plan hook for overlay env/injection (A4-T10).
+- From Agent 2 (A4-T09): publish `InstallProgress`/`InstallFinished` for installs the UI starts from
+  `invite-install-requested` as for any install (the invite follows them). Failure codes containing
+  `space`/`disk_full` map to `insufficient_space`.
   Until they land, Agent 4 codes against small traits in `social::ports` and tests with in-process fakes.
 - From Agent 3: a Vite entry for the overlay window (`apps/desktop/src/overlay/`, A4-T10).
 - From Agent 5 (CI, A4-T08): `tests/social_chat.rs` (launchers against the real API) needs PostgreSQL next to
@@ -189,6 +192,10 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   failed once locally under a full `cargo test` run (line 211) and passed 3/3 alone; it looks timing-sensitive.
 
 ## Cross-area edits (small, for the owners' review)
+- Agent 2 (A4-T09/T10 launch wiring): `launch/orchestrate.rs` gains `LaunchHooks` (+ `HookEnv`) and
+  `Launcher::set_hooks`; hook variables go through `inject_env` after `prepare` (a refused key is logged and
+  skipped), `aborted` is called when the session does not start. `orchestrate/tests.rs`: the test game exits with
+  `${VGAMES_TEST_EXIT:-7}` so a hook test can prove the variable reached the process.
 - Agent 2 (A4-T10): `lib.rs` `pub mod overlay;`; `names.rs` (`OVERLAY_WINDOW_COMMANDS = overlay_view,
   overlay_action`; two main-window commands), `capabilities/{main,overlay}.json`, `commands/mod.rs`, bindings; root
   `Cargo.toml` new workspace dependency `postcard` (add-only).

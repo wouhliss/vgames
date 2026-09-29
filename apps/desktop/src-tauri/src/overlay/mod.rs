@@ -8,9 +8,9 @@
 //! - `commands`: the overlay window's `overlay_view` / `overlay_action` and the Settings
 //!   commands `package_overlays_list` / `package_overlay_set`.
 //!
-//! Launch integration (for Agent 2's launch plan, A2-T09): call
-//! [`OverlayService::prepare_launch`] before starting a game and merge the returned variables
-//! into its environment; `GameStopped` on the bus ends the broker and feeds the valve.
+//! Launch integration: the service is the launcher's [`LaunchHooks`]. Before a game starts,
+//! [`OverlayService::prepare_launch`] adds the overlay variables to its environment; a start
+//! that fails drops the broker again, and `GameStopped` on the bus ends it and feeds the valve.
 
 pub mod broker;
 pub mod commands;
@@ -29,6 +29,7 @@ use vgames_overlay::protocol::Action;
 
 use crate::db::{Db, now_unix, settings};
 use crate::events::{AppEvent, ControllerChange, EventBus, PackageRef};
+use crate::launch::orchestrate::LaunchHooks;
 use crate::social::service::{SocialService, SocialSettingsKey};
 use broker::{Broker, BrokerEvent};
 use hub::Hub;
@@ -36,6 +37,17 @@ use model::{OverlayAction, PackageOverlay};
 
 /// How long a launched game has to connect its in-game renderer before the fallback shows.
 pub const FALLBACK_AFTER: std::time::Duration = std::time::Duration::from_secs(20);
+
+impl LaunchHooks for OverlayService {
+    fn prepare(&self, package: PackageRef) -> crate::launch::orchestrate::HookEnv<'_> {
+        // The title is filled in by the Settings list from the library.
+        Box::pin(self.prepare_launch(package, ""))
+    }
+
+    fn aborted(&self, package: PackageRef) {
+        self.end_session(package);
+    }
+}
 
 /// How the overlay shows when it is not drawn inside the game (05-social §6.2–§6.3).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -338,15 +350,7 @@ impl OverlayService {
             };
             match event {
                 AppEvent::GameStopped(stopped) => {
-                    let had = lock(&self.inner.sessions)
-                        .remove(&stopped.package)
-                        .is_some();
-                    if lock(&self.inner.sessions).is_empty() {
-                        self.set_panel(false);
-                        lock(&self.inner.hotkeys).deactivate();
-                    }
-                    self.fallback_off(stopped.package);
-                    if had {
+                    if self.end_session(stopped.package) {
                         self.record_exit(stopped.package, stopped.exit).await;
                     }
                 }
@@ -418,6 +422,17 @@ impl OverlayService {
     /// Logs the broker and switches to the fallback when no in-game renderer shows up within
     /// [`FALLBACK_AFTER`] (injection or layer failed or is off) or the broker gives up; a
     /// renderer that connects later takes over again.
+    /// Drops the broker and fallback of `package`; `true` when it had an overlay session.
+    fn end_session(&self, package: PackageRef) -> bool {
+        let had = lock(&self.inner.sessions).remove(&package).is_some();
+        if lock(&self.inner.sessions).is_empty() {
+            self.set_panel(false);
+            lock(&self.inner.hotkeys).deactivate();
+        }
+        self.fallback_off(package);
+        had
+    }
+
     async fn watch_broker(self, package: PackageRef, mut rx: mpsc::UnboundedReceiver<BrokerEvent>) {
         let wait = *lock(&self.inner.fallback_after);
         let deadline = tokio::time::sleep(wait);
@@ -612,6 +627,35 @@ mod tests {
                 .is_none()
         );
         assert_eq!(overlay.prepare_launch(game, "Arena").await.len(), 3);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_launch_that_fails_drops_the_broker() {
+        let (overlay, _bus, mut fallback, _tripped) = service().await;
+        let game = PackageRef {
+            server_id: Uuid::from_u128(1),
+            package_id: Uuid::from_u128(3),
+        };
+        let env = LaunchHooks::prepare(&overlay, game).await;
+        LaunchHooks::aborted(&overlay, game);
+        if cfg!(target_os = "macos") {
+            return;
+        }
+        // The fallback timer (300 ms here) finds no session: nothing shows.
+        assert!(
+            tokio::time::timeout(Duration::from_secs(1), fallback.recv())
+                .await
+                .is_err()
+        );
+        let addr: std::net::SocketAddr = env[1].1.parse().unwrap();
+        let until = std::time::Instant::now() + Duration::from_secs(5);
+        while tokio::net::TcpStream::connect(addr).await.is_ok() {
+            assert!(
+                std::time::Instant::now() < until,
+                "the broker still listens"
+            );
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
     }
 
     #[test]

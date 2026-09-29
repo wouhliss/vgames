@@ -359,7 +359,8 @@ Additions (A4-T10):
   handshake and is bound again on the same port when that renderer leaves (swapchain or device
   recreation). Heartbeats every 5 s, a link silent for 15 s is dropped. Caps: 4 toasts, 50 friends, 20
   invites, 20 messages; names 64, titles 128, texts 280, replies 500 characters; control characters refused.
-- Launch integration (Agent 2, A2-T09): `OverlayService::prepare_launch(package, title)` returns
-  `VGAMES_OVERLAY=1`, `VGAMES_OVERLAY_ENDPOINT=127.0.0.1:<port>` and `VGAMES_OVERLAY_TOKEN=<64 hex>` (or
-  nothing when the overlay is off); `GameStopped` ends the broker. The Guide/PS hold toggles the panel
+- Launch integration: `OverlayService` is the launcher's `launch::orchestrate::LaunchHooks`. Before each game
+  starts it adds `VGAMES_OVERLAY=1`, `VGAMES_OVERLAY_ENDPOINT=127.0.0.1:<port>` and
+  `VGAMES_OVERLAY_TOKEN=<64 hex>` through `PreparedLaunch::inject_env` (nothing when the overlay is off); a start
+  that fails drops the broker, and `GameStopped` ends it. The Guide/PS hold toggles the panel
   while a game with the overlay runs.
