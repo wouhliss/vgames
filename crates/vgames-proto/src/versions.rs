@@ -87,6 +87,10 @@ pub struct Version {
     pub pack_count: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub publisher_key_id: Option<String>,
+    /// The manifest signature envelope, once the version is finalized (the same envelope the
+    /// release descriptor carries). `vgames trust re-sign` reads it for any version.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<SignatureEnvelope>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "openapi", schema(minimum = 0, maximum = 1))]
     pub verify_progress: Option<f32>,

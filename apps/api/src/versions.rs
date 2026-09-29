@@ -3,6 +3,8 @@
 
 use std::time::Duration;
 
+use base64::Engine as _;
+
 use axum::{
     extract::State,
     http::StatusCode,
@@ -16,7 +18,10 @@ use uuid::Uuid;
 use vgames_proto::{
     FieldError,
     packages::Platform,
-    versions::{UploadMethod, UploadTarget, Version, VersionCreate, VersionPage, VersionState},
+    versions::{
+        SignatureContext, SignatureEnvelope, UploadMethod, UploadTarget, Version, VersionCreate,
+        VersionPage, VersionState,
+    },
 };
 
 use crate::http::path::Path;
@@ -75,6 +80,27 @@ pub fn signature_object(package_id: Uuid, version_id: Uuid) -> String {
     format!("v1/{package_id}/{version_id}/manifest.sig")
 }
 
+/// Lowercase hex, as envelopes and descriptors carry digests.
+pub fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// The `vgames.sig/1` manifest envelope rebuilt from what a version stores (01-security §3.3).
+pub fn manifest_envelope(
+    key_id: String,
+    manifest_blake3: &[u8],
+    signature: &[u8],
+) -> SignatureEnvelope {
+    SignatureEnvelope {
+        format: "vgames.sig/1".into(),
+        alg: "ed25519".into(),
+        context: SignatureContext::Manifest,
+        key_id,
+        payload_blake3: hex(manifest_blake3),
+        signature: base64::engine::general_purpose::STANDARD.encode(signature),
+    }
+}
+
 // ---------------------------------------------------------------------------------------
 // Loading
 // ---------------------------------------------------------------------------------------
@@ -84,6 +110,7 @@ pub async fn load(state: &AppState, ids: &[Uuid]) -> ApiResult<Vec<Version>> {
     let rows = sqlx::query!(
         r#"SELECT v.id, v.package_id, v.platform, v.sequence, v.version_label, v.state, v.failure_reason,
                   v.total_size, v.file_count, v.chunk_count, v.pack_count, v.publisher_key_id,
+                  v.manifest_blake3, v.signature,
                   v.created_at, v.created_by, v.finalized_at, v.verified_at, v.published_at, v.yanked_at, v.verify_progress,
                   EXISTS (SELECT 1 FROM package_releases r WHERE r.version_id = v.id) AS "is_current!"
            FROM package_versions v WHERE v.id = ANY($1) ORDER BY v.id DESC"#,
@@ -96,6 +123,12 @@ pub async fn load(state: &AppState, ids: &[Uuid]) -> ApiResult<Vec<Version>> {
     Ok(rows
         .into_iter()
         .filter_map(|r| {
+            let signature = match (&r.publisher_key_id, &r.manifest_blake3, &r.signature) {
+                (Some(key_id), Some(digest), Some(sig)) => {
+                    Some(manifest_envelope(key_id.clone(), digest, sig))
+                }
+                _ => None,
+            };
             Some(Version {
                 id: r.id,
                 package_id: r.package_id,
@@ -111,6 +144,7 @@ pub async fn load(state: &AppState, ids: &[Uuid]) -> ApiResult<Vec<Version>> {
                 chunk_count: r.chunk_count,
                 pack_count: r.pack_count,
                 publisher_key_id: r.publisher_key_id,
+                signature,
                 verify_progress: r.verify_progress,
                 created_at: r.created_at,
                 created_by: users.get(&r.created_by)?.clone(),

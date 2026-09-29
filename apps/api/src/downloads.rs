@@ -4,7 +4,6 @@
 //! Signed URLs are bearer credentials: they are returned to the caller and never logged.
 
 use axum::{extract::State, http::StatusCode};
-use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use utoipa_axum::{router::OpenApiRouter, routes};
 use uuid::Uuid;
@@ -14,7 +13,7 @@ use vgames_proto::{
     packages::Platform,
     versions::{
         DownloadUrlsRequest, IntegrityReport, ManifestLink, PackUrl, PackUrlList,
-        ReleaseDescriptor, SignatureContext, SignatureEnvelope, VersionState,
+        ReleaseDescriptor, VersionState,
     },
 };
 
@@ -32,6 +31,7 @@ use crate::{
     releases::{PackOutcome, notify_admins, verify_pack},
     state::AppState,
     storage::BucketKind,
+    versions::{self, hex},
 };
 
 /// Distinct users who must report the same pack within 24 h before it is re-verified.
@@ -46,10 +46,6 @@ pub fn routes() -> OpenApiRouter<AppState> {
 
 pub fn job_handlers() -> Vec<(&'static str, JobHandler)> {
     vec![("pack.reverify", handler(reverify_job))]
-}
-
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 /// Current release for a platform
@@ -114,14 +110,11 @@ pub async fn get_release(
             blake3: hex(&row.manifest_blake3),
             expires_at: link.expires_at,
         },
-        signature: SignatureEnvelope {
-            format: "vgames.sig/1".into(),
-            alg: "ed25519".into(),
-            context: SignatureContext::Manifest,
-            key_id: row.publisher_key_id,
-            payload_blake3: hex(&row.manifest_blake3),
-            signature: STANDARD.encode(&row.signature),
-        },
+        signature: versions::manifest_envelope(
+            row.publisher_key_id,
+            &row.manifest_blake3,
+            &row.signature,
+        ),
         yanked_version_ids: yanked,
         published_at: row.published_at,
     }))
