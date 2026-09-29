@@ -13,4 +13,18 @@ if [ -z "$state" ] || [ -z "$origin" ]; then
 fi
 callback=$(curl -sS -o /dev/null -w '%{redirect_url}' \
   "$origin/v1/auth/dev/fake-discord/submit?state=$state&id=${DISCORD_ID:-100000000000000001}&name=${DISCORD_NAME:-owner}")
-curl -sS -o /dev/null -w '%{redirect_url}\n' "$callback"
+page=$(mktemp)
+trap 'rm -f "$page"' EXIT
+redirect=$(curl -sS -o "$page" -w '%{redirect_url}' "$callback")
+if [ -n "$redirect" ]; then
+  printf '%s\n' "$redirect"
+  exit 0
+fi
+# The callback answers 200 with a page that opens the deep link through a meta refresh
+# (01-security §4.1); the link is HTML-attribute-escaped there.
+link=$(sed -n 's/.*<meta http-equiv="refresh" content="0;url=\([^"]*\)".*/\1/p' "$page" | head -n 1 | sed 's/&amp;/\&/g')
+if [ -z "$link" ]; then
+  echo "the sign-in callback page has no vgames:// link" >&2
+  exit 1
+fi
+printf '%s\n' "$link"
