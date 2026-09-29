@@ -137,15 +137,14 @@ async fn a_session_publishes_events_and_records_playtime() {
 #[tokio::test]
 async fn one_session_per_package_and_stop_ends_the_tree() {
     let mut f = fixture().await;
+    // Written once: rewriting the script while `sh` runs it changes what it executes.
+    let launch = f.launch("sleep 30 &\nwait");
     f.sessions
-        .start(PACKAGE, f.root(), f.launch("sleep 30 &\nwait"))
+        .start(PACKAGE, f.root(), launch.clone())
         .await
         .unwrap();
     assert!(record_path(&f.root()).exists());
-    let again = f
-        .sessions
-        .start(PACKAGE, f.root(), f.launch("exit 0"))
-        .await;
+    let again = f.sessions.start(PACKAGE, f.root(), launch).await;
     assert!(matches!(again, Err(SessionError::AlreadyRunning)));
 
     f.sessions.stop(PACKAGE, false).unwrap();

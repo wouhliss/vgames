@@ -51,6 +51,11 @@ export const commands = {
 	libraryAdd: (path: string, makeDefault: boolean) => typedError<LibraryInfo, LibraryActionError>(__TAURI_INVOKE("library_add", { path, makeDefault })),
 	librarySetDefault: (libraryId: string) => typedError<null, LibraryActionError>(__TAURI_INVOKE("library_set_default", { libraryId })),
 	libraryRemove: (libraryId: string) => typedError<null, LibraryRemovalError>(__TAURI_INVOKE("library_remove", { libraryId })),
+	/**
+	 *  Creates a desktop shortcut that opens `vgames://launch/<package id>`.
+	 *  Returns the shortcut's path.
+	 */
+	shortcutCreate: (pkg: PackageRef) => typedError<string, ShortcutActionError>(__TAURI_INVOKE("shortcut_create", { pkg })),
 	/**  Current updater status. */
 	updaterStatus: () => __TAURI_INVOKE<UpdaterStatus>("updater_status"),
 	/**  Checks for an update now. Refused while a game runs. */
@@ -523,6 +528,9 @@ export type ServerSwitched = {
 
 /**  The list of servers or one of their accounts changed; re-read `servers_list`. */
 export type ServersChanged = Record<string, never>;
+
+/**  The subset of the UI's `AppError` these commands produce. */
+export type ShortcutActionError = { kind: "not_found" } | { kind: "io"; path: string | null; detail: string } | { kind: "internal"; detail: string };
 
 export type SocialConnection = {
 	server_id: string | null,
