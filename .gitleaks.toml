@@ -47,3 +47,11 @@ paths = [
   '''^crates/vgames-core/tests/vectors/blake3\.json$''',
   '''^crates/vgames-core/tests/vectors/rfc8032_ed25519\.json$''',
 ]
+
+# Root key fingerprints (vgames-core sign.rs: `VG1-` + 8 groups of 4 Crockford
+# base32 characters). They are public by design, shown in the admin UI and the
+# launcher for comparison, and appear in mocks and docs. Only a secret that is
+# exactly one fingerprint is allowed.
+[[allowlists]]
+description = "vgames root key fingerprints (public)"
+regexes = ['''^VG1(?:-[0-9A-HJKMNP-TV-Z]{4}){8}$''']
