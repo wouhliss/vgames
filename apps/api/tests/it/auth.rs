@@ -138,9 +138,8 @@ impl Env {
                 "client_state": "launcher-state-0001", "device_name": "Test PC"
             }))
             .await;
-        assert_eq!(resp.status(), StatusCode::FOUND);
-        let location = resp.headers()["location"].to_str().unwrap().to_string();
-        let url = url::Url::parse(&location).unwrap();
+        let (status, url, page) = callback_target(resp).await;
+        assert_eq!(status, StatusCode::OK);
         assert_eq!(url.scheme(), "vgames");
         assert_eq!(
             url.query_pairs()
@@ -149,11 +148,15 @@ impl Env {
                 .1,
             "launcher-state-0001"
         );
-        url.query_pairs()
+        let code = url
+            .query_pairs()
             .find(|(k, _)| k == "code")
             .unwrap()
             .1
-            .to_string()
+            .to_string();
+        // The page shows the code for the paste fallback.
+        assert!(page.unwrap().contains(&format!("<code>{code}</code>")));
+        code
     }
 
     async fn exchange(&self, body: Value) -> (StatusCode, Value) {
@@ -268,11 +271,52 @@ async fn pkce_mismatch_and_code_reuse_are_rejected(pool: PgPool) {
     );
 }
 
-/// A refused sign-in: a 302 back to the client with `error=<code>`, no login code, no cookies.
-fn assert_refused(resp: &axum::http::Response<Body>, code: &str) -> url::Url {
-    assert_eq!(resp.status(), StatusCode::FOUND);
+/// Where a callback answer sends the browser: the `Location` of a web redirect, or the
+/// `<meta http-equiv="refresh">` target of the page a desktop flow gets (with that page).
+async fn callback_target(
+    resp: axum::http::Response<Body>,
+) -> (StatusCode, url::Url, Option<String>) {
+    let status = resp.status();
+    if status == StatusCode::FOUND {
+        let location = url::Url::parse(resp.headers()["location"].to_str().unwrap()).unwrap();
+        return (status, location, None);
+    }
+    // Browsers never render a redirect body, so the desktop page is a 200 (01-security §4.1).
+    assert_eq!(status, StatusCode::OK);
+    assert!(resp.headers().get("location").is_none());
+    assert_eq!(resp.headers()["cache-control"], "no-store");
+    assert!(
+        resp.headers()["content-security-policy"]
+            .to_str()
+            .unwrap()
+            .starts_with("default-src 'none';")
+    );
+    let page = String::from_utf8(
+        http_body_util::BodyExt::collect(resp.into_body())
+            .await
+            .unwrap()
+            .to_bytes()
+            .to_vec(),
+    )
+    .unwrap();
+    let marker = r#"<meta http-equiv="refresh" content="0;url="#;
+    let from = page.find(marker).expect("meta refresh") + marker.len();
+    let to = from + page[from..].find('"').unwrap();
+    let target = url::Url::parse(&page[from..to].replace("&amp;", "&")).unwrap();
+    assert!(
+        page.contains(&format!(r#"href="{}""#, &page[from..to])),
+        "{page}"
+    );
+    (status, target, Some(page))
+}
+
+/// A refused sign-in goes back to the client with `error=<code>`, no login code, no cookies.
+async fn assert_refused(
+    resp: axum::http::Response<Body>,
+    code: &str,
+) -> (url::Url, Option<String>) {
     assert!(resp.headers().get("set-cookie").is_none());
-    let location = url::Url::parse(resp.headers()["location"].to_str().unwrap()).unwrap();
+    let (_, location, page) = callback_target(resp).await;
     let error = location.query_pairs().find(|(k, _)| k == "error");
     assert_eq!(
         error.map(|(_, v)| v.into_owned()).as_deref(),
@@ -283,7 +327,7 @@ fn assert_refused(resp: &axum::http::Response<Body>, code: &str) -> url::Url {
         location.query_pairs().all(|(k, _)| k != "code"),
         "{location}"
     );
-    location
+    (location, page)
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -308,7 +352,7 @@ async fn oauth_state_is_single_use_and_denial_redirects(pool: PgPool) {
         )),
     )
     .await;
-    let location = assert_refused(&denied, "access_denied");
+    let (location, _) = assert_refused(denied, "access_denied").await;
     assert_eq!(location.scheme(), "vgames");
 
     let again = send(
@@ -404,7 +448,7 @@ async fn registration_modes(pool: PgPool) {
     let resp = e
         .through_callback(json!({"client": "desktop", "code_challenge": challenge(VERIFIER)}))
         .await;
-    assert_refused(&resp, "not_allowlisted");
+    assert_refused(resp, "not_allowlisted").await;
 
     sqlx::query("INSERT INTO registration_allowlist (discord_id) VALUES ('400000000000000001')")
         .execute(&e.pool)
@@ -418,7 +462,7 @@ async fn registration_modes(pool: PgPool) {
     let resp = e
         .through_callback(json!({"client": "desktop", "code_challenge": challenge(VERIFIER)}))
         .await;
-    assert_refused(&resp, "registration_closed");
+    assert_refused(resp, "registration_closed").await;
     // Existing accounts keep signing in when registration closes.
     e.discord_user("400000000000000001", "bob").await;
     e.desktop_login().await;
@@ -581,7 +625,7 @@ async fn disabled_users_are_locked_out_and_their_sessions_revoked(pool: PgPool) 
     let resp = e
         .through_callback(json!({"client": "desktop", "code_challenge": challenge(VERIFIER)}))
         .await;
-    assert_refused(&resp, "user_disabled");
+    assert_refused(resp, "user_disabled").await;
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -745,7 +789,7 @@ async fn fake_discord_signs_in_without_discord(pool: PgPool) {
         .replace("http://localhost:8080", "");
     // Fake users still pass the registration policy (default allowlist).
     let resp = send(&app, get_req(&next)).await;
-    assert_refused(&resp, "not_allowlisted");
+    assert_refused(resp, "not_allowlisted").await;
 }
 
 /// A refused or failed sign-in goes back to the client that started it (01-security §4.1): the
@@ -762,7 +806,7 @@ async fn refused_sign_ins_return_to_the_client_that_started_them(pool: PgPool) {
             "client_state": "launcher-state-0002", "device_name": "Test PC"
         }))
         .await;
-    let location = assert_refused(&resp, "not_allowlisted");
+    let (location, page) = assert_refused(resp, "not_allowlisted").await;
     assert_eq!(location.scheme(), "vgames");
     assert_eq!(
         location
@@ -772,15 +816,7 @@ async fn refused_sign_ins_return_to_the_client_that_started_them(pool: PgPool) {
             .as_deref(),
         Some("launcher-state-0002")
     );
-    assert_eq!(resp.headers()["cache-control"], "no-store");
-    let page = String::from_utf8(
-        http_body_util::BodyExt::collect(resp.into_body())
-            .await
-            .unwrap()
-            .to_bytes()
-            .to_vec(),
-    )
-    .unwrap();
+    let page = page.unwrap();
     assert!(
         page.contains("only admits invited Discord accounts"),
         "{page}"
@@ -789,7 +825,8 @@ async fn refused_sign_ins_return_to_the_client_that_started_them(pool: PgPool) {
     let resp = e
         .through_callback(json!({"client": "web", "return_to": "/admin/packages"}))
         .await;
-    let location = assert_refused(&resp, "not_allowlisted");
+    let (location, page) = assert_refused(resp, "not_allowlisted").await;
+    assert!(page.is_none());
     assert_eq!(
         location.as_str(),
         "http://localhost:8080/admin/login?error=not_allowlisted"
@@ -811,7 +848,7 @@ async fn refused_sign_ins_return_to_the_client_that_started_them(pool: PgPool) {
         get_req(&format!("/v1/auth/discord/callback?state={state}")),
     )
     .await;
-    assert_refused(&resp, "sign_in_failed");
+    assert_refused(resp, "sign_in_failed").await;
     let resp = send(
         &e.app,
         get_req(&format!("/v1/auth/discord/callback?code=x&state={state}")),
