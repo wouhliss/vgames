@@ -192,6 +192,21 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   pack worker, signs it in the key worker (`vgames/compat/v1`, the same unlocked publisher key flow as uploads) and PUTs
   it; 409 (newer revision published meanwhile) and 422 (untrusted key, invalid profile) are explained. The current
   revision is shown read-only. Tests: 5 Vitest + an e2e sign-and-publish in the real key worker, axe on both tabs.
+- A3-T17 — Users, allowlist, settings, trust, jobs, audit log. **Users:** search (username or Discord id) and role
+  filter in the URL, cursor paging, status with the disable reason, last seen; disable (reason ≤ 500) / enable; admins
+  can't act on admins or owners (the button says "Owners manage admins"); owners change roles from a select with a
+  confirmation that says what the role allows; `cannot_disable_self` and `last_owner` explained; a 403 is handled
+  even when a control was shown. **Allowlist:** Discord id checked (5–25 digits, with where to find it), note ≤ 200,
+  `already_allowlisted` on the field, remove with confirmation. **Settings:** owners edit name, message of the day and
+  registration mode with `If-Match` (a 412 keeps the input and offers keep-mine or load-theirs); admins see them
+  read-only. **Trust:** bundle version and expiry, publisher keys with holder and validity, "Expires in N days" under
+  60 days, expired and revoked (with reason) marked; owners upload a bundle + signature, every refusal explained
+  (`bad_signature`, `wrong_server`, `invalid_bundle`, `stale_version`, `unknown_holder`). **Jobs:** state and kind
+  filters, attempts, last error as text, retry for failed/dead (`job_already_queued` explained). **Audit log:**
+  actor/action/target/date-range filters in the URL (actor checked as a UUID), cursor paging, details as JSON text.
+  Tests: 17 Vitest and `e2e/authorization.spec.ts`: **the admin vs owner matrix for every page and action**
+  (owner-only controls present for owners, absent for admins; axe on every page for both roles) plus a forced
+  owner-only request answered 403.
 
 ## In progress
 - A3-T07 — Settings, in parts. **Part 1** ([#52](https://github.com/wouhliss/vgames/pull/52), merged): one URL per section (`/settings/<section>`, a section list that

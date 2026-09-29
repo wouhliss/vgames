@@ -6,6 +6,7 @@ import { compatHandlers } from "./compat";
 import { currentUser, IDS, type MockDb } from "./db";
 import { metadataHandlers } from "./metadata";
 import { packageHandlers } from "./packages";
+import { serverHandlers } from "./server";
 import { versionHandlers } from "./versions";
 
 type Problem = Schemas["Problem"];
@@ -87,5 +88,6 @@ export function createHandlers(db: MockDb) {
     ...metadataHandlers(db),
     ...versionHandlers(db),
     ...compatHandlers(db),
+    ...serverHandlers(db),
   ];
 }

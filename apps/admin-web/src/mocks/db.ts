@@ -53,6 +53,12 @@ export interface MockDb {
   };
   /** Published compat profiles per package id (all revisions). */
   compat: Record<string, Schemas["SignedCompatProfile"][]>;
+  allowlist: Schemas["AllowlistEntry"][];
+  settings: Schemas["ServerSettings"];
+  settingsEtag: number;
+  trust: { version: number; expiresAt: string; keys: Schemas["PublisherKey"][] };
+  jobs: Schemas["Job"][];
+  audit: Schemas["AuditEntry"][];
 }
 
 export function createDb(role: Role | null = "admin"): MockDb {
@@ -83,6 +89,24 @@ export function createDb(role: Role | null = "admin"): MockDb {
         role: "user",
         created_at: t,
         discord_id: "100000000000000003",
+        last_seen_at: t,
+      },
+      {
+        id: "01920000-0000-7000-8000-00000000a004",
+        username: "rtl_user",
+        display_name: "مستخدم",
+        role: "user",
+        created_at: t,
+        discord_id: "100000000000000004",
+      },
+      {
+        id: "01920000-0000-7000-8000-00000000a005",
+        username: "gone",
+        role: "user",
+        created_at: t,
+        discord_id: "100000000000000005",
+        disabled_at: t,
+        disabled_reason: "Asked to leave",
       },
     ],
     packages: makePackages(),
@@ -109,6 +133,15 @@ export function createDb(role: Role | null = "admin"): MockDb {
     verifyOutcome: {},
     faults: { expiredStarts: 0, gcsErrors: 0 },
     compat: {},
+    allowlist: [
+      { discord_id: "200000000000000001", note: "Kim from the Friday group", created_at: t },
+      { discord_id: "200000000000000002", created_at: t },
+    ],
+    settings: { registration_mode: "allowlist", name: "Friday Night Games", motd: "Be nice." },
+    settingsEtag: 1,
+    trust: makeTrust(),
+    jobs: makeJobs(),
+    audit: makeAudit(),
   };
 }
 
@@ -232,6 +265,80 @@ function demoVersions(): Schemas["Version"][] {
       yanked_at: "2026-09-10T10:00:00Z",
     },
   ];
+}
+
+const day = 86_400_000;
+const iso = (ms: number) => new Date(ms).toISOString();
+
+function makeTrust(): MockDb["trust"] {
+  const now = Date.now();
+  const holder = (id: string, username: string) => ({ id, username });
+  return {
+    version: 7,
+    expiresAt: iso(now + 200 * day),
+    keys: [
+      {
+        key_id: MOCK_KEY_ID,
+        public_key: "AAAA",
+        holder: holder(IDS.admin, "adrian"),
+        label: "Adrian's laptop",
+        not_before: iso(now - 100 * day),
+        not_after: iso(now + 300 * day),
+      },
+      {
+        key_id: OTHER_KEY_ID,
+        public_key: "BBBB",
+        holder: holder(IDS.owner, "olive"),
+        label: "Olive's desktop",
+        not_before: iso(now - 300 * day),
+        not_after: iso(now + 20 * day),
+      },
+      {
+        key_id: "9f8e7d6c5b4a39281706f5e4d3c2b1a0",
+        public_key: "CCCC",
+        holder: holder(IDS.admin, "adrian"),
+        label: "Old build server",
+        not_before: iso(now - 400 * day),
+        not_after: iso(now + 100 * day),
+        revoked_at: iso(now - 10 * day),
+        revocation_reason: "Machine was decommissioned",
+      },
+    ],
+  };
+}
+
+function makeJobs(): Schemas["Job"][] {
+  const kinds = ["metadata.fetch", "version.verify", "social.sweep", "assets.fetch"];
+  const states: Schemas["Job"]["state"][] = ["succeeded", "running", "queued", "failed", "dead"];
+  return Array.from({ length: 12 }, (_, i) => ({
+    id: `01920000-0000-7000-8000-0000000f${i.toString(16).padStart(4, "0")}`,
+    kind: kinds[i % kinds.length] ?? "metadata.fetch",
+    state: states[i % states.length] ?? "succeeded",
+    attempts: i % 5 === 4 ? 5 : 1,
+    max_attempts: 5,
+    ...(i % 5 >= 3 ? { last_error: "IGDB answered 503 <Service Unavailable>" } : {}),
+    created_at: iso(Date.parse("2026-09-24T10:00:00Z") + i * 60_000),
+  }));
+}
+
+function makeAudit(): Schemas["AuditEntry"][] {
+  const actions = [
+    "package.update",
+    "version.publish",
+    "user.disable",
+    "allowlist.add",
+    "settings.update",
+  ];
+  return Array.from({ length: 130 }, (_, i) => ({
+    id: `01920000-0000-7000-8000-0000000c${i.toString(16).padStart(4, "0")}`,
+    actor: { id: i % 2 ? IDS.admin : IDS.owner, username: i % 2 ? "adrian" : "olive" },
+    action: actions[i % actions.length] ?? "package.update",
+    target_type: "package",
+    target_id: packageId(1 + (i % 3)),
+    ip: "192.0.2.10",
+    details: { field: "summary", note: `<b>entry ${i}</b>` } as never,
+    created_at: iso(Date.parse("2026-09-28T10:00:00Z") - i * 3_600_000),
+  }));
 }
 
 export const packageId = (n: number) =>

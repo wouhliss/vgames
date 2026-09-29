@@ -1,6 +1,5 @@
 import { createBrowserRouter, Navigate, type RouteObject } from "react-router";
 import { LoginPage } from "../pages/LoginPage";
-import { Placeholder } from "../pages/Placeholder";
 import { CompatTab } from "../pages/packages/CompatTab";
 import { ImagesTab } from "../pages/packages/ImagesTab";
 import { MetadataTab } from "../pages/packages/MetadataTab";
@@ -10,6 +9,12 @@ import { PackageLayout } from "../pages/packages/PackageLayout";
 import { PackagesList } from "../pages/packages/PackagesList";
 import { UploadWizard } from "../pages/packages/UploadWizard";
 import { VersionsTab } from "../pages/packages/VersionsTab";
+import { AllowlistPage } from "../pages/server/AllowlistPage";
+import { AuditPage } from "../pages/server/AuditPage";
+import { JobsPage } from "../pages/server/JobsPage";
+import { SettingsPage } from "../pages/server/SettingsPage";
+import { TrustPage } from "../pages/server/TrustPage";
+import { UsersPage } from "../pages/server/UsersPage";
 import { NotFoundPage } from "./ErrorView";
 import { Layout } from "./Layout";
 
@@ -35,12 +40,12 @@ export const routes: RouteObject[] = [
           { path: "versions/:versionId/upload", Component: UploadWizard },
         ],
       },
-      { path: "users", element: <Placeholder title="Users" /> },
-      { path: "allowlist", element: <Placeholder title="Allowlist" /> },
-      { path: "settings", element: <Placeholder title="Settings" /> },
-      { path: "trust", element: <Placeholder title="Trust" /> },
-      { path: "jobs", element: <Placeholder title="Jobs" /> },
-      { path: "audit", element: <Placeholder title="Audit log" /> },
+      { path: "users", Component: UsersPage },
+      { path: "allowlist", Component: AllowlistPage },
+      { path: "settings", Component: SettingsPage },
+      { path: "trust", Component: TrustPage },
+      { path: "jobs", Component: JobsPage },
+      { path: "audit", Component: AuditPage },
       { path: "*", Component: NotFoundPage },
     ],
   },

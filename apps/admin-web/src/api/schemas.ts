@@ -293,3 +293,83 @@ export const SignedCompatProfileSchema = contract<Schemas["SignedCompatProfile"]
 export type SignedCompatProfile = z.infer<typeof SignedCompatProfileSchema>;
 
 export const CompatProfilesSchema = z.object({ items: z.array(SignedCompatProfileSchema) });
+
+// ---------------------------------------------------------------- server admin (A3-T17)
+
+export const AdminUserSchema = contract<Schemas["AdminUser"]>()(
+  UserSchema.extend({
+    disabled_at: Timestamp.optional(),
+    disabled_reason: z.string().optional(),
+    last_seen_at: Timestamp.optional(),
+  }),
+);
+export type AdminUser = z.infer<typeof AdminUserSchema>;
+
+export const AdminUserPageSchema = contract<Schemas["AdminUserPage"]>()(
+  z.object({ items: z.array(AdminUserSchema), next_cursor: z.string().optional() }),
+);
+
+export const DiscordId = z.string().regex(/^[0-9]{5,25}$/);
+
+export const AllowlistEntrySchema = contract<Schemas["AllowlistEntry"]>()(
+  z.object({
+    discord_id: DiscordId,
+    note: z.string().optional(),
+    added_by: UserPublicSchema.optional(),
+    created_at: Timestamp,
+  }),
+);
+export type AllowlistEntry = z.infer<typeof AllowlistEntrySchema>;
+export const AllowlistSchema = z.object({ items: z.array(AllowlistEntrySchema) });
+
+export const RegistrationModeSchema = z.enum(["open", "allowlist", "closed"]);
+export const ServerSettingsSchema = contract<Schemas["ServerSettings"]>()(
+  z.object({
+    registration_mode: RegistrationModeSchema,
+    name: z.string().max(100),
+    motd: z.string().max(500).optional(),
+  }),
+);
+export type ServerSettings = z.infer<typeof ServerSettingsSchema>;
+
+export const PublisherKeySchema = contract<Schemas["PublisherKey"]>()(
+  z.object({
+    key_id: z.string().regex(/^[0-9a-f]{32}$/),
+    public_key: z.string(),
+    holder: UserPublicSchema,
+    label: z.string(),
+    not_before: Timestamp,
+    not_after: Timestamp,
+    revoked_at: Timestamp.optional(),
+    revocation_reason: z.string().optional(),
+  }),
+);
+export type PublisherKey = z.infer<typeof PublisherKeySchema>;
+export const PublisherKeysSchema = z.object({
+  bundle_version: z.number().int().min(0),
+  bundle_expires_at: Timestamp.optional(),
+  items: z.array(PublisherKeySchema),
+});
+export const BundleStoredSchema = z.object({ version: z.number().int().min(1) });
+
+export const JobPageSchema = contract<Schemas["JobPage"]>()(
+  z.object({ items: z.array(JobSchema), next_cursor: z.string().optional() }),
+);
+
+// Not checked with `contract`: the contract types `details` as an empty object (`{ type: object }`),
+// which openapi-typescript renders as "no keys"; real entries carry keys.
+export const AuditEntrySchema = z.object({
+  id: Uuid,
+  actor: UserPublicSchema.optional(),
+  action: z.string(),
+  target_type: z.string().optional(),
+  target_id: z.string().optional(),
+  ip: z.string().optional(),
+  details: z.record(z.string(), z.unknown()).optional(),
+  created_at: Timestamp,
+});
+export type AuditEntry = z.infer<typeof AuditEntrySchema>;
+export const AuditPageSchema = z.object({
+  items: z.array(AuditEntrySchema),
+  next_cursor: z.string().optional(),
+});
