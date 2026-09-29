@@ -1,6 +1,6 @@
 # 05 — Social: adaptation notes and launcher interface
 
-Status: **v1.1** (A4-T01, 2026-09-25; messaging details A4-T08, 2026-09-28). Companion to [05-social.md](05-social.md). It records how the
+Status: **v1.2** (A4-T01, 2026-09-25; messaging details A4-T08, 2026-09-28; invites A4-T09, 2026-09-29). Companion to [05-social.md](05-social.md). It records how the
 Arachnel mechanisms map onto vgames, the few protocol details 05-social left open, and the exact
 realtime events, Tauri commands and Tauri events Agent 4 delivers. **Agent 3 can build every social
 screen against mockIPC from §5 and §6 alone.** Changing a name or shape here needs a `contract:` PR.
@@ -138,6 +138,28 @@ The server stores every `installing` report but publishes `invite.updated` for p
 - **Typing.** `typing_start` sends at most one `typing` frame per conversation every 3 s; the server
   fans it out to the other current members (none across a block, nothing from non-members), at
   most once per user and conversation every 3 s.
+
+### 3.2 Invite client behaviour (A4-T09)
+
+- **Join secret.** `invite_send` trims it; empty means none. It must match
+  `^[A-Za-z0-9._:\-\[\]]{1,256}$` (else `invalid_input` on `join_secret`, nothing sent). It is kept only on
+  the sending install, sealed with the keychain chat key, and travels only inside the Olm `invite.join`
+  payload. The UI sees `has_join_secret`, never the secret.
+- **Invitee.** `invite_accept` accepts, remembers that *this install* accepted, and checks the package:
+  current → reports `ready`; missing / outdated → `invite-install-requested {reason}` so the UI opens its
+  install or update dialog and installs through the normal commands (nothing is installed or verified
+  differently because of an invite). Install progress on the bus is reported as `installing` (every ≥ 5 s
+  or ≥ 5 %); `InstallFinished` reports `ready`, or `failed` with `cancelled_by_user`,
+  `insufficient_space` (codes containing `space`/`disk_full`), `no_build_for_platform`, else
+  `install_failed`. After a restart, `hello` resumes an accepted invite that never reported.
+- **Sender.** When its invite turns `ready`, the install that sent it queues `invite.join` (with the
+  secret, if any) once, in the direct conversation with the invitee, through the normal outbox. The
+  conversation shows an `invite_join` message; other installs of the sender never send it.
+- **Join.** `invite.join` is acted on only by the install that accepted the invite, only while the
+  server says it is `ready`, and only when it comes from the invite's sender. An invalid secret in it is
+  dropped (normal launch without the join arguments); a valid one is substituted into
+  `multiplayer.join.args` only where `{join_secret}` is a whole argument. After the launch → `joined`.
+- Invites that end (declined, cancelled, expired, failed, joined) are forgotten locally.
 
 ## 4. Realtime events (server → launcher)
 
