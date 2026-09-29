@@ -10,6 +10,8 @@ import { defineConfig } from "vite";
 export default defineConfig(({ mode }) => ({
   base: "/admin/",
   plugins: [react()],
+  // `import.meta.env.MODE` isn't carried into Web Worker bundles; the upload workers read this.
+  define: { __VGAMES_MOCK_UPLOADS__: JSON.stringify(mode === "mock" || mode === "test") },
   publicDir: mode === "mock" ? "node_modules/.vgames-mock-public" : "public",
   server: {
     port: 5173,

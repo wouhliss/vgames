@@ -134,8 +134,3 @@ export function DownloadIndicator() {
     </Tooltip>
   );
 }
-
-/** Slot for the launcher update banner (A3-T10). */
-export function UpdateBannerSlot(): null {
-  return null;
-}

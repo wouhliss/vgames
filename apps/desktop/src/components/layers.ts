@@ -24,6 +24,7 @@ function apply(): void {
 }
 
 export function pushLayer(el: HTMLElement): () => void {
+  el.setAttribute("data-modal-layer", "");
   stack.push(el);
   apply();
   return () => {
@@ -35,4 +36,12 @@ export function pushLayer(el: HTMLElement): () => void {
 
 export function isTopLayer(el: HTMLElement): boolean {
   return stack[stack.length - 1] === el;
+}
+
+/**
+ * Where a popover (menu, select list) opened from `el` is rendered: inside the modal layer that holds
+ * `el`, so it stacks above that layer's panel and isn't made inert with the rest of <body>.
+ */
+export function popoverContainer(el: Element | null): HTMLElement {
+  return el?.closest<HTMLElement>("[data-modal-layer]") ?? document.body;
 }

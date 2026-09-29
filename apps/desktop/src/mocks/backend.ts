@@ -11,6 +11,7 @@ import type {
   AppInfo,
   AuthError,
   AuthFlow,
+  CommandError,
   FolderPick,
   Library,
   LibraryError,
@@ -20,12 +21,14 @@ import type {
   ServerProfile,
   UpdateCheck,
   UpdaterStatus,
+  WhatsNew,
 } from "../ipc";
 import { events } from "../ipc";
 import { type CatalogState, catalogHandlers, defaultCatalogState } from "./catalog";
+import { type CompatState, compatHandlers, defaultCompatState } from "./compat";
 import { type DownloadsState, defaultDownloadsState, downloadHandlers } from "./downloads";
 import { defaultLibraryState, type LibraryState, libraryHandlers } from "./library";
-import { CommandFailure, fail, type Handler } from "./runtime";
+import { CommandFailure, fail, type Handler, later } from "./runtime";
 import {
   defaultSettingsState,
   loadPersisted,
@@ -33,6 +36,7 @@ import {
   savePersisted,
   settingsHandlers,
 } from "./settings";
+import { defaultSocialState, type SocialState, socialHandlers } from "./social";
 
 export { fail, type Handler } from "./runtime";
 
@@ -72,7 +76,13 @@ export const MOCK_LIBRARY: Library = {
   install_count: 0,
 };
 
-export interface MockState extends LibraryState, CatalogState, DownloadsState, SettingsState {
+export interface MockState
+  extends LibraryState,
+    CatalogState,
+    DownloadsState,
+    SettingsState,
+    CompatState,
+    SocialState {
   appInfo: AppInfo;
   appearance: AppearanceSettings;
   servers: ServerProfile[];
@@ -88,6 +98,12 @@ export interface MockState extends LibraryState, CatalogState, DownloadsState, S
   updateCheck: UpdateCheck;
   /** What `updater_status` returns. */
   updater: UpdaterStatus;
+  /** What `updater_whats_new` returns, or its error. */
+  whatsNew: WhatsNew | { error: CommandError };
+  /** How `updater_install` ends: `null` downloads (emitting progress) then "restarts"; an error is returned at once. */
+  updateInstallError: CommandError | null;
+  /** How long the simulated update download takes (ms; 0 in unit tests). */
+  updateInstallMs: number;
 }
 
 export function defaultState(): MockState {
@@ -96,6 +112,8 @@ export function defaultState(): MockState {
     ...defaultCatalogState(),
     ...defaultDownloadsState(),
     ...defaultSettingsState(),
+    ...defaultCompatState(),
+    ...defaultSocialState(),
     appInfo: {
       version: "0.4.0",
       profile: null,
@@ -114,14 +132,42 @@ export function defaultState(): MockState {
     libraryAddError: null,
     authDelayMs: 600,
     updateCheck: { kind: "available", version: "0.9.1" },
-    updater: {
-      current_version: "0.4.0",
-      state: { kind: "available", version: "0.9.1", date: "2026-09-20" },
-      blocked: null,
-    },
+    updater: { current_version: "0.4.0", state: { kind: "up_to_date" }, blocked: null },
+    whatsNew: MOCK_WHATS_NEW,
+    updateInstallError: null,
+    updateInstallMs: 0,
     diagnostics: "vgames 0.4.0 (linux x86_64)\nservers: 1\nlibraries: 1",
   };
 }
+
+/** Two releases between the installed 0.4.0 and 0.9.1; 0.9.0 has no player-facing changes. */
+export const MOCK_WHATS_NEW: WhatsNew = {
+  from_latest_notes: false,
+  releases: [
+    {
+      version: "0.9.1",
+      date: "2026-09-20",
+      entries: [
+        { type: "added", text: "You can now pin favorite packages to the top of your library." },
+        { type: "added", text: "Downloads now resume after your computer restarts." },
+        { type: "changed", text: "The library opens faster when you have many games." },
+        {
+          type: "fixed",
+          text: "Installing large games no longer freezes the launcher for a few seconds.",
+        },
+        {
+          type: "removed",
+          text: "The old compact list layout is gone; the list view replaces it.",
+        },
+        {
+          type: "security",
+          text: "Fixed an issue that could show another server's covers in your library.",
+        },
+      ],
+    },
+    { version: "0.9.0", date: "2026-09-10", entries: [] },
+  ],
+};
 
 // ------------------------------------------------------------------------------------------------
 // Server scenarios, chosen by host name so one fixture set covers every onboarding edge case.
@@ -373,6 +419,32 @@ export function installMockBackend(overrides: Partial<MockState> = {}): MockBack
 
     updater_status: () => state.updater,
     updater_check: () => state.updateCheck,
+    updater_whats_new: () => {
+      if ("error" in state.whatsNew) fail(state.whatsNew.error);
+      return state.whatsNew;
+    },
+    updater_install: async () => {
+      if (state.updateInstallError) fail(state.updateInstallError);
+      if (state.updater.blocked === "game_running")
+        fail({ code: "conflict", message: "Close the game to install the update." });
+      const { state: current } = state.updater;
+      if (current.kind !== "available")
+        fail({ code: "not_found", message: "No update is available." });
+      const version = current.version;
+      const total = 38 * 1024 ** 2;
+      const setUpdater = (next: UpdaterStatus["state"]) => {
+        state.updater = { ...state.updater, state: next };
+        void events.updaterStatus.emit(state.updater);
+      };
+      setUpdater({ kind: "downloading", version, downloaded: 0, total });
+      const steps = 4;
+      for (let i = 1; i <= steps; i += 1) {
+        await new Promise((resolve) => later(state.updateInstallMs / steps, () => resolve(null)));
+        setUpdater({ kind: "downloading", version, downloaded: (total * i) / steps, total });
+      }
+      setUpdater({ kind: "installed", version });
+      return null;
+    },
 
     libraries_list: () => state.libraries,
     library_pick_folder: () => {
@@ -422,6 +494,8 @@ export function installMockBackend(overrides: Partial<MockState> = {}): MockBack
     ...catalogHandlers(state),
     ...downloadHandlers(state),
     ...settingsHandlers(state),
+    ...compatHandlers(state),
+    ...socialHandlers(state),
   };
 
   function signIn(serverId: string) {

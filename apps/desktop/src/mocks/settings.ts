@@ -55,6 +55,9 @@ export const PERSISTED = [
   "socialSettings",
   "overlayPackages",
   "sessions",
+  "defaultRunner",
+  "compatOverrides",
+  "runtimes",
 ] as const;
 
 export function loadPersisted(key: string | null): Record<string, unknown> {

@@ -71,3 +71,305 @@ export type Me = z.infer<typeof MeSchema>;
 export const AuthStartResponseSchema = contract<Schemas["AuthStartResponse"]>()(
   z.object({ authorize_url: z.url(), expires_at: Timestamp }),
 );
+
+// ---------------------------------------------------------------- packages (A3-T14)
+
+export const PackageStatusSchema = z.enum(["draft", "published", "hidden", "archived"]);
+export type PackageStatus = z.infer<typeof PackageStatusSchema>;
+
+export const PlatformSchema = z.enum([
+  "windows-x86_64",
+  "windows-aarch64",
+  "linux-x86_64",
+  "linux-aarch64",
+  "macos-aarch64",
+  "macos-x86_64",
+]);
+
+export const AssetSchema = contract<Schemas["Asset"]>()(
+  z.object({
+    id: Uuid,
+    kind: z.enum(["cover", "hero", "logo", "screenshot", "icon"]),
+    url: z.string(),
+    width: z.number().int(),
+    height: z.number().int(),
+    content_type: z.enum(["image/jpeg", "image/png", "image/webp"]),
+    source: z.enum(["igdb", "steam", "upload"]).optional(),
+  }),
+);
+export type Asset = z.infer<typeof AssetSchema>;
+
+export const JobStateSchema = z.enum(["queued", "running", "succeeded", "failed", "dead"]);
+
+export const JobSchema = contract<Schemas["Job"]>()(
+  z.object({
+    id: Uuid,
+    kind: z.string(),
+    state: JobStateSchema,
+    attempts: z.number().int().min(0),
+    max_attempts: z.number().int().min(1),
+    last_error: z.string().optional(),
+    run_at: Timestamp.optional(),
+    created_at: Timestamp,
+    finished_at: Timestamp.optional(),
+  }),
+);
+export type Job = z.infer<typeof JobSchema>;
+
+export const FieldSourceSchema = z.enum(["admin", "igdb", "steam"]);
+export type FieldSource = z.infer<typeof FieldSourceSchema>;
+
+export const AdminPackageSchema = contract<Schemas["AdminPackage"]>()(
+  z.object({
+    id: Uuid,
+    slug: z.string(),
+    title: z.string(),
+    summary: z.string().optional(),
+    genres: z.array(z.string()).optional(),
+    cover: AssetSchema.optional(),
+    platforms: z.array(PlatformSchema),
+    updated_at: Timestamp,
+    description: z.string().optional(),
+    developer: z.string().optional(),
+    publisher: z.string().optional(),
+    release_date: z.iso.date().optional(),
+    protondb_tier: z.enum(["platinum", "gold", "silver", "bronze", "borked", "pending"]).optional(),
+    hero: AssetSchema.optional(),
+    logo: AssetSchema.optional(),
+    screenshots: z.array(AssetSchema).optional(),
+    releases: z
+      .array(
+        z.object({
+          platform: PlatformSchema,
+          version_id: Uuid,
+          version_label: z.string(),
+          sequence: z.number().int().min(1),
+          total_size: z.number().int().min(0),
+          published_at: Timestamp,
+        }),
+      )
+      .optional(),
+    status: PackageStatusSchema,
+    steam_app_id: z.number().int().min(1).optional(),
+    igdb_id: z.number().int().min(1).optional(),
+    field_sources: z.record(z.string(), FieldSourceSchema),
+    created_at: Timestamp,
+    created_by: UserPublicSchema,
+    metadata_job: JobSchema.optional(),
+  }),
+);
+export type AdminPackage = z.infer<typeof AdminPackageSchema>;
+
+export const AdminPackagePageSchema = contract<Schemas["AdminPackagePage"]>()(
+  z.object({ items: z.array(AdminPackageSchema), next_cursor: z.string().optional() }),
+);
+
+// ---------------------------------------------------------------- metadata (A3-T15)
+
+export const MetadataCandidateSchema = contract<Schemas["MetadataCandidate"]>()(
+  z.object({
+    source: z.enum(["igdb", "steam"]),
+    external_id: z.number().int().min(1),
+    title: z.string(),
+    release_year: z.number().int().optional(),
+    score: z.number().min(0).max(1),
+    data: z.object({
+      title: z.string().optional(),
+      summary: z.string().optional(),
+      description: z.string().optional(),
+      release_date: z.iso.date().optional(),
+      developer: z.string().optional(),
+      publisher: z.string().optional(),
+      genres: z.array(z.string()).optional(),
+      images: z
+        .object({
+          cover: z.url().optional(),
+          hero: z.url().optional(),
+          logo: z.url().optional(),
+          screenshots: z.array(z.url()).optional(),
+        })
+        .optional(),
+      external: z
+        .object({
+          steam_app_id: z.number().int().optional(),
+          igdb_id: z.number().int().optional(),
+          umu_id: z.string().optional(),
+        })
+        .optional(),
+    }),
+    fetched_at: Timestamp,
+  }),
+);
+export type MetadataCandidate = z.infer<typeof MetadataCandidateSchema>;
+
+export const CandidatesSchema = z.object({
+  items: z.array(MetadataCandidateSchema),
+  job: JobSchema.optional(),
+});
+
+// ---------------------------------------------------------------- versions (A3-T16)
+
+export const VersionStateSchema = z.enum([
+  "uploading",
+  "verifying",
+  "ready",
+  "published",
+  "failed",
+  "yanked",
+  "aborted",
+]);
+export type VersionState = z.infer<typeof VersionStateSchema>;
+export type Platform = z.infer<typeof PlatformSchema>;
+
+export const VersionSchema = contract<Schemas["Version"]>()(
+  z.object({
+    id: Uuid,
+    package_id: Uuid,
+    server_id: Uuid,
+    platform: PlatformSchema,
+    sequence: z.number().int().min(1),
+    version_label: z.string(),
+    state: VersionStateSchema,
+    is_current_release: z.boolean().optional(),
+    failure_reason: z.string().optional(),
+    total_size: z.number().int().min(0).optional(),
+    file_count: z.number().int().min(0).optional(),
+    chunk_count: z.number().int().min(0).optional(),
+    pack_count: z.number().int().min(1).optional(),
+    publisher_key_id: z.string().optional(),
+    verify_progress: z.number().min(0).max(1).optional(),
+    created_at: Timestamp,
+    created_by: UserPublicSchema,
+    finalized_at: Timestamp.optional(),
+    verified_at: Timestamp.optional(),
+    published_at: Timestamp.optional(),
+    yanked_at: Timestamp.optional(),
+  }),
+);
+export type Version = z.infer<typeof VersionSchema>;
+
+export const VersionPageSchema = contract<Schemas["VersionPage"]>()(
+  z.object({ items: z.array(VersionSchema), next_cursor: z.string().optional() }),
+);
+
+export const UploadTargetSchema = contract<Schemas["UploadTarget"]>()(
+  z.object({
+    url: z.url(),
+    method: z.enum(["POST", "PUT"]),
+    headers: z.record(z.string(), z.string()),
+    expires_at: Timestamp,
+  }),
+);
+export type UploadTarget = z.infer<typeof UploadTargetSchema>;
+
+// ---------------------------------------------------------------- compat profiles (A3-T16)
+
+export const ServerIdSchema = z.object({ server_id: Uuid });
+
+export const SignatureEnvelopeSchema = contract<Schemas["SignatureEnvelope"]>()(
+  z.object({
+    format: z.literal("vgames.sig/1"),
+    alg: z.literal("ed25519"),
+    context: z.enum(["vgames/manifest/v1", "vgames/compat/v1"]),
+    key_id: z.string().regex(/^[0-9a-f]{32}$/),
+    payload_blake3: z.string().regex(/^[0-9a-f]{64}$/),
+    signature: z.string(),
+  }),
+);
+
+export const CompatStatusSchema = z.enum(["verified", "playable", "unsupported", "untested"]);
+export type CompatStatus = z.infer<typeof CompatStatusSchema>;
+
+export const SignedCompatProfileSchema = contract<Schemas["SignedCompatProfile"]>()(
+  z.object({
+    target: z.enum(["linux", "macos"]),
+    revision: z.number().int().min(1),
+    status: CompatStatusSchema,
+    document: z.string(),
+    signature: SignatureEnvelopeSchema,
+    created_at: Timestamp,
+  }),
+);
+export type SignedCompatProfile = z.infer<typeof SignedCompatProfileSchema>;
+
+export const CompatProfilesSchema = z.object({ items: z.array(SignedCompatProfileSchema) });
+
+// ---------------------------------------------------------------- server admin (A3-T17)
+
+export const AdminUserSchema = contract<Schemas["AdminUser"]>()(
+  UserSchema.extend({
+    disabled_at: Timestamp.optional(),
+    disabled_reason: z.string().optional(),
+    last_seen_at: Timestamp.optional(),
+  }),
+);
+export type AdminUser = z.infer<typeof AdminUserSchema>;
+
+export const AdminUserPageSchema = contract<Schemas["AdminUserPage"]>()(
+  z.object({ items: z.array(AdminUserSchema), next_cursor: z.string().optional() }),
+);
+
+export const DiscordId = z.string().regex(/^[0-9]{5,25}$/);
+
+export const AllowlistEntrySchema = contract<Schemas["AllowlistEntry"]>()(
+  z.object({
+    discord_id: DiscordId,
+    note: z.string().optional(),
+    added_by: UserPublicSchema.optional(),
+    created_at: Timestamp,
+  }),
+);
+export type AllowlistEntry = z.infer<typeof AllowlistEntrySchema>;
+export const AllowlistSchema = z.object({ items: z.array(AllowlistEntrySchema) });
+
+export const RegistrationModeSchema = z.enum(["open", "allowlist", "closed"]);
+export const ServerSettingsSchema = contract<Schemas["ServerSettings"]>()(
+  z.object({
+    registration_mode: RegistrationModeSchema,
+    name: z.string().max(100),
+    motd: z.string().max(500).optional(),
+  }),
+);
+export type ServerSettings = z.infer<typeof ServerSettingsSchema>;
+
+export const PublisherKeySchema = contract<Schemas["PublisherKey"]>()(
+  z.object({
+    key_id: z.string().regex(/^[0-9a-f]{32}$/),
+    public_key: z.string(),
+    holder: UserPublicSchema,
+    label: z.string(),
+    not_before: Timestamp,
+    not_after: Timestamp,
+    revoked_at: Timestamp.optional(),
+    revocation_reason: z.string().optional(),
+  }),
+);
+export type PublisherKey = z.infer<typeof PublisherKeySchema>;
+export const PublisherKeysSchema = z.object({
+  bundle_version: z.number().int().min(0),
+  bundle_expires_at: Timestamp.optional(),
+  items: z.array(PublisherKeySchema),
+});
+export const BundleStoredSchema = z.object({ version: z.number().int().min(1) });
+
+export const JobPageSchema = contract<Schemas["JobPage"]>()(
+  z.object({ items: z.array(JobSchema), next_cursor: z.string().optional() }),
+);
+
+// Not checked with `contract`: the contract types `details` as an empty object (`{ type: object }`),
+// which openapi-typescript renders as "no keys"; real entries carry keys.
+export const AuditEntrySchema = z.object({
+  id: Uuid,
+  actor: UserPublicSchema.optional(),
+  action: z.string(),
+  target_type: z.string().optional(),
+  target_id: z.string().optional(),
+  ip: z.string().optional(),
+  details: z.record(z.string(), z.unknown()).optional(),
+  created_at: Timestamp,
+});
+export type AuditEntry = z.infer<typeof AuditEntrySchema>;
+export const AuditPageSchema = z.object({
+  items: z.array(AuditEntrySchema),
+  next_cursor: z.string().optional(),
+});

@@ -3,7 +3,7 @@
 // events instead (useIpcInvalidation). This keeps the launcher idle when nothing changes.
 import { QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useTauriEvent } from "./events";
-import { events, type Result } from "./index";
+import { events, type FriendList, type Result } from "./index";
 
 /** A command returned its typed error. `error` is the Rust enum value. */
 export class CommandError<E> extends Error {
@@ -40,6 +40,14 @@ export const queryKeys = {
   genres: ["catalog_genres"] as const,
   details: (packageId: string) => ["package_details", packageId] as const,
   downloads: ["downloads_list"] as const,
+  updater: ["updater_status"] as const,
+  whatsNew: (version: string) => ["updater_whats_new", version] as const,
+  socialConnection: ["social_connection"] as const,
+  friends: ["friends_list"] as const,
+  blocks: ["blocks_list"] as const,
+  conversations: ["conversations_list"] as const,
+  contactSecurity: (userId: string) => ["contact_security", userId] as const,
+  invites: ["invites_list"] as const,
 };
 
 export function createQueryClient(): QueryClient {
@@ -80,5 +88,33 @@ export function useIpcInvalidation(): void {
   useTauriEvent(events.gameStopped, installs);
   useTauriEvent(events.collectionsChanged, () => {
     void client.invalidateQueries({ queryKey: queryKeys.collections });
+  });
+
+  // Social (05-social-notes §6): the events carry the new state, so most update the cache directly.
+  useTauriEvent(events.socialConnectionChanged, (connection) => {
+    client.setQueryData(queryKeys.socialConnection, connection);
+  });
+  useTauriEvent(events.friendsChanged, (list) => {
+    client.setQueryData(queryKeys.friends, list);
+    void client.invalidateQueries({ queryKey: queryKeys.blocks });
+  });
+  useTauriEvent(events.presenceChanged, ({ user_id, presence }) => {
+    client.setQueryData<FriendList>(queryKeys.friends, (list) =>
+      list
+        ? {
+            ...list,
+            friends: list.friends.map((f) => (f.user.id === user_id ? { ...f, presence } : f)),
+          }
+        : list,
+    );
+  });
+  useTauriEvent(events.conversationsChanged, (conversations) => {
+    client.setQueryData(queryKeys.conversations, conversations);
+  });
+  const invites = () => void client.invalidateQueries({ queryKey: queryKeys.invites });
+  useTauriEvent(events.inviteReceived, invites);
+  useTauriEvent(events.inviteChanged, invites);
+  useTauriEvent(events.deviceNotice, ({ notice }) => {
+    void client.invalidateQueries({ queryKey: queryKeys.contactSecurity(notice.user_id) });
   });
 }

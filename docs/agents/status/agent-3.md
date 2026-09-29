@@ -96,6 +96,118 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   security failure fails 3 tests) and `e2e/downloads.spec.ts` (axe on the queue and the cancel dialog,
   live progress from the simulator, keyboard-only reorder/pause/cancel, controller-only).
 
+- A3-T10 — Update banner and What's new, on Agent 5's generated updater commands. A banner under the top bar
+  (non-blocking): "vgames X is available" → What's new / Later (Later hides that version for the session; a newer one
+  shows again), then download progress, then "Restarting…"; an install that failed is reported until dismissed, a
+  failed background check stays quiet. **What's new:** every release in `(installed, new]`, grouped New / Improved /
+  Fixed / Removed / Security, **plain text only**; a release with no entries is the single line "Stability and
+  performance improvements."; `latest.json` notes (fallback) as a plain list; the notes are a focusable scrolling
+  region, so long changelogs scroll with the keyboard or D-pad. **Install and restart** is disabled with its reason
+  while a game runs or while installing; while downloads are active it explains they pause first. Settings → Updates
+  opens the same dialog. Tests: 19 Vitest (incl. the zero-entries and long-changelog cases, markup shown as text) and
+  `e2e/update.spec.ts` (axe on banner and dialog, keyboard-only install, Escape/B return focus, long changelog scroll).
+
+- A3-T09 — Friends, chat and invites (05-social, 05-social-notes §5–6). `/friends` with tabs (LB/RB) that are URLs:
+  **Friends** grouped Playing / Online / Offline ("Playing X", or "Playing a game" when hidden; presence live from
+  `presence-changed`), Message, Invite to play, and a menu with Safety number, Remove (confirmed) and Block (confirmed);
+  **Add friend**: your code (single use, 15 min countdown, Copy, "expired → create a new code") and a friend's code
+  (Crockford normalization: lower case, O→0, I/L→1, dashes and spaces ignored; sent once 8 characters are there; every
+  `SocialError` has its sentence: code doesn't work, rate limited with the wait, limits, already friends, offline);
+  **Requests** (accept, decline, block; cancel outgoing); **Blocked** (unblock); a notice while the social socket
+  reconnects. **Messages** (`/friends/messages/<id>`): conversation list with unread counts, a virtualized history
+  (`role="log"`, focusable, follows new messages, "Load earlier messages"), plain text only, device-change notices,
+  delivery states (Sending…, Sent, Not sent + Try again), "… is typing" for 5 s, composer with the 4,000-character limit
+  (Enter sends, Shift+Enter new line); a key change pauses sending with "Review safety number". **Safety number:** 12
+  groups of 5, "Mark as verified", the contact's devices, "Trust new key" behind a confirmation, and "messages don't move
+  to new devices". **Invites:** "Invite to play" from a friend (pick an installed game) or a package page (pick a
+  friend), optional message (200) and join info (checked with 05-social §5's pattern, sent end-to-end encrypted);
+  **incoming invite cards** stacked under the top bar (Accept / Decline / Decide later; a card whose invite expired or
+  was cancelled says so); `invite-install-requested` opens the install dialog at once; the sender sees each state
+  (incl. the invitee's install progress bar and every failure reason) and can cancel while it makes sense; the invitee
+  sees theirs. Tests: 37 Vitest (every invite state for both sides, card accept/decline/later/expired/cancelled,
+  4,000 limit, key change, send/retry, typing, codes) and `e2e/friends.spec.ts` (axe on friends, requests, messages,
+  add friend, safety number, invite card and the install dialog it opens; keyboard-only and controller-only card →
+  Accept → install; keyboard-only add friend and send message). Memory test with Friends in the loop: steady window
+  204 KB (< 256 KB), nodes and listeners flat. Found on the way: a query that fails refetches on every visit, so the
+  mock now answers `social_connection` (a missing handler cost ~400 KB per 100 visits).
+
+- A3-T14 — Admin packages list and editor. **List** (`/admin/packages`): status and text filters kept in the URL
+  (back/forward and deep links work), table with sticky headers, cursor "Load more", empty / no-match / error (retry)
+  / forbidden states, "Deleted X." after a delete. **Create**: title (required, 1–200 code points), optional slug with a
+  live preview of the server's `slugify`, Steam/IGDB ids, "look up metadata"; one `Idempotency-Key` per form plus a
+  synchronous guard, so a double click or a retry after a lost answer creates one package; server field errors and
+  `slug_taken` land on the fields. **Editor**: every field with its source badge (admin / IGDB / Steam) and a counter,
+  client limits mirroring the API (code points after trimming: title 200, summary 500, description 20,000, developer
+  and publisher 200, ≤ 20 genres of ≤ 64, ids ≥ 1, slug pattern, date), focus to the first invalid field; saves send
+  only what changed as `application/merge-patch+json` with `If-Match`; **412** keeps the input and shows a
+  field-by-field diff (theirs / yours) with "keep mine, then save" (only my differences go over their version) or
+  "load theirs"; server `genres[i]` errors map onto Genres; dirty guard on in-app navigation (Stay / Leave) and tab
+  close; status change with a confirmation that says what it does; delete with the slug typed. Tests: 29 Vitest and
+  `e2e/packages.spec.ts` (axe on list, create, editor; double click = one package; concurrent edit 412 with diff, via
+  the mock server or, against the real stack, a second page; every field at 0 / max / max+1 with RTL, emoji and accents;
+  keyboard-only filter → open). The mock server now keeps its data across reloads in the tab (a `?mock=` URL starts over).
+
+- A3-T15 — Metadata review and images. The package page now has tabs (Details, Metadata, Images; own URLs) that share
+  the cached package and its ETag. **Metadata:** the lookup job's state in words, polled every 2 s while queued or
+  running and stopped at a terminal state (tested: no request after it ends); a failed/dead job shows its error and
+  attempts with "Try again"; candidates (source, title, year, score); a side-by-side comparison (current / candidate)
+  with a checkbox per field (differing values ticked by default, admin-edited fields marked and kept unless "Overwrite
+  fields an admin edited" is on, which warns); apply with `If-Match`, and a 412 asks to reload, then apply. Candidate
+  image URLs are shown as text (the admin page loads no third-party images). **Images:** cover, hero, logo and
+  screenshots from `/v1/assets/{id}` with a placeholder when one can't be loaded; upload checked before sending (content
+  sniffed as JPEG/PNG/WebP, 1 byte – 10 MiB), with progress (XHR: fetch has no upload progress), then a new
+  cover/hero/logo is set with `If-Match`; the server's 413/415 shown; delete with confirmation. Tests: 17 Vitest
+  (`metadata.test.tsx`, `api/upload.test.ts` with a fake XHR: CSRF, progress, 413/415, malformed, schema, network,
+  timeout, abort) and `e2e/metadata.spec.ts` (axe on both tabs, failed job + retry, 412 on apply, too big / wrong type
+  refused locally, a real multipart upload through the service worker, broken image, delete dialog).
+
+- A3-T16 (part 1: versions and browser upload). **Versions tab:** state, sequence, label, platform, size and file
+  count, creator, current-release badge, verification progress (polled every 2 s while one verifies); publish
+  (confirmed), yank (reason 3–500 required), abort (confirmed), continue upload. **Upload wizard**
+  (`/packages/<id>/versions/new`, `…/versions/<vid>/upload` to resume): platform + label (`Idempotency-Key` per form) →
+  folder (`<input webkitdirectory>`, or the File System Access API when present, which also finds empty folders) with
+  every invalid path listed and its reason (02 §3 rules checked in TypeScript for the preview, again by pack-wasm), plan
+  summary and a virtualized file list → the executable to start (+ arguments, or "nothing to start") → key file +
+  passphrase, unlocked **only inside a dedicated key worker** that offers nothing but `sign(digest)` and is terminated
+  after finalize (a root key is refused) → upload. **Engine:** a pack worker reads and hashes chunks and streams pack
+  bytes from any offset; the page PUTs 16 MiB pieces to GCS resumable sessions, 4 packs in parallel; session URIs and
+  confirmed offsets go to IndexedDB after every piece; on resume the re-picked folder must match (paths, sizes, mtimes)
+  or it's refused with the differences; network loss waits for `online`/backoff and resumes by itself; an expired start
+  URL gets a new one; a vanished session restarts that pack; 5xx backs off; `beforeunload` and in-app navigation ask
+  while uploading; one tab per upload (Web Locks, BroadcastChannel fallback). Then the manifest is built, signed, PUT,
+  finalized (every 422 code has a human explanation; "use another key file" for key problems; `pack_missing` re-checks
+  the packs), verification is followed, and Publish. Tests: 34 new Vitest (engine against MSW + an emulated GCS: full
+  run, pause/resume without resending, network loss, expired start URLs, 503s, resume after "reload", untrusted and
+  someone else's key, a changed file, failed verification; path rules; versions tab; wizard end to end, invalid paths,
+  root key, changed folder on resume) and `e2e/upload.spec.ts` in Chromium with real Web Workers: **a network cut and a
+  page reload mid-upload, then resume and complete**, wrong passphrase, key not in the trust bundle (422
+  `publisher_key_untrusted`), **a 100,000-file folder** (planned in the worker, < 100 rows in the DOM, input stays
+  responsive). The 2 GB run against the real API + fs storage is for the nightly e2e workflow (not run here).
+- A3-T16 (part 2: Compatibility tab). One editor per target, Linux (Proton) and macOS (Wine): status, notes (plain text,
+  2,000), Windows build and version range, preferred runtimes, minimum runtime version, umu id (Linux; the umu id from
+  the Steam candidate and the ProtonDB tier are shown as hints), graphics backends in order (macOS), env and DLL
+  overrides as lines, winetricks from the `vgames-core` allowlist. Every `vgames-core::compat` rule is checked before
+  signing (env key syntax and the launcher-owned/denied names like `LD_PRELOAD`, `STEAM_COMPAT_*`; DLL names and load
+  orders; runtime ids; duplicates). Saving builds the `vgames.compat/1` document with the next revision, hashes it in the
+  pack worker, signs it in the key worker (`vgames/compat/v1`, the same unlocked publisher key flow as uploads) and PUTs
+  it; 409 (newer revision published meanwhile) and 422 (untrusted key, invalid profile) are explained. The current
+  revision is shown read-only. Tests: 5 Vitest + an e2e sign-and-publish in the real key worker, axe on both tabs.
+- A3-T17 — Users, allowlist, settings, trust, jobs, audit log. **Users:** search (username or Discord id) and role
+  filter in the URL, cursor paging, status with the disable reason, last seen; disable (reason ≤ 500) / enable; admins
+  can't act on admins or owners (the button says "Owners manage admins"); owners change roles from a select with a
+  confirmation that says what the role allows; `cannot_disable_self` and `last_owner` explained; a 403 is handled
+  even when a control was shown. **Allowlist:** Discord id checked (5–25 digits, with where to find it), note ≤ 200,
+  `already_allowlisted` on the field, remove with confirmation. **Settings:** owners edit name, message of the day and
+  registration mode with `If-Match` (a 412 keeps the input and offers keep-mine or load-theirs); admins see them
+  read-only. **Trust:** bundle version and expiry, publisher keys with holder and validity, "Expires in N days" under
+  60 days, expired and revoked (with reason) marked; owners upload a bundle + signature, every refusal explained
+  (`bad_signature`, `wrong_server`, `invalid_bundle`, `stale_version`, `unknown_holder`). **Jobs:** state and kind
+  filters, attempts, last error as text, retry for failed/dead (`job_already_queued` explained). **Audit log:**
+  actor/action/target/date-range filters in the URL (actor checked as a UUID), cursor paging, details as JSON text.
+  Tests: 17 Vitest and `e2e/authorization.spec.ts`: **the admin vs owner matrix for every page and action**
+  (owner-only controls present for owners, absent for admins; axe on every page for both roles) plus a forced
+  owner-only request answered 403.
+
 ## In progress
 - A3-T07 — Settings, in parts. **Part 1** ([#52](https://github.com/wouhliss/vgames/pull/52), merged): one URL per section (`/settings/<section>`, a section list that
   works with arrows and the D-pad) with General (theme incl. "Same as system", reduce motion), Servers (address,
@@ -105,12 +217,20 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   every package of a library), Downloads (speed limit 0.1–1000 MB/s with validation, 1–3 installs at once),
   Updates (version, check now) and About (version, third-party licenses as plain text, copy diagnostics). Every
   setting is tested to survive a restart of the mock (disabling persistence fails 4 tests).
-  **Part 2 (this PR):** Privacy (show what I'm playing, do not disturb) and Overlay (on/off; the shortcut is recorded by
+  **Part 2** ([#62](https://github.com/wouhliss/vgames/pull/62), merged): Privacy (show what I'm playing, do not disturb) and Overlay (on/off; the shortcut is recorded by
   pressing it: keys named by position, a plain key or Shift + key refused locally, the Rust core's `invalid` and
   `in_use {by}` shown; Escape cancels; Reset to Shift+F3; a switch per game, with the date and reason when the
   crash safety valve turned it off). Tested to persist through a restart. Also fixes a unit-test teardown race
   (`clearMocks()` before a late `listen` settled) that made about half of the PackagePage runs report an unhandled error.
-  **Next parts:** Compatibility, Controllers, Cloud saves (with A3-T08). What's new comes with A3-T10.
+  **Part 3 (this PR):** Compatibility (09-compatibility): how Windows games run here (Proton, Wine, or natively on Windows);
+  Rosetta 2 on Apple silicon (install after confirming, and Apple's "limited after macOS 27" note from the runtime
+  catalog); the default Proton/Wine version (automatic or a catalog version); downloaded runtimes with their size,
+  what uses them and Remove for unused ones; per-game overrides (runner version, graphics backend on Macs with
+  D3DMetal only on Apple silicon, extra `NAME=value` environment lines checked locally and by the core; saving the
+  defaults removes the override; Reset); runtime licenses as plain text, including Apple's for D3DMetal. The
+  default and the overrides are tested to persist through a restart. Also: select lists and menus opened inside a
+  dialog now render in the dialog's layer (they were drawn under it and couldn't be clicked).
+  **Next parts:** Controllers, Cloud saves (with A3-T08). What's new comes with A3-T10.
 
 ## Interfaces delivered (other agents may now rely on these)
 - `apps/desktop/src/ipc/contract/`: the command/event surface the UI is built against, in exact
@@ -119,6 +239,8 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   once the same name exists in `src/bindings.ts` (generated entries already win).
 - `apps/desktop/src/ipc/contract/settings.ts`: account sessions, credential storage, library default/remove,
   download settings, social/overlay settings and licenses (see "Needs from others").
+- `apps/desktop/src/ipc/contract/compat.ts`: runtimes, the default runner, per-package overrides and runtime
+  licenses for Settings → Compatibility (see "Needs from others").
 - `apps/desktop/src/ipc/contract/downloads.ts`: the install queue commands and `downloads-changed` (see
   "Needs from others").
 - `apps/desktop/src/ipc/contract/catalog.ts`: catalog, package details, install plan/start and Rosetta 2
@@ -227,17 +349,40 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   - `download_settings_get -> DownloadSettings {bandwidth_limit_kib: Option<u32> (≥ 100), concurrent_installs: 1..=3}`,
     `download_settings_set(settings) -> Result<DownloadSettings, SettingsError {invalid {field, detail} | io}>`.
   - `app_licenses -> Result<String, AppError>` (bundled third-party notices, plain text).
+- **From Agent 2** (A2-T16/T17 runtime settings, for Settings → Compatibility, A3-T07). Full types in
+  `apps/desktop/src/ipc/contract/compat.ts`:
+  - `compat_overview -> Result<CompatOverview, AppError>`: `host` (`native` on Windows | `proton` |
+    `wine {apple_silicon, rosetta: installed | missing | null, rosetta_last_macos}` from the catalog's Rosetta
+    field), `runtimes` on disk (`{runtime, version, size_bytes, used_by}`), `runners` from the catalog for this
+    computer (newest first), `graphics` this Mac can use (D3DMetal only on Apple silicon), `default_runner`
+    (null = automatic).
+  - `compat_default_set(runner: Option<RunnerVersion>) -> Result<(), CompatSettingsError>`;
+    `runtime_remove(runtime, version) -> Result<(), RuntimeRemoveError {not_found | in_use {used_by} | io}>`.
+  - `compat_packages -> Result<Vec<PackageCompat {package, title, layer, override}>, AppError>` (installed
+    packages that launch through Proton/Wine); `compat_override_set(package, CompatOverride {runner, graphics,
+    env}) -> Result<(), CompatSettingsError>` (`not_found`, `unknown_runner`, `graphics_unavailable {backend}`,
+    `invalid_env {key, reason: format | denied}` per `vgames-core::compat` and the manifest env denylist, `io`);
+    `compat_override_reset(package)`.
+  - `compat_licenses -> Result<Vec<RuntimeLicense {runtime, name, spdx, text}>, AppError>` (the licenses shipped
+    next to the host's runtimes; Apple's for D3DMetal on Macs).
 - **From Agent 4** (Settings → Privacy and Overlay, A3-T07): `social_settings_get|set` are generated now and used
   as is. Still requested (A4-T10): `SocialError` variants for an overlay hotkey that can't be registered,
   `invalid` (not an accelerator) and `in_use {by: Option<String>}` (the OS or another app holds it); until then an
   `invalid_input {field: "overlay_hotkey"}` shows as "not a shortcut vgames can use". Also
   `overlay_packages -> Vec<PackageOverlay {package, title, enabled, disabled_by_safety_valve_at}>` and
   `overlay_package_set(package, enabled)` (turning it on clears the safety valve).
+- **From Agent 5** (A3-T16): the admin release build must run `pnpm --filter @vgames/pack-wasm build` before
+  `pnpm --filter @vgames/admin-web build`; without it the uploader says its packing module is missing. The admin pages
+  bundle the `.wasm` (≈ 250 KB gzipped) through an optional glob, so CI builds without it keep working.
 - **From Agent 5:** nothing more for now. Seen (2026-09-26): CI runs locally (`scripts/ci/local.sh`, PR 42);
   my PRs carry its summary on the final commit and merge only when every job passes. The updater commands and the `updater-status` event now
   come from the generated `bindings.ts` (onboarding's "launcher too old" check uses `updater_check ->
   UpdateCheck`); A3-T10 builds the banner and What's new dialog on them.
-- **From Agent 4:** the social UI (A3-T09) will be built from your A4-T01 note
+- **From Agent 4** (A3-T09, built): the messaging commands and events of A4-T08 (types copied from your branch into
+  `apps/desktop/src/ipc/contract/social.ts`; delete them there when they land in `bindings.ts`) and the invite
+  commands `invites_list`, `invite_send`, `invite_accept|decline|cancel` with the events `invite-received`,
+  `invite-changed`, `invite-install-requested` exactly as 05-social-notes §5–6.
+- **From Agent 4 (history):** the social UI (A3-T09) was built from your A4-T01 note
   (`05-social-notes.md`). What the screens need, so the note can cover it: friends with presence
   ("Playing X", package title included), incoming/outgoing requests, friend codes with `expires_at`,
   remove/block; conversations list with unread counts and last message; a message list with delivery
@@ -254,6 +399,15 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
 
 ## Blockers / contract questions
 - None blocking.
+- **For Agent 1 (compat history):** A3-T16 asks for a read-only revision history per compat target, but the API only
+  serves the latest profile per target (`GET /v1/packages/{id}/compat`, and only for published packages). Proposal:
+  `GET /v1/admin/packages/{id}/compat/{target}` → all revisions (newest first). Until then the tab shows the current
+  revision only.
+- **For Agent 2 (library commands, A2-T08):** the generated `library_remove` returns `LibraryRemovalError` without
+  the requested `is_default`. Can the default library be removed? Settings → Storage offers Remove on it and says
+  "make another one the default first" only if the core refuses with `is_default`. My pending library entries in
+  `src/ipc/contract/{core,settings}.ts` are superseded by the generated ones; I'll switch the UI to `LibraryInfo`
+  / `LibraryActionError` / `LibraryRemovalError` and delete them in a follow-up.
 - **For Agent 1 (genres):** Browse filters by genre (`GET /v1/packages?genre=`), but the API has no way
   to list the genres that exist. Proposal: `GET /v1/genres -> [{genre, count}]` over published packages
   visible to the caller (or a `genres` facet on the first `PackagePage`). Until it exists, `catalog_genres` has
