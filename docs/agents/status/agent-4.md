@@ -149,7 +149,18 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   Launcher `overlay::vulkan_layer`: per-user implicit layer manifest (`$XDG_DATA_HOME/vulkan/implicit_layer.d`,
   `enable_environment VGAMES_OVERLAY=1`, `disable_environment VGAMES_OVERLAY_DISABLE=1`), written only while the
   renderer library ships next to the launcher, removed otherwise (tests: manifest, XDG paths, write/keep/move/remove).
-  Next: the layer library itself (`vkQueuePresentKHR`), Linux GL preload,
+  `vgames_overlay::draw` (CPU layout of toast cards and the panel column, 8x8 bitmap font scaled with the frame) and
+  `vgames_overlay::vulkan`: the layer library (loader interface v2, `vkQueuePresentKHR` copies the cards into the
+  presented image on the presenting queue, chained on the game's semaphores; adds `TRANSFER_DST` only when the surface
+  allows it; 8-bit BGRA/RGBA swapchains only; staging rewritten only when the cards change; turns itself off above a
+  1 ms average (the open budget of A4-T11); every entry point catches panics). Evidence: `tests/vulkan_layer.rs` runs a real Vulkan app on
+  lavapipe with a headless surface: the layer connects with the token, the toast lands in presented frames, the rest
+  of the frame is untouched, and the Khronos validation layer (core + synchronization) reports nothing; with the copy
+  removed the test fails. CI job "Rust" now runs it (`VGAMES_REQUIRE_VULKAN=1`). Measured CPU cost of the layer with
+  a toast visible, 242 frames at 640x480 on lavapipe: **22 µs/frame release, 39 µs debug** (budget 1 ms open,
+  0.3 ms hidden; hidden is one map read and one atomic load). GPU cost and exclusive fullscreen need real hardware.
+  Not yet: input in the panel from inside a Vulkan game (the panel shows; replies/accept go through the launcher or
+  the fallback window), Linux GL preload,
   Windows hudhook DLL (needs a Windows machine to build and verify).
 
 - A4-T12 — Resilience, abuse and soak. **Started.** Chaos (`tests/social_chaos.rs`, real API in process):
@@ -211,6 +222,9 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
 - Agent 1 (A4-T12): `realtime/bus.rs` `listen`/`listen_once` (lost LISTEN connection → reconnect, then
   `close_all(1012)` so clients resync; before, events sent during the gap were lost silently) and one test in
   `tests/it/realtime.rs`.
+- Agent 5 (A4-T11): `.github/workflows/ci.yml` Rust job step "overlay renderer" (installs Mesa lavapipe + the Khronos
+  validation layer, clippy and tests for `vgames-overlay --features renderer`) and the same two commands in
+  `scripts/ci/local.sh`; root `Cargo.toml` workspace dependencies `ash`, `font8x8`, `libloading` (add-only).
 - Agent 2 (A4-T09/T10 launch wiring): `launch/orchestrate.rs` gains `LaunchHooks` (+ `HookEnv`) and
   `Launcher::set_hooks`; hook variables go through `inject_env` after `prepare` (a refused key is logged and
   skipped), `aborted` is called when the session does not start. `orchestrate/tests.rs`: the test game exits with

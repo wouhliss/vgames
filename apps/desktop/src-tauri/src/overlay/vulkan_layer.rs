@@ -19,6 +19,8 @@ use vgames_overlay::protocol::env;
 
 pub const LAYER_NAME: &str = "VK_LAYER_VGAMES_overlay";
 pub const MANIFEST_FILE: &str = "vgames_overlay_layer.json";
+/// The layer's exported negotiation function (`vgames_overlay::vulkan`).
+pub const NEGOTIATE_SYMBOL: &str = "vgames_overlay_vkNegotiateLoaderLayerInterfaceVersion";
 /// Set to `1` to keep the layer out of a process that has `VGAMES_OVERLAY=1`.
 pub const DISABLE_ENV: &str = "VGAMES_OVERLAY_DISABLE";
 
@@ -47,7 +49,7 @@ pub fn manifest(library: &Path) -> Option<String> {
         return None;
     }
     let value = json!({
-        "file_format_version": "1.0.0",
+        "file_format_version": "1.1.2",
         "layer": {
             "name": LAYER_NAME,
             "type": "GLOBAL",
@@ -57,6 +59,7 @@ pub fn manifest(library: &Path) -> Option<String> {
             "description": "vgames in-game overlay",
             "enable_environment": { env::ENABLED: "1" },
             "disable_environment": { DISABLE_ENV: "1" },
+            "functions": { "vkNegotiateLoaderLayerInterfaceVersion": NEGOTIATE_SYMBOL },
         }
     });
     serde_json::to_string_pretty(&value).ok()
@@ -135,6 +138,10 @@ mod tests {
         assert_eq!(layer["library_path"], lib.to_str().unwrap());
         assert_eq!(layer["enable_environment"]["VGAMES_OVERLAY"], "1");
         assert_eq!(layer["disable_environment"][DISABLE_ENV], "1");
+        assert_eq!(
+            layer["functions"]["vkNegotiateLoaderLayerInterfaceVersion"],
+            NEGOTIATE_SYMBOL
+        );
         assert!(manifest(Path::new("relative/lib.so")).is_none());
     }
 

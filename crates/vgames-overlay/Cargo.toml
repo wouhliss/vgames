@@ -11,18 +11,21 @@ crate-type = ["rlib", "cdylib"]
 
 [features]
 default = []
-# Build the in-game renderer (hooks + Dear ImGui). The launcher depends on this crate
-# without it, for the IPC protocol types only. Agent 4 adds hudhook (Windows), ash
-# (Vulkan layer) and imgui dependencies behind this feature.
-renderer = []
+# Build the in-game renderer (broker link, CPU-drawn cards, Vulkan layer). The launcher
+# depends on this crate without it, for the IPC protocol types only.
+renderer = ["dep:ash", "dep:font8x8"]
 
 [dependencies]
 serde.workspace = true
 thiserror.workspace = true
 postcard.workspace = true
 uuid.workspace = true
+ash = { workspace = true, optional = true }
+font8x8 = { workspace = true, optional = true }
 
 [dev-dependencies]
+ash.workspace = true
+libloading.workspace = true
 proptest.workspace = true
 
 [lints]
