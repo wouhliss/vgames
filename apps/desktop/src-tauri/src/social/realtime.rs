@@ -16,6 +16,7 @@
 //!   owners re-send what matters after the next `hello`.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
@@ -79,9 +80,16 @@ pub struct RealtimeHandle {
     outgoing: mpsc::Sender<(String, Value)>,
     state: watch::Receiver<SocialConnection>,
     network: Arc<Notify>,
+    epoch: Arc<AtomicU64>,
 }
 
 impl RealtimeHandle {
+    /// Counts connections that reached `hello`; it changes before the state turns
+    /// `Connected`, so "already sent on this connection" can be told apart from a previous one.
+    pub fn epoch(&self) -> u64 {
+        self.epoch.load(Ordering::Acquire)
+    }
+
     /// Queues a client frame; dropped when not connected.
     pub fn send(&self, kind: &str, data: Value) {
         if self.state.borrow().state == SocialConnectionState::Connected {
@@ -114,6 +122,7 @@ pub fn spawn(
     let (out_tx, out_rx) = mpsc::channel(64);
     let (state_tx, state_rx) = watch::channel(signed_out());
     let network = Arc::new(Notify::new());
+    let epoch = Arc::new(AtomicU64::new(0));
     let task = Task {
         sessions,
         http,
@@ -122,6 +131,7 @@ pub fn spawn(
         outgoing: out_rx,
         state: state_tx,
         network: network.clone(),
+        epoch: epoch.clone(),
         shutdown,
     };
     tokio::spawn(task.run());
@@ -129,6 +139,7 @@ pub fn spawn(
         outgoing: out_tx,
         state: state_rx,
         network,
+        epoch,
     }
 }
 
@@ -180,6 +191,7 @@ struct Task {
     outgoing: mpsc::Receiver<(String, Value)>,
     state: watch::Sender<SocialConnection>,
     network: Arc<Notify>,
+    epoch: Arc<AtomicU64>,
     shutdown: CancellationToken,
 }
 
@@ -310,6 +322,7 @@ impl Task {
         tracing::info!(server_id = %session.server_id, "realtime connected");
         // Drop frames queued for a previous connection.
         while self.outgoing.try_recv().is_ok() {}
+        self.epoch.fetch_add(1, Ordering::AcqRel);
         self.set_state(
             Some(session.server_id),
             SocialConnectionState::Connected,
