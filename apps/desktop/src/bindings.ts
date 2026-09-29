@@ -691,7 +691,11 @@ export type SocialConnectionChanged = SocialConnection;
 export type SocialConnectionState = "signed_out" | "connecting" | "connected" | "reconnecting";
 
 /**  Why a social command failed. */
-export type SocialError = { kind: "not_signed_in" } | { kind: "offline" } | { kind: "not_found" } | { kind: "invalid_input"; field: string; message: string } | { kind: "rate_limited"; retry_after_seconds: number } | { kind: "code_invalid" } | { kind: "limit_reached"; limit: SocialLimit } | { kind: "conflict"; code: string; message: string } | { kind: "key_changed"; user_id: string; device_ids: string[] } | { kind: "server"; code: string; message: string } | { kind: "internal"; detail: string };
+export type SocialError = { kind: "not_signed_in" } | { kind: "offline" } | { kind: "not_found" } | { kind: "invalid_input"; field: string; message: string } | { kind: "rate_limited"; retry_after_seconds: number } | { kind: "code_invalid" } | { kind: "limit_reached"; limit: SocialLimit } | { kind: "conflict"; code: string; message: string } | { kind: "key_changed"; user_id: string; device_ids: string[] } | { kind: "server"; code: string; message: string } | { kind: "internal"; detail: string } | 
+/**  The overlay hotkey is not a usable combination (needs Ctrl, Alt or Super, or an F-key). */
+{ kind: "invalid" } | 
+/**  Another application holds the overlay hotkey. */
+{ kind: "in_use"; by: string | null };
 
 export type SocialLimit = "friends" | "pending_requests" | "party_members";
 

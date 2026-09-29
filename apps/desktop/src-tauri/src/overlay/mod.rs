@@ -14,6 +14,7 @@
 
 pub mod broker;
 pub mod commands;
+pub mod hotkey;
 pub mod hub;
 pub mod model;
 pub mod valve;
@@ -53,6 +54,7 @@ struct Inner {
     shutdown: CancellationToken,
     open_launcher: Mutex<Option<Callback>>,
     valve_tripped: Mutex<Option<PackageCallback>>,
+    hotkeys: Mutex<hotkey::HotkeyState>,
 }
 
 /// Cheap to clone.
@@ -87,6 +89,7 @@ impl OverlayService {
                 shutdown: shutdown.clone(),
                 open_launcher: Mutex::new(None),
                 valve_tripped: Mutex::new(None),
+                hotkeys: Mutex::new(hotkey::HotkeyState::new()),
             }),
         };
         tokio::spawn(service.clone().action_loop(rx, shutdown.clone()));
@@ -96,6 +99,20 @@ impl OverlayService {
 
     pub fn hub(&self) -> &Arc<Hub> {
         &self.inner.hub
+    }
+
+    /// Where hotkeys are registered, and the configured accelerator (from the settings).
+    pub fn set_hotkey_host(&self, host: Arc<dyn hotkey::HotkeyHost>, accelerator: &str) {
+        let mut hk = lock(&self.inner.hotkeys);
+        hk.host = Some(host);
+        if let Ok(s) = hotkey::validate(accelerator) {
+            hk.current = s;
+        }
+    }
+
+    /// Checks and adopts a new hotkey (before the settings are saved).
+    pub fn change_hotkey(&self, accelerator: &str) -> Result<(), hotkey::HotkeyError> {
+        lock(&self.inner.hotkeys).change(accelerator)
     }
 
     /// What "Open vgames" does (show the main window).
@@ -146,6 +163,7 @@ impl OverlayService {
         };
         let env = broker.endpoint.env();
         tokio::spawn(log_broker(erx));
+        lock(&self.inner.hotkeys).activate();
         lock(&self.inner.sessions).insert(
             package,
             Session {
@@ -161,7 +179,8 @@ impl OverlayService {
         self.inner.panel.send_replace(open);
     }
 
-    fn toggle_panel(&self) {
+    /// The hotkey or the Guide/PS hold: open or close the panel while a game runs.
+    pub fn toggle_panel(&self) {
         if lock(&self.inner.sessions).is_empty() {
             return;
         }
@@ -242,6 +261,7 @@ impl OverlayService {
                         .is_some();
                     if lock(&self.inner.sessions).is_empty() {
                         self.set_panel(false);
+                        lock(&self.inner.hotkeys).deactivate();
                     }
                     if had {
                         self.record_exit(stopped.package, stopped.exit).await;

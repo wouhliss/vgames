@@ -36,6 +36,14 @@ pub enum SocialError {
     Server { code: String, message: String },
     #[error("internal error: {detail}")]
     Internal { detail: String },
+    /// The overlay hotkey is not a usable combination (needs Ctrl, Alt or Super, or an F-key).
+    #[serde(rename = "invalid")]
+    #[error("not a usable key combination")]
+    HotkeyInvalid,
+    /// Another application holds the overlay hotkey.
+    #[serde(rename = "in_use")]
+    #[error("the key combination is in use")]
+    HotkeyInUse { by: Option<String> },
 }
 
 impl SocialError {

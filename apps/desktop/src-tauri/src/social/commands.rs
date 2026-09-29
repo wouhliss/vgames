@@ -231,6 +231,12 @@ pub async fn social_settings_set(
     overlay: State<'_, crate::overlay::OverlayService>,
     settings: SocialSettings,
 ) -> Result<SocialSettings, SocialError> {
+    overlay
+        .change_hotkey(&settings.overlay_hotkey)
+        .map_err(|e| match e {
+            crate::overlay::hotkey::HotkeyError::Invalid => SocialError::HotkeyInvalid,
+            crate::overlay::hotkey::HotkeyError::InUse { by } => SocialError::HotkeyInUse { by },
+        })?;
     let saved = social.settings_set(settings).await?;
     overlay.hub().set_do_not_disturb(saved.do_not_disturb);
     Ok(saved)

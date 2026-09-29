@@ -40,14 +40,15 @@ pub fn init(app: &AppHandle, state: &AppState, social: SocialService, hub: Arc<H
         &state.bus,
         state.shutdown.child_token(),
     );
-    // Do not disturb from the stored settings.
-    let db = state.db.clone();
-    let h = Arc::clone(service.hub());
-    tauri::async_runtime::spawn(async move {
-        if let Ok(s) = db.call(|c| settings::get::<SocialSettingsKey>(c)).await {
-            h.set_do_not_disturb(s.do_not_disturb);
-        }
-    });
+    // Do not disturb and the hotkey from the stored settings.
+    let stored =
+        tauri::async_runtime::block_on(state.db.call(|c| settings::get::<SocialSettingsKey>(c)))
+            .unwrap_or_default();
+    service.hub().set_do_not_disturb(stored.do_not_disturb);
+    service.set_hotkey_host(
+        Arc::new(super::hotkey::TauriHotkeys(app.clone())),
+        &stored.overlay_hotkey,
+    );
     let handle = app.clone();
     service.on_open_launcher(move || {
         if let Some(w) = handle.get_webview_window("main") {

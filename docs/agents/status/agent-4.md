@@ -125,7 +125,10 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   `package_overlays_list`, `package_overlay_set` (Settings); events `overlay-view`, `overlay-package-disabled`.
   Tests: broker with a fake blocking renderer (views, panel, actions, only one renderer, wrong tokens → gives up
   after 5, garbage/oversized frames, invalid actions, reconnect on the same endpoint, stop), hub, valve.
-  **Next:** global hotkey (register + conflict check → `SocialError` `invalid` / `in_use`), always-on-top fallback
+  Hotkey: registered only while a game with the overlay runs, toggles the panel; `social_settings_set` checks a new
+  one first (Ctrl/Alt/Super or an F-key; trial registration) → `SocialError` `invalid` / `in_use` (Agent 3's
+  requested shapes, now generated: `HotkeyError` in `contract/settings.ts` can go).
+  **Next:** always-on-top fallback
   window and OS notifications (Wayland), macOS `NSPanel` (needs a Mac to verify; `macOSPrivateApi` contract PR),
   wiring `prepare_launch` into Agent 2's launch plan once A2-T09 lands.
 
