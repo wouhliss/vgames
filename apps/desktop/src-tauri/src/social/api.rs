@@ -114,31 +114,42 @@ impl SocialApi<'_> {
         path: &str,
         body: Option<&B>,
     ) -> Result<reqwest::Response, SocialError> {
-        let mut req = self
-            .http
-            .request(method, self.url(path)?)
-            .bearer_auth(self.session.access_token.as_str());
-        if let Some(b) = body {
-            req = req.json(b);
+        let url = self.url(path)?;
+        let mut session = self.session.clone();
+        let mut retried = false;
+        loop {
+            let mut req = self
+                .http
+                .request(method.clone(), url.clone())
+                .bearer_auth(session.access_token.as_str());
+            if let Some(b) = body {
+                req = req.json(b);
+            }
+            let resp = req.send().await.map_err(|e| {
+                tracing::debug!(error = %e.without_url(), "social request failed");
+                SocialError::Offline
+            })?;
+            let status = resp.status();
+            if status.is_success() {
+                return Ok(resp);
+            }
+            if status == StatusCode::UNAUTHORIZED {
+                // Once: the token may just have expired (the session bridge refreshes it).
+                if !retried && let Some(fresh) = self.sessions.refreshed(&session).await {
+                    retried = true;
+                    session = fresh;
+                    continue;
+                }
+                return Err(SocialError::NotSignedIn);
+            }
+            let retry_after = resp
+                .headers()
+                .get(reqwest::header::RETRY_AFTER)
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.parse().ok());
+            let problem = resp.json::<Problem>().await.unwrap_or_default();
+            return Err(map_problem(status, retry_after, problem));
         }
-        let resp = req.send().await.map_err(|e| {
-            tracing::debug!(error = %e.without_url(), "social request failed");
-            SocialError::Offline
-        })?;
-        let status = resp.status();
-        if status.is_success() {
-            return Ok(resp);
-        }
-        if status == StatusCode::UNAUTHORIZED {
-            self.sessions.report_unauthorized(self.session.server_id);
-        }
-        let retry_after = resp
-            .headers()
-            .get(reqwest::header::RETRY_AFTER)
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.parse().ok());
-        let problem = resp.json::<Problem>().await.unwrap_or_default();
-        Err(map_problem(status, retry_after, problem))
     }
 
     async fn json<T: DeserializeOwned, B: Serialize>(
