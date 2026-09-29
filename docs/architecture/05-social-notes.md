@@ -1,6 +1,6 @@
 # 05 — Social: adaptation notes and launcher interface
 
-Status: **v1.2** (A4-T01, 2026-09-25; messaging details A4-T08, 2026-09-28; invites A4-T09, 2026-09-29). Companion to [05-social.md](05-social.md). It records how the
+Status: **v1.3** (A4-T01, 2026-09-25; messaging A4-T08, 2026-09-28; invites A4-T09 and overlay broker A4-T10, 2026-09-29). Companion to [05-social.md](05-social.md). It records how the
 Arachnel mechanisms map onto vgames, the few protocol details 05-social left open, and the exact
 realtime events, Tauri commands and Tauri events Agent 4 delivers. **Agent 3 can build every social
 screen against mockIPC from §5 and §6 alone.** Changing a name or shape here needs a `contract:` PR.
@@ -343,3 +343,23 @@ export type OverlayAction =
 
 The in-game renderer (injected DLL / Vulkan layer / GL preload) gets the same view model over the
 loopback broker (`vgames_overlay::protocol`), never through the WebView.
+
+Additions (A4-T10):
+
+- Event `overlay-view` carries `OverlayView` to the overlay window on every change.
+- Main-window Settings commands (never prefixed `overlay_`, which is reserved for the overlay window):
+  `package_overlays_list() -> PackageOverlay[]` and `package_overlay_set(packageRef: PackageRef, enabled)`
+  (turning it on clears the safety valve); `PackageOverlay = { package, title, enabled,
+  disabled_by_safety_valve_at: string | null }`. Event `overlay-package-disabled {package}` when the valve
+  turns the overlay off (two exits with a code other than 0, not stopped by the user, ≤ 60 s after launch,
+  in a row, with the overlay on); show a notice with "Turn it back on".
+- Broker protocol (`vgames_overlay::protocol`, v1): `u32` LE length + postcard payload ≤ 64 KiB; renderer
+  sends `Hello {version, token, renderer}` within 5 s, the broker answers `Welcome` or closes; 5 failed
+  handshakes stop the broker for that game. One renderer at a time: the listener closes after a good
+  handshake and is bound again on the same port when that renderer leaves (swapchain or device
+  recreation). Heartbeats every 5 s, a link silent for 15 s is dropped. Caps: 4 toasts, 50 friends, 20
+  invites, 20 messages; names 64, titles 128, texts 280, replies 500 characters; control characters refused.
+- Launch integration (Agent 2, A2-T09): `OverlayService::prepare_launch(package, title)` returns
+  `VGAMES_OVERLAY=1`, `VGAMES_OVERLAY_ENDPOINT=127.0.0.1:<port>` and `VGAMES_OVERLAY_TOKEN=<64 hex>` (or
+  nothing when the overlay is off); `GameStopped` ends the broker. The Guide/PS hold toggles the panel
+  while a game with the overlay runs.
