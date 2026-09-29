@@ -95,7 +95,7 @@ impl Broker {
         views: watch::Receiver<OverlayView>,
         panel: watch::Receiver<bool>,
         actions: mpsc::Sender<Action>,
-        events: mpsc::UnboundedSender<BrokerEvent>,
+        events: mpsc::Sender<BrokerEvent>,
         parent: &CancellationToken,
     ) -> std::io::Result<Self> {
         let listener = TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0)).await?;
@@ -124,7 +124,7 @@ struct Task {
     views: watch::Receiver<OverlayView>,
     panel: watch::Receiver<bool>,
     actions: mpsc::Sender<Action>,
-    events: mpsc::UnboundedSender<BrokerEvent>,
+    events: mpsc::Sender<BrokerEvent>,
     stop: CancellationToken,
 }
 
@@ -146,6 +146,14 @@ async fn write_frame(stream: &mut TcpStream, msg: &ToRenderer) -> Result<(), Fra
 }
 
 impl Task {
+    /// Reports a state change; dropped when the watcher is behind (the queue is bounded).
+    /// A lost `Stopped` is still seen: the channel closes when this task ends.
+    fn event(&self, event: BrokerEvent) {
+        if self.events.try_send(event).is_err() {
+            tracing::debug!("overlay broker event dropped");
+        }
+    }
+
     async fn run(mut self, first: TcpListener) {
         let mut listener = Some(first);
         let mut failures = 0u32;
@@ -159,7 +167,7 @@ impl Task {
                         continue;
                     }
                     None => {
-                        let _ = self.events.send(BrokerEvent::Stopped);
+                        self.event(BrokerEvent::Stopped);
                         return;
                     }
                 }
@@ -180,19 +188,19 @@ impl Task {
                 Ok(Ok(kind)) => {
                     // One renderer at a time: stop listening while it is served.
                     drop(l);
-                    let _ = self.events.send(BrokerEvent::Connected(kind));
+                    self.event(BrokerEvent::Connected(kind));
                     let stopped = self.serve(stream).await;
-                    let _ = self.events.send(BrokerEvent::Disconnected);
+                    self.event(BrokerEvent::Disconnected);
                     if stopped {
                         return;
                     }
                 }
                 Ok(Err(_)) | Err(_) => {
                     failures += 1;
-                    let _ = self.events.send(BrokerEvent::AuthFailed);
+                    self.event(BrokerEvent::AuthFailed);
                     tracing::warn!(failures, "overlay handshake refused");
                     if failures >= MAX_AUTH_FAILURES {
-                        let _ = self.events.send(BrokerEvent::Stopped);
+                        self.event(BrokerEvent::Stopped);
                         return;
                     }
                     listener = Some(l);
@@ -349,14 +357,14 @@ mod tests {
         views: watch::Sender<OverlayView>,
         panel: watch::Sender<bool>,
         actions: mpsc::Receiver<Action>,
-        events: mpsc::UnboundedReceiver<BrokerEvent>,
+        events: mpsc::Receiver<BrokerEvent>,
     }
 
     async fn rig() -> Rig {
         let (views, vrx) = watch::channel(OverlayView::default());
         let (panel, prx) = watch::channel(false);
         let (atx, actions) = mpsc::channel(8);
-        let (etx, events) = mpsc::unbounded_channel();
+        let (etx, events) = mpsc::channel(super::super::BROKER_EVENTS);
         let broker = Broker::start(vrx, prx, atx, etx, &CancellationToken::new())
             .await
             .unwrap();
@@ -545,6 +553,41 @@ mod tests {
         .await
         .unwrap();
         assert!(matches!(res, Err(_) | Ok(0)));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn events_nobody_reads_are_dropped_and_never_block_the_broker() {
+        let mut r = rig().await;
+        let (addr, token) = (r.broker.endpoint.addr, r.token());
+        let cycles = super::super::BROKER_EVENTS * 3;
+        // A renderer that keeps coming back (each cycle queues Connected + Disconnected);
+        // nobody reads the events meanwhile.
+        tokio::task::spawn_blocking(move || {
+            for _ in 0..cycles {
+                let mut s = reconnect(addr, token);
+                assert!(matches!(read(&mut s), ToRenderer::Welcome { .. }));
+                next_view(&mut s);
+            }
+        })
+        .await
+        .unwrap();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let mut queued = 0;
+        while r.events.try_recv().is_ok() {
+            queued += 1;
+        }
+        assert_eq!(queued, super::super::BROKER_EVENTS);
+        // Still serving.
+        tokio::task::spawn_blocking(move || {
+            let mut s = reconnect(addr, token);
+            assert!(matches!(read(&mut s), ToRenderer::Welcome { .. }));
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            r.event().await,
+            BrokerEvent::Connected(RendererKind::Vulkan)
+        );
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

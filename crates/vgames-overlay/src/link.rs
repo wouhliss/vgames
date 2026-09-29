@@ -460,6 +460,20 @@ mod tests {
     }
 
     #[test]
+    fn queued_actions_are_bounded_and_extra_ones_dropped() {
+        let link = Link::new();
+        for _ in 0..MAX_QUEUED_ACTIONS * 3 {
+            link.act(Action::OpenLauncher);
+        }
+        assert_eq!(link.take_actions().len(), MAX_QUEUED_ACTIONS);
+        assert!(link.take_actions().is_empty());
+        // A dropped link forgets what it could not send.
+        link.act(Action::OpenLauncher);
+        link.disconnected();
+        assert!(link.take_actions().is_empty());
+    }
+
+    #[test]
     fn the_environment_must_name_a_loopback_broker_and_a_token() {
         let hex = protocol::token_hex(&TOKEN);
         let ok = Endpoint::from_vars(Some("1"), Some("127.0.0.1:4000"), Some(&hex)).unwrap();
