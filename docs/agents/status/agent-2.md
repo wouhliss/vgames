@@ -35,7 +35,7 @@
 - A2-T08 catalog, transfer orchestration, queue history, and collection/queue commands remain.
 - A2-T09 launch: target resolution, launch plans and Linux tracking are done (below). Still to do: Windows
   (suspended spawn + pre-resume hook, Job Object + completion port) and macOS (kqueue `NOTE_EXIT`) trackers,
-  the cloud-save and controller hooks, and the launch commands (these need T07's trust state).
+  the cloud-save and controller hooks (T11/T12) and compat plans (T16/T17) in `launch::orchestrate`.
 
 - A2-T12 controllers: mapping tables and the emulation decision are done (below). Still to do: the SDL3 input thread,
   ViGEmBus/uinput/CoreHID backends, physical-pad hiding, rumble, the tester events, the latency benchmark and the soak test.
@@ -110,7 +110,7 @@
   - Deep links: `deeplink::parse` (strict grammar) routes `server/add` and `auth/callback`; A2-T10 adds the rest.
   - DB: migration `0003_servers_trust`; new desktop migrations go after it.
 - **Launch plans** (A2-T09, for Agent 4's invites and overlay, and my own T16/T17):
-  `vgames_desktop_lib::launch::{target::resolve, TargetChoice, JoinSecret, LaunchPlan::{Native, Proton, Wine},
+  `vgames_desktop_lib::launch::{target::resolve, TargetChoice, JoinSecret, TargetError, LaunchPlan::{Native, Proton, Wine},
   PreparedLaunch}`. `TargetChoice::for_invite(secret)` validates the join secret (05-social §5) and falls back
   to a normal launch when it is absent or invalid. `resolve` (blocking: call it from `spawn_blocking`) confines the
   executable and working directory to the install. `LaunchPlan::prepare(target, std::env::vars_os())` builds the
@@ -120,6 +120,12 @@
   canceller, killer}, ProcessIdentity {pid, start_time}, GameExit, TreeKiller::terminate(force)}`. `wait` blocks on a
   dedicated thread until the whole process group has exited, with no timers. Processes that call `setsid`/`setpgid`
   leave tracking.
+- **Launch commands** (A2-T09, for Agent 3): `gameLaunch(pkg, targetId)` → `LaunchError` (the contract's shape,
+  including `busy { state: BusyState }` and `save_conflict`), `gameStop(pkg)` → `AppError`. The argument is `pkg`,
+  not `package`. I updated the mock and the two test expectations, and removed the pending contract entries.
+  Internally `state.launcher.launch(package, TargetChoice)` applies the 1-per-3 s limit, install state, trust
+  (`servers.trust_state`), pre-launch checks and a native plan. For Agent 4's invites, call it with
+  `TargetChoice::for_invite(secret)`.
 - **Game sessions** (A2-T09, for Agents 3 and 4): `state.games: launch::GameSessions` with `start(package, root,
   prepared) -> pid`, `stop(package, force)`, `is_running`, `reattach`, `detach_all` (on exit). Publishes `GameStarted`
   and `GameStopped { code, stopped_by_user, session_seconds }`, adds playtime to `installs`

@@ -74,7 +74,7 @@ fn named_target_uses_its_working_dir() {
         &manifest(true),
         &TargetChoice::Target("nope".into()),
     );
-    assert!(matches!(unknown, Err(LaunchError::UnknownTarget(id)) if id == "nope"));
+    assert!(matches!(unknown, Err(TargetError::UnknownTarget(id)) if id == "nope"));
 }
 
 #[test]
@@ -122,7 +122,7 @@ fn missing_executable_is_refused() {
     let result = resolve(dir.path(), &manifest(false), &TargetChoice::Default);
     assert!(matches!(
         result,
-        Err(LaunchError::OutsideInstall {
+        Err(TargetError::OutsideInstall {
             what: "executable",
             ..
         })
@@ -141,7 +141,7 @@ fn executable_that_is_a_directory_is_refused() {
     );
     assert!(matches!(
         result,
-        Err(LaunchError::OutsideInstall {
+        Err(TargetError::OutsideInstall {
             what: "executable",
             ..
         })
@@ -164,7 +164,7 @@ fn symlinks_out_of_the_install_are_refused() {
     let result = resolve(dir.path(), &manifest(false), &TargetChoice::Default);
     assert!(matches!(
         result,
-        Err(LaunchError::OutsideInstall {
+        Err(TargetError::OutsideInstall {
             what: "executable",
             ..
         })
@@ -179,7 +179,7 @@ fn symlinks_out_of_the_install_are_refused() {
     let result = resolve(dir.path(), &manifest(false), &TargetChoice::Default);
     assert!(matches!(
         result,
-        Err(LaunchError::OutsideInstall {
+        Err(TargetError::OutsideInstall {
             what: "executable",
             ..
         })
@@ -197,7 +197,7 @@ fn symlinks_out_of_the_install_are_refused() {
     let result = resolve(dir.path(), &m, &TargetChoice::Target("tools".into()));
     assert!(matches!(
         result,
-        Err(LaunchError::OutsideInstall {
+        Err(TargetError::OutsideInstall {
             what: "working directory",
             ..
         })
@@ -210,5 +210,5 @@ fn package_without_targets_cannot_launch() {
     let mut m = manifest(false);
     m.launch = None;
     let result = resolve(dir.path(), &m, &TargetChoice::Default);
-    assert!(matches!(result, Err(LaunchError::NoTargets)));
+    assert!(matches!(result, Err(TargetError::NoTargets)));
 }

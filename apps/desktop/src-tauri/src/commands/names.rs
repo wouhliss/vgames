@@ -30,6 +30,8 @@ pub const MAIN_WINDOW_COMMANDS: &[&str] = &[
     "library_set_default",
     "library_remove",
     "shortcut_create",
+    "game_launch",
+    "game_stop",
     "updater_status",
     "updater_check",
     "updater_whats_new",

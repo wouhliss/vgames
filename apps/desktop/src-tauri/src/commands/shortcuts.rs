@@ -1,37 +1,12 @@
 //! Desktop shortcut commands (A2-T10).
 
-use serde::Serialize;
-use specta::Type;
 use tauri::State;
 
 use crate::db;
+use crate::error::AppError;
 use crate::events::PackageRef;
 use crate::shortcuts::{self, ShortcutFormat};
 use crate::state::AppState;
-
-/// The subset of the UI's `AppError` these commands produce.
-#[derive(Debug, Serialize, Type, thiserror::Error)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum ShortcutActionError {
-    #[error("The package is not installed, or there is no desktop folder")]
-    NotFound,
-    #[error("{detail}")]
-    Io {
-        path: Option<String>,
-        detail: String,
-    },
-    #[error("{detail}")]
-    Internal { detail: String },
-}
-
-impl ShortcutActionError {
-    fn internal(context: &str, error: &dyn std::error::Error) -> Self {
-        tracing::error!(error = %crate::error::DisplayChain(error), "{context}");
-        Self::Internal {
-            detail: context.to_owned(),
-        }
-    }
-}
 
 /// Creates a desktop shortcut that opens `vgames://launch/<package id>`.
 /// Returns the shortcut's path.
@@ -41,13 +16,13 @@ impl ShortcutActionError {
 pub async fn shortcut_create(
     state: State<'_, AppState>,
     pkg: PackageRef,
-) -> Result<String, ShortcutActionError> {
+) -> Result<String, AppError> {
     let package = pkg;
     let (_, dir_name) = db::installs::find(&state.db, package)
         .await
-        .map_err(|e| ShortcutActionError::internal("Cannot read the install", &e))?
-        .ok_or(ShortcutActionError::NotFound)?;
-    let desktop = shortcuts::desktop_dir().ok_or(ShortcutActionError::NotFound)?;
+        .map_err(|e| AppError::internal("read the install", &e))?
+        .ok_or(AppError::NotFound)?;
+    let desktop = shortcuts::desktop_dir().ok_or(AppError::NotFound)?;
     let package_id = package.package_id;
     let created = tokio::task::spawn_blocking(move || {
         // The install folder is named after the title (a slug); the catalog
@@ -61,26 +36,23 @@ pub async fn shortcut_create(
         )
     })
     .await
-    .map_err(|e| ShortcutActionError::internal("Cannot create the shortcut", &e))?;
+    .map_err(|e| AppError::internal("create the shortcut", &e))?;
     let path = match created {
         Ok(path) => path,
         Err(shortcuts::ShortcutError::Io { path, source, .. }) => {
             tracing::warn!(%source, "cannot create a desktop shortcut");
-            return Err(ShortcutActionError::Io {
+            return Err(AppError::Io {
                 path: Some(path.to_string_lossy().into_owned()),
                 detail: "Cannot write the shortcut".into(),
             });
         }
         Err(error) => {
-            return Err(ShortcutActionError::internal(
-                "Cannot create the shortcut",
-                &error,
-            ));
+            return Err(AppError::internal("create the shortcut", &error));
         }
     };
     db::shortcuts::add(&state.db, package, path.clone())
         .await
-        .map_err(|e| ShortcutActionError::internal("Cannot record the shortcut", &e))?;
+        .map_err(|e| AppError::internal("record the shortcut", &e))?;
     Ok(path.to_string_lossy().into_owned())
 }
 

@@ -111,3 +111,44 @@ pub async fn find(
     })
     .await
 }
+
+/// What a launch needs from an install row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InstallRow {
+    pub library_path: std::path::PathBuf,
+    pub root: std::path::PathBuf,
+    /// `installs.state` (`installed`, `installing`, …).
+    pub state: String,
+    pub version_id: String,
+    pub sequence: i64,
+    pub platform: String,
+}
+
+pub async fn row(db: &Db, package: PackageRef) -> Result<Option<InstallRow>, DbError> {
+    db.call(move |conn| {
+        let mut statement = conn.prepare(
+            "SELECT l.path, i.dir_name, i.state, i.version_id, i.sequence, i.platform
+               FROM installs i JOIN libraries l ON l.id = i.library_id
+              WHERE i.server_id = ?1 AND i.package_id = ?2",
+        )?;
+        let mut rows = statement.query([
+            package.server_id.to_string(),
+            package.package_id.to_string(),
+        ])?;
+        let Some(row) = rows.next()? else {
+            return Ok(None);
+        };
+        let library: String = row.get(0)?;
+        let dir: String = row.get(1)?;
+        let library_path = std::path::PathBuf::from(library);
+        Ok(Some(InstallRow {
+            root: library_path.join(dir),
+            library_path,
+            state: row.get(2)?,
+            version_id: row.get(3)?,
+            sequence: row.get(4)?,
+            platform: row.get(5)?,
+        }))
+    })
+    .await
+}

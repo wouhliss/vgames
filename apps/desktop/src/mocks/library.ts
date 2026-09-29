@@ -449,7 +449,7 @@ export function libraryHandlers(
     },
 
     game_launch: (args) => {
-      const pkg = state.installs.find((i) => sameRef(i.package, args.package));
+      const pkg = state.installs.find((i) => sameRef(i.package, args.pkg));
       if (!pkg) fail({ kind: "not_installed" } satisfies LaunchError);
       const forcedError = state.launchErrors[pkg.package.package_id];
       if (forcedError) fail(forcedError);
@@ -468,7 +468,7 @@ export function libraryHandlers(
       return null;
     },
     game_stop: (args) => {
-      const pkg = find(args.package);
+      const pkg = find(args.pkg);
       update(pkg.package, { running: false });
       void events.gameStopped.emit({
         package: pkg.package,
