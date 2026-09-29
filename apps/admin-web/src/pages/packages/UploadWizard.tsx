@@ -542,7 +542,7 @@ function LaunchStep({
   );
 }
 
-function KeyStep({
+export function KeyStep({
   keys,
   unlocked,
   onUnlocked,

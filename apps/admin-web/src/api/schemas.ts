@@ -261,3 +261,35 @@ export const UploadTargetSchema = contract<Schemas["UploadTarget"]>()(
   }),
 );
 export type UploadTarget = z.infer<typeof UploadTargetSchema>;
+
+// ---------------------------------------------------------------- compat profiles (A3-T16)
+
+export const ServerIdSchema = z.object({ server_id: Uuid });
+
+export const SignatureEnvelopeSchema = contract<Schemas["SignatureEnvelope"]>()(
+  z.object({
+    format: z.literal("vgames.sig/1"),
+    alg: z.literal("ed25519"),
+    context: z.enum(["vgames/manifest/v1", "vgames/compat/v1"]),
+    key_id: z.string().regex(/^[0-9a-f]{32}$/),
+    payload_blake3: z.string().regex(/^[0-9a-f]{64}$/),
+    signature: z.string(),
+  }),
+);
+
+export const CompatStatusSchema = z.enum(["verified", "playable", "unsupported", "untested"]);
+export type CompatStatus = z.infer<typeof CompatStatusSchema>;
+
+export const SignedCompatProfileSchema = contract<Schemas["SignedCompatProfile"]>()(
+  z.object({
+    target: z.enum(["linux", "macos"]),
+    revision: z.number().int().min(1),
+    status: CompatStatusSchema,
+    document: z.string(),
+    signature: SignatureEnvelopeSchema,
+    created_at: Timestamp,
+  }),
+);
+export type SignedCompatProfile = z.infer<typeof SignedCompatProfileSchema>;
+
+export const CompatProfilesSchema = z.object({ items: z.array(SignedCompatProfileSchema) });

@@ -157,6 +157,8 @@ export async function handlePackRequest(state: PackState, req: PackRequest): Pro
         if (last) state.cursors.delete(req.pack);
         return { kind: "piece", offset, bytes: piece, last };
       }
+      case "hash":
+        return { kind: "hash", blake3: state.lib.hashHex(req.bytes) };
       case "manifest": {
         const packer = state.packer;
         if (!packer) return { kind: "error", code: "internal", message: "no plan" };

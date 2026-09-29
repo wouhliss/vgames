@@ -183,7 +183,15 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   page reload mid-upload, then resume and complete**, wrong passphrase, key not in the trust bundle (422
   `publisher_key_untrusted`), **a 100,000-file folder** (planned in the worker, < 100 rows in the DOM, input stays
   responsive). The 2 GB run against the real API + fs storage is for the nightly e2e workflow (not run here).
-  Next: the Compatibility tab (signed compat profiles).
+- A3-T16 (part 2: Compatibility tab). One editor per target, Linux (Proton) and macOS (Wine): status, notes (plain text,
+  2,000), Windows build and version range, preferred runtimes, minimum runtime version, umu id (Linux; the umu id from
+  the Steam candidate and the ProtonDB tier are shown as hints), graphics backends in order (macOS), env and DLL
+  overrides as lines, winetricks from the `vgames-core` allowlist. Every `vgames-core::compat` rule is checked before
+  signing (env key syntax and the launcher-owned/denied names like `LD_PRELOAD`, `STEAM_COMPAT_*`; DLL names and load
+  orders; runtime ids; duplicates). Saving builds the `vgames.compat/1` document with the next revision, hashes it in the
+  pack worker, signs it in the key worker (`vgames/compat/v1`, the same unlocked publisher key flow as uploads) and PUTs
+  it; 409 (newer revision published meanwhile) and 422 (untrusted key, invalid profile) are explained. The current
+  revision is shown read-only. Tests: 5 Vitest + an e2e sign-and-publish in the real key worker, axe on both tabs.
 
 ## In progress
 - A3-T07 — Settings, in parts. **Part 1** ([#52](https://github.com/wouhliss/vgames/pull/52), merged): one URL per section (`/settings/<section>`, a section list that
@@ -376,6 +384,10 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
 
 ## Blockers / contract questions
 - None blocking.
+- **For Agent 1 (compat history):** A3-T16 asks for a read-only revision history per compat target, but the API only
+  serves the latest profile per target (`GET /v1/packages/{id}/compat`, and only for published packages). Proposal:
+  `GET /v1/admin/packages/{id}/compat/{target}` → all revisions (newest first). Until then the tab shows the current
+  revision only.
 - **For Agent 2 (library commands, A2-T08):** the generated `library_remove` returns `LibraryRemovalError` without
   the requested `is_default`. Can the default library be removed? Settings → Storage offers Remove on it and says
   "make another one the default first" only if the core refuses with `is_default`. My pending library entries in

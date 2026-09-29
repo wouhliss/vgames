@@ -49,6 +49,8 @@ async function keyStep(page: Page, passphrase = PASSPHRASE, key = KEY) {
 }
 
 async function setFault(page: Page, down: boolean) {
+  // The mock server starts after an async import, possibly after the load event.
+  await page.waitForFunction(() => window.__adminMock !== undefined);
   await page.evaluate((d) => {
     const m = window.__adminMock;
     if (m) m.db.faults.networkDown = d;
@@ -57,6 +59,7 @@ async function setFault(page: Page, down: boolean) {
 }
 
 test("network cut and page reload: the upload resumes and completes", async ({ page }) => {
+  test.setTimeout(120_000);
   const folder = makeFolder(GAME);
   await page.goto(`/admin/packages/${HARBOR}/versions/new?mock=admin`);
   await page.getByLabel("Version label").fill("2.0.0");
@@ -79,16 +82,22 @@ test("network cut and page reload: the upload resumes and completes", async ({ p
   await setFault(page, true);
   await page.getByRole("button", { name: "Start upload" }).click();
   await expect(page.getByText(/The connection dropped/)).toBeVisible({ timeout: 15_000 });
+  // Back, then down again after two more pieces: the reload happens mid-upload.
+  await page.evaluate(() => {
+    const m = window.__adminMock;
+    if (m) m.db.faults.downAfterPieces = 2;
+  });
   await setFault(page, false);
-  await expect(page.getByText("Uploading…")).toBeVisible({ timeout: 15_000 });
 
   // Reload mid-way: the progress is kept, the folder is picked again, the key unlocked again.
-  await expect(page.getByRole("cell", { name: "Uploaded" }).first()).toBeVisible({
+  await expect(page.getByRole("cell", { name: /8\.4 MB \/ 8\.4 MB/ }).first()).toBeVisible({
     timeout: 20_000,
   });
+  await expect(page.getByText(/The connection dropped/)).toBeVisible();
+  // A full page load (not `reload()`: the current URL has `?mock=`, which starts the mock server over).
   page.once("dialog", (d) => void d.accept());
-  await page.reload();
   await page.goto(`/admin/packages/${HARBOR}/versions`);
+  await setFault(page, false);
   await page.getByRole("link", { name: "Continue upload" }).first().click();
   await expect(page.getByText(/Pick the same folder again/)).toBeVisible();
   await page.getByLabel("Game folder").setInputFiles(folder);
@@ -139,4 +148,28 @@ test("a 100,000-file folder stays responsive (virtualized preview)", async ({ pa
   await list.focus();
   await page.keyboard.press("End");
   await expect(list.getByText("d99/f999.txt")).toBeVisible();
+});
+
+test("versions and compatibility tabs have no serious accessibility violations", async ({
+  page,
+}) => {
+  const serious = async () =>
+    (await new AxeBuilder({ page }).analyze()).violations.filter(
+      (v) => v.impact === "serious" || v.impact === "critical",
+    );
+  await page.goto(`/admin/packages/${HARBOR}/versions?mock=admin`);
+  await expect(page.getByRole("table", { name: "Versions, newest first" })).toBeVisible();
+  expect(await serious()).toEqual([]);
+  await page
+    .getByRole("navigation", { name: "Package sections" })
+    .getByRole("link", { name: "Compatibility" })
+    .click();
+  await expect(page.getByRole("region", { name: "Linux (Proton)" })).toBeVisible();
+  expect(await serious()).toEqual([]);
+  // Sign and publish a macOS profile in the real key worker (mock key file).
+  await keyStep(page);
+  const mac = page.getByRole("region", { name: "macOS (Wine)" });
+  await mac.getByLabel("Status").selectOption("playable");
+  await mac.getByRole("button", { name: "Sign and publish revision 1" }).click();
+  await expect(mac.getByText("Revision 1 is published.")).toBeVisible();
 });

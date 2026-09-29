@@ -2,6 +2,7 @@
 // The same handlers power `vite --mode mock`, the Vitest suites and the Playwright MSW suite.
 import type { Schemas } from "@vgames/api-client";
 import { HttpResponse, http } from "msw";
+import { compatHandlers } from "./compat";
 import { currentUser, IDS, type MockDb } from "./db";
 import { metadataHandlers } from "./metadata";
 import { packageHandlers } from "./packages";
@@ -85,5 +86,6 @@ export function createHandlers(db: MockDb) {
     ...packageHandlers(db),
     ...metadataHandlers(db),
     ...versionHandlers(db),
+    ...compatHandlers(db),
   ];
 }

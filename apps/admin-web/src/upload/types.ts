@@ -72,7 +72,9 @@ export type PackRequest =
   | { kind: "plan"; files: PlannedFile[]; directories: string[]; blobs: File[] }
   | { kind: "open"; pack: number; from: number }
   | { kind: "next"; pack: number }
-  | { kind: "manifest"; identity: ManifestIdentity; execution: Execution | undefined };
+  | { kind: "manifest"; identity: ManifestIdentity; execution: Execution | undefined }
+  /** BLAKE3 of small documents (compat profiles). */
+  | { kind: "hash"; bytes: Uint8Array };
 
 export type PackReply =
   | { kind: "planned"; summary: PlanSummary }
@@ -81,6 +83,7 @@ export type PackReply =
   /** Stored bytes of the pack starting at `offset`; `last` when the pack is complete. */
   | { kind: "piece"; offset: number; bytes: Uint8Array; last: boolean }
   | { kind: "manifest"; bytes: Uint8Array; blake3: string }
+  | { kind: "hash"; blake3: string }
   | {
       kind: "error";
       code: "file_changed" | "unreadable" | "wasm_missing" | "internal";

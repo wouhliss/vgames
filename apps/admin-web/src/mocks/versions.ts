@@ -164,6 +164,13 @@ export function versionHandlers(db: MockDb) {
       const end = Number(piece[2]);
       if (start !== state.received || end - start + 1 !== body.byteLength) return reply(); // out of order: tell the client where we are
       state.received = end + 1;
+      if (db.faults.downAfterPieces !== undefined) {
+        db.faults.downAfterPieces -= 1;
+        if (db.faults.downAfterPieces <= 0) {
+          db.faults.networkDown = true;
+          delete db.faults.downAfterPieces;
+        }
+      }
       if (piece[3] !== "*") state.total = Number(piece[3]);
       if (state.total !== null && state.received === state.total) state.complete = true;
       return reply();

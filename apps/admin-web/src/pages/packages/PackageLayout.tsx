@@ -22,6 +22,7 @@ const TABS = [
   { to: "metadata", label: "Metadata", end: false },
   { to: "images", label: "Images", end: false },
   { to: "versions", label: "Versions", end: false },
+  { to: "compatibility", label: "Compatibility", end: false },
 ];
 
 export function PackageLayout() {

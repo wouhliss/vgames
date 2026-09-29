@@ -44,7 +44,15 @@ export interface MockDb {
   /** How verification of a version ends ("ok" by default). */
   verifyOutcome: Record<string, "ok" | "fail">;
   /** Test switches: the next N upload-session start URLs are already expired; GCS answers 503 N times. */
-  faults: { expiredStarts: number; gcsErrors: number; networkDown?: boolean };
+  faults: {
+    expiredStarts: number;
+    gcsErrors: number;
+    networkDown?: boolean;
+    /** The network goes down after this many more accepted pieces. */
+    downAfterPieces?: number;
+  };
+  /** Published compat profiles per package id (all revisions). */
+  compat: Record<string, Schemas["SignedCompatProfile"][]>;
 }
 
 export function createDb(role: Role | null = "admin"): MockDb {
@@ -100,6 +108,7 @@ export function createDb(role: Role | null = "admin"): MockDb {
     trustedKeys: { [MOCK_KEY_ID]: IDS.admin, [OTHER_KEY_ID]: IDS.owner },
     verifyOutcome: {},
     faults: { expiredStarts: 0, gcsErrors: 0 },
+    compat: {},
   };
 }
 

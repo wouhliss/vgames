@@ -1,6 +1,7 @@
 import { createBrowserRouter, Navigate, type RouteObject } from "react-router";
 import { LoginPage } from "../pages/LoginPage";
 import { Placeholder } from "../pages/Placeholder";
+import { CompatTab } from "../pages/packages/CompatTab";
 import { ImagesTab } from "../pages/packages/ImagesTab";
 import { MetadataTab } from "../pages/packages/MetadataTab";
 import { PackageCreate } from "../pages/packages/PackageCreate";
@@ -29,6 +30,7 @@ export const routes: RouteObject[] = [
           { path: "metadata", Component: MetadataTab },
           { path: "images", Component: ImagesTab },
           { path: "versions", Component: VersionsTab },
+          { path: "compatibility", Component: CompatTab },
           { path: "versions/new", Component: UploadWizard },
           { path: "versions/:versionId/upload", Component: UploadWizard },
         ],
