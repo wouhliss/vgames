@@ -93,51 +93,57 @@ export function TrustPage() {
           versions when it expires: sign and upload a new one before then.
         </p>
       ) : null}
-      <div className="table-wrap">
-        <table>
-          <caption className="visually-hidden">Publisher keys</caption>
-          <thead>
-            <tr>
-              <th scope="col">Key</th>
-              <th scope="col">Holder</th>
-              <th scope="col">Valid</th>
-              <th scope="col">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {keys.data.items.map((k) => {
-              const left = daysLeft(k.not_after);
-              return (
-                <tr key={k.key_id}>
-                  <th scope="row">
-                    {k.label} <div className="mono muted">{k.key_id}</div>
-                  </th>
-                  <td>{k.holder.display_name ?? k.holder.username}</td>
-                  <td>
-                    {when(k.not_before)} – {when(k.not_after)}
-                  </td>
-                  <td>
-                    {k.revoked_at ? (
-                      <>
-                        <span className="badge">Revoked</span> {when(k.revoked_at)}
-                        {k.revocation_reason ? (
-                          <div className="muted">{k.revocation_reason}</div>
-                        ) : null}
-                      </>
-                    ) : left < 0 ? (
-                      <span className="badge">Expired</span>
-                    ) : left < WARN_DAYS ? (
-                      <span className="field-error">Expires in {left} days</span>
-                    ) : (
-                      "Valid"
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      {keys.data.items.length === 0 ? (
+        <p role="status">
+          No publisher keys yet. Upload a trust bundle that lists them to publish packages.
+        </p>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <caption className="visually-hidden">Publisher keys</caption>
+            <thead>
+              <tr>
+                <th scope="col">Key</th>
+                <th scope="col">Holder</th>
+                <th scope="col">Valid</th>
+                <th scope="col">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {keys.data.items.map((k) => {
+                const left = daysLeft(k.not_after);
+                return (
+                  <tr key={k.key_id}>
+                    <th scope="row">
+                      {k.label} <div className="mono muted">{k.key_id}</div>
+                    </th>
+                    <td>{k.holder.display_name ?? k.holder.username}</td>
+                    <td>
+                      {when(k.not_before)} – {when(k.not_after)}
+                    </td>
+                    <td>
+                      {k.revoked_at ? (
+                        <>
+                          <span className="badge">Revoked</span> {when(k.revoked_at)}
+                          {k.revocation_reason ? (
+                            <div className="muted">{k.revocation_reason}</div>
+                          ) : null}
+                        </>
+                      ) : left < 0 ? (
+                        <span className="badge">Expired</span>
+                      ) : left < WARN_DAYS ? (
+                        <span className="field-error">Expires in {left} days</span>
+                      ) : (
+                        "Valid"
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
       {role === "owner" ? (
         <form onSubmit={(e) => void upload(e)} aria-label="Upload a trust bundle" noValidate>
           <h2>Upload a new trust bundle</h2>

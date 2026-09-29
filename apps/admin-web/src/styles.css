@@ -412,3 +412,9 @@ img.asset,
 progress {
   width: 240px;
 }
+
+/* Windowed tables (tableWindow.tsx): the space of rows that aren't rendered. */
+tr.spacer td {
+  padding: 0;
+  border: 0;
+}

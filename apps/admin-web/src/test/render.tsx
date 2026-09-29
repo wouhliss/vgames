@@ -31,7 +31,7 @@ export function renderAt(
   server.use(...(options.overrides ?? []), ...createHandlers(db));
   const router = createMemoryRouter(routes, { initialEntries: [path] });
   // A 401 behaves as in the app: drafts are kept and the router goes to sign-in.
-  const qc = createQueryClient({ onNetworkError: () => {} });
+  const qc = createQueryClient({ onNetworkError: () => {} }, { retryDelayMs: 1 });
   setUnauthorizedHandler(() =>
     leaveForSignIn(
       qc,
