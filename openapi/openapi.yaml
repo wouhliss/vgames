@@ -2570,6 +2570,7 @@ components:
         chunk_count: { type: integer, minimum: 0 }
         pack_count: { type: integer, minimum: 1 }
         publisher_key_id: { type: string }
+        signature: { $ref: "#/components/schemas/SignatureEnvelope" }
         verify_progress: { type: number, minimum: 0, maximum: 1 }
         created_at: { $ref: "#/components/schemas/Timestamp" }
         created_by: { $ref: "#/components/schemas/UserPublic" }
