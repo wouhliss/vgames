@@ -53,6 +53,9 @@ type UnauthorizedHook = Box<dyn Fn(Uuid) + Send + Sync>;
 pub struct SessionSlot {
     tx: Arc<watch::Sender<Option<ServerSession>>>,
     unauthorized: Arc<Mutex<Option<UnauthorizedHook>>>,
+    /// How long a refused call waits for a refreshed token before giving up (zero: no
+    /// retry). Set by whoever refreshes tokens (the session bridge).
+    refresh_wait: Arc<Mutex<Duration>>,
 }
 
 impl Default for SessionSlot {
@@ -66,7 +69,49 @@ impl SessionSlot {
         Self {
             tx: Arc::new(watch::channel(None).0),
             unauthorized: Arc::new(Mutex::new(None)),
+            refresh_wait: Arc::new(Mutex::new(Duration::ZERO)),
         }
+    }
+
+    /// Lets refused calls wait up to `wait` for a refreshed token and retry once.
+    pub fn set_refresh_wait(&self, wait: Duration) {
+        *self
+            .refresh_wait
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = wait;
+    }
+
+    /// Reports `stale` as refused and waits for a new token for the same server and user.
+    /// `None` when nothing refreshes it in time, or the session changed identity or ended.
+    pub(crate) async fn refreshed(&self, stale: &ServerSession) -> Option<ServerSession> {
+        let wait = *self
+            .refresh_wait
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut rx = self.tx.subscribe();
+        self.report_unauthorized(stale.server_id);
+        if wait.is_zero() {
+            return None;
+        }
+        tokio::time::timeout(wait, async {
+            loop {
+                {
+                    let now = rx.borrow_and_update();
+                    match now.as_ref() {
+                        Some(s) if !s.same_identity(stale) => return None,
+                        None => return None,
+                        Some(s) if s.access_token != stale.access_token => return Some(s.clone()),
+                        Some(_) => {}
+                    }
+                }
+                if rx.changed().await.is_err() {
+                    return None;
+                }
+            }
+        })
+        .await
+        .ok()
+        .flatten()
     }
 
     /// Replaces the session (`None` when signed out).
@@ -114,5 +159,53 @@ pub struct SystemIdle;
 impl IdleSource for SystemIdle {
     fn idle_for(&self) -> Option<Duration> {
         super::idle::system_idle()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
+
+    use super::*;
+
+    fn session(user: u128, token: &str) -> ServerSession {
+        ServerSession {
+            server_id: Uuid::from_u128(1),
+            user_id: Uuid::from_u128(user),
+            base_url: "https://vgames.test/".parse().unwrap(),
+            access_token: Arc::new(Zeroizing::new(token.to_owned())),
+        }
+    }
+
+    #[tokio::test]
+    async fn refused_tokens_wait_for_a_refresh_of_the_same_session_only() {
+        let slot = SessionSlot::new();
+        let stale = session(2, "old");
+        slot.set(Some(stale.clone()));
+        // No refresher configured: report and give up at once.
+        assert!(slot.refreshed(&stale).await.is_none());
+
+        slot.set_refresh_wait(Duration::from_secs(5));
+        let s2 = slot.clone();
+        slot.on_unauthorized(move |_| s2.set(Some(session(2, "new"))));
+        let fresh = slot.refreshed(&stale).await.unwrap();
+        assert_eq!(fresh.access_token.as_str(), "new");
+
+        // The refresher signs another user in: not a retry for this call.
+        let s3 = slot.clone();
+        slot.on_unauthorized(move |_| s3.set(Some(session(3, "other"))));
+        assert!(slot.refreshed(&fresh).await.is_none());
+
+        // Signed out.
+        let s4 = slot.clone();
+        slot.on_unauthorized(move |_| s4.set(None));
+        slot.set(Some(stale.clone()));
+        assert!(slot.refreshed(&stale).await.is_none());
+
+        // Nobody refreshes: the wait ends.
+        slot.set_refresh_wait(Duration::from_millis(100));
+        slot.on_unauthorized(|_| {});
+        slot.set(Some(stale.clone()));
+        assert!(slot.refreshed(&stale).await.is_none());
     }
 }

@@ -164,7 +164,8 @@ enum Ended {
     AfterHello,
     /// Failed before `hello`.
     Failed,
-    /// The session was revoked (4001): wait for a new session.
+    /// The session was revoked (4001) or the ticket refused: wait for a new session or a
+    /// refreshed token.
     Revoked,
     /// The session changed identity or went away: reconnect at once.
     SessionChanged,
@@ -228,6 +229,7 @@ impl Task {
             };
             self.set_state(Some(session.server_id), state, None);
             let ended = self.connect_and_run(&session, &mut sessions).await;
+            let revoked = matches!(ended, Ended::Revoked);
             let wait = match ended {
                 Ended::Shutdown => return,
                 Ended::SessionChanged => {
@@ -266,7 +268,14 @@ impl Task {
                 () = self.network.notified() => {
                     tracing::debug!("network changed: reconnecting now");
                 }
-                r = wait_identity_change(&mut sessions, &session) => {
+                // Refused: a refreshed token for the same user also counts.
+                r = async {
+                    if revoked {
+                        wait_token_change(&mut sessions, &session).await
+                    } else {
+                        wait_identity_change(&mut sessions, &session).await
+                    }
+                } => {
                     if r.is_err() { return }
                     attempt = 0;
                 }
@@ -430,6 +439,23 @@ type WsStream =
 enum Connect {
     Unauthorized,
     Failed(String),
+}
+
+/// Resolves when the session goes away or changes in any way, a refreshed token included.
+async fn wait_token_change(
+    sessions: &mut watch::Receiver<Option<ServerSession>>,
+    current: &ServerSession,
+) -> Result<(), watch::error::RecvError> {
+    loop {
+        {
+            let now = sessions.borrow_and_update();
+            match now.as_ref() {
+                Some(s) if s.same_identity(current) && s.access_token == current.access_token => {}
+                _ => return Ok(()),
+            }
+        }
+        sessions.changed().await?;
+    }
 }
 
 /// Resolves when the session goes away or changes server/user (not on a token refresh).

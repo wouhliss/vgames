@@ -146,6 +146,21 @@ pub fn init(app: &AppHandle, state: &AppState) -> Result<(), SocialError> {
         Timing::default(),
         state.shutdown.child_token(),
     ))?;
+    // Refused calls wait up to 10 s for the bridge's refreshed token, then retry once.
+    service
+        .sessions()
+        .set_refresh_wait(std::time::Duration::from_secs(10));
+    let http = crate::api::http_client()
+        .map_err(|e| SocialError::internal("creating the HTTP client", &e))?;
+    super::session_bridge::spawn(
+        Arc::new(super::session_bridge::ServersSource {
+            servers: Arc::clone(&state.servers),
+            http,
+        }),
+        service.sessions().clone(),
+        &state.bus,
+        state.shutdown.child_token(),
+    );
     app.manage(service);
     Ok(())
 }

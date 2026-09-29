@@ -636,6 +636,15 @@ async fn switching_servers_signing_out_and_revoked_sessions() {
     h.service.sessions().set(Some(wrong));
     tokio::time::sleep(Duration::from_millis(300)).await;
     assert!(unauthorized.lock().unwrap().contains(&Uuid::from_u128(3)));
+    // The session manager refreshes the refused token (same server, same user): the socket
+    // connects again with it, without waiting for another identity.
+    let before = b.gw.connections.load(Ordering::SeqCst);
+    let mut fixed = b.session(Uuid::from_u128(3));
+    fixed.access_token = Arc::new(Zeroizing::new("token-b".into()));
+    h.service.sessions().set(Some(fixed));
+    let c = h.state(SocialConnectionState::Connected).await;
+    assert_eq!(c.server_id, Some(Uuid::from_u128(3)));
+    assert_eq!(b.gw.connections.load(Ordering::SeqCst), before + 1);
     h.shutdown.cancel();
 }
 
@@ -744,5 +753,25 @@ async fn friend_actions_and_local_blocks() {
         h.service.friend_code_create().await,
         Err(SocialError::Offline)
     );
+    h.shutdown.cancel();
+}
+
+#[tokio::test]
+async fn a_refused_call_retries_once_with_the_refreshed_token() {
+    let server = Server::start("token-new", 0).await;
+    let h = harness().await;
+    let slot = h.service.sessions().clone();
+    let mut stale = server.session(Uuid::from_u128(9));
+    stale.access_token = Arc::new(Zeroizing::new("token-old".into()));
+    {
+        // What the session bridge does: refresh the refused token and publish it.
+        let slot2 = slot.clone();
+        let fresh = server.session(Uuid::from_u128(9));
+        slot.on_unauthorized(move |_| slot2.set(Some(fresh.clone())));
+    }
+    slot.set_refresh_wait(Duration::from_secs(5));
+    slot.set(Some(stale));
+    assert!(h.service.friends_list().await.is_ok());
+    assert_eq!(slot.current().unwrap().access_token.as_str(), "token-new");
     h.shutdown.cancel();
 }
