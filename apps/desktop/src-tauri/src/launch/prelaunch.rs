@@ -94,9 +94,15 @@ impl Prelaunch {
     }
 
     /// Drops cached results for an install (after update, repair, move, uninstall).
+    /// Blocks briefly (one `canonicalize`).
     pub fn forget(&self, root: &Path) {
         lock(&self.installs).remove(root);
-        lock(&self.executables).retain(|path, _| !path.starts_with(root));
+        // Executables are cached under their canonical path (`\\?\` on
+        // Windows, links resolved), which `root` may not be.
+        let canonical = fs::canonicalize(root).ok();
+        lock(&self.executables).retain(|path, _| {
+            !path.starts_with(root) && canonical.as_ref().is_none_or(|c| !path.starts_with(c))
+        });
     }
 
     /// Steps 1 and 2.
