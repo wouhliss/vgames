@@ -36,6 +36,9 @@ use broker::{Broker, BrokerEvent};
 use hub::Hub;
 use model::{OverlayAction, PackageOverlay};
 
+/// Broker state changes waiting for the watcher (bounded; extra events are dropped).
+pub const BROKER_EVENTS: usize = 16;
+
 /// How long a launched game has to connect its in-game renderer before the fallback shows.
 pub const FALLBACK_AFTER: std::time::Duration = std::time::Duration::from_secs(20);
 
@@ -241,7 +244,7 @@ impl OverlayService {
             self.fallback_on(package);
             return Vec::new();
         }
-        let (etx, erx) = mpsc::unbounded_channel();
+        let (etx, erx) = mpsc::channel(BROKER_EVENTS);
         let broker = match Broker::start(
             self.inner.hub.subscribe(),
             self.inner.panel.subscribe(),
@@ -434,7 +437,7 @@ impl OverlayService {
         had
     }
 
-    async fn watch_broker(self, package: PackageRef, mut rx: mpsc::UnboundedReceiver<BrokerEvent>) {
+    async fn watch_broker(self, package: PackageRef, mut rx: mpsc::Receiver<BrokerEvent>) {
         let wait = *lock(&self.inner.fallback_after);
         let deadline = tokio::time::sleep(wait);
         tokio::pin!(deadline);
@@ -449,7 +452,11 @@ impl OverlayService {
                     connected_once = true;
                     continue;
                 }
-                e = rx.recv() => match e { Some(e) => e, None => return },
+                e = rx.recv() => match e {
+                    Some(e) => e,
+                    // The broker ended: a `Stopped` may have been dropped with a full queue.
+                    None => BrokerEvent::Stopped,
+                },
             };
             match event {
                 BrokerEvent::Connected(kind) => {
@@ -460,10 +467,11 @@ impl OverlayService {
                 BrokerEvent::Disconnected => tracing::info!("overlay renderer disconnected"),
                 BrokerEvent::AuthFailed => tracing::warn!("overlay connection refused"),
                 BrokerEvent::Stopped => {
-                    tracing::warn!("overlay broker stopped");
                     if lock(&self.inner.sessions).contains_key(&package) {
+                        tracing::warn!("overlay broker stopped");
                         self.fallback_on(package);
                     }
+                    return;
                 }
             }
         }
