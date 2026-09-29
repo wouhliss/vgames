@@ -4,6 +4,9 @@ import { HttpResponse, http } from "msw";
 import { type MockDb, SERVER_ID } from "./db";
 import { guard, problem } from "./handlers";
 
+/** The same made-up fingerprint as the launcher mocks. */
+const FINGERPRINT = "VG1-7K2M-Q9XD-4HT8-B3NW-RC5E-X1JP-V6GA-M0ZF";
+
 export function compatHandlers(db: MockDb) {
   const latest = (pkg: string) => {
     const out: Record<string, Schemas["SignedCompatProfile"]> = {};
@@ -21,7 +24,7 @@ export function compatHandlers(db: MockDb) {
         name: "Friday Night Games",
         api_versions: ["v1"],
         root_public_key: "AAAA",
-        root_key_fingerprint: "VG1-7K2M-Q9XD-4HT8-B3NW-RC5E-X1JP-V6GA-M0ZF",
+        root_key_fingerprint: FINGERPRINT,
         features: ["admin_web"],
       }),
     ),
