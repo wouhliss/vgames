@@ -79,7 +79,7 @@ Legend: 🔓 public · 👤 user · 🛡 admin · 👑 owner.
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
 | POST | `/v1/auth/discord/start` | 🔓 | Begin Discord login (desktop: PKCE; web: return_to) |
-| GET | `/v1/auth/discord/callback` | 🔓 | Discord redirect target (302 to `vgames://…` or `/admin/…`; a refused sign-in redirects with `error=<code>`) |
+| GET | `/v1/auth/discord/callback` | 🔓 | Discord redirect target (desktop: 200 page opening `vgames://…` and showing the code; web: 302 to `/admin/…`; a refusal carries `error=<code>`) |
 | POST | `/v1/auth/token` | 🔓 | Exchange login code (+ verifier) or refresh token |
 | POST | `/v1/auth/logout` | 👤 | Revoke current session |
 | GET | `/v1/me` | 👤 | Current user, role, device |

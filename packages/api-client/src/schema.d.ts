@@ -67,13 +67,16 @@ export interface paths {
         };
         /**
          * Discord OAuth2 redirect target
-         * @description Desktop flows redirect to `vgames://auth/callback?code=…&client_state=…` (with an HTML
-         *     fallback page showing a copyable code). Web flows set the session and CSRF cookies and
-         *     redirect to `return_to` under `/admin/`.
+         * @description Desktop flows answer `200` with an HTML page that opens
+         *     `vgames://auth/callback?code=…&client_state=…` itself (`<meta http-equiv="refresh">`)
+         *     and shows the code for the paste fallback when the deep link does not reach the launcher
+         *     (browsers never render a redirect body). `Cache-Control: no-store`, a CSP without scripts.
+         *     Web flows set the session and CSRF cookies and redirect (`302`) to `return_to` under
+         *     `/admin/`.
          *
-         *     A refused sign-in also redirects, with `error=<code>` instead of a code or cookies:
-         *     `vgames://auth/callback?error=<code>&client_state=…` (HTML fallback page with the reason)
-         *     or `/admin/login?error=<code>`. Codes: `access_denied` (cancelled in Discord),
+         *     A refused sign-in carries `error=<code>` instead of a code or cookies: the desktop page
+         *     opens `vgames://auth/callback?error=<code>&client_state=…` and states the reason; web
+         *     flows redirect to `/admin/login?error=<code>`. Codes: `access_denied` (cancelled in Discord),
          *     `registration_closed`, `not_allowlisted`, `user_disabled`, `sign_in_failed` (Discord
          *     rejected the code or could not be reached; start again). Only a missing, expired or
          *     reused `state` (no flow to return to) answers `400 invalid_state`.
@@ -2199,7 +2202,16 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Redirect to the launcher deep link or the admin UI (also for a refused sign-in) */
+            /** @description Desktop: a page that opens the launcher deep link and shows the login code (or the refusal reason) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
+                };
+            };
+            /** @description Web: redirect to the admin UI (also for a refused sign-in) */
             302: {
                 headers: {
                     Location?: string;
