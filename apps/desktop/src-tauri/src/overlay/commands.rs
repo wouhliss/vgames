@@ -59,6 +59,7 @@ pub fn init(app: &AppHandle, state: &AppState, social: SocialService, hub: Arc<H
     service.on_valve_tripped(move |package| {
         let _ = OverlayPackageDisabled { package }.emit(&handle);
     });
+    super::fallback::install(app, &service);
     let mut views = service.hub().subscribe();
     let handle = app.clone();
     let stop = state.shutdown.child_token();

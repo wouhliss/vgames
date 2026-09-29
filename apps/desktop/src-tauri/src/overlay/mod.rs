@@ -14,6 +14,7 @@
 
 pub mod broker;
 pub mod commands;
+pub mod fallback;
 pub mod hotkey;
 pub mod hub;
 pub mod model;
@@ -33,11 +34,51 @@ use broker::{Broker, BrokerEvent};
 use hub::Hub;
 use model::{OverlayAction, PackageOverlay};
 
+/// How long a launched game has to connect its in-game renderer before the fallback shows.
+pub const FALLBACK_AFTER: std::time::Duration = std::time::Duration::from_secs(20);
+
+/// How the overlay shows when it is not drawn inside the game (05-social §6.2–§6.3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Fallback {
+    /// macOS panel or an always-on-top window (Windows, X11).
+    Window,
+    /// OS notifications for toasts (Wayland: no window can stay above other apps).
+    Notifications,
+}
+
+/// The fallback this desktop supports.
+pub fn fallback_for_this_desktop() -> Fallback {
+    fallback_for(
+        cfg!(target_os = "linux"),
+        std::env::var_os("XDG_SESSION_TYPE").as_deref(),
+        std::env::var_os("WAYLAND_DISPLAY").is_some(),
+        std::env::var_os("DISPLAY").is_some(),
+    )
+}
+
+fn fallback_for(
+    linux: bool,
+    session_type: Option<&std::ffi::OsStr>,
+    wayland_display: bool,
+    x_display: bool,
+) -> Fallback {
+    if !linux {
+        return Fallback::Window;
+    }
+    let wayland = session_type.is_some_and(|t| t == "wayland") || (wayland_display && !x_display);
+    if wayland {
+        Fallback::Notifications
+    } else {
+        Fallback::Window
+    }
+}
+
 /// Actions waiting to run (renderer floods are dropped beyond this).
 const ACTION_QUEUE: usize = 32;
 
 type Callback = Box<dyn Fn() + Send + Sync>;
 type PackageCallback = Box<dyn Fn(PackageRef) + Send + Sync>;
+type FallbackCallback = Box<dyn Fn(Option<Fallback>) + Send + Sync>;
 
 struct Session {
     /// `None` when the broker could not start (the game runs without the overlay).
@@ -55,6 +96,11 @@ struct Inner {
     open_launcher: Mutex<Option<Callback>>,
     valve_tripped: Mutex<Option<PackageCallback>>,
     hotkeys: Mutex<hotkey::HotkeyState>,
+    /// Shows (`Some`) or hides (`None`) the fallback.
+    fallback: Mutex<Option<FallbackCallback>>,
+    /// Packages whose game shows the fallback instead of an in-game renderer.
+    fallback_for: Mutex<std::collections::HashSet<PackageRef>>,
+    fallback_after: Mutex<std::time::Duration>,
 }
 
 /// Cheap to clone.
@@ -90,6 +136,9 @@ impl OverlayService {
                 open_launcher: Mutex::new(None),
                 valve_tripped: Mutex::new(None),
                 hotkeys: Mutex::new(hotkey::HotkeyState::new()),
+                fallback: Mutex::new(None),
+                fallback_for: Mutex::new(std::collections::HashSet::new()),
+                fallback_after: Mutex::new(FALLBACK_AFTER),
             }),
         };
         tokio::spawn(service.clone().action_loop(rx, shutdown.clone()));
@@ -107,6 +156,33 @@ impl OverlayService {
         hk.host = Some(host);
         if let Ok(s) = hotkey::validate(accelerator) {
             hk.current = s;
+        }
+    }
+
+    /// Shows or hides the fallback (overlay window or notifications).
+    pub fn on_fallback(&self, f: impl Fn(Option<Fallback>) + Send + Sync + 'static) {
+        *lock(&self.inner.fallback) = Some(Box::new(f));
+    }
+
+    fn fallback_on(&self, package: PackageRef) {
+        let first = {
+            let mut set = lock(&self.inner.fallback_for);
+            let first = set.is_empty();
+            set.insert(package);
+            first
+        };
+        if first && let Some(f) = lock(&self.inner.fallback).as_ref() {
+            f(Some(fallback_for_this_desktop()));
+        }
+    }
+
+    fn fallback_off(&self, package: PackageRef) {
+        let last = {
+            let mut set = lock(&self.inner.fallback_for);
+            set.remove(&package) && set.is_empty()
+        };
+        if last && let Some(f) = lock(&self.inner.fallback).as_ref() {
+            f(None);
         }
     }
 
@@ -145,6 +221,13 @@ impl OverlayService {
         if !enabled {
             return Vec::new();
         }
+        lock(&self.inner.hotkeys).activate();
+        if cfg!(target_os = "macos") {
+            // Nothing is injected on macOS: the panel draws above fullscreen Spaces.
+            lock(&self.inner.sessions).insert(package, Session { _broker: None });
+            self.fallback_on(package);
+            return Vec::new();
+        }
         let (etx, erx) = mpsc::unbounded_channel();
         let broker = match Broker::start(
             self.inner.hub.subscribe(),
@@ -162,8 +245,7 @@ impl OverlayService {
             }
         };
         let env = broker.endpoint.env();
-        tokio::spawn(log_broker(erx));
-        lock(&self.inner.hotkeys).activate();
+        tokio::spawn(self.clone().watch_broker(package, erx));
         lock(&self.inner.sessions).insert(
             package,
             Session {
@@ -263,6 +345,7 @@ impl OverlayService {
                         self.set_panel(false);
                         lock(&self.inner.hotkeys).deactivate();
                     }
+                    self.fallback_off(stopped.package);
                     if had {
                         self.record_exit(stopped.package, stopped.exit).await;
                     }
@@ -331,13 +414,222 @@ impl OverlayService {
     }
 }
 
-async fn log_broker(mut rx: mpsc::UnboundedReceiver<BrokerEvent>) {
-    while let Some(e) = rx.recv().await {
-        match e {
-            BrokerEvent::Connected(kind) => tracing::info!(?kind, "overlay renderer connected"),
-            BrokerEvent::Disconnected => tracing::info!("overlay renderer disconnected"),
-            BrokerEvent::AuthFailed => tracing::warn!("overlay connection refused"),
-            BrokerEvent::Stopped => tracing::warn!("overlay broker stopped"),
+impl OverlayService {
+    /// Logs the broker and switches to the fallback when no in-game renderer shows up within
+    /// [`FALLBACK_AFTER`] (injection or layer failed or is off) or the broker gives up; a
+    /// renderer that connects later takes over again.
+    async fn watch_broker(self, package: PackageRef, mut rx: mpsc::UnboundedReceiver<BrokerEvent>) {
+        let wait = *lock(&self.inner.fallback_after);
+        let deadline = tokio::time::sleep(wait);
+        tokio::pin!(deadline);
+        let mut connected_once = false;
+        loop {
+            let event = tokio::select! {
+                () = &mut deadline, if !connected_once => {
+                    if lock(&self.inner.sessions).contains_key(&package) {
+                        tracing::info!("no in-game overlay renderer; using the fallback");
+                        self.fallback_on(package);
+                    }
+                    connected_once = true;
+                    continue;
+                }
+                e = rx.recv() => match e { Some(e) => e, None => return },
+            };
+            match event {
+                BrokerEvent::Connected(kind) => {
+                    tracing::info!(?kind, "overlay renderer connected");
+                    connected_once = true;
+                    self.fallback_off(package);
+                }
+                BrokerEvent::Disconnected => tracing::info!("overlay renderer disconnected"),
+                BrokerEvent::AuthFailed => tracing::warn!("overlay connection refused"),
+                BrokerEvent::Stopped => {
+                    tracing::warn!("overlay broker stopped");
+                    if lock(&self.inner.sessions).contains_key(&package) {
+                        self.fallback_on(package);
+                    }
+                }
+            }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing
+    )]
+
+    use std::ffi::OsStr;
+    use std::time::Duration;
+
+    use uuid::Uuid;
+    use vgames_overlay::protocol::{self, PROTOCOL_VERSION, RendererKind, ToBroker, ToRenderer};
+
+    use super::*;
+    use crate::events::{GameExit, GameStopped};
+    use crate::social::crypto::SecretKey32;
+    use crate::social::ports::{IdleSource, SessionSlot};
+    use crate::social::realtime::Timing;
+    use crate::social::store::Keys;
+
+    struct NoIdle;
+    impl IdleSource for NoIdle {
+        fn idle_for(&self) -> Option<Duration> {
+            None
+        }
+    }
+
+    async fn service() -> (
+        OverlayService,
+        EventBus,
+        mpsc::UnboundedReceiver<Option<Fallback>>,
+        mpsc::UnboundedReceiver<PackageRef>,
+    ) {
+        let db = Db::open_in_memory().unwrap();
+        let bus = EventBus::new();
+        let hub = Arc::new(Hub::new());
+        let stop = CancellationToken::new();
+        let social = SocialService::start(
+            SessionSlot::new(),
+            db.clone(),
+            &bus,
+            hub.clone(),
+            Arc::new(NoIdle),
+            Arc::new(
+                Keys::new(
+                    SecretKey32::from_bytes([1; 32]),
+                    &SecretKey32::from_bytes([2; 32]),
+                )
+                .unwrap(),
+            ),
+            "Test PC".into(),
+            Timing::default(),
+            stop.clone(),
+        )
+        .await
+        .unwrap();
+        let overlay = OverlayService::start(db, social, hub, &bus, stop);
+        *lock(&overlay.inner.fallback_after) = Duration::from_millis(300);
+        let (ftx, frx) = mpsc::unbounded_channel();
+        overlay.on_fallback(move |m| {
+            let _ = ftx.send(m);
+        });
+        let (vtx, vrx) = mpsc::unbounded_channel();
+        overlay.on_valve_tripped(move |p| {
+            let _ = vtx.send(p);
+        });
+        (overlay, bus, frx, vrx)
+    }
+
+    async fn next<T>(rx: &mut mpsc::UnboundedReceiver<T>) -> T {
+        tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .expect("in time")
+            .unwrap()
+    }
+
+    fn crash(package: PackageRef) -> AppEvent {
+        AppEvent::GameStopped(GameStopped {
+            package,
+            exit: GameExit {
+                code: Some(-1),
+                stopped_by_user: false,
+                session_seconds: 4,
+            },
+        })
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn launch_fallback_renderer_takeover_and_the_safety_valve() {
+        let (overlay, bus, mut fallback, mut tripped) = service().await;
+        let game = PackageRef {
+            server_id: Uuid::from_u128(1),
+            package_id: Uuid::from_u128(2),
+        };
+        let env = overlay.prepare_launch(game, "Arena").await;
+        if cfg!(target_os = "macos") {
+            assert!(env.is_empty());
+            assert!(next(&mut fallback).await.is_some());
+            return;
+        }
+        assert_eq!(env.len(), 3);
+        // No renderer shows up: the fallback appears.
+        assert_eq!(next(&mut fallback).await, Some(fallback_for_this_desktop()));
+
+        // A renderer connects late: the fallback goes away.
+        let addr: std::net::SocketAddr = env[1].1.parse().unwrap();
+        let token = protocol::parse_token(&env[2].1).unwrap();
+        let renderer = tokio::task::spawn_blocking(move || {
+            let mut s = std::net::TcpStream::connect(addr).unwrap();
+            protocol::write_frame(
+                &mut s,
+                &ToBroker::Hello {
+                    version: PROTOCOL_VERSION,
+                    token,
+                    renderer: RendererKind::D3d11,
+                },
+            )
+            .unwrap();
+            assert!(matches!(
+                protocol::read_frame::<ToRenderer>(&mut s).unwrap(),
+                ToRenderer::Welcome { .. }
+            ));
+            s
+        })
+        .await
+        .unwrap();
+        assert_eq!(next(&mut fallback).await, None);
+        // The panel toggles only while a game runs; the renderer is told.
+        overlay.toggle_panel();
+        assert!(overlay.hub().current().visible_panel);
+        drop(renderer);
+
+        // Two quick crashes in a row with the overlay on: turned off for this game.
+        bus.publish(crash(game));
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert!(
+            !overlay.hub().current().visible_panel,
+            "the panel closes with the last game"
+        );
+        assert_eq!(overlay.prepare_launch(game, "Arena").await.len(), 3);
+        bus.publish(crash(game));
+        assert_eq!(next(&mut tripped).await, game);
+        let list = overlay.packages().await.unwrap();
+        assert_eq!(list[0].title, "Arena");
+        assert!(!list[0].enabled);
+        assert!(list[0].disabled_by_safety_valve_at.is_some());
+        // Off: no overlay environment for the next launch.
+        assert!(overlay.prepare_launch(game, "Arena").await.is_empty());
+        // One click turns it back on.
+        overlay.package_set(game, true).await.unwrap();
+        assert!(
+            overlay.packages().await.unwrap()[0]
+                .disabled_by_safety_valve_at
+                .is_none()
+        );
+        assert_eq!(overlay.prepare_launch(game, "Arena").await.len(), 3);
+    }
+
+    #[test]
+    fn wayland_gets_notifications_everything_else_a_window() {
+        assert_eq!(fallback_for(false, None, false, false), Fallback::Window);
+        assert_eq!(
+            fallback_for(true, Some(OsStr::new("x11")), false, true),
+            Fallback::Window
+        );
+        assert_eq!(
+            fallback_for(true, Some(OsStr::new("wayland")), true, true),
+            Fallback::Notifications
+        );
+        assert_eq!(
+            fallback_for(true, None, true, false),
+            Fallback::Notifications
+        );
+        // XWayland with a Wayland socket but an X display and no session type: a window works.
+        assert_eq!(fallback_for(true, None, true, true), Fallback::Window);
     }
 }
