@@ -263,7 +263,8 @@ pub struct CallbackParams {
     security(()),
     params(CallbackParams),
     responses(
-        (status = 302, description = "Redirect to the launcher deep link or the admin UI (also for a refused sign-in)", headers(("Location" = String))),
+        (status = 200, description = "Desktop: a page that opens the launcher deep link and shows the login code (or the refusal reason)", content_type = "text/html", body = String),
+        (status = 302, description = "Web: redirect to the admin UI (also for a refused sign-in)", headers(("Location" = String))),
         BadRequest
     )
 )]
@@ -371,15 +372,10 @@ pub async fn callback(
             q.append_pair("client_state", cs);
         }
     }
-    let body = fallback_page(deep_link.as_str(), &login_code);
-    let mut resp = (StatusCode::FOUND, Html(body)).into_response();
-    resp.headers_mut().insert(
-        header::LOCATION,
-        HeaderValue::from_str(deep_link.as_str()).map_err(ApiError::internal_from)?,
-    );
-    resp.headers_mut()
-        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
-    Ok(resp)
+    Ok(deep_link_page(fallback_page(
+        &html_attr(deep_link.as_str()),
+        &login_code,
+    )))
 }
 
 fn invalid_state() -> ApiError {
@@ -432,37 +428,59 @@ fn refused(
     client_state: Option<&str>,
     why: Refusal,
 ) -> ApiResult<Response> {
-    let (location, body) = if client_kind == "web" {
+    if client_kind == "web" {
         let target = format!(
             "{}/admin/login?error={}",
             state.config.public_origin(),
             why.code()
         );
-        (target, None)
-    } else {
-        let mut deep_link =
-            url::Url::parse("vgames://auth/callback").map_err(ApiError::internal_from)?;
-        {
-            let mut q = deep_link.query_pairs_mut();
-            q.append_pair("error", why.code());
-            if let Some(cs) = client_state {
-                q.append_pair("client_state", cs);
-            }
+        let mut resp = StatusCode::FOUND.into_response();
+        resp.headers_mut().insert(
+            header::LOCATION,
+            HeaderValue::from_str(&target).map_err(ApiError::internal_from)?,
+        );
+        resp.headers_mut()
+            .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+        return Ok(resp);
+    }
+    let mut deep_link =
+        url::Url::parse("vgames://auth/callback").map_err(ApiError::internal_from)?;
+    {
+        let mut q = deep_link.query_pairs_mut();
+        q.append_pair("error", why.code());
+        if let Some(cs) = client_state {
+            q.append_pair("client_state", cs);
         }
-        let page = refused_page(deep_link.as_str(), why.message());
-        (deep_link.to_string(), Some(page))
-    };
-    let mut resp = match body {
-        Some(page) => (StatusCode::FOUND, Html(page)).into_response(),
-        None => StatusCode::FOUND.into_response(),
-    };
-    resp.headers_mut().insert(
-        header::LOCATION,
-        HeaderValue::from_str(&location).map_err(ApiError::internal_from)?,
+    }
+    Ok(deep_link_page(refused_page(
+        &html_attr(deep_link.as_str()),
+        why.message(),
+    )))
+}
+
+/// The desktop callback answer: a `200` page that opens the launcher deep link itself
+/// (`<meta http-equiv="refresh">`) and stays readable when that fails, so the code can be
+/// pasted (01-security §4.1). Browsers never render the body of a redirect. No scripts run.
+fn deep_link_page(page: String) -> Response {
+    let mut resp = (StatusCode::OK, Html(page)).into_response();
+    let headers = resp.headers_mut();
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    headers.insert(
+        header::CONTENT_SECURITY_POLICY,
+        HeaderValue::from_static(
+            "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+        ),
     );
-    resp.headers_mut()
-        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
-    Ok(resp)
+    resp
+}
+
+/// Escapes a URL for an HTML attribute value (`url` already percent-encodes the rest).
+fn html_attr(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 fn append_cookie(headers: &mut HeaderMap, value: &str) {
@@ -471,12 +489,13 @@ fn append_cookie(headers: &mut HeaderMap, value: &str) {
     }
 }
 
-/// Shown for a refused sign-in when the browser cannot hand the deep link to the launcher.
-/// `reason` is one of the fixed [`Refusal::message`] texts.
+/// The refused sign-in page. `deep_link` is attribute-escaped; `reason` is one of the fixed
+/// [`Refusal::message`] texts.
 fn refused_page(deep_link: &str, reason: &str) -> String {
     format!(
         r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Sign-in refused</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="refresh" content="0;url={deep_link}">
 <style>body{{font:16px/1.5 system-ui,sans-serif;max-width:36rem;margin:3rem auto;padding:0 1rem}}</style>
 </head><body><h1>You're not signed in</h1>
 <p>{reason}</p>
@@ -484,15 +503,18 @@ fn refused_page(deep_link: &str, reason: &str) -> String {
     )
 }
 
-/// Shown when the browser cannot hand the deep link to the launcher.
+/// The signed-in page: opens the launcher and shows the code for the paste fallback.
+/// `deep_link` is attribute-escaped; the code is base64url.
 fn fallback_page(deep_link: &str, code: &str) -> String {
     format!(
         r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Signed in to vgames</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="refresh" content="0;url={deep_link}">
 <style>body{{font:16px/1.5 system-ui,sans-serif;max-width:36rem;margin:3rem auto;padding:0 1rem}}code{{display:block;padding:.75rem;background:#eef0f5;border-radius:6px;word-break:break-all}}</style>
 </head><body><h1>You're signed in</h1>
 <p>Your browser should now return you to vgames. If nothing happens, <a href="{deep_link}">open vgames</a>,
-or paste this code into the launcher's "Paste code" field within one minute:</p>
+or paste this code where vgames asks for it (the launcher's "Paste code" field or the
+<code>vgames</code> command line) within one minute:</p>
 <code>{code}</code></body></html>"#
     )
 }

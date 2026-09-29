@@ -136,7 +136,17 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   passes serially (141 passed, 1 GCS emulator test ignored because that emulator is not configured).
 
 ## In progress
-- None.
+- Agent 5's requests to Agent 1 (their status file, "Needs from others"):
+  1. **Sign-in page (security finding): done in this PR.** The desktop Discord callback now answers `200` with
+     the page (code or refusal reason, "open vgames" link) and opens the deep link itself with
+     `<meta http-equiv="refresh">`, instead of a `302` whose body browsers never render. `Cache-Control: no-store`
+     and a CSP without scripts. The paste fallback (launcher field, `vgames` CLI prompt) now works. Web flows
+     keep their `302`. Contract commit: `openapi.yaml` (`discordCallback` 200 `text/html`), 01-security §4.1,
+     03-api.
+  2. **`signature` on the admin `Version` (contract request): next PR.** It adds a field to
+     `vgames_proto::versions::Version`, which breaks the exhaustive test literal in Agent 2's
+     `crates/vgames-transfer/src/upload/publish.rs` (`fn version`). That PR adds only `signature: None,` there
+     and says so.
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_api::error::ApiError` / `ApiResult` (problem+json), `vgames_api::http::json::{Json, Validate}`
