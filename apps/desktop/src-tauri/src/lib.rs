@@ -137,9 +137,10 @@ fn setup(app: &AppHandle, profile: Option<String>) -> Result<(), Box<dyn std::er
     let state = AppState::new(paths, db, bus, Arc::clone(&servers))?;
     events::spawn_ui_bridge(app.clone(), &state.bus, state.shutdown.child_token());
     spawn_show_fallback(app.clone(), &state);
-    // Before the first deep link is published: `server/add` and `auth/callback`.
+    // Before the first deep link is published: `server/add`, `auth/callback` and `launch`.
     deeplink::spawn_router(
         Arc::clone(&servers),
+        Arc::clone(&state.launcher),
         state.bus.clone(),
         state.ui_ready.clone(),
         cfg!(debug_assertions),

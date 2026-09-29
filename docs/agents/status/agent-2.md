@@ -135,8 +135,9 @@
   `package`, because `package` is reserved in strict TypeScript. I changed the one mock line in
   `src/mocks/library.ts` and removed the pending entry from `src/ipc/contract/library.ts`. The shortcut is named after the
   install folder until the catalog title cache exists. Uninstall calls `commands::shortcuts::remove_for_package`,
-  which never deletes a file the player changed. Icons (`.ico`/PNG from the cover) and the `vgames://launch` route are
-  next (#47 is merged, so `deeplink::parse` can take the route).
+  which never deletes a file the player changed. `vgames://launch/{package_id}` (canonical UUID only, no query) launches
+  the active server's package through `state.launcher`; refusals are logged, and a UI notice for them is still to come.
+  Icons (`.ico`/PNG from the cover) are still to come.
 - **Controller mapping** (A2-T12): `controllers::mapping::{Mapper::new(kind, &Profile), Mapper::map(&PadState) ->
   XReport, Profile::parse(json)}` (the profile is the JSON in `controller_profiles.profile`) and
   `controllers::decision::{decide(&LaunchControllers, pad_kind) -> PadDecision, EmulationMode}`.
