@@ -15,3 +15,10 @@
 //! catches panics and disables itself).
 
 pub mod protocol;
+
+/// Hook panic safety net shared by every renderer backend.
+#[cfg(any(feature = "renderer", test))]
+pub mod guard;
+/// The in-game side of the broker link (connect, views, actions, reconnect).
+#[cfg(any(feature = "renderer", test))]
+pub mod link;
