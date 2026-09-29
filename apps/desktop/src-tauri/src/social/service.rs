@@ -163,7 +163,8 @@ struct Inner {
     friends: Mutex<Option<(Uuid, FriendList)>>,
     inputs: Mutex<presence::Inputs>,
     /// What was last sent, and to which server.
-    sent: Mutex<Option<(Uuid, PresenceUpdate)>>,
+    /// What was last sent, on which connection (`RealtimeHandle::epoch`) and server.
+    sent: Mutex<Option<(u64, Uuid, PresenceUpdate)>>,
     /// Keychain keys for the Olm pickles and the history at rest.
     keys: Arc<Keys>,
     /// The name this install registers its chat device under.
@@ -480,15 +481,16 @@ impl SocialService {
             return;
         };
         let desired = presence::desired(&lock(&self.inner.inputs), server);
+        let epoch = self.inner.realtime.epoch();
         let mut sent = lock(&self.inner.sent);
-        if sent.as_ref() == Some(&(server, desired.clone())) {
+        if sent.as_ref() == Some(&(epoch, server, desired.clone())) {
             return;
         }
         let Ok(data) = serde_json::to_value(&desired) else {
             return;
         };
         self.inner.realtime.send(kinds::PRESENCE_SET, data);
-        *sent = Some((server, desired));
+        *sent = Some((epoch, server, desired));
     }
 
     async fn presence_loop(
@@ -567,7 +569,7 @@ impl SocialService {
     async fn handle(&self, event: Incoming) {
         match event {
             Incoming::Connected { hello, .. } => {
-                *lock(&self.inner.sent) = None;
+                // Once per connection (unless the presence loop got there first).
                 self.publish_presence();
                 self.resync().await;
                 self.messaging_connected(&hello).await;
