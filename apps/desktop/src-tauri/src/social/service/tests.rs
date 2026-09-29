@@ -296,6 +296,9 @@ impl SocialEvents for Recorder {
     fn message_status_changed(&self, _: Uuid, _: Uuid, _: MessageStatus) {}
     fn typing(&self, _: Uuid, _: Uuid) {}
     fn device_notice(&self, _: Option<Uuid>, _: &DeviceNotice) {}
+    fn invite_received(&self, _: &Invite) {}
+    fn invite_changed(&self, _: &Invite) {}
+    fn invite_install_requested(&self, _: Uuid, _: PackageRef, _: InviteInstallReason) {}
 }
 
 fn test_keys() -> Keys {

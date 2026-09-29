@@ -62,6 +62,11 @@ pub const MAIN_WINDOW_COMMANDS: &[&str] = &[
     "contact_trust_device",
     "devices_list",
     "device_revoke",
+    "invites_list",
+    "invite_send",
+    "invite_accept",
+    "invite_decline",
+    "invite_cancel",
 ];
 
 /// Commands the in-game overlay window may call. Only `overlay_*` commands

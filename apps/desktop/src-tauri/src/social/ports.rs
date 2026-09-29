@@ -148,6 +148,111 @@ impl SessionSlot {
     }
 }
 
+/// A package's local state for an invite (05-social §5).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GameCheck {
+    /// Installed and current: ready to join.
+    Current,
+    /// Not installed: the install dialog opens.
+    Missing,
+    /// Installed, but an update is needed: the update dialog opens.
+    Outdated,
+    /// No build this computer can run.
+    NoBuildForPlatform,
+}
+
+/// Why a join launch did not start.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum LaunchError {
+    #[error("launching games is not available yet")]
+    Unavailable,
+    #[error("the game is not installed")]
+    NotInstalled,
+    #[error("launch failed: {0}")]
+    Failed(String),
+}
+
+pub type BoxFuture<'a, T> = std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send + 'a>>;
+
+/// What the invite flow needs from the library and the launcher (Agent 2: A2-T08 install
+/// state, A2-T09 launch with join arguments).
+pub trait Games: Send + Sync + 'static {
+    /// The package's local state on `server`.
+    fn check(&self, server: Uuid, package: Uuid) -> BoxFuture<'_, GameCheck>;
+    /// Launches the manifest's `multiplayer.join` target with `join_secret` substituted as a
+    /// whole argument (already validated; `None` = normal launch without join arguments).
+    fn launch_join(
+        &self,
+        server: Uuid,
+        package: Uuid,
+        join_secret: Option<String>,
+    ) -> BoxFuture<'_, Result<(), LaunchError>>;
+}
+
+/// Until A2-T09 lands: install state from the local `installs` table (an installed row counts
+/// as current: update detection needs A2-T08's platform choice), and no launching.
+pub struct LocalLibrary {
+    pub db: crate::db::Db,
+}
+
+impl Games for LocalLibrary {
+    fn check(&self, server: Uuid, package: Uuid) -> BoxFuture<'_, GameCheck> {
+        Box::pin(async move {
+            let state = self
+                .db
+                .call(move |c| {
+                    use crate::db::rusqlite::OptionalExtension as _;
+                    Ok(c.query_row(
+                        "SELECT state FROM installs WHERE server_id = ?1 AND package_id = ?2",
+                        [server.to_string(), package.to_string()],
+                        |r| r.get::<_, String>(0),
+                    )
+                    .optional()?)
+                })
+                .await;
+            match state {
+                Ok(Some(s)) if s == "installed" => GameCheck::Current,
+                Ok(Some(s)) if s == "updating" || s == "repairing" || s == "moving" => {
+                    GameCheck::Outdated
+                }
+                Ok(_) => GameCheck::Missing,
+                Err(error) => {
+                    tracing::warn!(%error, "cannot read the install state");
+                    GameCheck::Missing
+                }
+            }
+        })
+    }
+
+    fn launch_join(
+        &self,
+        _server: Uuid,
+        _package: Uuid,
+        _join_secret: Option<String>,
+    ) -> BoxFuture<'_, Result<(), LaunchError>> {
+        Box::pin(async { Err(LaunchError::Unavailable) })
+    }
+}
+
+/// Substitutes a join secret into a manifest's `multiplayer.join.args` (05-social §5, 02 §5):
+/// the `{join_secret}` placeholder is replaced only where it is a whole argument. An absent or
+/// invalid secret gives `None`: launch normally, without the join arguments.
+pub fn join_args(template: &[String], join_secret: Option<&str>) -> Option<Vec<String>> {
+    let secret = join_secret.filter(|s| vgames_proto::social::is_valid_join_secret(s))?;
+    Some(
+        template
+            .iter()
+            .map(|a| {
+                if a == "{join_secret}" {
+                    secret.to_owned()
+                } else {
+                    a.clone()
+                }
+            })
+            .collect(),
+    )
+}
+
 /// Time since the last keyboard or mouse input, when the OS tells us.
 pub trait IdleSource: Send + Sync + 'static {
     fn idle_for(&self) -> Option<Duration>;
@@ -175,6 +280,22 @@ mod tests {
             base_url: "https://vgames.test/".parse().unwrap(),
             access_token: Arc::new(Zeroizing::new(token.to_owned())),
         }
+    }
+
+    #[test]
+    fn join_secrets_are_whole_arguments_or_nothing() {
+        let t: Vec<String> = ["+connect", "{join_secret}", "-x{join_secret}"]
+            .map(String::from)
+            .to_vec();
+        assert_eq!(
+            join_args(&t, Some("10.0.0.2:27015")).unwrap(),
+            ["+connect", "10.0.0.2:27015", "-x{join_secret}"]
+        );
+        for bad in [None, Some(""), Some("a b"), Some("x;rm"), Some("$(id)")] {
+            assert_eq!(join_args(&t, bad), None, "{bad:?}");
+        }
+        let long = "a".repeat(257);
+        assert_eq!(join_args(&t, Some(&long)), None);
     }
 
     #[tokio::test]

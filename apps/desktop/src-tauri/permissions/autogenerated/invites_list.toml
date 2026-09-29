@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-invites-list"
+description = "Enables the invites_list command without any pre-configured scope."
+commands.allow = ["invites_list"]
+
+[[permission]]
+identifier = "deny-invites-list"
+description = "Denies the invites_list command without any pre-configured scope."
+commands.deny = ["invites_list"]

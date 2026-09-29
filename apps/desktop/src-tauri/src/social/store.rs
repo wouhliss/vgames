@@ -34,7 +34,9 @@ use super::payload::{self, Content, Decoded, Payload, PayloadError};
 use super::secrets::{CHAT_KEY, PICKLE_KEY, SecretError, SecretStore};
 
 mod conversations;
+mod invites;
 pub use conversations::*;
+pub use invites::*;
 
 /// Give up on an outgoing message after this many failed attempts (it shows as failed and
 /// can be retried by the user).
@@ -253,6 +255,7 @@ pub fn wipe_server(conn: &Connection, server: Uuid) -> Result<(), StoreError> {
         "social_outbox",
         "social_processed_envelopes",
         "social_blocks",
+        "social_invites_local",
     ] {
         conn.execute(
             &format!("DELETE FROM {table} WHERE server_id = ?1"),

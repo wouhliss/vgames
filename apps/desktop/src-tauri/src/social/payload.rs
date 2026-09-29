@@ -90,6 +90,32 @@ impl Payload {
         })
     }
 
+    /// `invite.join` from the invite's sender. `join_secret` must match the grammar.
+    pub fn invite_join(
+        conversation_id: Uuid,
+        client_message_id: Uuid,
+        sent_at: OffsetDateTime,
+        invite_id: Uuid,
+        join_secret: Option<String>,
+    ) -> Result<Self, PayloadError> {
+        if join_secret
+            .as_deref()
+            .is_some_and(|s| !is_valid_join_secret(s))
+        {
+            return Err(PayloadError::BadJoinSecret);
+        }
+        Ok(Self {
+            v: PAYLOAD_VERSION,
+            conversation_id,
+            client_message_id,
+            sent_at,
+            content: Content::InviteJoin {
+                invite_id,
+                join_secret,
+            },
+        })
+    }
+
     pub fn encode(&self) -> Result<Vec<u8>, PayloadError> {
         let bytes = serde_json::to_vec(self).map_err(|_| PayloadError::Malformed)?;
         if bytes.len() > MAX_PAYLOAD_BYTES {
@@ -125,13 +151,20 @@ pub fn decode(bytes: &[u8]) -> Result<Decoded, PayloadError> {
     if header.v != PAYLOAD_VERSION {
         return Ok(unsupported());
     }
-    let Ok(payload) = serde_json::from_value::<Payload>(value) else {
+    let Ok(mut payload) = serde_json::from_value::<Payload>(value) else {
         return Ok(unsupported());
     };
-    let valid = match &payload.content {
+    let valid = match &mut payload.content {
         Content::Text { body } => !body.trim().is_empty() && body.chars().count() <= MAX_TEXT_CHARS,
         Content::InviteJoin { join_secret, .. } => {
-            join_secret.as_deref().is_none_or(is_valid_join_secret)
+            // 05-social §5: an invalid secret means a normal launch, never a partial one.
+            if join_secret
+                .as_deref()
+                .is_some_and(|s| !is_valid_join_secret(s))
+            {
+                *join_secret = None;
+            }
+            true
         }
         Content::ReceiptRead { .. } => true,
     };
@@ -145,6 +178,49 @@ pub fn decode(bytes: &[u8]) -> Result<Decoded, PayloadError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_invalid_join_secret_is_dropped_not_interpreted() {
+        let (c, m) = ids();
+        let invite = Uuid::now_v7();
+        let raw = format!(
+            r#"{{"v":1,"conversation_id":"{c}","client_message_id":"{m}","sent_at":"2026-09-24T10:00:00Z","type":"invite.join","invite_id":"{invite}","join_secret":"a b; rm -rf"}}"#
+        );
+        match decode(raw.as_bytes()).unwrap() {
+            Decoded::Known(Payload {
+                content:
+                    Content::InviteJoin {
+                        invite_id,
+                        join_secret,
+                    },
+                ..
+            }) => {
+                assert_eq!(invite_id, invite);
+                assert_eq!(join_secret, None, "normal launch without arguments");
+            }
+            other => panic!("{other:?}"),
+        }
+        // Valid secrets survive the round trip; invalid ones are refused when sending.
+        let p = Payload::invite_join(
+            c,
+            m,
+            OffsetDateTime::UNIX_EPOCH,
+            invite,
+            Some("10.0.0.2:27015".into()),
+        )
+        .unwrap();
+        assert_eq!(decode(&p.encode().unwrap()).unwrap(), Decoded::Known(p));
+        assert!(matches!(
+            Payload::invite_join(
+                c,
+                m,
+                OffsetDateTime::UNIX_EPOCH,
+                invite,
+                Some("-x y".into())
+            ),
+            Err(PayloadError::BadJoinSecret)
+        ));
+    }
 
     fn ids() -> (Uuid, Uuid) {
         (Uuid::now_v7(), Uuid::now_v7())
@@ -188,7 +264,6 @@ mod tests {
         for extra in [
             r#","type":"file","url":"https://x""#,
             r#","type":"invite.join","invite_id":"not-a-uuid""#,
-            r#","type":"invite.join","invite_id":"01920000-0000-7000-8000-000000000001","join_secret":"a b; rm -rf""#,
             r#","type":"text","body":"""#,
             r#""#,
         ] {

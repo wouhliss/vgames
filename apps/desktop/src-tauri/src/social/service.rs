@@ -14,16 +14,19 @@ use vgames_proto::social::{PresenceUpdate, normalize_friend_code};
 use super::api::{SocialApi, http_client};
 use super::model::{
     BlockedUser, Conversation, DeviceNotice, Friend, FriendCode, FriendList, FriendState,
-    FriendTarget, Message, MessageStatus, Presence, SocialConnection, SocialError, SocialSettings,
-    UserSummary,
+    FriendTarget, Invite, InviteInstallReason, Message, MessageStatus, Presence, SocialConnection,
+    SocialError, SocialSettings, UserSummary,
 };
+use super::ports::{Games, LocalLibrary};
 use super::ports::{IdleSource, SessionSlot};
 use super::presence;
 use super::realtime::{self, Incoming, RealtimeHandle, Timing};
 use super::store::Keys;
 use crate::db::{Db, settings};
+use crate::events::PackageRef;
 use crate::events::{AppEvent, EventBus};
 
+mod invites;
 mod messaging;
 pub use messaging::{default_device_name, platform};
 
@@ -43,6 +46,14 @@ pub trait SocialEvents: Send + Sync + 'static {
     );
     fn typing(&self, conversation_id: Uuid, user_id: Uuid);
     fn device_notice(&self, conversation_id: Option<Uuid>, notice: &DeviceNotice);
+    fn invite_received(&self, invite: &Invite);
+    fn invite_changed(&self, invite: &Invite);
+    fn invite_install_requested(
+        &self,
+        invite_id: Uuid,
+        package: PackageRef,
+        reason: InviteInstallReason,
+    );
 }
 
 /// The persisted social settings.
@@ -112,6 +123,8 @@ struct Inner {
     /// The name this install registers its chat device under.
     device_name: String,
     messaging: messaging::MessagingState,
+    /// Library and launch port for invites (Agent 2's, once A2-T09 lands).
+    games: Mutex<Arc<dyn Games>>,
 }
 
 /// Cheap to clone; every clone talks to the same state.
@@ -148,7 +161,7 @@ impl SocialService {
             inner: Arc::new(Inner {
                 sessions,
                 http,
-                db,
+                db: db.clone(),
                 events,
                 realtime,
                 idle,
@@ -161,6 +174,7 @@ impl SocialService {
                 keys,
                 device_name,
                 messaging: messaging::MessagingState::default(),
+                games: Mutex::new(Arc::new(LocalLibrary { db: db.clone() })),
             }),
         };
         tokio::spawn(service.clone().incoming_loop(rx, shutdown.clone()));
@@ -171,6 +185,11 @@ impl SocialService {
             shutdown.clone(),
         ));
         tokio::spawn(service.clone().outbox_loop(shutdown.clone()));
+        tokio::spawn(
+            service
+                .clone()
+                .invite_install_loop(bus.subscribe(), shutdown.clone()),
+        );
         tokio::spawn(service.clone().network_loop(timing.network_poll, shutdown));
         Ok(service)
     }
@@ -506,6 +525,7 @@ impl SocialService {
                 self.publish_presence();
                 self.resync().await;
                 self.messaging_connected(&hello).await;
+                self.invites_connected().await;
             }
             Incoming::Event {
                 server_id,
@@ -548,6 +568,10 @@ impl SocialService {
                     }
                 }
                 kinds::FRIEND_ACCEPTED | kinds::FRIEND_REMOVED => self.resync().await,
+                kinds::INVITE_CREATED | kinds::INVITE_UPDATED => {
+                    self.invite_event(server_id, kind == kinds::INVITE_CREATED, data)
+                        .await;
+                }
                 kinds::INBOX_NEW | kinds::DEVICE_ADDED | kinds::DEVICE_REVOKED | kinds::TYPING => {
                     self.messaging_event(server_id, &kind, data).await;
                 }

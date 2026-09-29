@@ -97,8 +97,24 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   reconnected with a refreshed token. Tests: bridge (sign-in, refresh, other server, sign-out), slot refresh rules,
   REST retry, realtime reconnect after refresh (fails without the fix).
 
+- A4-T09 — Launcher: invites client. `social/service/invites.rs`, `social/store/invites.rs`, desktop migration
+  `0004_social_invites` (sender's join secret sealed with the chat key, accepted-here flag, join-sent flag, progress
+  throttle), `ports::{Games, GameCheck, LaunchError, LocalLibrary, join_args}`. Commands `invites_list`,
+  `invite_send`, `invite_accept`, `invite_decline`, `invite_cancel`; events `invite-received`, `invite-changed`,
+  `invite-install-requested` (05-social-notes §5–§6, behaviour §3.2). Received `invite.join` with an invalid secret →
+  normal launch (it was ignored before).
+  Evidence: `tests/social_chat.rs::invite_install_ready_join_handshake` (the M3 demo on the real API, two launchers,
+  fake library/launcher): missing game → install dialog event at once → `installing` progress → not `ready` before
+  `InstallFinished` → `ready` → `invite.join` over Olm → launch with the secret → `joined`; installed game without a
+  secret → normal launch; install failing its signature check → `failed/install_failed`, nothing launched; sender
+  cancels → invitee sees `cancelled`, accepting then is a conflict; invalid secret refused before sending; the secret
+  is in no server table. Store tests (secret sealed at rest and delivered over Olm, queued once, throttle every
+  ≥ 5 s / 5 %, roles), `join_args` (whole-argument substitution, invalid → none), outcome mapping.
+  **Not yet:** the real launch and update detection are Agent 2's (A2-T08/T09); until then `LocalLibrary` reads the
+  `installs` table (installed = current) and cannot launch (`LaunchError::Unavailable`, logged).
+
 ## In progress
-- A4-T09 — Launcher: invites client
+- A4-T10 — Overlay broker, macOS panel and fallbacks
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_desktop_lib::social::ports::SessionSlot` (A4-T07): now filled by `social::session_bridge` from
@@ -121,7 +137,14 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   The overlay window's surface is §7.
 
 ## Needs from others
-- From Agent 2: library/install state and launch-with-args internal APIs (for invites, A4-T09), launch-plan hook for overlay env/injection (A4-T10).
+- From Agent 2 (A4-T09): implement `social::ports::Games` over your library and launcher and install it with
+  `State<SocialService>.set_games(Arc::new(…))`: `check(server, package)` → `Current | Missing | Outdated |
+  NoBuildForPlatform` (your platform choice), `launch_join(server, package, secret)` → launch the manifest's
+  `multiplayer.join.target` with `social::ports::join_args(&args, secret.as_deref())` (whole-argument substitution;
+  `None` → normal launch). Publish `InstallProgress`/`InstallFinished` for installs the UI starts from
+  `invite-install-requested` as for any install (the invite follows them). Failure codes containing `space`/`disk_full`
+  map to `insufficient_space`.
+- From Agent 2: launch-plan hook for overlay env/injection (A4-T10).
   Until they land, Agent 4 codes against small traits in `social::ports` and tests with in-process fakes.
 - From Agent 3: a Vite entry for the overlay window (`apps/desktop/src/overlay/`, A4-T10).
 - From Agent 5 (CI, A4-T08): `tests/social_chat.rs` (launchers against the real API) needs PostgreSQL next to
@@ -135,6 +158,9 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   failed once locally under a full `cargo test` run (line 211) and passed 3/3 alone; it looks timing-sensitive.
 
 ## Cross-area edits (small, for the owners' review)
+- Agent 2 (A4-T09): `images.rs` `ImageKey::url()` (the `vgimg` URL for a key; used for invite covers);
+  `db/migrations.rs` one `Migration { name: "0004_social_invites", … }` entry; commands/names/capabilities/bindings
+  for the 5 invite commands and 3 events.
 - Agent 2 (A4-T07 follow-up): none beyond `social::commands::init` reading `state.servers`/`state.bus` (my file);
   social REST still uses its own `reqwest` client with the bearer token from `Session::access_token`, not
   `ApiClient`: moving to `ApiClient` is possible once it exposes the problem body and a 401 hook.
@@ -159,6 +185,7 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   also decrypts and encrypts at rest; consider adding `/apps/desktop/src-tauri/src/social/store*` to that section.
 
 ## Blockers / contract questions
+- `contract:` `05-social-notes.md` v1.2 (A4-T09): new §3.2 (invite client behaviour). Additive.
 - `contract:` `05-social-notes.md` v1.1 (A4-T08): §2.1 fallback key ids prefixed `F`; new §3.1 (launcher messaging
   behaviour, typing throttle). Additive; no name or payload in §5–§6 changed.
 - `contract:` `docs/architecture/05-social-notes.md` (new, A4-T01). Additive realtime changes in its §3

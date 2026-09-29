@@ -1360,3 +1360,160 @@ fn the_conversation_cache_orders_counts_unread_and_finds_members() {
         3
     );
 }
+
+// ---- A4-T09: local invite state -----------------------------------------------------------
+
+#[test]
+fn join_secrets_are_sealed_and_invite_join_is_queued_once() {
+    let (ua, ub, _) = users();
+    let mut relay = Relay::default();
+    let mut alice = Launcher::new("alice", ua);
+    let mut bob = Launcher::new("bob", ub);
+    relay.register(&mut alice);
+    relay.register(&mut bob);
+    let (invite, package, conv) = (Uuid::now_v7(), Uuid::now_v7(), Uuid::now_v7());
+
+    // Invalid secrets are refused; valid ones are stored sealed.
+    assert!(
+        invite_sent(
+            &alice.db,
+            &alice.keys,
+            SERVER,
+            invite,
+            package,
+            Some("a b"),
+            NOW
+        )
+        .is_err()
+    );
+    invite_sent(
+        &alice.db,
+        &alice.keys,
+        SERVER,
+        invite,
+        package,
+        Some("10.0.0.2:27015"),
+        NOW,
+    )
+    .unwrap();
+    assert_eq!(
+        local_invite(&alice.db, SERVER, invite).unwrap(),
+        Some(LocalInvite::Sent {
+            has_secret: true,
+            join_sent: false
+        })
+    );
+    let raw: Vec<u8> = alice
+        .db
+        .query_row("SELECT secret FROM social_invites_local", [], |r| r.get(0))
+        .unwrap();
+    assert!(!raw.windows(8).any(|w| w == b"10.0.0.2"), "sealed at rest");
+
+    // Queued once; the stored message shows the invite, never the secret.
+    let m = queue_invite_join(&mut alice.db, &alice.keys, SERVER, invite, conv, NOW)
+        .unwrap()
+        .unwrap();
+    assert_eq!(m.body, MessageBody::InviteJoin { invite_id: invite });
+    assert!(
+        queue_invite_join(&mut alice.db, &alice.keys, SERVER, invite, conv, NOW)
+            .unwrap()
+            .is_none()
+    );
+    // The outbox payload carries it; delivered over Olm, Bob gets the secret back.
+    let item = outbox_due(&alice.db, &alice.keys, SERVER, NOW, 10)
+        .unwrap()
+        .pop()
+        .unwrap();
+    alice.learn(&relay, &[ub]);
+    let claimed = relay.claim(&[bob.device]);
+    let out = encrypt_for(
+        &mut alice.db,
+        &alice.keys,
+        SERVER,
+        &[bob.device],
+        &claimed,
+        &item.plaintext,
+        NOW,
+    )
+    .unwrap();
+    relay.deliver(&alice, conv, &out.envelopes);
+    bob.learn(&relay, &[ua]);
+    match &bob.receive_all(&mut relay)[..] {
+        [
+            Received::InviteJoin {
+                invite_id,
+                join_secret,
+                ..
+            },
+        ] => {
+            assert_eq!(*invite_id, invite);
+            assert_eq!(join_secret.as_deref(), Some("10.0.0.2:27015"));
+        }
+        other => panic!("{other:?}"),
+    }
+    // Nothing on Bob's side stores the secret.
+    let dump: i64 = bob
+        .db
+        .query_row(
+            "SELECT count(*) FROM social_messages WHERE instr(body, '10.0.0.2') > 0",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(dump, 0);
+
+    // An invite this install did not send is never joined from here.
+    assert!(
+        queue_invite_join(&mut bob.db, &bob.keys, SERVER, invite, conv, NOW)
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[test]
+fn accepted_invites_throttle_progress_and_are_forgotten() {
+    let l = Launcher::new("bob", Uuid::now_v7());
+    let (invite, package) = (Uuid::now_v7(), Uuid::now_v7());
+    // Not accepted here: never due.
+    assert!(!progress_due(&l.db, SERVER, invite, 0.1, NOW).unwrap());
+    invite_accepted(&l.db, SERVER, invite, package, NOW).unwrap();
+    assert_eq!(
+        local_invite(&l.db, SERVER, invite).unwrap(),
+        Some(LocalInvite::Accepted)
+    );
+    assert_eq!(
+        accepted_for_package(&l.db, SERVER, package).unwrap(),
+        vec![invite]
+    );
+    assert!(
+        accepted_for_package(&l.db, SERVER, Uuid::now_v7())
+            .unwrap()
+            .is_empty()
+    );
+
+    assert!(progress_due(&l.db, SERVER, invite, 0.10, NOW).unwrap());
+    // Less than 5 % and less than 5 s later: not due.
+    assert!(!progress_due(&l.db, SERVER, invite, 0.13, NOW + 2).unwrap());
+    // 5 % more: due.
+    assert!(progress_due(&l.db, SERVER, invite, 0.15, NOW + 3).unwrap());
+    // 5 s later: due even without progress.
+    assert!(progress_due(&l.db, SERVER, invite, 0.16, NOW + 8).unwrap());
+
+    // Accepting cannot turn a sent invite into an accepted one (or the reverse).
+    let keys = &l.keys;
+    let sent = Uuid::now_v7();
+    invite_sent(&l.db, keys, SERVER, sent, package, None, NOW).unwrap();
+    invite_accepted(&l.db, SERVER, sent, package, NOW).unwrap();
+    assert!(matches!(
+        local_invite(&l.db, SERVER, sent).unwrap(),
+        Some(LocalInvite::Sent { .. })
+    ));
+    invite_sent(&l.db, keys, SERVER, invite, package, Some("x"), NOW).unwrap();
+    assert_eq!(
+        local_invite(&l.db, SERVER, invite).unwrap(),
+        Some(LocalInvite::Accepted)
+    );
+
+    forget_invite(&l.db, SERVER, invite).unwrap();
+    assert_eq!(local_invite(&l.db, SERVER, invite).unwrap(), None);
+}

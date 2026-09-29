@@ -55,6 +55,11 @@
     "allow-contact-set-verified",
     "allow-contact-trust-device",
     "allow-devices-list",
-    "allow-device-revoke"
+    "allow-device-revoke",
+    "allow-invites-list",
+    "allow-invite-send",
+    "allow-invite-accept",
+    "allow-invite-decline",
+    "allow-invite-cancel"
   ]
 }
