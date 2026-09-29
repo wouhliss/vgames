@@ -200,3 +200,28 @@ fn prelaunch_budget() {
     assert!(cold < std::time::Duration::from_millis(300), "{cold:?}");
     assert!(warm < std::time::Duration::from_millis(20), "{warm:?}");
 }
+
+/// Cached executables are keyed by their canonical path; `forget` must match
+/// them even when given the (non-canonical) path the install was checked with,
+/// as on Windows (`\\?\` prefix) or through a linked folder.
+#[cfg(unix)]
+#[test]
+fn forget_matches_installs_reached_through_a_link() {
+    let install = installed(InstallState::Installed);
+    let links = tempfile::tempdir().unwrap();
+    let linked = links.path().join("library");
+    std::os::unix::fs::symlink(install.root.path(), &linked).unwrap();
+    let cache = Prelaunch::default();
+    let check = || {
+        cache.check(
+            &linked,
+            &install.package.trust,
+            &install.package.expected,
+            &TargetChoice::Default,
+        )
+    };
+    check().unwrap();
+    cache.forget(&linked);
+    check().unwrap();
+    assert_eq!(cache.hashed.load(Ordering::Relaxed), 2);
+}
