@@ -15,7 +15,7 @@ use super::*;
 use crate::db::rusqlite;
 use crate::events::{AppEvent, EventBus, GameStopped};
 
-const GAME: &[u8] = b"#!/bin/sh\nexit 7\n";
+const GAME: &[u8] = b"#!/bin/sh\nexit ${VGAMES_TEST_EXIT:-7}\n";
 
 struct FixedTrust(Option<Arc<TrustState>>);
 
@@ -174,6 +174,34 @@ async fn a_verified_install_launches_and_repeats_are_rate_limited() {
             .await,
         Err(LaunchError::RateLimited)
     );
+}
+
+struct ExitHook;
+
+impl LaunchHooks for ExitHook {
+    fn prepare(&self, _: PackageRef) -> HookEnv<'_> {
+        Box::pin(async {
+            vec![
+                ("BAD KEY".into(), "x".into()),
+                ("VGAMES_TEST_EXIT".into(), "9".into()),
+            ]
+        })
+    }
+
+    fn aborted(&self, _: PackageRef) {}
+}
+
+#[tokio::test]
+async fn launch_hooks_add_variables_and_invalid_keys_are_skipped() {
+    let f = fixture().await;
+    let mut events = f.bus.subscribe();
+    let launcher = f.trusted();
+    launcher.set_hooks(Arc::new(ExitHook));
+    launcher
+        .launch(f.package_ref(), TargetChoice::Default)
+        .await
+        .unwrap();
+    assert_eq!(stopped(&mut events).await.exit.code, Some(9));
 }
 
 #[tokio::test]

@@ -40,6 +40,8 @@ pub fn init(app: &AppHandle, state: &AppState, social: SocialService, hub: Arc<H
         &state.bus,
         state.shutdown.child_token(),
     );
+    // Every game the launcher starts gets the overlay environment.
+    state.launcher.set_hooks(Arc::new(service.clone()));
     // Do not disturb and the hotkey from the stored settings.
     let stored =
         tauri::async_runtime::block_on(state.db.call(|c| settings::get::<SocialSettingsKey>(c)))

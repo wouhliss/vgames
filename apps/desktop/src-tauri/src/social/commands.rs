@@ -187,6 +187,12 @@ pub fn init(app: &AppHandle, state: &AppState) -> Result<(), SocialError> {
         Timing::default(),
         state.shutdown.child_token(),
     ))?;
+    service.set_games(Arc::new(super::ports::LauncherGames {
+        library: super::ports::LocalLibrary {
+            db: state.db.clone(),
+        },
+        launcher: Arc::clone(&state.launcher),
+    }));
     // Refused calls wait up to 10 s for the bridge's refreshed token, then retry once.
     service
         .sessions()

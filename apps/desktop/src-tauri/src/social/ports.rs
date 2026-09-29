@@ -189,8 +189,8 @@ pub trait Games: Send + Sync + 'static {
     ) -> BoxFuture<'_, Result<(), LaunchError>>;
 }
 
-/// Until A2-T09 lands: install state from the local `installs` table (an installed row counts
-/// as current: update detection needs A2-T08's platform choice), and no launching.
+/// Install state from the local `installs` table (an installed row counts as current: update
+/// detection needs A2-T08's platform choice). Cannot launch; [`LauncherGames`] can.
 pub struct LocalLibrary {
     pub db: crate::db::Db,
 }
@@ -234,23 +234,39 @@ impl Games for LocalLibrary {
     }
 }
 
-/// Substitutes a join secret into a manifest's `multiplayer.join.args` (05-social §5, 02 §5):
-/// the `{join_secret}` placeholder is replaced only where it is a whole argument. An absent or
-/// invalid secret gives `None`: launch normally, without the join arguments.
-pub fn join_args(template: &[String], join_secret: Option<&str>) -> Option<Vec<String>> {
-    let secret = join_secret.filter(|s| vgames_proto::social::is_valid_join_secret(s))?;
-    Some(
-        template
-            .iter()
-            .map(|a| {
-                if a == "{join_secret}" {
-                    secret.to_owned()
-                } else {
-                    a.clone()
-                }
-            })
-            .collect(),
-    )
+/// The real port: [`LocalLibrary`] install state, launches through Agent 2's launcher (rate
+/// limit, pre-launch checks, `multiplayer.join` target with the secret as a whole argument).
+pub struct LauncherGames<T> {
+    pub library: LocalLibrary,
+    pub launcher: Arc<crate::launch::orchestrate::Launcher<T>>,
+}
+
+impl<T: crate::launch::orchestrate::TrustSource> Games for LauncherGames<T> {
+    fn check(&self, server: Uuid, package: Uuid) -> BoxFuture<'_, GameCheck> {
+        self.library.check(server, package)
+    }
+
+    fn launch_join(
+        &self,
+        server: Uuid,
+        package: Uuid,
+        join_secret: Option<String>,
+    ) -> BoxFuture<'_, Result<(), LaunchError>> {
+        use crate::launch::TargetChoice;
+        use crate::launch::orchestrate::LaunchError as Refused;
+        Box::pin(async move {
+            let package = crate::events::PackageRef {
+                server_id: server,
+                package_id: package,
+            };
+            let choice = TargetChoice::for_invite(join_secret.as_deref());
+            match self.launcher.launch(package, choice).await {
+                Ok(_) => Ok(()),
+                Err(Refused::NotInstalled | Refused::Incomplete) => Err(LaunchError::NotInstalled),
+                Err(other) => Err(LaunchError::Failed(other.to_string())),
+            }
+        })
+    }
 }
 
 /// Time since the last keyboard or mouse input, when the OS tells us.
@@ -280,22 +296,6 @@ mod tests {
             base_url: "https://vgames.test/".parse().unwrap(),
             access_token: Arc::new(Zeroizing::new(token.to_owned())),
         }
-    }
-
-    #[test]
-    fn join_secrets_are_whole_arguments_or_nothing() {
-        let t: Vec<String> = ["+connect", "{join_secret}", "-x{join_secret}"]
-            .map(String::from)
-            .to_vec();
-        assert_eq!(
-            join_args(&t, Some("10.0.0.2:27015")).unwrap(),
-            ["+connect", "10.0.0.2:27015", "-x{join_secret}"]
-        );
-        for bad in [None, Some(""), Some("a b"), Some("x;rm"), Some("$(id)")] {
-            assert_eq!(join_args(&t, bad), None, "{bad:?}");
-        }
-        let long = "a".repeat(257);
-        assert_eq!(join_args(&t, Some(&long)), None);
     }
 
     #[tokio::test]
