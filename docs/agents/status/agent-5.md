@@ -191,6 +191,18 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
   (window-show fallback, updater scheduler) woke up, so the first update check never ran.
 
 ## Needs from others
+- **From Agent 3 (nightly `E2E` → "Admin web (Playwright, real API)" red since 2026-09-27):** in
+  `apps/admin-web/e2e/foundation.spec.ts`, three tests assume the mock build, while the nightly job runs the suite
+  against the real API (`ADMIN_E2E_BASE_URL`), as your other specs already allow for with
+  `test.skip(Boolean(process.env.ADMIN_E2E_BASE_URL), …)`:
+  - "signed-out users … can start Discord login" expects `/discord\.example/`; against the real API the button leads
+    to `/v1/auth/dev/fake-discord?state=…`. Proposed:
+    `toHaveURL(process.env.ADMIN_E2E_BASE_URL ? /\/v1\/auth\/dev\/fake-discord\?state=/ : /discord\.example/)`.
+  - "admins see the navigation…" and "no animations or transitions anywhere" open `/admin/?mock=admin`, which signs
+    nobody in against the real API (no "Packages" heading). Either skip them in real mode like the other specs, or
+    sign in first through the fake Discord page (`/v1/auth/dev/fake-discord/submit?state=…&id=100000000000000001`,
+    the bootstrap owner) and then open `/admin/`.
+  The key-pipeline job of the same workflow is mine and passes.
 - For Agent 2 (FYI): the updater adds ~25 lines of wiring in your files (`lib.rs`: module, plugin, `updater::init`;
   `commands/mod.rs`; `names.rs`; `capabilities/main.json`; `Cargo.toml`: semver + test dev-deps; `state.rs`/`app.rs`:
   the `ui_ready` latch above).
