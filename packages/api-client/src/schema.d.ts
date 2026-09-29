@@ -1880,6 +1880,7 @@ export interface components {
             chunk_count?: number;
             pack_count?: number;
             publisher_key_id?: string;
+            signature?: components["schemas"]["SignatureEnvelope"];
             verify_progress?: number;
             created_at: components["schemas"]["Timestamp"];
             created_by: components["schemas"]["UserPublic"];
