@@ -39,6 +39,10 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
   Dependabot — https://github.com/wouhliss/vgames/pull/33. The fork dry run (acceptance) needs humans.
 - A5-T12 part 1: `vgames_core::runtimes` (`verify_catalog`), runtime-catalog test vectors, `cargo xtask runtimes
   build | sign | verify`, `runtimes/catalog.toml` — https://github.com/wouhliss/vgames/pull/35.
+- Launcher memory test (Agent 3's `apps/desktop/e2e/memory.spec.ts`, changed with the maintainer's approval): V8 grows
+  the heap in steps, so one 100-round window measured 27–308 KB on an idle app and the required check flipped. The
+  256 KiB budget now applies to the smallest of three windows (a leak grows every window: 3 KB per round injected
+  fails), with listeners and DOM nodes checked after each — https://github.com/wouhliss/vgames/pull/94.
 
 ## In progress
 - **CI runs on GitHub again (the repository is public since 2026-09-26; Actions minutes are free).** Nothing changes
