@@ -300,8 +300,18 @@ async fn launcher(api: &Api, name: &'static str, user: Uuid) -> Launcher {
 
 /// A launcher signed in to the API instance at `base`.
 async fn launcher_at(api: &Api, base: &str, name: &'static str, user: Uuid) -> Launcher {
+    launcher_with_db(api, base, name, user, Db::open_in_memory().unwrap()).await
+}
+
+/// Same, with the launcher's database at a given place (on disk for long runs).
+async fn launcher_with_db(
+    api: &Api,
+    base: &str,
+    name: &'static str,
+    user: Uuid,
+    db: Db,
+) -> Launcher {
     let token = api.session(user).await;
-    let db = Db::open_in_memory().unwrap();
     let server_id: Uuid = SERVER_ID.parse().unwrap();
     let row_url = base.to_owned();
     db.call(move |c| {
