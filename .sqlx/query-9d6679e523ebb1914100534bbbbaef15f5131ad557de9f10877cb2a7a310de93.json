@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT v.id, v.package_id, v.platform, v.sequence, v.version_label, v.state, v.failure_reason,\n                  v.total_size, v.file_count, v.chunk_count, v.pack_count, v.publisher_key_id,\n                  v.created_at, v.created_by, v.finalized_at, v.verified_at, v.published_at, v.yanked_at, v.verify_progress,\n                  EXISTS (SELECT 1 FROM package_releases r WHERE r.version_id = v.id) AS \"is_current!\"\n           FROM package_versions v WHERE v.id = ANY($1) ORDER BY v.id DESC",
+  "query": "SELECT v.id, v.package_id, v.platform, v.sequence, v.version_label, v.state, v.failure_reason,\n                  v.total_size, v.file_count, v.chunk_count, v.pack_count, v.publisher_key_id,\n                  v.manifest_blake3, v.signature,\n                  v.created_at, v.created_by, v.finalized_at, v.verified_at, v.published_at, v.yanked_at, v.verify_progress,\n                  EXISTS (SELECT 1 FROM package_releases r WHERE r.version_id = v.id) AS \"is_current!\"\n           FROM package_versions v WHERE v.id = ANY($1) ORDER BY v.id DESC",
   "describe": {
     "columns": [
       {
@@ -137,6 +137,28 @@
       },
       {
         "ordinal": 12,
+        "name": "manifest_blake3",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "package_versions",
+            "name": "manifest_blake3"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "signature",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "package_versions",
+            "name": "signature"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -147,7 +169,7 @@
         }
       },
       {
-        "ordinal": 13,
+        "ordinal": 15,
         "name": "created_by",
         "type_info": "Uuid",
         "origin": {
@@ -158,7 +180,7 @@
         }
       },
       {
-        "ordinal": 14,
+        "ordinal": 16,
         "name": "finalized_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -169,7 +191,7 @@
         }
       },
       {
-        "ordinal": 15,
+        "ordinal": 17,
         "name": "verified_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -180,7 +202,7 @@
         }
       },
       {
-        "ordinal": 16,
+        "ordinal": 18,
         "name": "published_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -191,7 +213,7 @@
         }
       },
       {
-        "ordinal": 17,
+        "ordinal": 19,
         "name": "yanked_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -202,7 +224,7 @@
         }
       },
       {
-        "ordinal": 18,
+        "ordinal": 20,
         "name": "verify_progress",
         "type_info": "Float4",
         "origin": {
@@ -213,7 +235,7 @@
         }
       },
       {
-        "ordinal": 19,
+        "ordinal": 21,
         "name": "is_current!",
         "type_info": "Bool",
         "origin": "Expression"
@@ -237,6 +259,8 @@
       true,
       true,
       true,
+      true,
+      true,
       false,
       false,
       true,
@@ -247,5 +271,5 @@
       null
     ]
   },
-  "hash": "e229455c7894bcd5a62abbc5cf2c0b6ca96e19cc19b2e185ddc1677b437ff623"
+  "hash": "9d6679e523ebb1914100534bbbbaef15f5131ad557de9f10877cb2a7a310de93"
 }

@@ -21,6 +21,15 @@ async fn a_real_package_finalizes_and_can_be_re_signed(pool: PgPool) {
     let w = world(&pool).await;
     let (version, built) = full_upload(&w, false).await;
 
+    // Nothing is signed before finalize, so the admin version carries no envelope.
+    let resp = send(
+        &w.app,
+        bearer_request("GET", &format!("/v1/admin/versions/{version}"), &w.owner),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert!(body_json(resp).await.get("signature").is_none());
+
     let (status, v) = finalize(
         &w,
         version,
@@ -37,6 +46,7 @@ async fn a_real_package_finalizes_and_can_be_re_signed(pool: PgPool) {
         v["publisher_key_id"],
         key(2).public_key().key_id().to_string()
     );
+    assert_eq!(v["signature"], envelope(&key(2), &built.manifest));
     assert!(v["finalized_at"].is_string());
 
     let packs: i64 = sqlx::query_scalar("SELECT count(*) FROM package_packs WHERE version_id = $1")
@@ -85,9 +95,22 @@ async fn a_real_package_finalizes_and_can_be_re_signed(pool: PgPool) {
     )
     .await;
     assert_eq!(resp.status(), StatusCode::OK);
+    let body = body_json(resp).await;
     assert_eq!(
-        body_json(resp).await["publisher_key_id"],
+        body["publisher_key_id"],
         key(6).public_key().key_id().to_string()
+    );
+    // Admin versions carry the envelope, so `vgames trust re-sign` reaches versions that are
+    // not the current release (Agent 5's request).
+    assert_eq!(body["signature"], envelope(&key(6), &built.manifest));
+    let resp = send(
+        &w.app,
+        bearer_request("GET", &format!("/v1/admin/versions/{version}"), &w.owner),
+    )
+    .await;
+    assert_eq!(
+        body_json(resp).await["signature"],
+        envelope(&key(6), &built.manifest)
     );
     let resp = send(
         &w.app,

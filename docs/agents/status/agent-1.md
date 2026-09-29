@@ -137,15 +137,15 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
 
 ## In progress
 - Agent 5's requests to Agent 1 (their status file, "Needs from others"):
-  1. **Sign-in page (security finding): done in this PR.** The desktop Discord callback now answers `200` with
+  1. **Sign-in page (security finding): done, wouhliss/vgames#88.** The desktop Discord callback now answers `200` with
      the page (code or refusal reason, "open vgames" link) and opens the deep link itself with
      `<meta http-equiv="refresh">`, instead of a `302` whose body browsers never render. `Cache-Control: no-store`
      and a CSP without scripts. The paste fallback (launcher field, `vgames` CLI prompt) now works. Web flows
      keep their `302`. Contract commit: `openapi.yaml` (`discordCallback` 200 `text/html`), 01-security §4.1,
      03-api.
-  2. **`signature` on the admin `Version` (contract request): next PR.** It adds a field to
+  2. **`signature` on the admin `Version` (contract request): done in this PR.** It adds a field to
      `vgames_proto::versions::Version`, which breaks the exhaustive test literal in Agent 2's
-     `crates/vgames-transfer/src/upload/publish.rs` (`fn version`). That PR adds only `signature: None,` there
+     `crates/vgames-transfer/src/upload/publish.rs` (`fn version`). This PR adds only `signature: None,` there
      and says so.
 
 ## Interfaces delivered (other agents may now rely on these)
@@ -201,6 +201,9 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   exactly those headers, take `Location` as the session URI, `PUT` chunks with `Content-Range`. The manifest target is a
   single `PUT` with `content-type: application/json` and `x-goog-content-length-range: 1,268435456`. Objects:
   `v1/{package}/{version}/packs/{i:05}.pack`, `…/manifest.json` (`vgames_api::versions::{pack_object, manifest_object}`).
+- **Re-sign for Agent 5 (`vgames trust re-sign`):** the admin `Version` carries `signature` (the same
+  `vgames.sig/1` envelope as the release descriptor, from `versions::manifest_envelope`) once the version is
+  finalized, so every ready/published version can be re-signed, not only the current release.
 - **Downloads for Agent 2 (launcher):** `GET /v1/packages/{id}/releases/{platform}` → `ReleaseDescriptor`
   (`manifest.{url,size,blake3,expires_at}`, `signature` envelope for `vgames_core::verify::verify_manifest`,
   `yanked_version_ids`); then `POST /v1/versions/{id}/download-urls {packs:[…]}` → `{items:[{pack_index,url,size,

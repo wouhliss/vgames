@@ -494,6 +494,7 @@ mod tests {
             chunk_count: None,
             pack_count: None,
             publisher_key_id: None,
+            signature: None,
             verify_progress: None,
             created_at: OffsetDateTime::UNIX_EPOCH,
             created_by: UserPublic {
