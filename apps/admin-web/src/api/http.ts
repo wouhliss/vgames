@@ -123,8 +123,19 @@ async function send(run: RawCall, signal: AbortSignal | undefined) {
   }
 }
 
+let onUnauthorized: (() => void) | null = null;
+
+/**
+ * Called on every 401, whoever made the request (queries, mutations and direct calls from forms):
+ * the app keeps unsaved input and goes to sign-in.
+ */
+export function setUnauthorizedHandler(handler: (() => void) | null): void {
+  onUnauthorized = handler;
+}
+
 /** The typed error for a non-2xx response whose body was `error` (text or parsed). */
 export function failure(response: Response, error: unknown): ApiError {
+  if (response.status === 401) onUnauthorized?.();
   return new ApiError({
     kind: "http",
     status: response.status,

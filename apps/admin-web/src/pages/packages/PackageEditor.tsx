@@ -6,10 +6,12 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { useBlocker, useNavigate } from "react-router";
+import { z } from "zod";
 import { ApiError } from "../../api/errors";
 import type { ApiResponse } from "../../api/http";
 import { deletePackage, getPackage, packageKeys, updatePackage } from "../../api/packages";
 import type { AdminPackage, PackageStatus } from "../../api/schemas";
+import { isSigningOut, RESTORED_MESSAGE, useDraft } from "../../app/drafts";
 import { ErrorView } from "../../app/ErrorView";
 import { Field } from "../../components/Field";
 import { Modal } from "../../components/Modal";
@@ -20,6 +22,7 @@ import {
   type FieldName,
   type FieldSpec,
   type FormValues,
+  FormValuesSchema,
   fromPackage,
   isDirty,
   length,
@@ -49,6 +52,14 @@ function toFormErrors(errors: Record<string, string>): Partial<Record<FieldName,
   return out;
 }
 
+/** Unsaved input kept across a sign-in, with the version it was edited against. */
+const EditorDraft = z.object({
+  etag: z.string(),
+  base: FormValuesSchema,
+  values: FormValuesSchema,
+});
+type EditorDraft = z.infer<typeof EditorDraft>;
+
 /** The Details tab: the form, status and delete. */
 export function PackageEditor() {
   const { response } = usePackageContext();
@@ -58,13 +69,16 @@ export function PackageEditor() {
 function Editor({ initial }: { initial: ApiResponse<AdminPackage> }) {
   const client = useQueryClient();
   const navigate = useNavigate();
+  const restored = useDraft(`package:${initial.data.id}`, EditorDraft, (): EditorDraft | null =>
+    dirty ? { etag, base, values } : null,
+  );
   const [pkg, setPkg] = useState(initial.data);
-  const [etag, setEtag] = useState(initial.etag ?? "");
-  const [base, setBase] = useState(() => fromPackage(initial.data));
-  const [values, setValues] = useState(base);
+  const [etag, setEtag] = useState(restored?.etag ?? initial.etag ?? "");
+  const [base, setBase] = useState(() => restored?.base ?? fromPackage(initial.data));
+  const [values, setValues] = useState(restored?.values ?? base);
   const [errors, setErrors] = useState<Partial<Record<FieldName, string>>>({});
   const [failure, setFailure] = useState<unknown>(null);
-  const [saved, setSaved] = useState<string | null>(null);
+  const [saved, setSaved] = useState<string | null>(restored ? RESTORED_MESSAGE : null);
   const [saving, setSaving] = useState(false);
   const [conflict, setConflict] = useState<{ latest: AdminPackage; etag: string } | null>(null);
   const [statusChoice, setStatusChoice] = useState<PackageStatus>(initial.data.status);
@@ -77,6 +91,7 @@ function Editor({ initial }: { initial: ApiResponse<AdminPackage> }) {
   useEffect(() => {
     if (!dirty) return;
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isSigningOut()) return; // The input is kept as a draft.
       e.preventDefault();
       e.returnValue = "";
     };
@@ -87,7 +102,7 @@ function Editor({ initial }: { initial: ApiResponse<AdminPackage> }) {
   // In-app navigation with unsaved changes.
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
-      dirty && currentLocation.pathname !== nextLocation.pathname,
+      dirty && !isSigningOut() && currentLocation.pathname !== nextLocation.pathname,
   );
 
   const accept = (response: ApiResponse<AdminPackage>, message: string) => {

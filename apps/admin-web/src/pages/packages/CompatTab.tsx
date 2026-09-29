@@ -4,17 +4,20 @@
 // revision. The current revision is shown read-only.
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
+import { z } from "zod";
 import { compatKeys, compatProfiles, putCompatProfile, serverInfo } from "../../api/compat";
 import { ApiError } from "../../api/errors";
 import { listCandidates, metadataKeys } from "../../api/packages";
 import { type CompatStatus, CompatStatusSchema, type SignedCompatProfile } from "../../api/schemas";
 import { FINALIZE_ERRORS } from "../../api/versions";
+import { RESTORED_MESSAGE, useDraft } from "../../app/drafts";
 import { ErrorView, Loading } from "../../app/ErrorView";
 import { useUploadDeps } from "../../upload/context";
 import type { KeyChannel, PackChannel } from "../../upload/rpc";
 import {
   buildDocument,
   type CompatForm,
+  CompatFormSchema,
   emptyForm,
   type FormErrors,
   formFromDocument,
@@ -25,6 +28,10 @@ import {
   validate,
   WINETRICKS,
 } from "./compatModel";
+
+const CompatDraft = z.object({ revision: z.number().int().min(0), form: CompatFormSchema });
+type CompatDraft = z.infer<typeof CompatDraft>;
+
 import { usePackageContext } from "./PackageLayout";
 import { KeyStep } from "./UploadWizard";
 
@@ -142,12 +149,18 @@ function TargetEditor({
       return null;
     }
   })();
-  const [form, setForm] = useState<CompatForm>(() =>
+  const [loaded, setLoaded] = useState<CompatForm>(() =>
     currentDoc ? formFromDocument(currentDoc, target) : emptyForm(target),
   );
+  // Kept across a sign-in with the revision it builds on: a newer one saved meanwhile is a 409.
+  const restored = useDraft(`compat:${packageId}:${target}`, CompatDraft, (): CompatDraft | null =>
+    JSON.stringify(form) === JSON.stringify(loaded) ? null : { revision: baseRevision, form },
+  );
+  const [baseRevision, setBaseRevision] = useState(restored?.revision ?? current?.revision ?? 0);
+  const [form, setForm] = useState<CompatForm>(restored?.form ?? loaded);
   const [errors, setErrors] = useState<FormErrors>({});
   const [failure, setFailure] = useState<string | null>(null);
-  const [saved, setSaved] = useState<string | null>(null);
+  const [saved, setSaved] = useState<string | null>(restored ? RESTORED_MESSAGE : null);
   const [busy, setBusy] = useState(false);
   const id = (f: string) => `${target}-${f}`;
   const set = <K extends keyof CompatForm>(k: K, v: CompatForm[K]) => {
@@ -155,7 +168,7 @@ function TargetEditor({
     setErrors((e) => ({ ...e, [k]: undefined }));
     setSaved(null);
   };
-  const next = (current?.revision ?? 0) + 1;
+  const next = baseRevision + 1;
 
   const save = async () => {
     if (busy || !packs || !keys) return;
@@ -184,6 +197,8 @@ function TargetEditor({
         signature: JSON.parse(signed.envelope),
       });
       setSaved(`Revision ${next} is published.`);
+      setBaseRevision(next);
+      setLoaded(form);
       await client.invalidateQueries({ queryKey: compatKeys.profiles(packageId) });
     } catch (e) {
       if (e instanceof ApiError && e.status === 409)

@@ -4,8 +4,10 @@ import userEvent from "@testing-library/user-event";
 import type { RequestHandler } from "msw";
 import type { ReactNode } from "react";
 import { createMemoryRouter, RouterProvider } from "react-router";
+import { setUnauthorizedHandler } from "../api/http";
 import { createQueryClient } from "../api/query";
 import { routes } from "../app/router";
+import { leaveForSignIn } from "../app/session";
 import { createDb, type MockDb, type Role } from "../mocks/db";
 import { createHandlers } from "../mocks/handlers";
 import { server } from "./setup";
@@ -18,15 +20,26 @@ export function renderAt(
     overrides?: RequestHandler[];
     db?: (db: MockDb) => void;
     wrapper?: (props: { children: ReactNode }) => ReactNode;
+    /** Continue with this mock server state (a reload in the middle of a test). */
+    existing?: MockDb;
   } = {},
 ) {
-  const db = createDb(role);
+  const db = options.existing ?? createDb(role);
   options.db?.(db);
   // biome-ignore lint/suspicious/noDocumentCookie: simulates the server-set CSRF cookie.
   document.cookie = `__Host-vgames_csrf=${db.csrf}; path=/; secure`;
   server.use(...(options.overrides ?? []), ...createHandlers(db));
   const router = createMemoryRouter(routes, { initialEntries: [path] });
-  const qc = createQueryClient({ onUnauthenticated: () => {}, onNetworkError: () => {} });
+  // A 401 behaves as in the app: drafts are kept and the router goes to sign-in.
+  const qc = createQueryClient({ onNetworkError: () => {} });
+  setUnauthorizedHandler(() =>
+    leaveForSignIn(
+      qc,
+      (to) => void router.navigate(to),
+      `/admin${router.state.location.pathname}`,
+      router.state.location.pathname.startsWith("/login"),
+    ),
+  );
   const Wrapper = options.wrapper ?? (({ children }: { children: ReactNode }) => children);
   render(
     <QueryClientProvider client={qc}>
@@ -35,5 +48,5 @@ export function renderAt(
       </Wrapper>
     </QueryClientProvider>,
   );
-  return { router, db, user: userEvent.setup() };
+  return { router, db, qc, user: userEvent.setup() };
 }

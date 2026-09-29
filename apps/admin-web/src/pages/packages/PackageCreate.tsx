@@ -4,9 +4,11 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
+import { z } from "zod";
 import { ApiError } from "../../api/errors";
 import { newIdempotencyKey } from "../../api/http";
 import { createPackage } from "../../api/packages";
+import { RESTORED_MESSAGE, useDraft } from "../../app/drafts";
 import { ErrorView } from "../../app/ErrorView";
 import { Field } from "../../components/Field";
 import { FIELDS, length, parseId, SLUG, slugify, validateField } from "./model";
@@ -17,15 +19,27 @@ const spec = (name: "title" | "slug" | "steam_app_id" | "igdb_id") => {
   return found;
 };
 
+const CreateDraft = z.object({
+  title: z.string(),
+  slug: z.string(),
+  steam: z.string(),
+  igdb: z.string(),
+  fetchMetadata: z.boolean(),
+});
+type CreateDraft = z.infer<typeof CreateDraft>;
+
 export function PackageCreate() {
   const navigate = useNavigate();
   const client = useQueryClient();
   const [key] = useState(newIdempotencyKey);
-  const [title, setTitle] = useState("");
-  const [slug, setSlug] = useState("");
-  const [steam, setSteam] = useState("");
-  const [igdb, setIgdb] = useState("");
-  const [fetchMetadata, setFetchMetadata] = useState(true);
+  const restored = useDraft("package-create", CreateDraft, (): CreateDraft | null =>
+    title || slug || steam || igdb ? { title, slug, steam, igdb, fetchMetadata } : null,
+  );
+  const [title, setTitle] = useState(restored?.title ?? "");
+  const [slug, setSlug] = useState(restored?.slug ?? "");
+  const [steam, setSteam] = useState(restored?.steam ?? "");
+  const [igdb, setIgdb] = useState(restored?.igdb ?? "");
+  const [fetchMetadata, setFetchMetadata] = useState(restored?.fetchMetadata ?? true);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [failure, setFailure] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
@@ -94,6 +108,11 @@ export function PackageCreate() {
         <Link to="/packages">← Packages</Link>
       </p>
       <h1 id="page-title">Create package</h1>
+      {restored ? (
+        <p role="status" className="muted">
+          {RESTORED_MESSAGE}
+        </p>
+      ) : null}
       {failure ? <ErrorView error={failure} /> : null}
       <form onSubmit={(e) => void submit(e)} noValidate>
         <Field

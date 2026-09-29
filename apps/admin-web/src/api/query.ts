@@ -24,16 +24,13 @@ export function retryDelay(failureCount: number, error: unknown): number {
 }
 
 export interface GlobalErrorHandlers {
-  /** 401: the session is gone. */
-  onUnauthenticated: () => void;
-  /** No response at all (offline, timeout): show the offline banner. */
+  /** No response at all (offline, timeout): show the offline banner. (401s: `setUnauthorizedHandler`.) */
   onNetworkError: () => void;
 }
 
 export function createQueryClient(handlers: GlobalErrorHandlers): QueryClient {
   const onError = (error: unknown) => {
     if (!(error instanceof ApiError)) return;
-    if (error.status === 401) handlers.onUnauthenticated();
     if (error.detail.kind === "network" || error.detail.kind === "timeout")
       handlers.onNetworkError();
   };

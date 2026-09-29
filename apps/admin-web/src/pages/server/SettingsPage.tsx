@@ -2,10 +2,16 @@
 // admins see them read-only. A 412 keeps the input and shows what changed.
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
+import { z } from "zod";
 import { ApiError } from "../../api/errors";
 import type { ApiResponse } from "../../api/http";
-import type { ServerSettings } from "../../api/schemas";
+import {
+  RegistrationModeSchema,
+  type ServerSettings,
+  ServerSettingsSchema,
+} from "../../api/schemas";
 import { getSettings, serverKeys, updateSettings } from "../../api/server";
+import { RESTORED_MESSAGE, useDraft } from "../../app/drafts";
 import { ErrorView, ForbiddenPage, Loading } from "../../app/ErrorView";
 import { useRole } from "./shared";
 
@@ -22,6 +28,16 @@ const MODES = [
     text: "Nobody new can join. Existing accounts keep working.",
   },
 ] as const;
+
+/** Unsaved input kept across a sign-in, with the version it was edited against. */
+const SettingsDraft = z.object({
+  etag: z.string(),
+  base: ServerSettingsSchema,
+  name: z.string(),
+  motd: z.string(),
+  mode: RegistrationModeSchema,
+});
+type SettingsDraft = z.infer<typeof SettingsDraft>;
 
 export function SettingsPage() {
   const settings = useQuery({
@@ -42,23 +58,31 @@ function SettingsForm({ initial }: { initial: ApiResponse<ServerSettings> }) {
   const role = useRole();
   const client = useQueryClient();
   const readOnly = role !== "owner";
-  const [etag, setEtag] = useState(initial.etag ?? "");
-  const [base, setBase] = useState(initial.data);
-  const [name, setName] = useState(initial.data.name);
-  const [motd, setMotd] = useState(initial.data.motd ?? "");
-  const [mode, setMode] = useState(initial.data.registration_mode);
+  const restored = useDraft("settings", SettingsDraft, (): SettingsDraft | null =>
+    !readOnly &&
+    (name.trim() !== base.name || motd !== (base.motd ?? "") || mode !== base.registration_mode)
+      ? { etag, base, name, motd, mode }
+      : null,
+  );
+  const [etag, setEtag] = useState(restored?.etag ?? initial.etag ?? "");
+  const [base, setBase] = useState(restored?.base ?? initial.data);
+  const [name, setName] = useState(restored?.name ?? initial.data.name);
+  const [motd, setMotd] = useState(restored?.motd ?? initial.data.motd ?? "");
+  const [mode, setMode] = useState(restored?.mode ?? initial.data.registration_mode);
   const [errors, setErrors] = useState<{ name?: string | undefined; motd?: string | undefined }>(
     {},
   );
   const [failure, setFailure] = useState<unknown>(null);
   const [conflict, setConflict] = useState<ApiResponse<ServerSettings> | null>(null);
   const [saved, setSaved] = useState(false);
+  const [restoredNote, setRestoredNote] = useState(Boolean(restored));
   const [busy, setBusy] = useState(false);
 
   const save = async (e: FormEvent) => {
     e.preventDefault();
     if (readOnly || busy) return;
     setSaved(false);
+    setRestoredNote(false);
     setFailure(null);
     const local: typeof errors = {};
     const n = [...name.trim()].length;
@@ -195,7 +219,7 @@ function SettingsForm({ initial }: { initial: ApiResponse<ServerSettings> }) {
           </button>
         )}
         <p role="status" className="muted">
-          {saved ? "Saved." : ""}
+          {saved ? "Saved." : restoredNote ? RESTORED_MESSAGE : ""}
         </p>
       </form>
     </section>

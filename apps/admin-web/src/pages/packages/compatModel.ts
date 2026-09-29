@@ -1,6 +1,7 @@
 // The compat profile editor's model: form fields, the rules of `vgames-core::compat` (checked here
 // so the admin sees every problem before signing; the server checks again), and the document.
-import type { CompatStatus } from "../../api/schemas";
+import { z } from "zod";
+import { type CompatStatus, CompatStatusSchema } from "../../api/schemas";
 
 export type Target = "linux" | "macos";
 export type Graphics = "d3dmetal" | "dxmt" | "dxvk" | "wined3d";
@@ -80,6 +81,22 @@ export interface CompatForm {
   dllOverrides: string;
   winetricks: string[];
 }
+
+/** A form kept across a sign-in (drafts). */
+export const CompatFormSchema: z.ZodType<CompatForm> = z.object({
+  status: CompatStatusSchema,
+  notes: z.string(),
+  platform: z.enum(["windows-x86_64", "windows-aarch64"]),
+  minSequence: z.string(),
+  maxSequence: z.string(),
+  prefer: z.string(),
+  minVersion: z.string(),
+  umuGameId: z.string(),
+  graphics: z.array(z.enum(GRAPHICS)),
+  env: z.string(),
+  dllOverrides: z.string(),
+  winetricks: z.array(z.string()),
+});
 
 export function emptyForm(target: Target): CompatForm {
   return {
