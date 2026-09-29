@@ -16,9 +16,17 @@
 
 pub mod protocol;
 
+/// CPU layout and rasterisation of the overlay cards.
+#[cfg(feature = "renderer")]
+pub mod draw;
 /// Hook panic safety net shared by every renderer backend.
 #[cfg(any(feature = "renderer", test))]
 pub mod guard;
 /// The in-game side of the broker link (connect, views, actions, reconnect).
 #[cfg(any(feature = "renderer", test))]
 pub mod link;
+/// Vulkan implicit layer (all FFI with the loader: `unsafe` is allowed here, and every block
+/// carries a `SAFETY` comment).
+#[cfg(all(feature = "renderer", any(target_os = "linux", windows)))]
+#[allow(unsafe_code)]
+pub mod vulkan;
