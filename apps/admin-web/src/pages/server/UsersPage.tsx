@@ -8,6 +8,7 @@ import type { AdminUser } from "../../api/schemas";
 import { listUsers, serverKeys, updateUser } from "../../api/server";
 import { ErrorView, ForbiddenPage, Loading } from "../../app/ErrorView";
 import { Modal } from "../../components/Modal";
+import { SpacerRow, useTableWindow } from "../../components/tableWindow";
 import { LoadMore, useRole, useUrlFilters, when } from "./shared";
 
 const ROLES = ["user", "admin", "owner"] as const;
@@ -61,8 +62,9 @@ export function UsersPage() {
     }
   };
 
-  if (pages.error instanceof ApiError && pages.error.status === 403) return <ForbiddenPage />;
   const users = pages.data?.pages.flatMap((p) => p.items) ?? [];
+  const win = useTableWindow(users);
+  if (pages.error instanceof ApiError && pages.error.status === 403) return <ForbiddenPage />;
   const search = (e: FormEvent) => {
     e.preventDefault();
     apply({ q, role: roleFilter });
@@ -121,7 +123,7 @@ export function UsersPage() {
         <p role="status">No users match.</p>
       ) : (
         <>
-          <div className="table-wrap">
+          <div className="table-wrap" ref={win.scrollRef}>
             <table>
               <caption className="visually-hidden">Users</caption>
               <thead>
@@ -135,10 +137,11 @@ export function UsersPage() {
                 </tr>
               </thead>
               <tbody>
-                {users.map((u) => {
+                <SpacerRow height={win.before} columns={6} />
+                {win.rows.map(({ item: u, index }) => {
                   const canToggle = role === "owner" || u.role === "user";
                   return (
-                    <tr key={u.id}>
+                    <tr key={u.id} ref={win.measure} data-index={index}>
                       <th scope="row" dir="auto">
                         {u.display_name ?? u.username} <span className="muted">@{u.username}</span>
                       </th>
@@ -193,6 +196,7 @@ export function UsersPage() {
                     </tr>
                   );
                 })}
+                <SpacerRow height={win.after} columns={6} />
               </tbody>
             </table>
           </div>

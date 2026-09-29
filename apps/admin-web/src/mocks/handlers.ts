@@ -42,6 +42,13 @@ export function guard(db: MockDb, request: Request, minRole: "user" | "admin" | 
 
 export function createHandlers(db: MockDb) {
   return [
+    // A switchable outage for the robustness e2e: fails every API call but the session check.
+    http.all("*/v1/*", ({ request }) => {
+      const fault = db.faults.api;
+      if (fault === undefined || new URL(request.url).pathname === "/v1/me") return undefined;
+      if (fault === "offline") return HttpResponse.error();
+      return problem(fault, fault >= 500 ? "internal" : "fault", "Injected fault");
+    }),
     http.get("*/v1/me", ({ request }) => {
       const denied = guard(db, request, "user");
       if (denied) return denied;

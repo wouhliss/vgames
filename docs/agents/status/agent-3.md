@@ -207,6 +207,21 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   Tests: 17 Vitest and `e2e/authorization.spec.ts`: **the admin vs owner matrix for every page and action**
   (owner-only controls present for owners, absent for admins; axe on every page for both roles) plus a forced
   owner-only request answered 403.
+- A3-T18 — Admin robustness suite. **Sessions ending mid-form:** any 401 (queries, mutations and forms' direct
+  calls; the hook moved into the HTTP layer) stashes every mounted form's unsaved input to sessionStorage before
+  going to sign-in; each form restores it once afterwards, says so, and keeps the ETag or compat revision it was
+  edited against (a change saved elsewhere meanwhile is still a 412/409). Drafts are per account, expire after a
+  day, are validated with zod, never hold passphrases or files; leave prompts don't stop the sign-in redirect.
+  **Page × state** (`robustness.test.tsx`, 131 cases): every page's reads failing as 401, 403, 404, 429, 500, a
+  proxy's HTML 502, offline, non-JSON and off-contract bodies; slow loads; empty lists. **Forms × failures**
+  (`forms.test.tsx`): create, editor, settings and allowlist under 409/412/428/429/500/offline keep the input and
+  claim no success; double clicks send one request; 500-code-point mixed-script input saves exactly. **Long
+  lists:** past 200 rows the packages, users, jobs and audit tables render only the rows near the scroll position
+  (tested at 10,000). **Browser** (`e2e/robustness.spec.ts`): deep links to every package section, filter URLs and
+  unknown ids; back/forward; keyboard-only create/edit/filter with a focus-ring check at every Tab stop; axe on
+  every page under 500/429/403/offline; the mid-form sign-in round trip. Repeated 3× with no flake; `retries: 0`.
+  Fixed on the way: a second "Create package" request between success and navigation; no focus ring on date
+  inputs' calendar button; the Trust page's empty table (now an empty state).
 
 ## In progress
 - A3-T07 — Settings, in parts. **Part 1** ([#52](https://github.com/wouhliss/vgames/pull/52), merged): one URL per section (`/settings/<section>`, a section list that
@@ -222,7 +237,7 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   `in_use {by}` shown; Escape cancels; Reset to Shift+F3; a switch per game, with the date and reason when the
   crash safety valve turned it off). Tested to persist through a restart. Also fixes a unit-test teardown race
   (`clearMocks()` before a late `listen` settled) that made about half of the PackagePage runs report an unhandled error.
-  **Part 3 (this PR):** Compatibility (09-compatibility): how Windows games run here (Proton, Wine, or natively on Windows);
+  **Part 3** ([#86](https://github.com/wouhliss/vgames/pull/86), merged): Compatibility (09-compatibility): how Windows games run here (Proton, Wine, or natively on Windows);
   Rosetta 2 on Apple silicon (install after confirming, and Apple's "limited after macOS 27" note from the runtime
   catalog); the default Proton/Wine version (automatic or a catalog version); downloaded runtimes with their size,
   what uses them and Remove for unused ones; per-game overrides (runner version, graphics backend on Macs with
@@ -252,6 +267,11 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   `src/mocks/` (`?mock=fresh|ready|empty|huge|no-library|debug`; `ready` has 40 installed packages
   with one library offline, `huge` has 5,000). E2E: `pnpm --filter @vgames/desktop e2e`
   (builds the mock bundle; set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to use a preinstalled Chromium).
+
+- Admin web (A3-T18): `useDraft(key, schema, snapshot)` and `stashDrafts()` (`src/app/drafts.ts`) for any new form;
+  `setUnauthorizedHandler` (`src/api/http.ts`) is the one place a 401 is handled; `useTableWindow(items)` +
+  `SpacerRow` (`src/components/tableWindow.tsx`) for tables that grow by pages; the mock's `db.faults.api`
+  (a status or `"offline"`) fails every API call but `/v1/me`.
 
 ## Needs from others
 - **From Agent 2** (`bindings.ts`, A2-T01/T07/T08/T12). Please implement these names and shapes
@@ -374,7 +394,12 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
 - **From Agent 5** (A3-T16): the admin release build must run `pnpm --filter @vgames/pack-wasm build` before
   `pnpm --filter @vgames/admin-web build`; without it the uploader says its packing module is missing. The admin pages
   bundle the `.wasm` (≈ 250 KB gzipped) through an optional glob, so CI builds without it keep working.
-- **From Agent 5:** nothing more for now. Seen (2026-09-26): CI runs locally (`scripts/ci/local.sh`, PR 42);
+- **From Agent 5** (A3-T18 acceptance "runs in CI"): the admin Playwright suite runs nightly (`e2e.yml`) but not on
+  PRs. Please add a `ci.yml` job like `desktop-e2e` running `pnpm --filter @vgames/admin-web exec playwright install
+  --with-deps chromium` then `pnpm --filter @vgames/admin-web e2e` (mock mode, `CI: "true"`, report uploaded on
+  failure; about 2.5 min), and the same job in `scripts/ci/local.sh`. `.github/` and `scripts/ci/` are yours, so I
+  haven't changed them.
+- **From Agent 5:** otherwise nothing more for now. Seen (2026-09-26): CI runs locally (`scripts/ci/local.sh`, PR 42);
   my PRs carry its summary on the final commit and merge only when every job passes. The updater commands and the `updater-status` event now
   come from the generated `bindings.ts` (onboarding's "launcher too old" check uses `updater_check ->
   UpdateCheck`); A3-T10 builds the banner and What's new dialog on them.

@@ -6,6 +6,7 @@ import { ApiError } from "../../api/errors";
 import { JobStateSchema } from "../../api/schemas";
 import { listJobs, retryJob, serverKeys } from "../../api/server";
 import { ErrorView, ForbiddenPage, Loading } from "../../app/ErrorView";
+import { SpacerRow, useTableWindow } from "../../components/tableWindow";
 import { LoadMore, useUrlFilters, when } from "./shared";
 
 export function JobsPage() {
@@ -26,8 +27,9 @@ export function JobsPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [failure, setFailure] = useState<unknown>(null);
 
-  if (pages.error instanceof ApiError && pages.error.status === 403) return <ForbiddenPage />;
   const jobs = pages.data?.pages.flatMap((p) => p.items) ?? [];
+  const win = useTableWindow(jobs);
+  if (pages.error instanceof ApiError && pages.error.status === 403) return <ForbiddenPage />;
 
   return (
     <section aria-labelledby="page-title">
@@ -85,7 +87,7 @@ export function JobsPage() {
         <p role="status">No jobs match.</p>
       ) : (
         <>
-          <div className="table-wrap">
+          <div className="table-wrap" ref={win.scrollRef}>
             <table>
               <caption className="visually-hidden">Jobs</caption>
               <thead>
@@ -99,8 +101,9 @@ export function JobsPage() {
                 </tr>
               </thead>
               <tbody>
-                {jobs.map((j) => (
-                  <tr key={j.id}>
+                <SpacerRow height={win.before} columns={6} />
+                {win.rows.map(({ item: j, index }) => (
+                  <tr key={j.id} ref={win.measure} data-index={index}>
                     <th scope="row" className="mono">
                       {j.kind}
                     </th>
@@ -132,6 +135,7 @@ export function JobsPage() {
                     </td>
                   </tr>
                 ))}
+                <SpacerRow height={win.after} columns={6} />
               </tbody>
             </table>
           </div>

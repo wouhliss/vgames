@@ -24,16 +24,18 @@ export function retryDelay(failureCount: number, error: unknown): number {
 }
 
 export interface GlobalErrorHandlers {
-  /** 401: the session is gone. */
-  onUnauthenticated: () => void;
-  /** No response at all (offline, timeout): show the offline banner. */
+  /** No response at all (offline, timeout): show the offline banner. (401s: `setUnauthorizedHandler`.) */
   onNetworkError: () => void;
 }
 
-export function createQueryClient(handlers: GlobalErrorHandlers): QueryClient {
+/** `retryDelayMs` replaces the backoff (tests: the same retries, without the waiting). */
+export function createQueryClient(
+  handlers: GlobalErrorHandlers,
+  options: { retryDelayMs?: number } = {},
+): QueryClient {
+  const delay = options.retryDelayMs;
   const onError = (error: unknown) => {
     if (!(error instanceof ApiError)) return;
-    if (error.status === 401) handlers.onUnauthenticated();
     if (error.detail.kind === "network" || error.detail.kind === "timeout")
       handlers.onNetworkError();
   };
@@ -45,7 +47,7 @@ export function createQueryClient(handlers: GlobalErrorHandlers): QueryClient {
       // failure shows the offline banner with Retry instead of silently pausing (A3-T13).
       queries: {
         retry: shouldRetry,
-        retryDelay,
+        retryDelay: delay === undefined ? retryDelay : () => delay,
         refetchOnWindowFocus: false,
         staleTime: 10_000,
         networkMode: "always",
