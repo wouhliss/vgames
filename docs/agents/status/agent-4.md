@@ -128,9 +128,17 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   Hotkey: registered only while a game with the overlay runs, toggles the panel; `social_settings_set` checks a new
   one first (Ctrl/Alt/Super or an F-key; trial registration) → `SocialError` `invalid` / `in_use` (Agent 3's
   requested shapes, now generated: `HotkeyError` in `contract/settings.ts` can go).
-  **Next:** always-on-top fallback
-  window and OS notifications (Wayland), macOS `NSPanel` (needs a Mac to verify; `macOSPrivateApi` contract PR),
+  Overlay window UI in `apps/desktop/src/overlay/` (toasts, invites with Accept/Decline, last message per
+  conversation with quick reply, friends online, Open vgames, Escape closes; server text as plain text; 3 Vitest
+  tests) and the fallback: no in-game renderer within 20 s (or macOS, where nothing is injected) → always-on-top
+  borderless window at the right screen edge, click-through unless the panel is open, never focused on appear
+  (Windows, X11, macOS), or OS notifications for toasts (Wayland); hidden when the last game stops; a renderer that
+  connects later takes over. Tested end to end in `overlay::tests` (launch env, fallback, takeover, valve through
+  `GameStopped`, disabled package → no env, re-enable).
+  **Still open in A4-T10:** the macOS `NSPanel` (non-activating, `.fullScreenAuxiliary`) and transparency need
+  `app.macOSPrivateApi` (contract PR) and a Mac to verify "visible over a fullscreen Space without taking focus";
   wiring `prepare_launch` into Agent 2's launch plan once A2-T09 lands.
+  **Next:** A4-T11 (in-game renderers) while the macOS items wait.
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_desktop_lib::social::ports::SessionSlot` (A4-T07): now filled by `social::session_bridge` from

@@ -1,0 +1,138 @@
+/* Overlay window styles (Agent 4). The window is transparent; only toasts and the panel draw. */
+:root {
+  color-scheme: dark;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 14px;
+}
+html,
+body,
+#root {
+  margin: 0;
+  background: transparent;
+  overflow: hidden;
+}
+button,
+input {
+  font: inherit;
+  color: inherit;
+  background: rgb(255 255 255 / 8%);
+  border: 1px solid rgb(255 255 255 / 16%);
+  border-radius: 6px;
+  padding: 4px 10px;
+}
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid #6aa7ff;
+  outline-offset: 1px;
+}
+.ov-root {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+.ov-toasts {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  width: 320px;
+}
+.ov-toast {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgb(20 22 28 / 92%);
+  color: #f2f3f5;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 40%);
+}
+.ov-toast span {
+  color: #c4c7ce;
+  overflow-wrap: anywhere;
+}
+.ov-toast-invite {
+  border-left: 3px solid #6aa7ff;
+}
+.ov-panel {
+  pointer-events: auto;
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 380px;
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: rgb(20 22 28 / 96%);
+  color: #f2f3f5;
+  box-shadow: 0 8px 32px rgb(0 0 0 / 50%);
+}
+.ov-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ov-head h1 {
+  flex: 1;
+  font-size: 16px;
+  margin: 0;
+}
+.ov-panel h2 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #9da2ad;
+  margin: 16px 0 6px;
+}
+.ov-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ov-list li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
+.ov-message {
+  flex-direction: column;
+}
+.ov-actions {
+  display: flex;
+  gap: 6px;
+}
+.ov-muted,
+.ov-empty {
+  color: #9da2ad;
+}
+.ov-reply {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+}
+.ov-reply input {
+  flex: 1;
+  min-width: 0;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .ov-toast {
+    animation: ov-in 150ms ease-out;
+  }
+}
+@keyframes ov-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
