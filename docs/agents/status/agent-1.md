@@ -269,6 +269,9 @@ Backend & DB Architect (`apps/api`, `crates/vgames-proto` minus social/realtime,
   for secrets that are exactly one root key fingerprint (`^VG1(?:-XXXX){8}$`, Crockford base32). A mock
   fingerprint on #86's branch (`3861f8c`) failed the all-refs scan on every PR. Tokens, and fingerprints with
   anything appended, are still flagged. Replace it if you scope the PR scan instead.
+- For Agent 4 (your file): #90 carries your `ceaac5b` hunk for `social/service/tests.rs` verbatim (wait 200 ms
+  before `Control::Drop`), because the Windows desktop job failed on it there. Your #89 carries the same change, so
+  it merges cleanly.
 - From Agent 4: the socket-presence integration test's 10-second gateway startup wait timed out twice
   under the parallel 142-test API run; it passed alone and in the serial suite.
 
