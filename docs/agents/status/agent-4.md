@@ -114,7 +114,20 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   `installs` table (installed = current) and cannot launch (`LaunchError::Unavailable`, logged).
 
 ## In progress
-- A4-T10 — Overlay broker, macOS panel and fallbacks
+- A4-T10 — Overlay broker, macOS panel and fallbacks. **Part 1 done:** `vgames_overlay::protocol` (versioned
+  length-prefixed postcard frames, closed enums, caps, constant-time token check, no-panic property test);
+  launcher `overlay::{broker, hub, valve, commands}`: per-game loopback broker (random port, 32-byte token in the
+  launch environment, one authenticated renderer at a time, listener closed after the handshake and re-bound for
+  a reconnect, 5 failed handshakes stop it, 15 s dead-link timeout, bounded action queue), the view-model hub fed
+  by social events (toasts 8 s, friends online, open invites, last messages; do not disturb), actions (accept /
+  decline invite, quick reply, open launcher, close panel), Guide/PS hold toggles the panel, crash safety valve
+  and per-package switches; commands `overlay_view`, `overlay_action` (overlay window) and
+  `package_overlays_list`, `package_overlay_set` (Settings); events `overlay-view`, `overlay-package-disabled`.
+  Tests: broker with a fake blocking renderer (views, panel, actions, only one renderer, wrong tokens → gives up
+  after 5, garbage/oversized frames, invalid actions, reconnect on the same endpoint, stop), hub, valve.
+  **Next:** global hotkey (register + conflict check → `SocialError` `invalid` / `in_use`), always-on-top fallback
+  window and OS notifications (Wayland), macOS `NSPanel` (needs a Mac to verify; `macOSPrivateApi` contract PR),
+  wiring `prepare_launch` into Agent 2's launch plan once A2-T09 lands.
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_desktop_lib::social::ports::SessionSlot` (A4-T07): now filled by `social::session_bridge` from
@@ -137,6 +150,13 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   The overlay window's surface is §7.
 
 ## Needs from others
+- From Agent 2 (A4-T10): in the launch plan (A2-T09), call `State<OverlayService>.prepare_launch(package, title)`
+  before spawning and merge the returned variables into the game's environment (empty = overlay off). For the
+  Windows DLL injection (A4-T11) I will need a "start suspended, run hook, resume" step in the launch plan.
+- From Agent 3 (A4-T10): the Settings overlay commands are generated as `packageOverlaysList()` and
+  `packageOverlaySet(packageRef, enabled)` (main-window commands may not start with `overlay_`, Agent 2's rule);
+  I pointed your contract wrappers and mocks at them and removed the now-generated `PackageOverlay` type from
+  `contract/settings.ts`. Show `overlay-package-disabled` as a notice with "Turn it back on".
 - From Agent 2 (A4-T09): implement `social::ports::Games` over your library and launcher and install it with
   `State<SocialService>.set_games(Arc::new(…))`: `check(server, package)` → `Current | Missing | Outdated |
   NoBuildForPlatform` (your platform choice), `launch_join(server, package, secret)` → launch the manifest's
@@ -158,6 +178,11 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   failed once locally under a full `cargo test` run (line 211) and passed 3/3 alone; it looks timing-sensitive.
 
 ## Cross-area edits (small, for the owners' review)
+- Agent 2 (A4-T10): `lib.rs` `pub mod overlay;`; `names.rs` (`OVERLAY_WINDOW_COMMANDS = overlay_view,
+  overlay_action`; two main-window commands), `capabilities/{main,overlay}.json`, `commands/mod.rs`, bindings; root
+  `Cargo.toml` new workspace dependency `postcard` (add-only).
+- Agent 3 (A4-T10): `src/ipc/contract/settings.ts` (removed `PackageOverlay`, now generated; wrappers call the
+  renamed commands), `src/mocks/settings.ts` (handler names, `packageRef` argument).
 - Agent 2 (A4-T09): `images.rs` `ImageKey::url()` (the `vgimg` URL for a key; used for invite covers);
   `db/migrations.rs` one `Migration { name: "0004_social_invites", … }` entry; commands/names/capabilities/bindings
   for the 5 invite commands and 3 events.
@@ -186,6 +211,8 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
 
 ## Blockers / contract questions
 - `contract:` `05-social-notes.md` v1.2 (A4-T09): new §3.2 (invite client behaviour). Additive.
+- `contract:` `05-social-notes.md` v1.3 (A4-T10): §7 additions (overlay events, Settings commands, broker protocol,
+  launch integration). Additive.
 - `contract:` `05-social-notes.md` v1.1 (A4-T08): §2.1 fallback key ids prefixed `F`; new §3.1 (launcher messaging
   behaviour, typing throttle). Additive; no name or payload in §5–§6 changed.
 - `contract:` `docs/architecture/05-social-notes.md` (new, A4-T01). Additive realtime changes in its §3

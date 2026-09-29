@@ -144,9 +144,9 @@ export function settingsHandlers(
       state.socialSettings = next;
       return next;
     },
-    overlay_packages: () => state.overlayPackages,
-    overlay_package_set: (args) => {
-      const ref = args.package as { server_id: string; package_id: string };
+    package_overlays_list: () => state.overlayPackages,
+    package_overlay_set: (args) => {
+      const ref = args.packageRef as { server_id: string; package_id: string };
       state.overlayPackages = state.overlayPackages.map((p) =>
         p.package.server_id === ref.server_id && p.package.package_id === ref.package_id
           ? {

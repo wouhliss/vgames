@@ -121,6 +121,14 @@ export const commands = {
 	inviteAccept: (inviteId: string) => typedError<Invite, SocialError>(__TAURI_INVOKE("invite_accept", { inviteId })),
 	inviteDecline: (inviteId: string) => typedError<Invite, SocialError>(__TAURI_INVOKE("invite_decline", { inviteId })),
 	inviteCancel: (inviteId: string) => typedError<Invite, SocialError>(__TAURI_INVOKE("invite_cancel", { inviteId })),
+	/**  Settings → Overlay: the per-game switches. */
+	packageOverlaysList: () => typedError<PackageOverlay[], AppError>(__TAURI_INVOKE("package_overlays_list")),
+	/**  Turns the overlay on or off for one game. Turning it on also clears the safety valve. */
+	packageOverlaySet: (packageRef: PackageRef, enabled: boolean) => typedError<null, AppError>(__TAURI_INVOKE("package_overlay_set", { packageRef, enabled })),
+	/**  The overlay window's current view model. */
+	overlayView: () => __TAURI_INVOKE<OverlayView>("overlay_view"),
+	/**  An action from the overlay window (accept/decline, quick reply, open launcher, close). */
+	overlayAction: (action: OverlayAction) => __TAURI_INVOKE<void>("overlay_action", { action }),
 };
 
 /** Events */
@@ -141,6 +149,8 @@ export const events = {
 	inviteReceived: makeEvent<InviteReceived>("invite-received"),
 	messageReceived: makeEvent<MessageReceived>("message-received"),
 	messageStatusChanged: makeEvent<MessageStatusChanged>("message-status-changed"),
+	overlayPackageDisabled: makeEvent<OverlayPackageDisabled>("overlay-package-disabled"),
+	overlayView: makeEvent<OverlayViewChanged>("overlay-view"),
 	presenceChanged: makeEvent<PresenceChanged>("presence-changed"),
 	serverAddRequested: makeEvent<ServerAddRequested>("server-add-requested"),
 	serverSwitched: makeEvent<ServerSwitched>("server-switched"),
@@ -502,6 +512,70 @@ export type MyDevice = {
 	current: boolean,
 	created_at: string,
 	last_seen_at: string | null,
+};
+
+/**  What the overlay (window or in-game renderer) asks the launcher to do. */
+export type OverlayAction = { kind: "accept_invite"; invite_id: string } | { kind: "decline_invite"; invite_id: string } | { kind: "quick_reply"; conversation_id: string; text: string } | { kind: "open_launcher" } | { kind: "close_panel" };
+
+export type OverlayFriend = {
+	user_id: string,
+	name: string,
+	status: PresenceStatus,
+	playing: string | null,
+};
+
+export type OverlayInvite = {
+	invite_id: string,
+	from: string,
+	package_title: string,
+	state: InviteState,
+};
+
+export type OverlayMessage = {
+	conversation_id: string,
+	from: string,
+	text: string,
+	/**  RFC 3339. */
+	sent_at: string,
+};
+
+/**
+ *  `overlay-package-disabled`: the crash safety valve turned the overlay off for a game
+ *  (show a notice with "Turn it back on").
+ */
+export type OverlayPackageDisabled = {
+	package: PackageRef,
+};
+
+export type OverlayToast = {
+	id: string,
+	kind: OverlayToastKind,
+	title: string,
+	body: string,
+	/**  RFC 3339. */
+	expires_at: string,
+};
+
+export type OverlayToastKind = "invite" | "message" | "friend_online";
+
+export type OverlayView = {
+	visible_panel: boolean,
+	toasts: OverlayToast[],
+	friends_online: OverlayFriend[],
+	invites: OverlayInvite[],
+	recent_messages: OverlayMessage[],
+};
+
+/**  `overlay-view`: the overlay window's view model changed. */
+export type OverlayViewChanged = OverlayView;
+
+/**  The per-package "In-game overlay" switch and its safety valve (Settings → Overlay). */
+export type PackageOverlay = {
+	package: PackageRef,
+	title: string,
+	enabled: boolean,
+	/**  RFC 3339; set when the launcher turned the overlay off after two quick abnormal exits. */
+	disabled_by_safety_valve_at: string | null,
 };
 
 /**  A package on a specific server (package ids are only unique per server). */

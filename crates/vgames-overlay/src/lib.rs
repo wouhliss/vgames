@@ -13,3 +13,5 @@
 //! Rules for the in-game side: no network except the broker link, no disk writes, no keys,
 //! no allocation on the per-frame fast path while hidden, and never crash the game (every hook
 //! catches panics and disables itself).
+
+pub mod protocol;

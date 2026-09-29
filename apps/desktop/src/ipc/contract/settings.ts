@@ -2,7 +2,7 @@
 // management, download limits, the overlay's per-package switches, privacy and overlay preferences
 // (Agent 4's `SocialSettings`, 05-social-notes §5) and third-party licenses (Agents 2 and 4).
 // Requested shapes; see core.ts for the conventions.
-import type { PackageRef, SocialError } from "../../bindings";
+import type { PackageOverlay, PackageRef, SocialError } from "../../bindings";
 import type { AppError, LibraryError } from "./core";
 import { call, get, type Result } from "./runtime";
 
@@ -49,15 +49,6 @@ export type HotkeyError =
 /** What saving social settings can report: the generated errors plus the requested hotkey ones. */
 export type SocialSettingsError = SocialError | HotkeyError;
 
-/** The per-package "In-game overlay" switch and its crash safety valve (05-social §6.3). */
-export type PackageOverlay = {
-  package: PackageRef;
-  title: string;
-  enabled: boolean;
-  /** Set when the launcher turned the overlay off after two quick abnormal exits. */
-  disabled_by_safety_valve_at: string | null;
-};
-
 export type LibraryRemoveError =
   | LibraryError
   /** Installs still live there: move or uninstall them first. */
@@ -94,11 +85,12 @@ export const settingsCommands = {
   },
 
   async overlayPackages(): Promise<Result<PackageOverlay[], AppError>> {
-    return call("overlay_packages");
+    // Generated as `packageOverlaysList` (main-window commands never start with `overlay_`).
+    return call("package_overlays_list");
   },
   /** Turning it on also clears the safety valve. */
   async overlayPackageSet(pkg: PackageRef, enabled: boolean): Promise<Result<null, AppError>> {
-    return call("overlay_package_set", { package: pkg, enabled });
+    return call("package_overlay_set", { packageRef: pkg, enabled });
   },
 
   /** Third-party notices bundled with the launcher (plain text). */

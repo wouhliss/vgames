@@ -73,6 +73,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"]
 
 # --- ids, time, text -------------------------------------------------------
 uuid = { version = "1.26", features = ["v7", "serde"] }
+# Overlay IPC frames between the launcher broker and the in-game renderer (vgames-overlay).
+postcard = { version = "1.1", default-features = false, features = ["alloc"] }
 time = { version = "0.3", features = ["serde-well-known", "macros", "formatting", "parsing"] }
 semver = { version = "1", features = ["serde"] }
 url = "2.5"

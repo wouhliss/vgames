@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-package-overlays-list"
+description = "Enables the package_overlays_list command without any pre-configured scope."
+commands.allow = ["package_overlays_list"]
+
+[[permission]]
+identifier = "deny-package-overlays-list"
+description = "Denies the package_overlays_list command without any pre-configured scope."
+commands.deny = ["package_overlays_list"]
