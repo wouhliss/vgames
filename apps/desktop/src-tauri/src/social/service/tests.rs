@@ -618,7 +618,11 @@ async fn switching_servers_signing_out_and_revoked_sessions() {
             json!({"reason": "device_revoked"}),
         ))
         .unwrap();
-    b.gw.control.send(Control::Drop).unwrap();
+    // No close frame, just a reset. Give the event frame time to arrive first: on Windows a
+    // reset discards data the client has not read yet, which would test something else.
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    // The launcher may already have closed the socket on the event (no receiver left).
+    let _ = b.gw.control.send(Control::Drop);
     h.state(SocialConnectionState::Reconnecting).await;
     tokio::time::sleep(Duration::from_millis(500)).await;
     assert_eq!(b.gw.connections.load(Ordering::SeqCst), 3);
