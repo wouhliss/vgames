@@ -138,10 +138,15 @@ pub async fn revoke_user(state: &AppState, user_id: Uuid, reason: &str) -> Resul
 }
 
 /// Runs the `LISTEN` loop until shutdown, reconnecting with backoff.
+///
+/// Notifications sent while the `LISTEN` connection is down (database failover, connection
+/// reset) are lost. So after listening again, this instance closes its sockets with 1012:
+/// clients reconnect and resync over REST after `hello`, and nothing stays undelivered.
 pub async fn listen(state: AppState) {
     let mut backoff = Duration::from_millis(250);
+    let mut listened = false;
     while !state.shutdown.is_cancelled() {
-        match listen_once(&state).await {
+        match listen_once(&state, &mut listened).await {
             Ok(()) => return,
             Err(e) => {
                 tracing::warn!(error = %e, ?backoff, "realtime listener failed; reconnecting");
@@ -155,14 +160,28 @@ pub async fn listen(state: AppState) {
     }
 }
 
-async fn listen_once(state: &AppState) -> Result<(), sqlx::Error> {
+async fn listen_once(state: &AppState, listened: &mut bool) -> Result<(), sqlx::Error> {
     let mut listener = PgListener::connect_with(&state.db).await?;
     listener.listen(CHANNEL).await?;
+    if *listened {
+        tracing::warn!("realtime listener back; asking clients to resync");
+        state.realtime.close_all(1012, "realtime resync");
+    }
+    *listened = true;
     state.realtime_ready.send_replace(true);
     loop {
         let notification = tokio::select! {
             _ = state.shutdown.cancelled() => return Ok(()),
-            n = listener.recv() => n?,
+            // `recv` would reconnect silently and hide the gap; `try_recv` reports it.
+            n = listener.try_recv() => match n? {
+                Some(n) => n,
+                None => {
+                    return Err(sqlx::Error::Io(std::io::Error::new(
+                        std::io::ErrorKind::ConnectionReset,
+                        "realtime LISTEN connection lost",
+                    )));
+                }
+            },
         };
         let notice: Notice = match serde_json::from_str(notification.payload()) {
             Ok(n) => n,
