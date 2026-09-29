@@ -67,8 +67,8 @@ describe("useTableWindow", () => {
     expect(rows[0]).toHaveTextContent("Row 0");
     const after = document.querySelector<HTMLElement>("tr.spacer");
     expect(Number.parseInt(after?.style.height ?? "0", 10)).toBeGreaterThan(300_000);
-    // Space isn't something to read out.
-    expect(after).toHaveAttribute("aria-hidden", "true");
+    // Space isn't a row to read out.
+    expect(after).toHaveAttribute("role", "presentation");
   });
 
   it("follows the scroll position to the end of the list", async () => {

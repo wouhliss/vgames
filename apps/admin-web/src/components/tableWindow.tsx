@@ -59,7 +59,8 @@ export function useTableWindow<T>(items: readonly T[], rowHeight = 37): TableWin
 export function SpacerRow({ height, columns }: { height: number; columns: number }) {
   if (height <= 0) return null;
   return (
-    <tr aria-hidden="true" className="spacer" style={{ height }}>
+    // biome-ignore lint/a11y/noInteractiveElementToNoninteractiveRole: a <tr> isn't interactive; this one is only space, not a row to read out.
+    <tr role="presentation" className="spacer" style={{ height }}>
       <td colSpan={columns} />
     </tr>
   );

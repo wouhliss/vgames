@@ -69,6 +69,7 @@ export function PackageCreate() {
     if (Object.keys(local).length > 0) return;
     inFlight.current = true;
     setBusy(true);
+    let created = false;
     try {
       const steamId = parseId(steam);
       const igdbId = parseId(igdb);
@@ -82,6 +83,8 @@ export function PackageCreate() {
         },
         key,
       );
+      // Created: the guard stays set, so a click before the editor opens can't submit again.
+      created = true;
       await client.invalidateQueries({ queryKey: ["admin-packages"] });
       navigate(`/packages/${data.id}`, { replace: true });
     } catch (error) {
@@ -97,8 +100,10 @@ export function PackageCreate() {
         setFailure(error);
       }
     } finally {
-      inFlight.current = false;
-      setBusy(false);
+      if (!created) {
+        inFlight.current = false;
+        setBusy(false);
+      }
     }
   };
 
