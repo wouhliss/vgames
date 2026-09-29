@@ -15,7 +15,7 @@
   },
   "devDependencies": {
     "openapi-typescript": "^7.13.0",
-    "typescript": "~5.9.3"
+    "typescript": "~7.0.2"
   },
   "//": "typescript 5 is only for openapi-typescript (it needs the TS 5 compiler API); typecheck uses the workspace TypeScript 7."
 }
