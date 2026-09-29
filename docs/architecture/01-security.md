@@ -177,7 +177,7 @@ Launcher                              API                                  Disco
   │                                   │ consume flow (single use) → exchange code (client secret)
   │                                   │ GET /users/@me → upsert user → registration policy check
   │                                   │ create login_code (32B, TTL 60 s, bound to challenge)
-  │◀── 302 vgames://auth/callback?code=<login_code>&client_state=<client_state>
+  │◀── 200 page: meta refresh → vgames://auth/callback?code=<login_code>&client_state=<client_state>
   │ check client_state matches pending flow
   │ POST /v1/auth/token {grant_type:"authorization_code", code, code_verifier}
   │──────────────────────────────────▶│ verify S256(verifier)==challenge, single use
@@ -185,15 +185,18 @@ Launcher                              API                                  Disco
 ```
 
 - Discord's access token is used once to read the profile and then discarded (never stored).
-- If the deep link cannot reach the launcher (for example the scheme is not registered), the callback page
-  shows the code with a "copy" button, and the launcher offers a paste field (same PKCE check).
+- The callback answers the browser with a page (`200`, never a redirect: browsers do not render a
+  redirect body) that opens the deep link itself and shows the code. If the deep link cannot reach the
+  launcher (for example the scheme is not registered, or the sign-in came from the `vgames` CLI), the code
+  is pasted into the launcher's paste field or the CLI prompt (same PKCE check). `Cache-Control: no-store`;
+  the page runs no script.
 - `registration.mode`: `open` | `allowlist` (default) | `closed`. The Discord id
   in `VGAMES_BOOTSTRAP_OWNER_DISCORD_ID` always passes and becomes `owner` on first sign-in.
 - A refused or failed sign-in (cancelled in Discord, registration closed, not on the allowlist, account
   disabled, Discord error)
-  still consumes the flow and redirects to the client that started it, with `error=<code>` and no code
-  or cookies: `vgames://auth/callback?error=<code>&client_state=…` for the launcher (the fallback page
-  states the reason), `/admin/login?error=<code>` for the admin UI. Codes: `access_denied`,
+  still consumes the flow and goes back to the client that started it, with `error=<code>` and no code
+  or cookies: the page opens `vgames://auth/callback?error=<code>&client_state=…` for the launcher and
+  states the reason; the admin UI is redirected to `/admin/login?error=<code>`. Codes: `access_denied`,
   `registration_closed`, `not_allowlisted`, `user_disabled`, `sign_in_failed` (Discord rejected the code
   or could not be reached). The launcher accepts an `error` deep link only with a `client_state`
   matching its pending flow.
