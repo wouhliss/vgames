@@ -1,4 +1,5 @@
-# Continuous integration for every PR and every push to main (08-release §1).
+# Continuous integration for every PR, every push to main, and nightly on main, so every test in
+# docs/security/test-matrix.md runs at least nightly (08-release §1, A5-T11).
 # Owner: Agent 5. Required checks for branch protection: docs/security/ci.md.
 #
 # Rules: actions pinned by commit SHA; no secrets are used here, so PRs from
@@ -12,6 +13,8 @@ on:
   push:
     branches: [main]
   merge_group:
+  schedule:
+    - cron: "13 2 * * *"
   workflow_dispatch:
 
 permissions: {}
@@ -174,6 +177,8 @@ jobs:
         run: cargo xtask changelog lint
       - name: Every file has a code owner; security paths stay with security
         run: cargo xtask codeowners check
+      - name: Security gates (launcher CSP and capabilities, signing secrets only in `release`)
+        run: cargo xtask security check
 
   wasm:
     name: WASM (vgames-core, pack-wasm)
@@ -253,6 +258,34 @@ jobs:
         with:
           name: desktop-e2e-report
           path: apps/desktop/playwright-report
+          retention-days: 7
+
+  admin-e2e:
+    name: Admin UI end-to-end (mock mode)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @vgames/admin-web exec playwright install --with-deps chromium
+      # The mock build (the nightly e2e.yml runs the same specs against the real API).
+      - run: pnpm --filter @vgames/admin-web e2e
+        env:
+          CI: "true"
+      - if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: admin-e2e-mock-report
+          path: apps/admin-web/playwright-report
           retention-days: 7
 
   desktop:

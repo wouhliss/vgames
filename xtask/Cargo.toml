@@ -21,6 +21,8 @@ time.workspace = true
 # The runtime catalog, validated by the launcher's own parser.
 vgames-core.workspace = true
 toml.workspace = true
+# Workflow checks (security gates).
+serde_yaml_ng.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

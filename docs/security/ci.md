@@ -9,10 +9,11 @@ the GitHub settings below; agents cannot.
 |---|---|
 | `Rust (fmt, clippy, tests)` | `cargo fmt --check`, `cargo clippy --all-targets -D warnings`, `cargo test` (default members) against a Postgres 18 service (`#[sqlx::test]` creates one database per test) |
 | `SQLx offline data and migrations` | Migrations apply to an empty database; the upgrade path from the base revision works and no merged migration was edited (checksum mismatch fails); `cargo sqlx prepare --workspace --check` (committed `.sqlx/` matches the queries) |
-| `Changelog fragments` | Also `cargo xtask codeowners check` (every tracked file has a code owner; security-critical paths resolve to the security section of `.github/CODEOWNERS`). PRs: `cargo xtask changelog check --base <base>` — every fragment is valid (08-release §3.2), the PR adds at least one, and a warning when `apps/desktop/**` changed without an `audience: user` launcher fragment. Pushes: `cargo xtask changelog lint` |
+| `Changelog fragments` | Also `cargo xtask codeowners check` (every tracked file has a code owner; security-critical paths resolve to the security section of `.github/CODEOWNERS`) and `cargo xtask security check` (launcher CSP and capabilities stay strict; signing secrets and OIDC tokens only in the `release` environment; no `pull_request_target`; see [test-matrix.md](test-matrix.md)). PRs: `cargo xtask changelog check --base <base>` — every fragment is valid (08-release §3.2), the PR adds at least one, and a warning when `apps/desktop/**` changed without an `audience: user` launcher fragment. Pushes: `cargo xtask changelog lint` |
 | `WASM (vgames-core, pack-wasm)` | `vgames-core --features wasm` builds and passes clippy on `wasm32-unknown-unknown`; the `@vgames/pack-wasm` package builds and its Node smoke test passes |
 | `TypeScript (Biome, typecheck, Vitest, OpenAPI lint)` | `pnpm install --frozen-lockfile`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `redocly lint` of `openapi/openapi.yaml` |
 | `Launcher UI end-to-end (mock mode)` | Playwright suite of `apps/desktop` against the mock backend (Chromium) |
+| `Admin UI end-to-end (mock mode)` | Playwright suite of `apps/admin-web` against the mock build (Chromium), including the admin-versus-owner authorization matrix; the nightly `e2e.yml` runs the same specs against the real API |
 | `Desktop build check (Linux, WebKitGTK)` | Builds the launcher UI, then `cargo clippy -p vgames-desktop -D warnings` with the Tauri system libraries |
 | `Supply chain (cargo-deny, cargo-audit, pnpm audit)` | [`deny.toml`](../../deny.toml): RustSec advisories, license allowlist (no GPL/AGPL), crates.io only, duplicate versions reported; `cargo audit`; `pnpm audit --prod` |
 | `Secret scan (gitleaks)` | Full history with [`.gitleaks.toml`](../../.gitleaks.toml): default rules plus `vga_`/`vgr_`/`vgs_` tokens, `vgames.key/1` key files, `.vgkey` files, minisign secret keys |
@@ -20,6 +21,9 @@ the GitHub settings below; agents cannot.
 | `Dependency review` | PRs only: new dependencies with moderate+ advisories or GPL/AGPL licenses. Needs GitHub Advanced Security on a private repository (see below) |
 
 The OpenAPI drift check runs inside `cargo test` (`apps/api/tests/openapi_contract.rs`).
+
+`ci.yml` also runs nightly on `main` (02:13 UTC), so every test in [test-matrix.md](test-matrix.md) runs at least
+nightly.
 
 Other workflows: [`desktop-matrix.yml`](../../.github/workflows/desktop-matrix.yml) (Windows, Linux, macOS
 builds and Rust tests of the launcher crates on PRs touching them, and nightly; not required) and
@@ -44,6 +48,7 @@ Settings → Rules → Rulesets → new branch ruleset targeting `main`:
    - `WASM (vgames-core, pack-wasm)`
    - `TypeScript (Biome, typecheck, Vitest, OpenAPI lint)`
    - `Launcher UI end-to-end (mock mode)`
+   - `Admin UI end-to-end (mock mode)` (added 2026-09-30)
    - `Desktop build check (Linux, WebKitGTK)`
    - `Supply chain (cargo-deny, cargo-audit, pnpm audit)`
    - `Secret scan (gitleaks)`
