@@ -10,6 +10,12 @@ use crate::db::download_jobs::JobStoreError;
 use crate::events::PackageRef;
 use crate::state::AppState;
 
+// The UI's `DownloadActionError` (ipc/contract); `InsufficientSpace` and `Offline` are
+// produced by `install_start` and the offline pause (A2-T08, still to do).
+#[expect(
+    dead_code,
+    reason = "A2-T08: produced by install_start and offline pause"
+)]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type, thiserror::Error)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum DownloadActionError {
