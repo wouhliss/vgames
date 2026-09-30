@@ -152,3 +152,78 @@ pub async fn row(db: &Db, package: PackageRef) -> Result<Option<InstallRow>, DbE
     })
     .await
 }
+
+/// Registers a new install in state `installing` (no-op when the package
+/// already has a row, e.g. when resuming).
+#[allow(clippy::too_many_arguments)]
+pub async fn begin(
+    db: &Db,
+    package: PackageRef,
+    library_id: uuid::Uuid,
+    dir_name: String,
+    version_id: uuid::Uuid,
+    sequence: i64,
+    platform: String,
+) -> Result<(), DbError> {
+    db.call(move |conn| {
+        conn.execute(
+            "INSERT OR IGNORE INTO installs (server_id, package_id, library_id, dir_name,
+             version_id, sequence, platform, state)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'installing')",
+            rusqlite::params![
+                package.server_id.to_string(),
+                package.package_id.to_string(),
+                library_id.to_string(),
+                dir_name,
+                version_id.to_string(),
+                sequence,
+                platform
+            ],
+        )?;
+        Ok(())
+    })
+    .await
+}
+
+/// Marks a finished install playable.
+pub async fn mark_installed(db: &Db, package: PackageRef, size_bytes: u64) -> Result<(), DbError> {
+    let size = i64::try_from(size_bytes).unwrap_or(i64::MAX);
+    db.call(move |conn| {
+        conn.execute(
+            "UPDATE installs SET state = 'installed', installed_at = ?3, size_bytes = ?4
+             WHERE server_id = ?1 AND package_id = ?2",
+            rusqlite::params![
+                package.server_id.to_string(),
+                package.package_id.to_string(),
+                super::now_unix(),
+                size
+            ],
+        )?;
+        Ok(())
+    })
+    .await
+}
+
+/// Deletes the row of an install that never completed (state `installing`).
+/// Returns its directory name when a row was removed.
+pub async fn delete_unfinished(db: &Db, package: PackageRef) -> Result<Option<String>, DbError> {
+    db.call(move |conn| {
+        let ids = rusqlite::params![package.server_id.to_string(), package.package_id.to_string()];
+        let dir: Option<String> = conn
+            .query_row(
+                "SELECT dir_name FROM installs
+                 WHERE server_id = ?1 AND package_id = ?2 AND state = 'installing'",
+                ids,
+                |row| row.get(0),
+            )
+            .ok();
+        if dir.is_some() {
+            conn.execute(
+                "DELETE FROM installs WHERE server_id = ?1 AND package_id = ?2 AND state = 'installing'",
+                ids,
+            )?;
+        }
+        Ok(dir)
+    })
+    .await
+}

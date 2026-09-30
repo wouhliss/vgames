@@ -30,7 +30,7 @@
 - A2-T08 cache-only `vgimg://` protocol ([PR #72](https://github.com/wouhliss/vgames/pull/72), merged): strict opaque URL parsing and native cache reads on a blocking pool.
 
 ## In progress
-- A2-T08 queue worker (`queue::InstallQueue<R: JobRunner>`) is done and tested with a scripted runner: one job at a time, pause/resume/retry/cancel (keep or delete partial), disk-full pause with reason `disk_full`, shutdown leaves the row `active` for startup recovery. Still to do: the real `JobRunner` (fetch_release + `install` through the API client), then the install/queue Tauri commands.
+- A2-T08 queue worker (`queue::InstallQueue<R: JobRunner>`) is done and tested with a scripted runner: one job at a time, pause/resume/retry/cancel (keep or delete partial), disk-full pause with reason `disk_full`, shutdown leaves the row `active` for startup recovery. The real runner `install_runner::TransferRunner<R: Remote>` is done (release descriptor → trust → signed manifest → only then the install row and folder → `install`; failure codes `untrusted`, `integrity`, `not_enough_space`, `library_offline`, `release_changed`, …; discard removes only a never-finished install). `ServersRemote` is the production `Remote`. Tested end to end with queue + loopback rig (install, untrusted server, flipped byte). Still to do: wire both into `AppState`/startup, update and repair jobs, the install/queue Tauri commands, catalog commands.
   `DownloadControl::interrupted()` (new) waits for a pause or cancel request.
 - A2-T08 remote image fetch can now use the T07 API client.
 - A2-T08 catalog, transfer orchestration, queue history, and collection/queue commands remain.

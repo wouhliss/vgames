@@ -16,6 +16,7 @@ pub mod deeplink;
 pub mod error;
 pub mod events;
 pub mod images;
+pub mod install_runner;
 pub mod launch;
 pub mod libraries;
 pub mod logging;
