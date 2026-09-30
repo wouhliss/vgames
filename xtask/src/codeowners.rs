@@ -33,6 +33,7 @@ pub const SECURITY_CRITICAL: &[&str] = &[
     "runtimes/upstreams.toml",
     "runtimes/runtime-catalog.pub",
     "scripts/runtimes/watch.py",
+    "scripts/runtimes/d3dmetal_intake.sh",
     ".github/workflows/ci.yml",
     "deny.toml",
     ".gitleaks.toml",
