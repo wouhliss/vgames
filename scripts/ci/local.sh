@@ -14,8 +14,9 @@
 #                  `docker compose up -d postgres` is started for you. sqlx: sqlx-cli 0.9.0.
 #   wasm           wasm-pack; the wasm32 target comes with rust-toolchain.toml. wasm-pack downloads
 #                  wasm-opt from GitHub unless one is on PATH (offline: install binaryen).
-#   typescript,    Node 22 and pnpm (corepack enable). desktop-e2e: Playwright Chromium
-#   desktop-e2e    (pnpm --filter @vgames/desktop exec playwright install chromium), or an existing
+#   typescript,    Node 22 and pnpm (corepack enable). desktop-e2e, admin-e2e: Playwright Chromium
+#   desktop-e2e,   (pnpm --filter @vgames/desktop exec playwright install chromium), or an existing
+#   admin-e2e
 #                  Chromium via PLAYWRIGHT_CHROMIUM_EXECUTABLE=/path/to/chrome.
 #   desktop        WebKitGTK 4.1 development libraries (Linux; see AGENTS.md §4).
 #   supply-chain   cargo-deny, cargo-audit, network access.
@@ -25,14 +26,15 @@
 # -p vgames-transfer` on those systems, or start that workflow by hand when minutes are available.
 set -uo pipefail
 
-JOBS=(rust sqlx changelog wasm typescript desktop-e2e desktop supply-chain secrets workflows)
+JOBS=(rust sqlx changelog wasm typescript desktop-e2e admin-e2e desktop supply-chain secrets workflows)
 declare -A TITLE=(
   [rust]="Rust (fmt, clippy, tests)"
   [sqlx]="SQLx offline data and migrations"
-  [changelog]="Changelog fragments and code owners"
+  [changelog]="Changelog fragments, code owners and security gates"
   [wasm]="WASM (vgames-core, pack-wasm)"
   [typescript]="TypeScript (Biome, typecheck, Vitest, OpenAPI lint)"
   [desktop-e2e]="Launcher UI end-to-end (mock mode)"
+  [admin-e2e]="Admin UI end-to-end (mock mode)"
   [desktop]="Desktop build check (Linux, WebKitGTK)"
   [supply-chain]="Supply chain (cargo-deny, cargo-audit, pnpm audit)"
   [secrets]="Secret scan (gitleaks)"
@@ -154,6 +156,7 @@ job_changelog() {
     cargo xtask changelog check --base "$base"
   fi
   cargo xtask codeowners check
+  cargo xtask security check
 }
 
 job_wasm() {
@@ -175,6 +178,11 @@ job_typescript() {
 job_desktop-e2e() {
   pnpm_install
   pnpm --filter @vgames/desktop e2e
+}
+
+job_admin-e2e() {
+  pnpm_install
+  pnpm --filter @vgames/admin-web e2e
 }
 
 job_desktop() {

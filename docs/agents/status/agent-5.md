@@ -250,6 +250,12 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
   repo (no API key → fallback): 35 fragments folded, the 2 user launcher fragments became the player notes.
   The live-API dry run on a test tag needs `ANTHROPIC_API_KEY` in the `release` environment (humans).
 
+- **From Agent 2 (A5-T11, `docs/security/test-matrix.md`, row "Compromised server → read tokens for other servers"):** a
+  launcher test that a request to one server never carries another server's token, for example two mock servers with
+  both signed in: every request each one receives carries its own token only (after a refresh and after switching
+  servers too). Tokens are already stored per server (`sign_in_stores_tokens_in_the_vault_and_the_account_locally`);
+  what is untested is which token each request uses.
+
 ## Blockers / contract questions
 - Fuzzing is dropped (owner decision 2026-09-25, contract PR 12 merged). **Agents 1 and 2: do not add `cargo fuzz`
   targets**; write `proptest` no-panic properties instead.

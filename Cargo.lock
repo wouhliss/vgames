@@ -9297,6 +9297,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+ "serde_yaml_ng",
  "tempfile",
  "time",
  "toml 1.1.6+spec-1.1.0",

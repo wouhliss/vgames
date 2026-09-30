@@ -14,6 +14,7 @@ mod changelog;
 mod codeowners;
 mod release;
 mod runtimes;
+mod security;
 mod updater;
 
 use std::path::{Path, PathBuf};
@@ -42,6 +43,11 @@ enum Cmd {
     Codeowners {
         #[command(subcommand)]
         command: CodeownersCmd,
+    },
+    /// Security gates: launcher CSP and capabilities, workflow secrets (docs/security/test-matrix.md).
+    Security {
+        #[command(subcommand)]
+        command: SecurityCmd,
     },
     /// OpenAPI contract checks.
     Openapi {
@@ -304,6 +310,12 @@ enum CodeownersCmd {
 }
 
 #[derive(Subcommand)]
+enum SecurityCmd {
+    /// Launcher CSP and capabilities stay strict; signing secrets only in the `release` environment.
+    Check,
+}
+
+#[derive(Subcommand)]
 enum OpenapiCmd {
     /// Compare the API's generated OpenAPI document with openapi/openapi.yaml
     /// (Agent 1's drift test, apps/api/tests/openapi_contract.rs).
@@ -490,6 +502,9 @@ fn main() -> ExitCode {
         Cmd::Codeowners {
             command: CodeownersCmd::Check,
         } => codeowners::check(&root),
+        Cmd::Security {
+            command: SecurityCmd::Check,
+        } => security::check(&root),
         Cmd::Changelog {
             command: ChangelogCmd::Export,
         } => lint_all(&root).and_then(|(fragments, failures)| {
