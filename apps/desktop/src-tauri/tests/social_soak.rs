@@ -63,16 +63,16 @@ impl Rss {
         }
     }
 
+    /// Records and prints a sample at once, so a run cut short still leaves its numbers.
     fn sample(&mut self) {
-        self.samples.push((self.started.elapsed(), rss_kib()));
+        let (t, kib) = (self.started.elapsed(), rss_kib());
+        eprintln!("rss sample: t={:>6}s rss={kib:>7} KiB", t.as_secs());
+        self.samples.push((t, kib));
     }
 
     /// Prints the samples and checks that the last quarter's median is at most `limit_kib`
     /// above the median of the second quarter (after warm-up).
     fn assert_flat(&self, what: &str, limit_kib: u64) {
-        for (t, kib) in &self.samples {
-            eprintln!("{what}: t={:>6}s rss={:>7} KiB", t.as_secs(), kib);
-        }
         let n = self.samples.len();
         assert!(n >= 8, "{what}: too few samples ({n})");
         let median = |range: std::ops::Range<usize>| {
