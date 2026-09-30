@@ -586,7 +586,10 @@ mod tests {
             assert!(next(&mut fallback).await.is_some());
             return;
         }
-        assert_eq!(env.len(), 3);
+        // Three overlay variables, plus `LD_PRELOAD` when the renderer library sits next to the
+        // test binary.
+        let own = env.iter().filter(|(k, _)| k != "LD_PRELOAD").count();
+        assert_eq!(own, 3);
         // No renderer shows up: the fallback appears.
         assert_eq!(next(&mut fallback).await, Some(fallback_for_this_desktop()));
 
@@ -625,7 +628,8 @@ mod tests {
             !overlay.hub().current().visible_panel,
             "the panel closes with the last game"
         );
-        assert_eq!(overlay.prepare_launch(game, "Arena").await.len(), 3);
+        let again = overlay.prepare_launch(game, "Arena").await;
+        assert_eq!(again.iter().filter(|(k, _)| k != "LD_PRELOAD").count(), 3);
         bus.publish(crash(game));
         assert_eq!(next(&mut tripped).await, game);
         let list = overlay.packages().await.unwrap();
@@ -641,7 +645,8 @@ mod tests {
                 .disabled_by_safety_valve_at
                 .is_none()
         );
-        assert_eq!(overlay.prepare_launch(game, "Arena").await.len(), 3);
+        let again = overlay.prepare_launch(game, "Arena").await;
+        assert_eq!(again.iter().filter(|(k, _)| k != "LD_PRELOAD").count(), 3);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
