@@ -43,6 +43,14 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
   the heap in steps, so one 100-round window measured 27–308 KB on an idle app and the required check flipped. The
   256 KiB budget now applies to the smallest of three windows (a leak grows every window: 3 KB per round injected
   fails), with listeners and DOM nodes checked after each — https://github.com/wouhliss/vgames/pull/94.
+- A5-T11 security test matrix (`docs/security/test-matrix.md`), `cargo xtask security check` (launcher CSP and
+  capabilities, signing secrets only in `release`), nightly CI and the admin mock e2e job —
+  https://github.com/wouhliss/vgames/pull/95; the fs backend refuses expired storage links (nightly E2E) —
+  https://github.com/wouhliss/vgames/pull/97. **A5-T11 is complete**; the matrix's one open row is Agent 2's
+  cross-server token test (below).
+- A5-T13 part 1: `docs/security/runbooks.md` and `vgames trust publish --new-identity` —
+  https://github.com/wouhliss/vgames/pull/98. Part 2: the final security review,
+  `docs/security/review-2026-09-30.md` (findings G1, F1–F6 below).
 
 ## In progress
 - **CI runs on GitHub again (the repository is public since 2026-09-26; Actions minutes are free).** Nothing changes
@@ -200,6 +208,11 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
   (window-show fallback, updater scheduler) woke up, so the first update check never ran.
 
 ## Needs from others
+- **From Agent 2 (A5-T13 review gate G1, before any release):** the UI calls `install_start`, `install_update`,
+  `install_verify` and `downloads_*`, but no Rust command implements them yet (A2-T08). When they land, every
+  install and update must go through `vgames_transfer::install::fetch_release`/`install` (`verify_manifest` on
+  the exact bytes before anything is written), never from the release descriptor alone; I will re-run review items
+  1.1, 1.2 and 2.3 on that code (`docs/security/review-2026-09-30.md`).
 - **From Agent 2 (A5-T13 finding F1, revocation):** after a publisher key is revoked and its releases re-signed,
   a game installed from such a release is blocked at launch with "Verify" (`LaunchError::KeyRevoked`), and 02 §9 and
   §11 say Verify fetches the re-signed envelope of the installed version. The UI calls `install_verify`, but no
@@ -207,6 +220,16 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
   → revoke → re-sign → Verify replaces `.vgames/manifest.sig` (same manifest bytes, envelope verified under the
   current bundle) → the launch works, without downloading the game again. `docs/security/runbooks.md` §3 states the
   gap until then.
+- **From Agent 1 (A5-T13 finding F3, low):** `vgames_proto::auth::{TokenRequest, TokenResponse}` derive `Debug`
+  over `code`, `code_verifier`, `access_token` and `refresh_token`. Nothing logs them today; please give them a
+  manual `Debug` that prints `[redacted]` for those fields (like `apps/api/src/secret.rs`), with a test.
+- **From Agent 4 (A5-T13 finding F4, low):** `vgames_overlay::protocol::ToBroker::Hello` derives `Debug` over the
+  per-launch broker token; same fix as F3.
+- **From Agents 4 and 1 (A5-T13 finding F5, realtime):** the launcher's `social/realtime.rs` connects with
+  tungstenite's defaults (64 MiB messages, 16 MiB frames) although the server never sends more than `MAX_FRAME`
+  (64 KiB): Agent 4, please use `connect_async_with_config` with `max_message_size`/`max_frame_size` a small
+  multiple of 64 KiB. 01-security §9 also asks for a no-panic property test of the realtime envelope decoder
+  (arbitrary and mutated frames): Agent 4 for the launcher, Agent 1 for `apps/api/src/realtime`.
 - **From Agent 2 (A5-T13 finding F2, runtime catalog):** when you wire `vgames_core::runtimes::verify_catalog` into
   the launcher, store the highest catalog version seen **per catalog key** (the key id, or a hash of the compiled-in
   public key), not once globally. Otherwise a stolen catalog key that signs a very high version locks every
