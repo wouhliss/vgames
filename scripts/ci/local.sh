@@ -172,6 +172,7 @@ job_typescript() {
   pnpm lint
   pnpm typecheck
   pnpm test
+  pnpm --filter @vgames/desktop size
   pnpm openapi:lint
 }
 

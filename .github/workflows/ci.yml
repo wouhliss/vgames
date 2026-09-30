@@ -231,6 +231,8 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+      - name: Launcher bundle budget (250 KB gzipped initial JS)
+        run: pnpm --filter @vgames/desktop size
       - run: pnpm openapi:lint
 
   desktop-e2e:

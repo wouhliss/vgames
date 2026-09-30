@@ -60,3 +60,48 @@ test("navigating all routes 100 times does not grow memory (steady state)", asyn
   console.log(test.info().annotations.at(-1)?.description);
   expect(smallest).toBeLessThan(256 * 1024);
 });
+
+// The screens added after A3-T02 keep listeners too (the controller tester, publish progress, cloud
+// save events), so the settings sections and Publish are cycled as well.
+async function cycleSections(page: Page, times: number) {
+  const nav = page.getByRole("navigation", { name: "Main" });
+  for (let i = 0; i < times; i += 1) {
+    await nav.getByRole("link", { name: "Settings" }).click();
+    for (const section of ["Controllers", "Cloud saves", "Compatibility", "Overlay"]) {
+      await page
+        .getByRole("navigation", { name: "Sections" })
+        .getByRole("link", { name: section })
+        .click();
+      await expect(page.getByRole("region", { name: section })).toBeVisible();
+    }
+    await nav.getByRole("link", { name: "Publish" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Publish" })).toBeVisible();
+    await nav.getByRole("link", { name: "Library" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Library" })).toBeVisible();
+  }
+}
+
+test("settings sections and Publish do not leak either", async ({ page }) => {
+  test.setTimeout(420_000);
+  await open(page, "admin");
+  await expect(page.getByRole("heading", { level: 1, name: "Library" })).toBeVisible();
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Performance.enable");
+  await cycleSections(page, 10);
+  const before = await measure(cdp);
+  await cycleSections(page, 60);
+  let previous = await measure(cdp);
+  const windows: number[] = [];
+  for (let w = 0; w < 2; w += 1) {
+    await cycleSections(page, 60);
+    const now = await measure(cdp);
+    windows.push(now.heap - previous.heap);
+    expect(now.listeners, `listeners after window ${w + 1}`).toBeLessThanOrEqual(before.listeners);
+    expect(now.nodes, `DOM nodes after window ${w + 1}`).toBeLessThanOrEqual(before.nodes * 1.05);
+    previous = now;
+  }
+  console.log(
+    `sections: heap ${(before.heap / 1e6).toFixed(2)} → ${(previous.heap / 1e6).toFixed(2)} MB; windows ${windows.map((w) => `${(w / 1e3).toFixed(0)} KB`).join(" / ")}; nodes ${before.nodes} → ${previous.nodes}; listeners ${before.listeners} → ${previous.listeners}`,
+  );
+  expect(Math.min(...windows)).toBeLessThan(256 * 1024);
+});

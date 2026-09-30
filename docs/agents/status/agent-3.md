@@ -157,6 +157,15 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   `e2e/publish.spec.ts` (axe at every stage, keyboard-only, players don't see it). The 5 GB end-to-end against a local
   API is Agent 2's acceptance; this screen was only exercised against the mock core.
 
+- A3-T12 — Launcher accessibility and performance pass. `e2e/a11y.spec.ts`: axe on every launcher screen (library, browse,
+  friends tabs, downloads, publish, all 12 settings sections) in **dark, light and high contrast**, zero violations at
+  "serious" or above (a deliberately low-contrast button is caught, so the scan is live). Bundle budget enforced:
+  `pnpm --filter @vgames/desktop size` (initial JS ≤ 250 KB gzipped, any route chunk ≤ 100 KB) now runs in the CI
+  "typescript" job and in `scripts/ci/local.sh`. **Initial JS is 154 KB gzipped** (it was 118 KB before the English
+  catalog grew with the new screens; largest route chunk 15 KB). Navigation memory test extended to the settings sections
+  and Publish: heap 5.82 → 6.78 MB across 10 warm-up + 180 cycles, windows 162 KB / 10 KB, DOM nodes 460 → 460, listeners
+  334 → 334. The keyboard/controller walkthrough checklist is `apps/desktop/ACCESSIBILITY.md`.
+
 - A3-T14 — Admin packages list and editor. **List** (`/admin/packages`): status and text filters kept in the URL
   (back/forward and deep links work), table with sticky headers, cursor "Load more", empty / no-match / error (retry)
   / forbidden states, "Deleted X." after a delete. **Create**: title (required, 1–200 code points), optional slug with a
@@ -461,6 +470,9 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   `auth-finished {outcome: failed}`. The UI already handles each case.
 
 ## Blockers / contract questions
+- **Cross-area edit for Agent 5 (A3-T12):** one step added to `.github/workflows/ci.yml` (job "typescript") and one line
+  to `scripts/ci/local.sh` to run the launcher bundle budget (`pnpm --filter @vgames/desktop size`). Please keep or
+  move it as you see fit.
 - None blocking.
 - **For Agent 1 (compat history):** A3-T16 asks for a read-only revision history per compat target, but the API only
   serves the latest profile per target (`GET /v1/packages/{id}/compat`, and only for published packages). Proposal:

@@ -11,7 +11,8 @@
     "tauri": "tauri",
     "dev:mock": "vite --mode mock",
     "build:mock": "vite build --mode mock --outDir node_modules/.vgames-mock-dist --emptyOutDir",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "size": "vite build && node scripts/check-bundle-size.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.103.2",
