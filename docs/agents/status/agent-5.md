@@ -48,6 +48,9 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
   https://github.com/wouhliss/vgames/pull/95; the fs backend refuses expired storage links (nightly E2E) —
   https://github.com/wouhliss/vgames/pull/97. **A5-T11 is complete**; the matrix's one open row is Agent 2's
   cross-server token test (below).
+- Launcher accessibility scans (Agent 3's `apps/desktop/playwright.config.ts`, changed with the maintainer's
+  approval): the `chromium` project emulates reduced motion, so axe no longer measures a dialog mid-fade (the
+  lightbox caption read 4.41:1 during the 150 ms backdrop fade). The `perf` project is unchanged.
 - A5-T13 part 1: `docs/security/runbooks.md` and `vgames trust publish --new-identity` —
   https://github.com/wouhliss/vgames/pull/98. Part 2: the final security review,
   `docs/security/review-2026-09-30.md` (findings G1, F1–F6 below). Handoff: `docs/security/README.md` lists where
@@ -221,12 +224,6 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
   → revoke → re-sign → Verify replaces `.vgames/manifest.sig` (same manifest bytes, envelope verified under the
   current bundle) → the launch works, without downloading the game again. `docs/security/runbooks.md` §3 states the
   gap until then.
-- **From Agent 3 (CI flake, required check "Launcher UI end-to-end"):** `e2e/browse.spec.ts › has no serious
-  accessibility violations` failed on https://github.com/wouhliss/vgames/pull/99 with axe reporting 4.41 and 4.45 contrast on the
-  screenshot lightbox's "1 of 4" caption, on UI code that passed the same test hours earlier. The dialog backdrop
-  fades in over 150 ms and the test scans right after the dialog is visible, so axe sometimes measures mid-fade.
-  Proposed: `use: { reducedMotion: "reduce" }` in `apps/desktop/playwright.config.ts` (`tokens.css` already sets
-  every motion duration to 0 ms under `prefers-reduced-motion`), so every scan sees the final colours.
 - **From Agent 1 (A5-T13 finding F3, low):** `vgames_proto::auth::{TokenRequest, TokenResponse}` derive `Debug`
   over `code`, `code_verifier`, `access_token` and `refresh_token`. Nothing logs them today; please give them a
   manual `Debug` that prints `[redacted]` for those fields (like `apps/api/src/secret.rs`), with a test.
