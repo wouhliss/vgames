@@ -68,15 +68,17 @@ jobs:
       - name: tests
         run: cargo test --locked
       # The in-game overlay renderer (feature `renderer`), and its Vulkan layer end to end on
-      # Mesa's software driver with the Khronos validation layer (A4-T11).
+      # Mesa's software driver with the Khronos validation layer, and its GL preload in a game
+      # process on Xvfb (A4-T11).
       - name: overlay renderer
         env:
           VGAMES_REQUIRE_VULKAN: "1"
+          VGAMES_REQUIRE_GL: "1"
           VGAMES_VK_VALIDATION: "1"
           VK_LAYER_ENABLES: VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends mesa-vulkan-drivers libvulkan1 vulkan-validationlayers
+          sudo apt-get install -y -qq --no-install-recommends mesa-vulkan-drivers libvulkan1 vulkan-validationlayers xvfb libgl1 libgl1-mesa-dri libx11-6
           cargo clippy -p vgames-overlay --all-targets --features renderer --locked -- -D warnings
           cargo test -p vgames-overlay --features renderer --locked
 

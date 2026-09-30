@@ -119,7 +119,7 @@ job_rust() {
   cargo fmt --all -- --check
   cargo clippy --all-targets --locked -- -D warnings
   cargo test --locked
-  # ci.yml "overlay renderer" (the Vulkan test is skipped without lavapipe here).
+  # ci.yml "overlay renderer" (the Vulkan and GL tests are skipped without lavapipe / Xvfb here).
   cargo clippy -p vgames-overlay --all-targets --features renderer --locked -- -D warnings
   cargo test -p vgames-overlay --features renderer --locked
 }

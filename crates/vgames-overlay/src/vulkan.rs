@@ -36,6 +36,9 @@ use crate::protocol::{RendererKind, View};
 pub const FRAME_BUDGET: Duration = Duration::from_millis(1);
 /// Frames averaged for the budget.
 const BUDGET_WINDOW: u32 = 120;
+/// Set once the layer has been part of an instance of this process: the GL hooks stand down
+/// (a game draws through one API; Zink and friends present through Vulkan).
+pub(crate) static ACTIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static DRAWN_FRAMES: AtomicU64 = AtomicU64::new(0);
 static DRAW_NANOS: AtomicU64 = AtomicU64::new(0);
 
@@ -425,6 +428,7 @@ unsafe extern "system" fn create_instance(
         if result != vk::Result::SUCCESS {
             return result;
         }
+        ACTIVE.store(true, Ordering::Relaxed);
         // SAFETY: `out` now holds the new instance.
         let handle = unsafe { *out };
         let load = |name: &CStr| {

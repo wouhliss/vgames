@@ -100,6 +100,28 @@ pub fn sync(dir: &Path, library: Option<&Path>) -> io::Result<Registration> {
     Ok(Registration::Written)
 }
 
+/// `LD_PRELOAD` for a native Linux game (the GL hooks of `vgames_overlay::gl`; Vulkan and
+/// Proton games are covered by the layer). `None` off Linux, without the library next to the
+/// launcher, or when the path cannot be used (`LD_PRELOAD` splits on `:` and whitespace).
+pub fn preload_value(library: Option<&Path>) -> Option<String> {
+    if !cfg!(target_os = "linux") {
+        return None;
+    }
+    let path = library?;
+    let text = path.to_str()?;
+    (path.is_absolute()
+        && path.is_file()
+        && !text.contains(|c: char| c == ':' || c.is_whitespace()))
+    .then(|| text.to_owned())
+}
+
+/// The renderer library next to the launcher executable.
+pub fn installed_library() -> Option<PathBuf> {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|d| d.join(LIBRARY_FILE)))
+}
+
 /// Registers the layer for this install (Linux; a no-op elsewhere for now). Never fails the
 /// launcher: problems are logged and games run without the in-game renderer.
 pub fn register_for_this_install() {
@@ -111,9 +133,7 @@ pub fn register_for_this_install() {
         tracing::debug!("no data directory for the Vulkan layer manifest");
         return;
     };
-    let library = std::env::current_exe()
-        .ok()
-        .and_then(|exe| exe.parent().map(|d| d.join(LIBRARY_FILE)));
+    let library = installed_library();
     match sync(&dir, library.as_deref()) {
         Ok(result) => tracing::debug!(?result, "Vulkan overlay layer"),
         Err(error) => tracing::warn!(%error, "cannot register the Vulkan overlay layer"),
@@ -125,6 +145,27 @@ mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
 
     use super::*;
+
+    #[test]
+    fn preload_needs_an_existing_library_at_a_plain_path() {
+        let dir = std::env::temp_dir().join(format!("vg-preload-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let lib = dir.join(LIBRARY_FILE);
+        assert_eq!(preload_value(Some(&lib)), None, "missing file");
+        std::fs::write(&lib, b"x").unwrap();
+        let spaced = dir.join("a b");
+        std::fs::create_dir_all(&spaced).unwrap();
+        std::fs::write(spaced.join(LIBRARY_FILE), b"x").unwrap();
+        if cfg!(target_os = "linux") {
+            assert_eq!(preload_value(Some(&lib)).as_deref(), lib.to_str());
+            assert_eq!(preload_value(Some(&spaced.join(LIBRARY_FILE))), None);
+            assert_eq!(preload_value(Some(Path::new("libvgames_overlay.so"))), None);
+        } else {
+            assert_eq!(preload_value(Some(&lib)), None);
+        }
+        assert_eq!(preload_value(None), None);
+        std::fs::remove_dir_all(&dir).ok();
+    }
 
     #[test]
     fn the_manifest_loads_only_with_the_overlay_variable() {

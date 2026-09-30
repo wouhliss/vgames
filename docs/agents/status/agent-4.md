@@ -159,9 +159,21 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   removed the test fails. CI job "Rust" now runs it (`VGAMES_REQUIRE_VULKAN=1`). Measured CPU cost of the layer with
   a toast visible, 242 frames at 640x480 on lavapipe: **22 µs/frame release, 39 µs debug** (budget 1 ms open,
   0.3 ms hidden; hidden is one map read and one atomic load). GPU cost and exclusive fullscreen need real hardware.
-  Not yet: input in the panel from inside a Vulkan game (the panel shows; replies/accept go through the launcher or
-  the fallback window), Linux GL preload,
-  Windows hudhook DLL (needs a Windows machine to build and verify).
+  **Linux GL preload (done, 2026-09-30):** `vgames_overlay::gl` in the same library: `glXSwapBuffers`,
+  `eglSwapBuffers` (+ `WithDamageKHR/EXT`), `glXGetProcAddress[ARB]`, `eglGetProcAddress` and `dlsym`
+  (for games that open libGL with `RTLD_LOCAL`, as SDL does). The cards are blitted into the default framebuffer
+  (`glBlitFramebuffer`, GL 3.0 / ES 3.0, core and compatibility) from one RGBA texture; bindings, unpack state,
+  scissor and sRGB are saved and restored, the error queue is not touched; stands down when the Vulkan layer is
+  active, after a hook panic and above 1 ms average. The launcher adds `LD_PRELOAD` for native Linux games
+  (`overlay::vulkan_layer::preload_value`; test). Evidence: `tests/gl_preload.rs` + `examples/gl_game.rs` run a
+  separate "game" process on Xvfb with Mesa llvmpipe, find the swap function both by `dlsym` on the libGL handle
+  and through `glXGetProcAddressARB`, read the window back from the X server: toast pixels in the frame, the rest
+  untouched, no toast and no broker connection without the preload; fails with the blit removed. CI installs
+  Xvfb/Mesa and sets `VGAMES_REQUIRE_GL=1`. Cost on llvmpipe (the copy itself runs on the CPU there): ≈ 1.1 ms per
+  frame, debug and release alike; real GPUs need hardware numbers. **EGL is untested** (no libEGL in this
+  sandbox); the code path shares everything but the two size/context queries.
+  Not yet: input in the panel from inside a Vulkan or GL game (the panel shows; replies/accept go through the
+  launcher or the fallback window), Windows hudhook DLL (needs a Windows machine to build and verify).
 
 - A4-T12 — Resilience, abuse and soak. **Started.** Chaos (`tests/social_chaos.rs`, real API in process):
   launchers on two API instances chat and see typing across instances; an API restart while a message is written

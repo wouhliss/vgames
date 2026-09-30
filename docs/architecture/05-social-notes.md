@@ -369,3 +369,12 @@ Additions (A4-T10):
   `VGAMES_OVERLAY_TOKEN=<64 hex>` through `PreparedLaunch::inject_env` (nothing when the overlay is off); a start
   that fails drops the broker, and `GameStopped` ends it. The Guide/PS hold toggles the panel
   while a game with the overlay runs.
+- Linux renderers (A4-T11), both in `libvgames_overlay.so` next to the launcher: the Vulkan implicit layer
+  (registered per user, gated by `VGAMES_OVERLAY=1`; covers native Vulkan and every Proton game) and the GL
+  hooks. For a **native** game the launcher also sets `LD_PRELOAD=<that library>` (only when the file exists and
+  its path has no `:` or whitespace). The GL hooks export `glXSwapBuffers`, `eglSwapBuffers` (+ `WithDamage`),
+  `glXGetProcAddress[ARB]`, `eglGetProcAddress` and `dlsym` (so a game that opens libGL itself, as SDL and GLFW do,
+  still gets them). Cards are copied into the default framebuffer with `glBlitFramebuffer` (GL 3.0 / ES 3.0);
+  touched state is saved and restored and the GL error queue is left alone. They stand down when the Vulkan
+  layer is active in the process, after a panic, and when the average draw time exceeds 1 ms. No input on
+  Linux: hotkey and Guide/PS only.

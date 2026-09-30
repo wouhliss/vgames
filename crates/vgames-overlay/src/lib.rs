@@ -19,6 +19,11 @@ pub mod protocol;
 /// CPU layout and rasterisation of the overlay cards.
 #[cfg(feature = "renderer")]
 pub mod draw;
+/// Linux OpenGL hooks for `LD_PRELOAD` (`glXSwapBuffers`, `eglSwapBuffers`): same library as the
+/// Vulkan layer. FFI with the C runtime and the GL libraries, hence `unsafe_code`.
+#[cfg(all(feature = "renderer", target_os = "linux", target_endian = "little"))]
+#[allow(unsafe_code)]
+pub mod gl;
 /// Hook panic safety net shared by every renderer backend.
 #[cfg(any(feature = "renderer", test))]
 pub mod guard;

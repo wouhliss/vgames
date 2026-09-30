@@ -260,7 +260,13 @@ impl OverlayService {
                 return Vec::new();
             }
         };
-        let env = broker.endpoint.env();
+        let mut env = broker.endpoint.env();
+        // Native Linux games also get the GL hooks (the launcher sets this only for the game it
+        // starts; its own environment and other processes never see it).
+        if let Some(lib) = vulkan_layer::preload_value(vulkan_layer::installed_library().as_deref())
+        {
+            env.push(("LD_PRELOAD".to_owned(), lib));
+        }
         tokio::spawn(self.clone().watch_broker(package, erx));
         lock(&self.inner.sessions).insert(
             package,
