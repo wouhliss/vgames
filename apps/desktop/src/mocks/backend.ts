@@ -29,6 +29,7 @@ import { type CompatState, compatHandlers, defaultCompatState } from "./compat";
 import { type ControllersState, controllersHandlers, defaultControllersState } from "./controllers";
 import { type DownloadsState, defaultDownloadsState, downloadHandlers } from "./downloads";
 import { defaultLibraryState, type LibraryState, libraryHandlers } from "./library";
+import { defaultPublishState, type PublishState, publishHandlers } from "./publish";
 import { CommandFailure, fail, type Handler, later } from "./runtime";
 import { defaultSavesState, type SavesState, savesHandlers } from "./saves";
 import {
@@ -86,6 +87,7 @@ export interface MockState
     CompatState,
     SavesState,
     ControllersState,
+    PublishState,
     SocialState {
   appInfo: AppInfo;
   appearance: AppearanceSettings;
@@ -119,6 +121,7 @@ export function defaultState(): MockState {
     ...defaultCompatState(),
     ...defaultSavesState(),
     ...defaultControllersState(),
+    ...defaultPublishState(),
     ...defaultSocialState(),
     appInfo: {
       version: "0.4.0",
@@ -503,6 +506,7 @@ export function installMockBackend(overrides: Partial<MockState> = {}): MockBack
     ...compatHandlers(state),
     ...savesHandlers(state),
     ...controllersHandlers(state),
+    ...publishHandlers(state),
     ...socialHandlers(state),
   };
 

@@ -5,6 +5,7 @@
 import { emit } from "@tauri-apps/api/event";
 import {
   installMockBackend,
+  MOCK_ACCOUNT,
   MOCK_LIBRARY,
   MOCK_SERVER,
   type MockBackend,
@@ -13,6 +14,7 @@ import {
 import { makeCatalog } from "./catalog";
 import { makeDownloads, startDownloadSimulation } from "./downloads";
 import { MOCK_COLLECTIONS, makeInstalls, OFFLINE_LIBRARY } from "./library";
+import { defaultPublishState } from "./publish";
 import { BEA, ME, makeInvite } from "./social";
 
 function withInstalls(count: number, downloads = false): Partial<MockState> {
@@ -65,6 +67,12 @@ const PRESETS: Record<string, () => Partial<MockState>> = {
   ready: () => withInstalls(40, true),
   /** Signed in with an empty library. */
   empty: () => ({ servers: [MOCK_SERVER], libraries: [MOCK_LIBRARY], packages: makeCatalog(120) }),
+  /** Signed in as an admin (Publish screen), with the upload simulated step by step. */
+  admin: () => ({
+    servers: [{ ...MOCK_SERVER, account: { ...MOCK_ACCOUNT, role: "admin" } }],
+    libraries: [MOCK_LIBRARY],
+    publish: { ...defaultPublishState().publish, stepMs: 400 },
+  }),
   /** 5,000 installed packages (performance). */
   huge: () => withInstalls(5000),
   /** Server added and signed in, but no library yet. */

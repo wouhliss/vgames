@@ -144,6 +144,19 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   hides snapshots but keeps backups. Tests: 32 Vitest (`routes/saves/saves.test.tsx`: every outcome, each choice, each
   error) and `e2e/saves.spec.ts` (axe on the dialog, list and history; keyboard-only and controller-only).
 
+- A3-T11 — Admin publishing in the launcher (`/publish`, admins and owners only; hidden for players), against
+  `src/ipc/contract/publish.ts`. Steps: game (search, pick, or create with slug-taken handling) → folder (native
+  picker; the plan shows files, size and packs, every invalid path with its rule, "and N more", and **blocks** starting)
+  → version (platform, name checked against the server's rule, program to start and options) → key file + passphrase
+  (passphrase sent once, then cleared from the window). The job view follows `publish-progress` only: phase, overall and
+  per-pack bars, the server's verification, cancel (keeps the upload), continue with the passphrase again, give up,
+  and **Publish only after a confirmation**. Failures: wrong passphrase (also on continue), untrusted key (explained,
+  nothing uploaded, no retry), verification failed (no publish, no continue, only give up), refused finish and lost
+  connection (continue offered). Unfinished jobs from earlier are offered on the next visit. Versions list with Withdraw
+  (reason 3–500 characters, nothing optimistic). Tests: 34 Vitest (`routes/publish/publish.test.tsx`) and
+  `e2e/publish.spec.ts` (axe at every stage, keyboard-only, players don't see it). The 5 GB end-to-end against a local
+  API is Agent 2's acceptance; this screen was only exercised against the mock core.
+
 - A3-T14 — Admin packages list and editor. **List** (`/admin/packages`): status and text filters kept in the URL
   (back/forward and deep links work), table with sticky headers, cursor "Load more", empty / no-match / error (retry)
   / forbidden states, "Deleted X." after a delete. **Create**: title (required, 1–200 code points), optional slug with a
@@ -263,6 +276,8 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   licenses for Settings → Compatibility (see "Needs from others").
 - `apps/desktop/src/ipc/contract/saves.ts`: `saves_conflict`, `saves_resolve`, `saves_history`, `saves_restore` and the
   `save-sync` / `saves-changed` events (see "Needs from others").
+- `apps/desktop/src/ipc/contract/publish.ts`: package, plan, key, publish job and yank commands and `publish-progress`
+  (see "Needs from others").
 - `apps/desktop/src/ipc/contract/controllers.ts`: controllers overview, tester, per-package emulation and profiles (see
   "Needs from others").
 - `apps/desktop/src/ipc/contract/downloads.ts`: the install queue commands and `downloads-changed` (see
@@ -278,6 +293,13 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   (builds the mock bundle; set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to use a preinstalled Chromium).
 
 ## Needs from others
+- **From Agent 2** (A2-T13 admin publishing, for A3-T11). Full types and doc comments in
+  `apps/desktop/src/ipc/contract/publish.ts`: `publish_packages(query)`, `publish_package_create(title)`,
+  `publish_pick_folder`, `publish_plan(folder) -> PublishPlan {plan_id, file_count, total_bytes, pack_count, invalid[],
+  invalid_total, executables[]}`, `publish_pick_key`, `publish_start(request)` (passphrase inside; errors incl.
+  wrong_passphrase, untrusted_key, plan_changed, label_taken), `publish_jobs`, `publish_cancel`, `publish_resume(job,
+  passphrase)`, `publish_publish`, `publish_abort`, `publish_versions(package_id)`, `publish_yank(version_id, reason)`,
+  and the event `publish-progress` (the whole job state; the first one must arrive when the job starts).
 - **From Agent 2** (A2-T12 controllers, 07-controllers, for Settings → Controllers). Full types and doc comments in
   `apps/desktop/src/ipc/contract/controllers.ts`: `controllers_overview -> {pads: Pad[] (kind, name, connection, battery,
   player), backend: BackendStatus}`, `controller_tester_start/stop` + event `controller-input {instance_id, pressed,

@@ -94,6 +94,14 @@ export function Shell() {
                 </NavLink>
               </li>
             ))}
+            {server.account && server.account.role !== "user" ? (
+              <li>
+                <NavLink to="/publish" className={styles.navLink ?? ""}>
+                  <Icon name="arrowUp" />
+                  {t("nav.publish")}
+                </NavLink>
+              </li>
+            ) : null}
           </ul>
         </nav>
         <div className={styles.column}>
