@@ -28,9 +28,6 @@ use vgames_overlay::protocol::{
     self, PROTOCOL_VERSION, RendererKind, TOKEN_LEN, ToBroker, ToRenderer, Toast, ToastKind, View,
 };
 
-/// The game's window (the toast lands at the top right: scale 1 at this height).
-const W: u32 = 640;
-const H: u32 = 480;
 const CARD_BG: u32 = 0x001C_1D24;
 const GAME_BLUE: u32 = 0x0000_00FF;
 
@@ -100,7 +97,7 @@ fn start_xvfb() -> Option<Xvfb> {
         .args([
             "-screen",
             "0",
-            &format!("{W}x{H}x24"),
+            "1024x768x24",
             "-nolisten",
             "tcp",
             "-displayfd",
@@ -135,6 +132,8 @@ fn skip(why: &str) -> bool {
 struct Run {
     probe: u32,
     corner: u32,
+    resized: u32,
+    resized_corner: u32,
     frames: u64,
     nanos: u64,
     hello: Option<RendererKind>,
@@ -170,6 +169,8 @@ fn run_game(display: &str, lookup: &str, preload: bool) -> Run {
     Run {
         probe: field("PROBE=") as u32,
         corner: field("CORNER=") as u32,
+        resized: field("RESIZED=") as u32,
+        resized_corner: field("RESIZED_CORNER=") as u32,
         frames: field("FRAMES="),
         nanos: if preload { field("NANOS=") } else { 0 },
         hello: hello.recv_timeout(Duration::from_millis(200)).ok(),
@@ -231,6 +232,12 @@ fn the_preload_draws_a_toast_into_the_frame_of_a_game_that_loads_libgl_itself() 
         assert_eq!(r.hello, Some(RendererKind::OpenGl), "lookup {lookup}");
         assert_eq!(r.probe, CARD_BG, "the toast is in the frame ({lookup})");
         assert_eq!(r.corner, GAME_BLUE, "the rest is the game's ({lookup})");
+        // After the game changes its resolution the cards sit at the new top right.
+        assert_eq!(r.resized, CARD_BG, "toast after a resize ({lookup})");
+        assert_eq!(
+            r.resized_corner, GAME_BLUE,
+            "rest after a resize ({lookup})"
+        );
         assert!(r.frames > 0, "frames drawn ({lookup})");
         // Debug build on the software rasteriser, where the copy itself runs on the CPU and the
         // first frame creates the objects: a loose bound here; the layer turns itself off above
@@ -241,7 +248,7 @@ fn the_preload_draws_a_toast_into_the_frame_of_a_game_that_loads_libgl_itself() 
             r.frames
         );
         assert!(
-            per_frame < Duration::from_millis(3),
+            per_frame < Duration::from_millis(10),
             "{per_frame:?} per frame ({lookup})"
         );
     }

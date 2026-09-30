@@ -195,6 +195,25 @@ fn main() {
         println!("PROBE={:x}", rgb(PROBE.0, PROBE.1));
         println!("CORNER={:x}", rgb(10, H - 10));
 
+        // Resize the window (a game changing its resolution): the overlay follows the new size.
+        let resize: unsafe extern "C" fn(Display, c_ulong, c_uint, c_uint) -> c_int =
+            sym!(x11, "XResizeWindow", _);
+        let (w2, h2) = (800u32, 600u32);
+        resize(dpy, win, w2, h2);
+        sync(dpy, 0);
+        for _ in 0..10 {
+            clear_color(0.0, 0.0, 1.0, 1.0);
+            clear(0x4000);
+            swap(dpy, win);
+            sync(dpy, 0);
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let image = get_image(dpy, win, 0, 0, w2, h2, c_ulong::MAX, 2);
+        assert!(!image.is_null(), "XGetImage failed after the resize");
+        let rgb = |x: u32, y: u32| (get_pixel(image, x as c_int, y as c_int) & 0x00FF_FFFF) as u32;
+        println!("RESIZED={:x}", rgb(w2 - 12 - 3, 12 + 3));
+        println!("RESIZED_CORNER={:x}", rgb(10, h2 - 10));
+
         let frames = match std::env::var("VGAMES_GL_LIB") {
             Ok(path) if std::env::var_os("LD_PRELOAD").is_some() => {
                 let lib = libloading::Library::new(path).unwrap();

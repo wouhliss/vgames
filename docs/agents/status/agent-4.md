@@ -168,7 +168,8 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   (`overlay::vulkan_layer::preload_value`; test). Evidence: `tests/gl_preload.rs` + `examples/gl_game.rs` run a
   separate "game" process on Xvfb with Mesa llvmpipe, find the swap function both by `dlsym` on the libGL handle
   and through `glXGetProcAddressARB`, read the window back from the X server: toast pixels in the frame, the rest
-  untouched, no toast and no broker connection without the preload; fails with the blit removed. CI installs
+  untouched, the cards follow a window resize (640x480 → 800x600), no toast and no broker connection without the
+  preload; fails with the blit removed. CI installs
   Xvfb/Mesa and sets `VGAMES_REQUIRE_GL=1`. Cost on llvmpipe (the copy itself runs on the CPU there): ≈ 1.1 ms per
   frame, debug and release alike; real GPUs need hardware numbers. **EGL is untested** (no libEGL in this
   sandbox); the code path shares everything but the two size/context queries.
