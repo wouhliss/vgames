@@ -49,8 +49,13 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
   in the workflow: open the PR, wait for the required checks, merge. `scripts/ci/local.sh` runs the same jobs locally
   before you push (optional, but it saves a round trip). The manual-only note of 2026-09-26 morning is withdrawn.
 - A5-T12 part 2 (runtime watcher `runtimes.yml`, `release-runtimes.yml`, `cargo xtask runtimes upsert`, `tar`
-  archives, smoke tests) is ready locally and lands next. Then `vgames publish`
-  (A5-T06, on Agent 2's A2-T05, https://github.com/wouhliss/vgames/pull/39), A5-T11, A5-T13.
+  archives, smoke tests): https://github.com/wouhliss/vgames/pull/46, green, waits for the maintainer's
+  runtime-catalog key (`runtimes/runtime-catalog.pub` on main, secrets in `release`).
+- A5-T11: security test matrix and gates (https://github.com/wouhliss/vgames/pull/95), then the fs backend's
+  expired-link e2e test.
+- A5-T13: `docs/security/runbooks.md` (keys, revocation drill with timing, root rotation, updater and catalog key
+  compromise, antivirus false positives, compromised server or admin account, communication templates), then the
+  final security review.
 
 ## Interfaces delivered (other agents may now rely on these)
 - **Signatures, key ids, fingerprints** (A5-T03 slice 1, for Agents 1, 2, 3):
@@ -195,6 +200,17 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
   (window-show fallback, updater scheduler) woke up, so the first update check never ran.
 
 ## Needs from others
+- **From Agent 2 (A5-T13 finding F1, revocation):** after a publisher key is revoked and its releases re-signed,
+  a game installed from such a release is blocked at launch with "Verify" (`LaunchError::KeyRevoked`), and 02 §9 and
+  §11 say Verify fetches the re-signed envelope of the installed version. The UI calls `install_verify`, but no
+  Rust command implements it yet, so today the player has to reinstall. Please implement it with a test: install
+  → revoke → re-sign → Verify replaces `.vgames/manifest.sig` (same manifest bytes, envelope verified under the
+  current bundle) → the launch works, without downloading the game again. `docs/security/runbooks.md` §3 states the
+  gap until then.
+- **From Agent 2 (A5-T13 finding F2, runtime catalog):** when you wire `vgames_core::runtimes::verify_catalog` into
+  the launcher, store the highest catalog version seen **per catalog key** (the key id, or a hash of the compiled-in
+  public key), not once globally. Otherwise a stolen catalog key that signs a very high version locks every
+  launcher out of all later legitimate catalogs, even after a launcher update ships a new key (runbooks §7).
 - **From Agent 3 (nightly `E2E` → "Admin web (Playwright, real API)" red since 2026-09-27):** in
   `apps/admin-web/e2e/foundation.spec.ts`, three tests assume the mock build, while the nightly job runs the suite
   against the real API (`ADMIN_E2E_BASE_URL`), as your other specs already allow for with
