@@ -45,6 +45,7 @@ trust.toml:
 The version is the previous bundle's + 1, and every revocation of the previous bundle
 is carried over: a key, once revoked, stays revoked.")]
     Build {
+        /// The trust spec (TOML, format below).
         #[arg(long)]
         spec: PathBuf,
         /// The root key file (only its public part is read) or a base64 root public key.
@@ -53,8 +54,10 @@ is carried over: a key, once revoked, stays revoked.")]
         /// The current bundle (signed `{bundle, signature}` JSON, or the bundle bytes).
         #[arg(long)]
         previous: Option<PathBuf>,
+        /// Where to write the unsigned bundle bytes.
         #[arg(long, default_value = "bundle.json")]
         out: PathBuf,
+        /// Overwrite --out if it exists.
         #[arg(long)]
         force: bool,
     },
@@ -66,16 +69,19 @@ Examples:
 
 Upload the output in the admin UI (Trust) or with `vgames trust publish`.")]
     Sign {
+        /// The unsigned bundle from `vgames trust build`.
         #[arg(long)]
         bundle: PathBuf,
         /// The root key file.
         #[arg(long)]
         root: PathBuf,
+        /// Where to write the signed `{bundle, signature}` JSON.
         #[arg(long, default_value = "bundle.signed.json")]
         out: PathBuf,
         /// Do not ask for confirmation.
         #[arg(long)]
         yes: bool,
+        /// Overwrite --out if it exists.
         #[arg(long)]
         force: bool,
         #[command(flatten)]
@@ -87,6 +93,7 @@ Examples:
   vgames trust verify --signed bundle.signed.json --root root.vgkey
   vgames trust verify --signed bundle.signed.json --root <base64> --fingerprint VG1-… --server-id 0192…")]
     Verify {
+        /// The signed `{bundle, signature}` JSON to check.
         #[arg(long)]
         signed: PathBuf,
         /// The root key file (public part) or a base64 root public key.
