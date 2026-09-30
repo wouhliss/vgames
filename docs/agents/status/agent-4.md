@@ -112,8 +112,9 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   ≥ 5 s / 5 %, roles), outcome mapping.
   Launching now goes through Agent 2's `Launcher` (`ports::LauncherGames`: rate limit, pre-launch checks,
   `TargetChoice::for_invite` → `multiplayer.join` with the secret as a whole argument); `join_args` was removed in
-  favour of A2-T09's substitution. **Not yet:** update detection (A2-T08's platform choice); until then an installed
-  row counts as current.
+  favour of A2-T09's substitution. **Update detection (done, A4-T09 follow-up):** after accepting, an installed game whose sequence is below the
+  newest release for its installed platform (`GET /v1/packages/{id}`) opens the update dialog (`reason: outdated`);
+  a failed lookup counts as current (`ports::is_outdated`, unit test).
 
 ## In progress
 - A4-T10 — Overlay broker, macOS panel and fallbacks. **Part 1 done:** `vgames_overlay::protocol` (versioned
@@ -219,7 +220,7 @@ Where everything is (final names and payloads: `docs/architecture/05-social-note
 2. macOS `NSPanel` (non-activating, `.fullScreenAuxiliary`) and the `app.macOSPrivateApi` contract PR.
 3. Real-GPU frame budget numbers (Vulkan and GL); EGL path verification; Wayland and Proton runs.
 4. Soaks of 1 h chat and 24 h idle without the 29 min cap.
-5. In-game input (panel clicks) on any backend; update detection for invites (A2-T08 platform choice).
+5. In-game input (panel clicks) on any backend.
 6. Threat review co-signed by Agent 5: Agent 5's `docs/security/review-2026-09-30.md` already covers the social
    controls (ciphertext-only storage, keychain, join-secret grammar, parser limits); the overlay GL/Vulkan
    hooks (in-process code, loopback broker token, no-panic guard) were added after it and need one more row.

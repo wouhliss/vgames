@@ -361,6 +361,17 @@ impl SocialApi<'_> {
         .await
     }
 
+    /// The releases of a package (for update detection): `GET /v1/packages/{id}`.
+    pub async fn package_releases(
+        &self,
+        package: Uuid,
+    ) -> Result<Vec<vgames_proto::packages::ReleaseInfo>, SocialError> {
+        let detail: vgames_proto::packages::PackageDetail = self
+            .json(Method::GET, &format!("v1/packages/{package}"), None::<&()>)
+            .await?;
+        Ok(detail.releases)
+    }
+
     pub async fn invite_status(
         &self,
         id: Uuid,

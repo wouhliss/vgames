@@ -31,7 +31,7 @@ use crate::db::now_unix;
 use crate::events::{AppEvent, InstallOutcome, PackageRef};
 use crate::social::api::SocialApi;
 use crate::social::model::{Invite, InviteInstallReason, SocialError};
-use crate::social::ports::{GameCheck, Games};
+use crate::social::ports::{GameCheck, Games, is_outdated};
 use crate::social::store::{self, LocalInvite};
 
 /// Longest invite message (the server's limit).
@@ -212,11 +212,30 @@ impl SocialService {
         Ok(())
     }
 
+    /// An installed game is outdated when the server publishes a newer release for the
+    /// installed platform. A failed lookup never blocks joining: the game counts as current.
+    async fn has_newer_release(&self, api: &SocialApi<'_>, server: Uuid, package: Uuid) -> bool {
+        let Some(installed) = self.games().installed_build(server, package).await else {
+            return false;
+        };
+        match api.package_releases(package).await {
+            Ok(releases) => is_outdated(&installed, &releases),
+            Err(error) => {
+                tracing::info!(%error, %package, "cannot check for a newer release");
+                false
+            }
+        }
+    }
+
     /// After accepting (or after a restart): is the game ready, or does it need installing?
     async fn prepare(&self, api: &SocialApi<'_>, invite: &vgames_proto::social::Invite) {
         let server = api.session.server_id;
         let package = invite.package.id;
-        let (state, failure) = match self.games().check(server, package).await {
+        let mut check = self.games().check(server, package).await;
+        if check == GameCheck::Current && self.has_newer_release(api, server, package).await {
+            check = GameCheck::Outdated;
+        }
+        let (state, failure) = match check {
             GameCheck::Current => (InviteReport::Ready, None),
             GameCheck::NoBuildForPlatform => (
                 InviteReport::Failed,

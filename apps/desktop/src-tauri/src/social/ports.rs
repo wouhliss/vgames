@@ -161,6 +161,28 @@ pub enum GameCheck {
     NoBuildForPlatform,
 }
 
+/// The build installed on this computer (from the `installs` table).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InstalledBuild {
+    /// `linux-x86_64` and so on, as in the release list.
+    pub platform: String,
+    pub sequence: i64,
+}
+
+/// `true` when the server publishes a newer release than `installed` for the same platform.
+/// No release for that platform says nothing about updates.
+pub fn is_outdated(
+    installed: &InstalledBuild,
+    releases: &[vgames_proto::packages::ReleaseInfo],
+) -> bool {
+    releases
+        .iter()
+        .filter(|r| r.platform.as_str() == installed.platform)
+        .map(|r| r.sequence)
+        .max()
+        .is_some_and(|latest| latest > installed.sequence)
+}
+
 /// Why a join launch did not start.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum LaunchError {
@@ -179,6 +201,15 @@ pub type BoxFuture<'a, T> = std::pin::Pin<Box<dyn std::future::Future<Output = T
 pub trait Games: Send + Sync + 'static {
     /// The package's local state on `server`.
     fn check(&self, server: Uuid, package: Uuid) -> BoxFuture<'_, GameCheck>;
+    /// The installed build, for update detection against the server's releases (none: an
+    /// installed game counts as current).
+    fn installed_build(
+        &self,
+        _server: Uuid,
+        _package: Uuid,
+    ) -> BoxFuture<'_, Option<InstalledBuild>> {
+        Box::pin(async { None })
+    }
     /// Launches the manifest's `multiplayer.join` target with `join_secret` substituted as a
     /// whole argument (already validated; `None` = normal launch without join arguments).
     fn launch_join(
@@ -196,6 +227,34 @@ pub struct LocalLibrary {
 }
 
 impl Games for LocalLibrary {
+    fn installed_build(
+        &self,
+        server: Uuid,
+        package: Uuid,
+    ) -> BoxFuture<'_, Option<InstalledBuild>> {
+        Box::pin(async move {
+            self.db
+                .call(move |c| {
+                    use crate::db::rusqlite::OptionalExtension as _;
+                    Ok(c.query_row(
+                        "SELECT platform, sequence FROM installs
+                         WHERE server_id = ?1 AND package_id = ?2 AND state = 'installed'",
+                        [server.to_string(), package.to_string()],
+                        |r| {
+                            Ok(InstalledBuild {
+                                platform: r.get(0)?,
+                                sequence: r.get(1)?,
+                            })
+                        },
+                    )
+                    .optional()?)
+                })
+                .await
+                .ok()
+                .flatten()
+        })
+    }
+
     fn check(&self, server: Uuid, package: Uuid) -> BoxFuture<'_, GameCheck> {
         Box::pin(async move {
             let state = self
@@ -244,6 +303,14 @@ pub struct LauncherGames<T> {
 impl<T: crate::launch::orchestrate::TrustSource> Games for LauncherGames<T> {
     fn check(&self, server: Uuid, package: Uuid) -> BoxFuture<'_, GameCheck> {
         self.library.check(server, package)
+    }
+
+    fn installed_build(
+        &self,
+        server: Uuid,
+        package: Uuid,
+    ) -> BoxFuture<'_, Option<InstalledBuild>> {
+        self.library.installed_build(server, package)
     }
 
     fn launch_join(
@@ -328,5 +395,42 @@ mod tests {
         slot.on_unauthorized(|_| {});
         slot.set(Some(stale.clone()));
         assert!(slot.refreshed(&stale).await.is_none());
+    }
+}
+
+#[cfg(test)]
+mod update_tests {
+    use super::*;
+    use time::OffsetDateTime;
+    use vgames_proto::packages::{Platform, ReleaseInfo};
+
+    fn release(platform: Platform, sequence: i64) -> ReleaseInfo {
+        ReleaseInfo {
+            platform,
+            version_id: Uuid::now_v7(),
+            version_label: format!("{sequence}"),
+            sequence,
+            total_size: 1,
+            published_at: OffsetDateTime::UNIX_EPOCH,
+        }
+    }
+
+    #[test]
+    fn only_a_newer_release_for_the_installed_platform_is_an_update() {
+        let installed = InstalledBuild {
+            platform: "linux-x86_64".into(),
+            sequence: 3,
+        };
+        let r = |p, s| release(p, s);
+        assert!(is_outdated(&installed, &[r(Platform::LinuxX86_64, 4)]));
+        assert!(is_outdated(
+            &installed,
+            &[r(Platform::LinuxX86_64, 2), r(Platform::LinuxX86_64, 5)]
+        ));
+        assert!(!is_outdated(&installed, &[r(Platform::LinuxX86_64, 3)]));
+        assert!(!is_outdated(&installed, &[r(Platform::LinuxX86_64, 2)]));
+        // A newer build for another platform is not an update for this computer.
+        assert!(!is_outdated(&installed, &[r(Platform::WindowsX86_64, 9)]));
+        assert!(!is_outdated(&installed, &[]));
     }
 }
