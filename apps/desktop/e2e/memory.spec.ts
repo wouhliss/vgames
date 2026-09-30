@@ -25,7 +25,7 @@ async function cycle(page: Page, times: number) {
 }
 
 test("navigating all routes 100 times does not grow memory (steady state)", async ({ page }) => {
-  test.setTimeout(240_000);
+  test.setTimeout(420_000);
   // The simulated download is paused: its 4 progress events per second re-render the top bar, and a
   // tick landing between the forced GC and the reading shows up as one extra listener. This test is
   // about what navigation leaves behind, so it measures an otherwise idle app.
@@ -36,21 +36,27 @@ test("navigating all routes 100 times does not grow memory (steady state)", asyn
 
   await cycle(page, 10); // warm up: lazy chunks, query cache, JIT
   const before = await measure(cdp);
+  // The first 100 cycles still settle (JIT, router and query caches: ~1 MB once).
   await cycle(page, 100);
-  const mid = await measure(cdp);
-  await cycle(page, 100);
-  const after = await measure(cdp);
-
-  // The first 100 cycles still settle (JIT, router and query caches: ~0.8 MB once). A leak shows
-  // as growth that continues, so the assertion is on the second 100-cycle window.
-  const growth = after.heap - mid.heap;
+  let previous = await measure(cdp);
+  // Then three more windows of 100. V8 grows the heap in steps, so one window alone lands anywhere
+  // between ~30 and ~260 KB on an idle app (measured: 212/146/28/250 KB in one run). A leak grows
+  // every window, so the smallest window is the one held to the budget: ≥ 2.6 KB leaked per round
+  // still fails. Listeners and DOM nodes must stay flat after every window.
+  const windows: number[] = [];
+  for (let w = 0; w < 3; w += 1) {
+    await cycle(page, 100);
+    const now = await measure(cdp);
+    windows.push(now.heap - previous.heap);
+    expect(now.listeners, `listeners after window ${w + 1}`).toBeLessThanOrEqual(before.listeners);
+    expect(now.nodes, `DOM nodes after window ${w + 1}`).toBeLessThanOrEqual(before.nodes * 1.05);
+    previous = now;
+  }
+  const smallest = Math.min(...windows);
   test.info().annotations.push({
     type: "memory",
-    description: `heap ${(before.heap / 1e6).toFixed(2)} → ${(mid.heap / 1e6).toFixed(2)} → ${(after.heap / 1e6).toFixed(2)} MB (steady window ${(growth / 1e3).toFixed(0)} KB); nodes ${before.nodes} → ${after.nodes}; listeners ${before.listeners} → ${after.listeners}`,
+    description: `heap ${(before.heap / 1e6).toFixed(2)} → ${(previous.heap / 1e6).toFixed(2)} MB; windows ${windows.map((w) => `${(w / 1e3).toFixed(0)} KB`).join(" / ")}; nodes ${before.nodes} → ${previous.nodes}; listeners ${before.listeners} → ${previous.listeners}`,
   });
   console.log(test.info().annotations.at(-1)?.description);
-  expect(after.listeners).toBeLessThanOrEqual(before.listeners);
-  expect(after.nodes).toBeLessThanOrEqual(before.nodes * 1.05);
-  expect(after.listeners).toBeLessThanOrEqual(mid.listeners);
-  expect(growth).toBeLessThan(256 * 1024);
+  expect(smallest).toBeLessThan(256 * 1024);
 });
