@@ -330,6 +330,20 @@ pub async fn remove_waiting(db: &Db, package: PackageRef) -> Result<(), JobStore
     .await?
 }
 
+/// Deletes the active job once its worker has stopped (finished or cancelled).
+pub async fn finish_active(db: &Db, package: PackageRef) -> Result<(), JobStoreError> {
+    db.call(move |conn| {
+        Ok((|| -> Result<(), JobStoreError> {
+            let changed = conn.execute(
+                "DELETE FROM download_jobs WHERE server_id = ?1 AND package_id = ?2 AND state = 'active'",
+                params![package.server_id.to_string(), package.package_id.to_string()],
+            )?;
+            if changed == 1 { Ok(()) } else { Err(JobStoreError::InvalidState) }
+        })())
+    })
+    .await?
+}
+
 /// Reorders all waiting jobs. The active job keeps its place and state; the
 /// submitted list must contain every queued, paused, and failed job once.
 pub async fn reorder(db: &Db, packages: Vec<PackageRef>) -> Result<(), JobStoreError> {

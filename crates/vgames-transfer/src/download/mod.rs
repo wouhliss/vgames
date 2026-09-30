@@ -263,6 +263,21 @@ impl DownloadControl {
         *self.request.borrow() == Request::Cancel
     }
 
+    /// Waits until a pause or cancel is requested; `true` means cancel.
+    pub async fn interrupted(&self) -> bool {
+        let mut rx = self.request.subscribe();
+        loop {
+            match *rx.borrow_and_update() {
+                Request::Run => {}
+                Request::Pause => return false,
+                Request::Cancel => return true,
+            }
+            if rx.changed().await.is_err() {
+                return true;
+            }
+        }
+    }
+
     pub fn set_limit(&self, bytes_per_second: Option<u64>) {
         self.throttle.set_rate(bytes_per_second);
     }
