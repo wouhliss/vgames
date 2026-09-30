@@ -197,6 +197,36 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   Still open: the full 1 h chat and 24 h idle runs on a machine without the time cap
   (`VGAMES_SOAK_CHAT_SECS=3600`, `VGAMES_SOAK_IDLE_SECS=86400`).
 
+## Handoff (A4-T13, 2026-09-30)
+Where everything is (final names and payloads: `docs/architecture/05-social-notes.md` §3–§7; generated
+`apps/desktop/src/bindings.ts`; `openapi/openapi.yaml` tags `social`, `messaging`, `invites`):
+- **Server:** `apps/api/src/social/{friends,presence,relations,devices,relay,invites,typing,events}.rs`; job
+  `social.sweep` (60 s); migrations `20260925120000…`, `…130000…`, `…140000…`. Every operation of the contract
+  is implemented (`openapi_unimplemented.txt` is empty).
+- **Launcher:** `social::{crypto,store,secrets,payload,api,realtime,service,presence,idle,netwatch,session_bridge,
+  commands}`, `overlay::{broker,hub,valve,fallback,hotkey,vulkan_layer,commands}`; desktop migrations
+  `0002_social`, `0004_social_invites`.
+- **In-game:** `crates/vgames-overlay`: `protocol`, `link`, `guard`, `draw`, `vulkan` (layer), `gl` (Linux preload).
+- **Tests to run:** `cargo test -p vgames-api` (social_* suites), `cargo test -p vgames-desktop` and, with PostgreSQL,
+  `VGAMES_TEST_DATABASE_URL=… cargo test -p vgames-desktop --test social_chat --test social_chaos -- --ignored`,
+  `cargo test -p vgames-overlay --features renderer` (Vulkan on lavapipe, GL on Xvfb; `VGAMES_REQUIRE_*=1` makes a
+  missing driver an error). Soaks: `tests/social_soak.rs` (`VGAMES_SOAK_CHAT_SECS`, `VGAMES_SOAK_IDLE_SECS`).
+
+**Deferred (need hardware or time this sandbox does not have):**
+1. Windows renderer: hudhook DLL (D3D9/11/12, OpenGL), injector with suspended start (needs Agent 2's second
+   `LaunchHooks` step), 32-bit helper, Vulkan layer registry key, exclusive-fullscreen tests.
+2. macOS `NSPanel` (non-activating, `.fullScreenAuxiliary`) and the `app.macOSPrivateApi` contract PR.
+3. Real-GPU frame budget numbers (Vulkan and GL); EGL path verification; Wayland and Proton runs.
+4. Soaks of 1 h chat and 24 h idle without the 29 min cap.
+5. In-game input (panel clicks) on any backend; update detection for invites (A2-T08 platform choice).
+6. Threat review co-signed by Agent 5: Agent 5's `docs/security/review-2026-09-30.md` already covers the social
+   controls (ciphertext-only storage, keychain, join-secret grammar, parser limits); the overlay GL/Vulkan
+   hooks (in-process code, loopback broker token, no-panic guard) were added after it and need one more row.
+
+**Risks:** the `dlsym` interposer runs in every preloaded native game (kept allocation-free and panic-free; a
+game that checks its own `dlsym` results by address would see ours for the hooked names); the 1 ms self-disable
+will trip on software GL; the overlay is untested with anti-cheat (packages have none by design).
+
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_desktop_lib::social::ports::SessionSlot` (A4-T07): now filled by `social::session_bridge` from
   `state.servers` (nothing for Agent 2 to call). Reach it through `State<SocialService>` → `sessions()`. Social commands for Agent 3: the friends/presence rows of
