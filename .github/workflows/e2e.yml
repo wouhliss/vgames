@@ -4,7 +4,8 @@
 #   root and publisher keys, login, bundle v1, a package published with the first key and
 #   verified as launchers do, bundle v2 revoking that key (launchers refuse the release),
 #   replay refused, re-sign with the new key, launchers accept it again
-#   (scripts/e2e/key-pipeline.sh; A5-T06 acceptance).
+#   (scripts/e2e/key-pipeline.sh; A5-T06 acceptance). A second API on the same database signs
+#   60-second storage links: once expired, the fs storage backend refuses them (A5-T11).
 # - admin-web: the admin Playwright suite against the API serving the built admin web
 #   (ADMIN_E2E_BASE_URL), instead of the mocks used on PRs.
 #
@@ -82,15 +83,22 @@ jobs:
           export VGAMES_SERVER_SECRET VGAMES_FS_URL_SIGNING_KEY
           target/debug/vgames-api --migrate
           nohup target/debug/vgames-api > "$RUNNER_TEMP/api.log" 2>&1 &
-          for _ in $(seq 1 60); do curl -sf http://127.0.0.1:8080/v1/health > /dev/null && exit 0; sleep 1; done
-          cat "$RUNNER_TEMP/api.log"; exit 1
+          # Same database, storage and keys; storage links valid for 60 seconds (the minimum).
+          VGAMES_BIND_ADDR=127.0.0.1:8081 VGAMES_PUBLIC_URL=http://localhost:8081 VGAMES_SIGNED_URL_TTL_SECONDS=60 \
+            nohup target/debug/vgames-api > "$RUNNER_TEMP/api-short-links.log" 2>&1 &
+          for port in 8080 8081; do
+            for _ in $(seq 1 60); do curl -sf "http://127.0.0.1:$port/v1/health" > /dev/null && continue 2; sleep 1; done
+            cat "$RUNNER_TEMP"/api*.log; exit 1
+          done
       - name: Key pipeline
-        run: VGAMES_BIN=target/debug/vgames scripts/e2e/key-pipeline.sh run "$RUNNER_TEMP/keys" http://localhost:8080
+        run: |
+          VGAMES_BIN=target/debug/vgames scripts/e2e/key-pipeline.sh run "$RUNNER_TEMP/keys" \
+            http://localhost:8080 http://localhost:8081
       - if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: key-pipeline-api-log
-          path: ${{ runner.temp }}/api.log
+          path: ${{ runner.temp }}/api*.log
           retention-days: 7
 
   admin-web:

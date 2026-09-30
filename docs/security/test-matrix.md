@@ -81,13 +81,11 @@ Test names are `file::function` (Rust) or `file › test title` (Playwright, Vit
 | Deep-link injection | "Malicious website" above | Desktop, CI launcher |
 | Admin CSRF without the header, or with a foreign Origin | `apps/api/tests/it/auth.rs::web_sessions_use_cookies_with_csrf_and_origin_checks` | CI |
 | Refresh-token reuse | `apps/api/tests/it/auth.rs::refresh_rotates_and_reuse_revokes_the_session`; `apps/desktop/src-tauri/src/servers/tests.rs::refresh_rotates_the_token_once_for_concurrent_callers` | CI, Desktop |
-| Expired signed URLs | Launchers refresh them: `crates/vgames-transfer/tests/download.rs::expired_links_are_refreshed`. Tampered and retargeted URLs are refused by the fs storage backend: `apps/api/tests/it/storage.rs::fs_urls_enforce_their_signature`. **Missing:** that the fs backend refuses an *expired* URL (GCS enforces its own expiry). Planned in `e2e.yml`: a second API signing 60-second links (the lowest `VGAMES_SIGNED_URL_TTL_SECONDS`), its manifest and pack links fetched before and after they expire | CI, Desktop |
+| Expired signed URLs | Launchers refresh them: `crates/vgames-transfer/tests/download.rs::expired_links_are_refreshed`. Tampered and retargeted URLs are refused by the fs storage backend: `apps/api/tests/it/storage.rs::fs_urls_enforce_their_signature`. Expired ones too (GCS enforces its own expiry): E2E `key-pipeline.sh` "expired storage links are refused; fresh ones still work", against a second API signing 60-second links (the lowest `VGAMES_SIGNED_URL_TTL_SECONDS`) | CI, Desktop, E2E |
 | Plaintext scan of the social tables | 3a | CI |
 | Updater tamper | 1f | Desktop, CI |
 
 ## Gaps being closed
 
-- The fs backend refusing an expired signed URL (row "Expired signed URLs"): the e2e test above, on top of the
-  key-pipeline e2e that now publishes a package (https://github.com/wouhliss/vgames/pull/69, merged). Next PR.
 - A launcher request to one server never carrying another server's token (row "Compromised server → read tokens for
   other servers"): asked of Agent 2.
