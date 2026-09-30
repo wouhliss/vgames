@@ -22,7 +22,7 @@ vgames-proto.workspace = true
 vgames-pack.workspace = true
 vgames-transfer.workspace = true
 vgames-overlay.workspace = true
-tauri.workspace = true
+tauri = { workspace = true, features = ["macos-private-api"] }
 tauri-plugin-deep-link.workspace = true
 tauri-plugin-single-instance.workspace = true
 tauri-plugin-updater.workspace = true

@@ -217,7 +217,8 @@ Where everything is (final names and payloads: `docs/architecture/05-social-note
 **Deferred (need hardware or time this sandbox does not have):**
 1. Windows renderer: hudhook DLL (D3D9/11/12, OpenGL), injector with suspended start (needs Agent 2's second
    `LaunchHooks` step), 32-bit helper, Vulkan layer registry key, exclusive-fullscreen tests.
-2. macOS `NSPanel` (non-activating, `.fullScreenAuxiliary`) and the `app.macOSPrivateApi` contract PR.
+2. macOS `NSPanel` (non-activating, `.fullScreenAuxiliary`): needs a Mac to write and verify (no Apple SDK here).
+   `app.macOSPrivateApi` is now on (`contract:` commit below), so the fallback window is transparent on macOS.
 3. Real-GPU frame budget numbers (Vulkan and GL); EGL path verification; Wayland and Proton runs.
 4. Soaks of 1 h chat and 24 h idle without the 29 min cap.
 5. In-game input (panel clicks) on any backend.
@@ -316,6 +317,9 @@ will trip on software GL; the overlay is untested with anti-cheat (packages have
   also decrypts and encrypts at rest; consider adding `/apps/desktop/src-tauri/src/social/store*` to that section.
 
 ## Blockers / contract questions
+- `contract:` `app.macOSPrivateApi: true` in `tauri.conf.json` + tauri feature `macos-private-api` (A4-T10; Agent 2's files).
+  Needed for transparent windows on macOS; fine for direct distribution, **not for the Mac App Store** (08-release
+  ships direct). Agent 2/5: please confirm; it is a one-line revert.
 - `contract:` `05-social-notes.md` v1.2 (A4-T09): new §3.2 (invite client behaviour). Additive.
 - `contract:` `05-social-notes.md` v1.3 (A4-T10): §7 additions (overlay events, Settings commands, broker protocol,
   launch integration). Additive.

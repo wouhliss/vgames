@@ -3,10 +3,11 @@
 //! notifications for toasts (Wayland). The window lets clicks through to the game unless the
 //! panel is open, never takes focus when it appears, and hides when the last game stops.
 //!
-//! macOS: until `app.macOSPrivateApi` is enabled (contract PR), the window cannot be
-//! transparent there; it shows on every Space and above fullscreen apps through
-//! `visible_on_all_workspaces` + always-on-top. The `NSPanel` (non-activating,
-//! `.fullScreenAuxiliary`) replaces it once that lands.
+//! macOS: `app.macOSPrivateApi` is on (Tauri's transparent windows need it; fine for direct
+//! distribution, not for the Mac App Store), so the window is transparent there too. It shows
+//! on every Space and above fullscreen apps through `visible_on_all_workspaces` +
+//! always-on-top. An `NSPanel` (non-activating, `.fullScreenAuxiliary`) would replace it, but
+//! needs a Mac to verify "above a fullscreen Space without taking focus" (A4-T10, open).
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -47,9 +48,7 @@ fn window<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<WebviewWindow<R>> {
         .visible(false)
         .inner_size(WIDTH, height)
         .position(x, 0.0);
-    #[cfg(not(target_os = "macos"))]
-    let builder = builder.transparent(true);
-    builder.build()
+    builder.transparent(true).build()
 }
 
 /// Wires the service's fallback to the window and notifications.
