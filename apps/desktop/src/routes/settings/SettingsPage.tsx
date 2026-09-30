@@ -6,6 +6,7 @@ import { t } from "../../i18n";
 import { Page } from "../Page";
 import { AboutSection } from "./AboutSection";
 import { AccountSection } from "./AccountSection";
+import { CloudSavesSection } from "./CloudSavesSection";
 import { CompatSection } from "./CompatSection";
 import { DownloadsSection } from "./DownloadsSection";
 import { GeneralSection } from "./GeneralSection";
@@ -23,6 +24,7 @@ const SECTIONS = {
   storage: StorageSection,
   downloads: DownloadsSection,
   compatibility: CompatSection,
+  "cloud-saves": CloudSavesSection,
   privacy: PrivacySection,
   overlay: OverlaySection,
   updates: UpdatesSection,
@@ -45,7 +47,7 @@ export function SettingsPage() {
             {(Object.keys(SECTIONS) as SectionId[]).map((id) => (
               <li key={id}>
                 <NavLink to={`/settings/${id}`} className={styles.navLink ?? ""}>
-                  {t(`settings.section.${id}`)}
+                  {t(`settings.section.${id === "cloud-saves" ? "cloudSaves" : id}`)}
                 </NavLink>
               </li>
             ))}

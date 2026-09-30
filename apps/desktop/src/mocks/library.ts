@@ -454,6 +454,11 @@ export function libraryHandlers(
       const forcedError = state.launchErrors[pkg.package.package_id];
       if (forcedError) fail(forcedError);
       if (pkg.running) fail({ kind: "already_running" } satisfies LaunchError);
+      if (pkg.cloud_saves === "conflict")
+        fail({
+          kind: "save_conflict",
+          conflict_id: `conflict-${pkg.package.package_id}`,
+        } satisfies LaunchError);
       if (pkg.state === "incomplete") fail({ kind: "incomplete" } satisfies LaunchError);
       if (pkg.state !== "installed") fail({ kind: "busy", state: pkg.state } satisfies LaunchError);
       const library = libraryOf(pkg);

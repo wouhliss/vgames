@@ -48,6 +48,9 @@ export const queryKeys = {
   conversations: ["conversations_list"] as const,
   contactSecurity: (userId: string) => ["contact_security", userId] as const,
   invites: ["invites_list"] as const,
+  saveConflict: (id: string) => ["saves_conflict", id] as const,
+  saveHistory: (packageId: string) => ["saves_history", packageId] as const,
+  saveHistories: ["saves_history"] as const,
 };
 
 export function createQueryClient(): QueryClient {
@@ -86,6 +89,10 @@ export function useIpcInvalidation(): void {
   useTauriEvent(events.downloadsChanged, downloads);
   useTauriEvent(events.gameStarted, installs);
   useTauriEvent(events.gameStopped, installs);
+  useTauriEvent(events.savesChanged, () => {
+    installs();
+    void client.invalidateQueries({ queryKey: queryKeys.saveHistories });
+  });
   useTauriEvent(events.collectionsChanged, () => {
     void client.invalidateQueries({ queryKey: queryKeys.collections });
   });

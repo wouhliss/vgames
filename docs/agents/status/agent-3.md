@@ -131,6 +131,19 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   204 KB (< 256 KB), nodes and listeners flat. Found on the way: a query that fails refetches on every visit, so the
   mock now answers `social_connection` (a missing handler cost ~400 KB per 100 visits).
 
+- A3-T08 — Cloud save UX (06-cloud-saves §3), against `src/ipc/contract/saves.ts` (see "Needs from others"). **Conflict
+  dialog:** both sides side by side (time, device, file count, size), three choices (keep the cloud saves / keep this
+  device / keep both) and Cancel; nothing is preselected and Continue stays off until a choice is made, so it never
+  resolves on its own; Cancel, Escape and B change nothing and the game doesn't start; it opens from Play
+  (`save_conflict`), from a `save-sync` conflict after the game exited, and from Settings; errors (game running, offline,
+  already resolved, I/O) stay in the dialog, and "the cloud changed again" shows the newer details and clears the
+  choice. **Notices** for the other outcomes of the decision table: restored before launch, uploaded after exit,
+  pending (server unreachable; the tile badge already says "Saves not synced"), failed. **Settings → Cloud saves:**
+  games with cloud saves and their state, "Resolve the conflict", per-game history (server snapshots, local backups,
+  the current head can't be restored over itself) and Restore behind a confirmation that mentions the backup; offline
+  hides snapshots but keeps backups. Tests: 32 Vitest (`routes/saves/saves.test.tsx`: every outcome, each choice, each
+  error) and `e2e/saves.spec.ts` (axe on the dialog, list and history; keyboard-only and controller-only).
+
 - A3-T14 — Admin packages list and editor. **List** (`/admin/packages`): status and text filters kept in the URL
   (back/forward and deep links work), table with sticky headers, cursor "Load more", empty / no-match / error (retry)
   / forbidden states, "Deleted X." after a delete. **Create**: title (required, 1–200 code points), optional slug with a
@@ -230,7 +243,7 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   defaults removes the override; Reset); runtime licenses as plain text, including Apple's for D3DMetal. The
   default and the overrides are tested to persist through a restart. Also: select lists and menus opened inside a
   dialog now render in the dialog's layer (they were drawn under it and couldn't be clicked).
-  **Next parts:** Controllers, Cloud saves (with A3-T08). What's new comes with A3-T10.
+  **Next part:** Controllers (the Cloud saves section is done with A3-T08).
 
 ## Interfaces delivered (other agents may now rely on these)
 - `apps/desktop/src/ipc/contract/`: the command/event surface the UI is built against, in exact
@@ -241,6 +254,8 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   download settings, social/overlay settings and licenses (see "Needs from others").
 - `apps/desktop/src/ipc/contract/compat.ts`: runtimes, the default runner, per-package overrides and runtime
   licenses for Settings → Compatibility (see "Needs from others").
+- `apps/desktop/src/ipc/contract/saves.ts`: `saves_conflict`, `saves_resolve`, `saves_history`, `saves_restore` and the
+  `save-sync` / `saves-changed` events (see "Needs from others").
 - `apps/desktop/src/ipc/contract/downloads.ts`: the install queue commands and `downloads-changed` (see
   "Needs from others").
 - `apps/desktop/src/ipc/contract/catalog.ts`: catalog, package details, install plan/start and Rosetta 2
@@ -254,6 +269,14 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   (builds the mock bundle; set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to use a preinstalled Chromium).
 
 ## Needs from others
+- **From Agent 2** (A2-T11 cloud saves, 06-cloud-saves §3, for A3-T08). Full types and doc comments in
+  `apps/desktop/src/ipc/contract/saves.ts`: `saves_conflict(conflict_id) -> SaveConflict {local, cloud: SaveSide
+  {changed_at, device_name, file_count, size_bytes}}`, `saves_resolve(conflict_id, choice: keep_cloud | keep_device |
+  keep_both) -> SaveResolved {launched}` (`SaveConflictError`: not_found, running, offline, head_moved {conflict}, io),
+  `saves_history(package) -> {snapshots, backups}`, `saves_restore(package, source)`, and the events `save-sync
+  {package, title, outcome: restored | uploaded | pending | conflict {conflict_id} | failed}` and `saves-changed`.
+  `game_launch` already returns `save_conflict {conflict_id}`; after a choice that came from Play the core should start the
+  game itself (`launched: true`). Cancelling sends nothing.
 - **From Agent 2** (`bindings.ts`, A2-T01/T07/T08/T12). Please implement these names and shapes
   (full types and doc comments in `apps/desktop/src/ipc/contract.ts`; Rust enums as
   `#[serde(tag = "kind", rename_all = "snake_case")]`). If you prefer other names, tell me and I adapt.

@@ -249,7 +249,6 @@ describe("library", () => {
       [{ kind: "key_revoked" }, /replaced the signature/],
       [{ kind: "compat_unavailable", detail: "Vulkan driver missing" }, /Vulkan driver missing/],
       [{ kind: "rate_limited" }, /Wait a moment/],
-      [{ kind: "save_conflict", conflict_id: "c1" }, /changed on this device and in the cloud/],
       [{ kind: "already_running" }, /already running/],
       [{ kind: "io", detail: "permission denied" }, /permission denied/],
     ] as const;

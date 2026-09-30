@@ -8,6 +8,7 @@ import { t } from "../i18n";
 import { events } from "../ipc";
 import { useTauriEvent } from "../ipc/events";
 import { InviteHost } from "../routes/friends/invites";
+import { SaveSyncHost } from "../routes/saves/SaveSyncHost";
 import { useActiveServer, useOnboardingNeed, useServers } from "./queries";
 import styles from "./Shell.module.css";
 import { AccountMenu, DownloadIndicator, ServerSwitcher } from "./TopBar";
@@ -75,49 +76,51 @@ export function Shell() {
   if (need !== null || !server) return <Navigate to="/onboarding" replace />;
 
   return (
-    <div className={styles.shell}>
-      <a className={styles.skip} href="#main-content">
-        {t("shell.skipToContent")}
-      </a>
-      <nav className={styles.sidebar} aria-label={t("nav.main")} data-nav-group="">
-        <div className={styles.brand} aria-hidden="true">
-          {t("common.appName")}
-        </div>
-        <ul className={styles.navList}>
-          {NAV.map((item) => (
-            <li key={item.to}>
-              <NavLink to={item.to} className={styles.navLink ?? ""}>
-                <Icon name={item.icon} />
-                {item.label()}
-              </NavLink>
-            </li>
-          ))}
-        </ul>
-      </nav>
-      <div className={styles.column}>
-        <header className={styles.topbar} data-nav-group="">
-          <ServerSwitcher servers={servers.data ?? []} active={server} />
-          <div className={styles.spacer} />
-          <DownloadIndicator />
-          <AccountMenu server={server} />
-        </header>
-        <UpdateBanner />
-        {offline.has(server.id) ? (
-          <div className={styles.banner} role="status">
-            <span className={styles.bannerIcon}>
-              <Icon name="offline" />
-            </span>
-            <div>
-              <strong>{t("shell.offlineTitle")}</strong>
-              <p>{t("shell.offlineText", { server: server.name })}</p>
-            </div>
+    <SaveSyncHost>
+      <div className={styles.shell}>
+        <a className={styles.skip} href="#main-content">
+          {t("shell.skipToContent")}
+        </a>
+        <nav className={styles.sidebar} aria-label={t("nav.main")} data-nav-group="">
+          <div className={styles.brand} aria-hidden="true">
+            {t("common.appName")}
           </div>
-        ) : null}
-        <main id="main-content" className={styles.content} tabIndex={-1} data-nav-group="">
-          <Outlet />
-        </main>
-        <InviteHost />
+          <ul className={styles.navList}>
+            {NAV.map((item) => (
+              <li key={item.to}>
+                <NavLink to={item.to} className={styles.navLink ?? ""}>
+                  <Icon name={item.icon} />
+                  {item.label()}
+                </NavLink>
+              </li>
+            ))}
+          </ul>
+        </nav>
+        <div className={styles.column}>
+          <header className={styles.topbar} data-nav-group="">
+            <ServerSwitcher servers={servers.data ?? []} active={server} />
+            <div className={styles.spacer} />
+            <DownloadIndicator />
+            <AccountMenu server={server} />
+          </header>
+          <UpdateBanner />
+          {offline.has(server.id) ? (
+            <div className={styles.banner} role="status">
+              <span className={styles.bannerIcon}>
+                <Icon name="offline" />
+              </span>
+              <div>
+                <strong>{t("shell.offlineTitle")}</strong>
+                <p>{t("shell.offlineText", { server: server.name })}</p>
+              </div>
+            </div>
+          ) : null}
+          <main id="main-content" className={styles.content} tabIndex={-1} data-nav-group="">
+            <Outlet />
+          </main>
+          <InviteHost />
+        </div>
       </div>
-    </div>
+    </SaveSyncHost>
   );
 }

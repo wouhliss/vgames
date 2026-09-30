@@ -17,6 +17,7 @@ import {
   type Result,
 } from "../../ipc";
 import { queryKeys } from "../../ipc/query";
+import { useSaveConflicts } from "../saves/SaveSyncHost";
 import {
   AddToCollectionDialog,
   ManageCollectionsDialog,
@@ -87,6 +88,7 @@ export function LibraryActionsProvider({
   const [dialog, setDialog] = useState<DialogState>({ kind: "none" });
   const [launching, setLaunching] = useState<ReadonlySet<string>>(() => new Set());
   const { toast } = useToast();
+  const { openConflict } = useSaveConflicts();
   const navigate = useNavigate();
   const client = useQueryClient();
   const close = useCallback(() => setDialog({ kind: "none" }), []);
@@ -152,8 +154,13 @@ export function LibraryActionsProvider({
           return;
         }
         const error = result.error;
+        if (error.kind === "save_conflict") {
+          // The player decides; the game starts only after a choice (06-cloud-saves §3).
+          openConflict(error.conflict_id);
+          return;
+        }
         toast({
-          tone: error.kind === "save_conflict" ? "warning" : "danger",
+          tone: "danger",
           title: launchErrorMessage(error, pkg.title),
           ...(error.kind === "integrity" || error.kind === "key_revoked"
             ? { action: { label: t("library.toasts.verify"), onClick: () => void verify(pkg) } }
@@ -169,7 +176,7 @@ export function LibraryActionsProvider({
         });
       }
     },
-    [toast, verify],
+    [openConflict, toast, verify],
   );
 
   const primary = useCallback(
