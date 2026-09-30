@@ -174,7 +174,16 @@ the `social`/`messaging`/`invites` OpenAPI tags, `apps/desktop/src-tauri/src/{so
   16 with drop (test); the in-game action queue has a drop test. Abuse already covered by the A4-T03..T06 server
   tests: per-route rate limits, friend-code/request, invite and message spam limits, oversized and malformed
   envelopes, blocked-user probes (look like unknown users), 1 GiB overlay frame headers.
-  Next: the soak runs (1 h chat at 2 msg/s with RSS, 24 h idle socket).
+  Soak (`tests/social_soak.rs`, real API in process, launcher databases on disk, whole-process RSS): runs in this
+  sandbox are capped at ~29 min (background task limit; longer runs were killed with the container), so the recorded
+  runs are **25 min each**, not the 1 h chat / 24 h idle the task asks for:
+  - chat at 2 msg/s for 1500 s: **3001 messages, all delivered, 0 duplicates**; RSS 61.9 MB at 37 s, 63.8 MB after
+    warm-up (median), 66.1 MB at the end, flat at ~66.1 MB over the last ~4 min. The +4.3 MB fits two launchers'
+    SQLite page caches filling to the default 2 MiB each (no `cache_size` is set); likely, not proven.
+  - idle sockets for 1500 s: **0 connection drops**, RSS 60.9 MB from 37 s to the end (flat to the KiB), and a message
+    sent at the end still arrives.
+  Still open: the full 1 h chat and 24 h idle runs on a machine without the time cap
+  (`VGAMES_SOAK_CHAT_SECS=3600`, `VGAMES_SOAK_IDLE_SECS=86400`).
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_desktop_lib::social::ports::SessionSlot` (A4-T07): now filled by `social::session_bridge` from
