@@ -63,7 +63,7 @@ fn bundle(
     let doc = json!({
         "format": "vgames.trust/1", "server_id": server_id, "version": version,
         "issued_at": "2026-09-24T10:00:00Z", "expires_at": null,
-        "root_key_id": root().public_key().key_id(),
+        "root_key_id": signer.public_key().key_id(),
         "publishers": publishers.iter().map(publisher).collect::<Vec<_>>(),
         "revoked": revoked.iter().map(|k| json!({ "key_id": k.public_key().key_id(),
             "revoked_at": "2026-09-25T08:00:00Z", "reason": "laptop stolen" })).collect::<Vec<_>>(),
@@ -93,10 +93,15 @@ struct Env {
 
 impl Env {
     async fn start() -> Self {
+        Self::advertising(&root()).await
+    }
+
+    /// A server whose `/.well-known/vgames.json` advertises `root`.
+    async fn advertising(root: &SecretKey) -> Self {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/.well-known/vgames.json"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(server_info(&root())))
+            .respond_with(ResponseTemplate::new(200).set_body_json(server_info(root)))
             .mount(&server)
             .await;
         Self {
@@ -417,21 +422,22 @@ async fn serve_bundle(env: &Env, signed: &SignedBundle) {
 }
 
 async fn publish(env: &Env, signed: &SignedBundle, root_arg: &str) -> Output {
+    publish_with(env, signed, &["--root", root_arg]).await
+}
+
+async fn publish_with(env: &Env, signed: &SignedBundle, extra: &[&str]) -> Output {
     let file = env.file("next.signed.json", &serde_json::to_vec(signed).unwrap());
-    env.run(
-        &[
-            "trust",
-            "publish",
-            "--server",
-            &env.uri(),
-            "--signed",
-            file.to_str().unwrap(),
-            "--root",
-            root_arg,
-        ],
-        &[("VGAMES_ACCESS_TOKEN", &bearer())],
-    )
-    .await
+    let uri = env.uri();
+    let mut args = vec![
+        "trust",
+        "publish",
+        "--server",
+        &uri,
+        "--signed",
+        file.to_str().unwrap(),
+    ];
+    args.extend_from_slice(extra);
+    env.run(&args, &[("VGAMES_ACCESS_TOKEN", &bearer())]).await
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -499,6 +505,68 @@ async fn trust_publish_refuses_bad_bundles_without_uploading() {
         let out = publish(&env, &signed, &root_arg).await;
         assert!(!out.status.success(), "{why}: {}", text(&out));
     }
+}
+
+/// Runbooks §5: the old root was lost or stolen, the server now advertises a new one.
+#[tokio::test(flavor = "multi_thread")]
+async fn trust_publish_new_identity_accepts_only_a_newer_bundle_under_the_advertised_root() {
+    let new_root = SecretKey::from_seed(&[7; 32]);
+    let new_b64 = new_root.public_key().to_base64();
+    let current = bundle(3, &[old_key()], &[], &root(), SERVER_ID);
+    let next = bundle(4, &[new_key()], &[old_key()], &new_root, SERVER_ID);
+
+    // Refused: without the flag (the old root's bundle does not verify under the new
+    // root), not newer, signed by another key, the flag without --root, or a --root the
+    // server does not advertise.
+    let stale = bundle(3, &[new_key()], &[], &new_root, SERVER_ID);
+    let forged = bundle(4, &[new_key()], &[], &old_key(), SERVER_ID);
+    let cases: [(&str, &SecretKey, &SignedBundle, Vec<&str>); 5] = [
+        ("no flag", &new_root, &next, vec!["--root", &new_b64]),
+        (
+            "not newer",
+            &new_root,
+            &stale,
+            vec!["--root", &new_b64, "--new-identity"],
+        ),
+        (
+            "another signer",
+            &new_root,
+            &forged,
+            vec!["--root", &new_b64, "--new-identity"],
+        ),
+        ("no --root", &new_root, &next, vec!["--new-identity"]),
+        (
+            "not advertised",
+            &root(),
+            &next,
+            vec!["--root", &new_b64, "--new-identity"],
+        ),
+    ];
+    for (why, advertised, signed, extra) in cases {
+        let env = Env::advertising(advertised).await;
+        serve_bundle(&env, &current).await;
+        Mock::given(method("POST"))
+            .and(path("/v1/admin/trust/bundles"))
+            .respond_with(ResponseTemplate::new(201).set_body_json(json!({ "version": 4 })))
+            .expect(0)
+            .mount(&env.server)
+            .await;
+        let out = publish_with(&env, signed, &extra).await;
+        assert!(!out.status.success(), "{why}: {}", text(&out));
+    }
+
+    let env = Env::advertising(&new_root).await;
+    serve_bundle(&env, &current).await;
+    Mock::given(method("POST"))
+        .and(path("/v1/admin/trust/bundles"))
+        .and(body_json(&next))
+        .respond_with(ResponseTemplate::new(201).set_body_json(json!({ "version": 4 })))
+        .expect(1)
+        .mount(&env.server)
+        .await;
+    let out = publish_with(&env, &next, &["--root", &new_b64, "--new-identity"]).await;
+    assert!(out.status.success(), "{}", text(&out));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("version 4"));
 }
 
 // ---------------------------------------------------------------------------

@@ -32,9 +32,15 @@ use crate::trust::root_key;
 Examples:
   vgames trust publish --server https://games.example.com --signed bundle.signed.json
   vgames trust publish --server https://games.example.com --signed bundle.signed.json --root root.pub
+  vgames trust publish --server https://games.example.com --signed bundle.signed.json --root <new root> --new-identity
 
 Owner only. The bundle is verified locally first: signed by the server's root key (the one
-pinned at `vgames login`, or --root), for this server, and newer than the server's bundle.")]
+pinned at `vgames login`, or --root), for this server, and newer than the server's bundle.
+
+--new-identity is for a server whose root key was replaced because the old one was lost or
+stolen (docs/security/runbooks.md §5): the server must already advertise --root, the bundle
+must be signed by it and newer than the server's current one, whose old signature is no
+longer checked. Launchers treat such a server as a new identity that players add again.")]
 pub struct PublishArgs {
     #[command(flatten)]
     server: ServerArgs,
@@ -44,6 +50,10 @@ pub struct PublishArgs {
     /// Root key file (public part) or base64 root public key, instead of the pinned one.
     #[arg(long)]
     root: Option<String>,
+    /// The server's root key was replaced on purpose (lost or stolen): publish under --root
+    /// without verifying the server's current bundle, which the old root signed.
+    #[arg(long, requires = "root")]
+    new_identity: bool,
 }
 
 #[derive(Args)]
@@ -124,11 +134,25 @@ pub(crate) async fn current_bundle(
     Ok(Some(verified))
 }
 
+/// The version of the server's current bundle, read without verifying it. Only for
+/// `--new-identity`: the old root's chain cannot verify under the new root, but versions
+/// must still go up.
+async fn current_version_unverified(api: &Api) -> Result<Option<u64>> {
+    let signed: SignedBundle = match api.get("/v1/trust/bundle").await {
+        Ok(s) => s,
+        Err(e) if matches!(problem_code(&e), Some((404, _))) => return Ok(None),
+        Err(e) => return Err(e),
+    };
+    let bundle = TrustBundle::parse_unverified(&signed.bundle_bytes()?)
+        .context("the server's current trust bundle is malformed")?;
+    Ok(Some(bundle.version))
+}
+
 pub async fn publish(args: PublishArgs) -> Result<()> {
     let mut session = Session::open(&args.server).await?;
     let info: ServerInfo = session.api.get("/.well-known/vgames.json").await?;
+    // With --root, this also checks that the server advertises exactly that key.
     let pin = pin_for(&session, args.root.as_deref(), &info)?;
-    let current = current_bundle(&session.api, &pin, info.server_id).await?;
 
     let raw = std::fs::read(&args.signed)
         .with_context(|| format!("reading {}", args.signed.display()))?;
@@ -139,10 +163,17 @@ pub async fn publish(args: PublishArgs) -> Result<()> {
         )
     })?;
     let bytes = signed.bundle_bytes()?;
-    let current_pin = current
-        .as_ref()
-        .map_or_else(|| pin.clone(), |c| c.pin.clone());
-    let last = current.as_ref().map(|c| c.state.version());
+    let (current_pin, last) = if args.new_identity {
+        (pin.clone(), current_version_unverified(&session.api).await?)
+    } else {
+        let current = current_bundle(&session.api, &pin, info.server_id).await?;
+        (
+            current
+                .as_ref()
+                .map_or_else(|| pin.clone(), |c| c.pin.clone()),
+            current.as_ref().map(|c| c.state.version()),
+        )
+    };
     let verified = verify_bundle(
         &bytes,
         &signed.signature,

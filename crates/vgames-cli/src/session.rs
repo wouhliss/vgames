@@ -277,15 +277,24 @@ impl Session {
 
     /// Stores a moved root pin after a verified trust bundle.
     pub fn update_pin(&mut self, pin: &RootPin) -> Result<()> {
-        if let Some(creds) = &mut self.creds
-            && creds.pin()? != *pin
-        {
+        if let Some(creds) = &mut self.creds {
+            let before = creds.pin()?;
+            if before == *pin {
+                return Ok(());
+            }
             creds.set_pin(pin);
             save(creds)?;
-            eprintln!(
-                "The server's root key rotated; now pinned to {}.",
-                pin.root.fingerprint()
-            );
+            if before.root != pin.root {
+                eprintln!(
+                    "The server's root key rotated; now pinned to {}.",
+                    pin.root.fingerprint()
+                );
+            } else if let Some(next) = &pin.next_root {
+                eprintln!(
+                    "The server announced its next root key {}; it will be accepted once the server switches to it.",
+                    next.fingerprint()
+                );
+            }
         }
         Ok(())
     }
