@@ -38,6 +38,7 @@ compromised end-user machines.
 | Key files at rest | **Argon2id** (m=64 MiB, t=3, p=1) → **XChaCha20-Poly1305** | Format `vgames.key/1` |
 | PKCE | **SHA-256** S256 (RFC 7636) | Interop standard |
 | Token / code digests in DB | **SHA-256** | Tokens are 256-bit random, so no KDF needed |
+| Server-side MACs (fs storage links, page cursors) | **HMAC-SHA-256** (RFC 2104) | Keys derived with BLAKE3 `derive_key` from `VGAMES_FS_URL_SIGNING_KEY` and `VGAMES_SERVER_SECRET`; they never leave the server |
 | Randomness | OS CSPRNG (`getrandom`) | Never `rand::thread_rng` for secrets |
 | E2EE | **Olm** (3DH + Double Ratchet, Curve25519, AES-256-CBC + HMAC-SHA-256 as specified by Olm) via **vodozemac** | See 05-social §4 |
 | Local secret storage | OS keychain (Windows Credential Manager, macOS Keychain, Secret Service) | Fallback in §8 |
