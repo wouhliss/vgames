@@ -50,7 +50,8 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
   cross-server token test (below).
 - A5-T13 part 1: `docs/security/runbooks.md` and `vgames trust publish --new-identity` —
   https://github.com/wouhliss/vgames/pull/98. Part 2: the final security review,
-  `docs/security/review-2026-09-30.md` (findings G1, F1–F6 below).
+  `docs/security/review-2026-09-30.md` (findings G1, F1–F6 below). Handoff: `docs/security/README.md` lists where
+  each security and release document is and every step still needing a person before the first release.
 
 ## In progress
 - **CI runs on GitHub again (the repository is public since 2026-09-26; Actions minutes are free).** Nothing changes
