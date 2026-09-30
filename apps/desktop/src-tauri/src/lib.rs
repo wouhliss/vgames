@@ -151,6 +151,7 @@ fn setup(app: &AppHandle, profile: Option<String>) -> Result<(), Box<dyn std::er
         state.shutdown.child_token(),
     );
     spawn_connect_active(Arc::clone(&servers));
+    tauri::async_runtime::spawn(Arc::clone(&state.installs).run(state.shutdown.child_token()));
     launch::session::spawn_reattach(state.db.clone(), state.games.clone());
 
     // Deep links: from the first launch's arguments, and later from the OS

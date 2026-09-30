@@ -500,7 +500,7 @@ mod tests {
         ));
         let bus = EventBus::new();
         let mut events = bus.subscribe();
-        let queue = InstallQueue::new(db.clone(), bus, runner).await.unwrap();
+        let queue = InstallQueue::new(db.clone(), bus, runner);
         let shutdown = CancellationToken::new();
         tokio::spawn(Arc::clone(&queue).run(shutdown.clone()));
         let pkg = PackageRef {

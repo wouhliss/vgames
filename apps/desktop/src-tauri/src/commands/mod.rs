@@ -5,6 +5,7 @@
 //! `VGAMES_UPDATE_BINDINGS=1 cargo test -p vgames-desktop bindings`).
 
 mod app;
+mod downloads;
 mod games;
 mod libraries;
 pub mod names;
@@ -48,6 +49,12 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             libraries::library_set_default,
             libraries::library_remove,
             shortcuts::shortcut_create,
+            downloads::download_pause,
+            downloads::download_resume,
+            downloads::download_retry,
+            downloads::download_cancel,
+            downloads::download_remove,
+            downloads::downloads_reorder,
             games::game_launch,
             games::game_stop,
             crate::updater::updater_status,

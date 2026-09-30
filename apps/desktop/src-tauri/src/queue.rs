@@ -79,17 +79,24 @@ fn phase(p: Phase) -> InstallPhase {
 }
 
 impl<R: JobRunner> InstallQueue<R> {
-    /// Requeues a job that was active when the previous process died, then
-    /// wakes the worker for anything waiting.
-    pub async fn new(db: Db, bus: EventBus, runner: Arc<R>) -> Result<Arc<Self>, JobStoreError> {
-        download_jobs::recover_active(&db).await?;
-        Ok(Arc::new(Self {
+    pub fn new(db: Db, bus: EventBus, runner: Arc<R>) -> Arc<Self> {
+        Arc::new(Self {
             db,
             bus,
             runner,
             wake: Notify::new(),
             active: Mutex::new(None),
-        }))
+        })
+    }
+
+    /// Removes a waiting (queued, paused or failed) job; its partial files stay.
+    pub async fn remove(&self, package: PackageRef) -> Result<(), JobStoreError> {
+        download_jobs::remove_waiting(&self.db, package).await
+    }
+
+    /// New order of the waiting jobs (see `download_jobs::reorder`).
+    pub async fn reorder(&self, packages: Vec<PackageRef>) -> Result<(), JobStoreError> {
+        download_jobs::reorder(&self.db, packages).await
     }
 
     pub async fn enqueue(
@@ -168,6 +175,10 @@ impl<R: JobRunner> InstallQueue<R> {
     /// Runs jobs until `shutdown` is cancelled. A running job is paused on
     /// shutdown and stays `active` in the table; the next start requeues it.
     pub async fn run(self: Arc<Self>, shutdown: CancellationToken) {
+        // No worker survives a restart: a job left `active` goes back in the queue.
+        if let Err(error) = download_jobs::recover_active(&self.db).await {
+            tracing::error!(%error, "requeueing interrupted install jobs failed");
+        }
         loop {
             let claimed = match download_jobs::claim_next(&self.db).await {
                 Ok(job) => job,
@@ -400,9 +411,7 @@ mod tests {
             discarded: Mutex::new(Vec::new()),
         });
         let bus = EventBus::new();
-        let queue = InstallQueue::new(db.clone(), bus.clone(), Arc::clone(&runner))
-            .await
-            .unwrap();
+        let queue = InstallQueue::new(db.clone(), bus.clone(), Arc::clone(&runner));
         let shutdown = CancellationToken::new();
         tokio::spawn(Arc::clone(&queue).run(shutdown.clone()));
         Rig {

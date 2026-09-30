@@ -78,49 +78,12 @@ export type DownloadQueue = {
   history: DownloadHistoryEntry[];
 };
 
-export type DownloadActionError =
-  | { kind: "not_found" }
-  | { kind: "insufficient_space"; required_bytes: number; available_bytes: number }
-  | { kind: "library_offline"; library_path: string }
-  | { kind: "offline" }
-  | { kind: "io"; detail: string };
-
 /** The queue or the history changed (jobs added, reordered, paused, finished, removed). */
 export type DownloadsChanged = Record<string, never>;
 
 export const downloadCommands = {
   async downloadsList(): Promise<Result<DownloadQueue, AppError>> {
     return call("downloads_list");
-  },
-  async downloadPause(pkg: PackageRef): Promise<Result<null, DownloadActionError>> {
-    return call("download_pause", { package: pkg });
-  },
-  /** Resumes a paused job (it runs when its turn comes). */
-  async downloadResume(pkg: PackageRef): Promise<Result<null, DownloadActionError>> {
-    return call("download_resume", { package: pkg });
-  },
-  /** Queues a failed job again, from its journal. */
-  async downloadRetry(pkg: PackageRef): Promise<Result<null, DownloadActionError>> {
-    return call("download_retry", { package: pkg });
-  },
-  /**
-   * Stops the job. `keepPartial`: keep the downloaded files so the install can be resumed later
-   * (it shows as incomplete in the library); otherwise delete them. An update or repair leaves the
-   * installed version as it was.
-   */
-  async downloadCancel(
-    pkg: PackageRef,
-    keepPartial: boolean,
-  ): Promise<Result<null, DownloadActionError>> {
-    return call("download_cancel", { package: pkg, keepPartial });
-  },
-  /** Removes a failed job from the queue (its partial files are kept, as for a cancel with keep). */
-  async downloadRemove(pkg: PackageRef): Promise<Result<null, DownloadActionError>> {
-    return call("download_remove", { package: pkg });
-  },
-  /** The new order of the waiting jobs; running jobs keep running. */
-  async downloadsReorder(packages: PackageRef[]): Promise<Result<null, DownloadActionError>> {
-    return call("downloads_reorder", { packages });
   },
   async downloadsHistoryClear(): Promise<Result<null, AppError>> {
     return call("downloads_history_clear");

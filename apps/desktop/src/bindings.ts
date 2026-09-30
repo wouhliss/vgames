@@ -56,6 +56,12 @@ export const commands = {
 	 *  Returns the shortcut's path.
 	 */
 	shortcutCreate: (pkg: PackageRef) => typedError<string, AppError>(__TAURI_INVOKE("shortcut_create", { pkg })),
+	downloadPause: (pkg: PackageRef) => typedError<null, DownloadActionError>(__TAURI_INVOKE("download_pause", { pkg })),
+	downloadResume: (pkg: PackageRef) => typedError<null, DownloadActionError>(__TAURI_INVOKE("download_resume", { pkg })),
+	downloadRetry: (pkg: PackageRef) => typedError<null, DownloadActionError>(__TAURI_INVOKE("download_retry", { pkg })),
+	downloadCancel: (pkg: PackageRef, keepPartial: boolean) => typedError<null, DownloadActionError>(__TAURI_INVOKE("download_cancel", { pkg, keepPartial })),
+	downloadRemove: (pkg: PackageRef) => typedError<null, DownloadActionError>(__TAURI_INVOKE("download_remove", { pkg })),
+	downloadsReorder: (packages: PackageRef[]) => typedError<null, DownloadActionError>(__TAURI_INVOKE("downloads_reorder", { packages })),
 	/**  Pre-launch checks, then spawn. `target_id` null = the default target. */
 	gameLaunch: (pkg: PackageRef, targetId: string | null) => typedError<null, LaunchError>(__TAURI_INVOKE("game_launch", { pkg, targetId })),
 	/**  Ends the game's whole process tree. The UI confirms first. */
@@ -307,6 +313,8 @@ export type DeviceNoticeEvent = {
 };
 
 export type DevicePlatform = "windows" | "linux" | "macos";
+
+export type DownloadActionError = { kind: "not_found" } | { kind: "insufficient_space"; required_bytes: number; available_bytes: number } | { kind: "library_offline"; library_path: string } | { kind: "offline" } | { kind: "io"; detail: string };
 
 /**  Stable, closed set of error codes for the UI. */
 export type ErrorCode = 
