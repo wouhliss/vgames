@@ -8,6 +8,7 @@ import { AboutSection } from "./AboutSection";
 import { AccountSection } from "./AccountSection";
 import { CloudSavesSection } from "./CloudSavesSection";
 import { CompatSection } from "./CompatSection";
+import { ControllersSection } from "./ControllersSection";
 import { DownloadsSection } from "./DownloadsSection";
 import { GeneralSection } from "./GeneralSection";
 import { OverlaySection } from "./OverlaySection";
@@ -25,6 +26,7 @@ const SECTIONS = {
   downloads: DownloadsSection,
   compatibility: CompatSection,
   "cloud-saves": CloudSavesSection,
+  controllers: ControllersSection,
   privacy: PrivacySection,
   overlay: OverlaySection,
   updates: UpdatesSection,

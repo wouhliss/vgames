@@ -26,6 +26,7 @@ import type {
 import { events } from "../ipc";
 import { type CatalogState, catalogHandlers, defaultCatalogState } from "./catalog";
 import { type CompatState, compatHandlers, defaultCompatState } from "./compat";
+import { type ControllersState, controllersHandlers, defaultControllersState } from "./controllers";
 import { type DownloadsState, defaultDownloadsState, downloadHandlers } from "./downloads";
 import { defaultLibraryState, type LibraryState, libraryHandlers } from "./library";
 import { CommandFailure, fail, type Handler, later } from "./runtime";
@@ -84,6 +85,7 @@ export interface MockState
     SettingsState,
     CompatState,
     SavesState,
+    ControllersState,
     SocialState {
   appInfo: AppInfo;
   appearance: AppearanceSettings;
@@ -116,6 +118,7 @@ export function defaultState(): MockState {
     ...defaultSettingsState(),
     ...defaultCompatState(),
     ...defaultSavesState(),
+    ...defaultControllersState(),
     ...defaultSocialState(),
     appInfo: {
       version: "0.4.0",
@@ -499,6 +502,7 @@ export function installMockBackend(overrides: Partial<MockState> = {}): MockBack
     ...settingsHandlers(state),
     ...compatHandlers(state),
     ...savesHandlers(state),
+    ...controllersHandlers(state),
     ...socialHandlers(state),
   };
 

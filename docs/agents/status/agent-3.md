@@ -243,7 +243,14 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   defaults removes the override; Reset); runtime licenses as plain text, including Apple's for D3DMetal. The
   default and the overrides are tested to persist through a restart. Also: select lists and menus opened inside a
   dialog now render in the dialog's layer (they were drawn under it and couldn't be clicked).
-  **Next part:** Controllers (the Cloud saves section is done with A3-T08).
+  **Part 4 (Controllers):** connected pads (kind, connection, battery, player; refreshed on hot-plug), the virtual-pad backend
+  status with help (ViGEmBus missing, no `/dev/uinput` access, macOS build without the entitlement, macOS native), a live
+  tester (streams only while on, one render per frame, stopped when you leave), per-game emulation (Automatic / Always /
+  Never; none for Proton and Wine games) and a mapping editor for a game or the default (Nintendo labels, deadzone and
+  anti-deadzone 0–99 per stick, invert Y, button remaps with no duplicates, copy as text and paste to import, reset).
+  Persists through a restart (mock). Tests: 28 Vitest (`ControllersSection.test.tsx`, boundaries 0/99 and bad numbers,
+  every backend state, the core's refusals) and `e2e/controllers.spec.ts` (axe, keyboard-only, controller-only).
+  **All settings sections of A3-T07 are now done.**
 
 ## Interfaces delivered (other agents may now rely on these)
 - `apps/desktop/src/ipc/contract/`: the command/event surface the UI is built against, in exact
@@ -256,6 +263,8 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   licenses for Settings → Compatibility (see "Needs from others").
 - `apps/desktop/src/ipc/contract/saves.ts`: `saves_conflict`, `saves_resolve`, `saves_history`, `saves_restore` and the
   `save-sync` / `saves-changed` events (see "Needs from others").
+- `apps/desktop/src/ipc/contract/controllers.ts`: controllers overview, tester, per-package emulation and profiles (see
+  "Needs from others").
 - `apps/desktop/src/ipc/contract/downloads.ts`: the install queue commands and `downloads-changed` (see
   "Needs from others").
 - `apps/desktop/src/ipc/contract/catalog.ts`: catalog, package details, install plan/start and Rosetta 2
@@ -269,6 +278,15 @@ Frontend UX/UI (`apps/desktop/src/**` except `overlay/` and `bindings.ts`, `apps
   (builds the mock bundle; set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to use a preinstalled Chromium).
 
 ## Needs from others
+- **From Agent 2** (A2-T12 controllers, 07-controllers, for Settings → Controllers). Full types and doc comments in
+  `apps/desktop/src/ipc/contract/controllers.ts`: `controllers_overview -> {pads: Pad[] (kind, name, connection, battery,
+  player), backend: BackendStatus}`, `controller_tester_start/stop` + event `controller-input {instance_id, pressed,
+  left, right, triggers}` (emit only while the tester runs), `controllers_packages`, `controller_emulation_set(pkg,
+  auto|always|never)`, `controller_default_profile`, `controller_profile_set(pkg|null, profile)` (errors: range,
+  duplicate_remap, not_found, io), `controller_profile_reset`, `controller_profile_export`, `controller_profile_parse(json)
+  -> profile | syntax error`, and event `controllers-changed` (battery/player changes; `controller-event` connect and
+  disconnect already refresh the list). `PadProfile` is `controllers::mapping::Profile`. `BackendStatus.help_url` is opened
+  with `open_external_url`.
 - **From Agent 2** (A2-T11 cloud saves, 06-cloud-saves §3, for A3-T08). Full types and doc comments in
   `apps/desktop/src/ipc/contract/saves.ts`: `saves_conflict(conflict_id) -> SaveConflict {local, cloud: SaveSide
   {changed_at, device_name, file_count, size_bytes}}`, `saves_resolve(conflict_id, choice: keep_cloud | keep_device |

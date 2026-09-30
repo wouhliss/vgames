@@ -51,6 +51,9 @@ export const queryKeys = {
   saveConflict: (id: string) => ["saves_conflict", id] as const,
   saveHistory: (packageId: string) => ["saves_history", packageId] as const,
   saveHistories: ["saves_history"] as const,
+  controllers: ["controllers_overview"] as const,
+  controllerPackages: ["controllers_packages"] as const,
+  controllerDefault: ["controller_default_profile"] as const,
 };
 
 export function createQueryClient(): QueryClient {
@@ -89,6 +92,11 @@ export function useIpcInvalidation(): void {
   useTauriEvent(events.downloadsChanged, downloads);
   useTauriEvent(events.gameStarted, installs);
   useTauriEvent(events.gameStopped, installs);
+  const pads = () => void client.invalidateQueries({ queryKey: queryKeys.controllers });
+  useTauriEvent(events.controllersChanged, pads);
+  useTauriEvent(events.controllerEvent, ({ change }) => {
+    if (change.kind !== "guide_held") pads();
+  });
   useTauriEvent(events.savesChanged, () => {
     installs();
     void client.invalidateQueries({ queryKey: queryKeys.saveHistories });
