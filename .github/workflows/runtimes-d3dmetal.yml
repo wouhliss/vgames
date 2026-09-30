@@ -1,0 +1,199 @@
+# D3DMetal intake (A5-T12, 09-compatibility §3 and §7). Owner: Agent 5. Run by hand for each new
+# Game Porting Toolkit release; the steps for humans are in docs/security/release.md ("D3DMetal intake").
+#
+# Apple's download needs an Apple ID, so a maintainer uploads the Toolkit's .dmg to the DRAFT release
+# `runtimes-intake` (drafts are visible only to people with write access) and starts this workflow:
+#   fetch    reads that asset (the only job that needs write access to see a draft; it runs nothing);
+#   package  on Apple silicon, read-only: scripts/runtimes/d3dmetal_intake.sh mounts the image read-only,
+#            requires Apple's own strict, deep code signature on D3DMetal.framework, packs it unmodified
+#            with Apple's license text, and checks the signature again on the unpacked archive;
+#   publish  uploads the archive to the `runtimes` release (never the same name with other bytes) and
+#            opens a pull request pinning it in runtimes/catalog.toml, validated by the launcher's parser.
+# Merging that pull request is the human review; release-runtimes.yml then signs the catalog in the
+# `release` environment. Nothing from the image is ever executed.
+
+name: Runtimes (D3DMetal intake)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Game Porting Toolkit version, e.g. 3.0 (becomes the catalog version)
+        required: true
+      asset:
+        description: File name of the .dmg in the draft release `runtimes-intake`
+        required: true
+      license_path:
+        description: Path of Apple's license text inside the image, e.g. License.rtf
+        required: true
+      min_launcher_version:
+        description: Oldest launcher that can use this entry (x.y.z)
+        required: false
+        default: "0.1.0"
+
+permissions: {}
+
+concurrency:
+  group: runtimes-d3dmetal
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    name: Fetch the intake image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write # only to see the draft release; nothing is pushed
+    steps:
+      - name: Check the inputs
+        env:
+          VERSION: ${{ inputs.version }}
+          ASSET: ${{ inputs.asset }}
+          LICENSE_PATH: ${{ inputs.license_path }}
+          MIN_LAUNCHER: ${{ inputs.min_launcher_version }}
+        run: |
+          [[ $VERSION =~ ^[A-Za-z0-9._+-]{1,64}$ ]] || { echo "::error::invalid version"; exit 1; }
+          [[ $ASSET =~ ^[A-Za-z0-9._+\ -]{1,200}\.dmg$ ]] || { echo "::error::the asset must be a .dmg file name"; exit 1; }
+          [[ $LICENSE_PATH =~ ^[A-Za-z0-9._+\ /-]{1,300}$ && $LICENSE_PATH != /* && $LICENSE_PATH != *..* ]] ||
+            { echo "::error::invalid license path"; exit 1; }
+          [[ $MIN_LAUNCHER =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::invalid launcher version"; exit 1; }
+      - name: Download from the draft release `runtimes-intake`
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ASSET: ${{ inputs.asset }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/intake"
+          gh release download runtimes-intake --repo "$REPO" --pattern "$ASSET" --dir "$RUNNER_TEMP/intake"
+          size=$(stat -c %s "$RUNNER_TEMP/intake/$ASSET")
+          [ "$size" -le 8589934592 ] || { echo "::error::the image is larger than 8 GiB"; exit 1; }
+          echo "Intake image: \`$ASSET\`, $size bytes" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: intake
+          path: ${{ runner.temp }}/intake/
+          retention-days: 1
+
+  package:
+    name: Verify Apple's signature and package (Apple silicon)
+    needs: fetch
+    runs-on: macos-15
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: intake
+          path: ${{ runner.temp }}/intake
+      - name: Verify and package
+        env:
+          VERSION: ${{ inputs.version }}
+          ASSET: ${{ inputs.asset }}
+          LICENSE_PATH: ${{ inputs.license_path }}
+          MIN_LAUNCHER: ${{ inputs.min_launcher_version }}
+          REPO: ${{ github.repository }}
+        run: |
+          scripts/runtimes/d3dmetal_intake.sh "$RUNNER_TEMP/intake/$ASSET" "$VERSION" "$LICENSE_PATH" \
+            "$REPO" "$RUNNER_TEMP/out" "$MIN_LAUNCHER"
+          cat "$RUNNER_TEMP/out/summary.md" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: d3dmetal
+          path: ${{ runner.temp }}/out/
+          retention-days: 7
+
+  publish:
+    name: Publish the archive and open the pull request
+    needs: package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: runtimes-bot
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: d3dmetal
+          path: ${{ runner.temp }}/in
+      - name: Install toolchain (rust-toolchain.toml)
+        run: rustup toolchain install && rustup show active-toolchain
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: xtask
+          save-if: false
+      - name: Update catalog.toml (validated by the launcher's parser)
+        run: |
+          cargo xtask runtimes upsert "$RUNNER_TEMP/in/entries.json"
+          cargo xtask runtimes build --out "$RUNNER_TEMP/runtimes.json"
+      - name: Upload the archive to the `runtimes` release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          file=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))[0]["url"].rsplit("/", 1)[1])' "$RUNNER_TEMP/in/entries.json")
+          sha=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))[0]["sha256"])' "$RUNNER_TEMP/in/entries.json")
+          echo "$sha  $RUNNER_TEMP/in/$file" | sha256sum -c -
+          if ! gh release view runtimes --repo "$REPO" >/dev/null 2>&1; then
+            gh release create runtimes --repo "$REPO" --target "$GITHUB_SHA" --latest=false \
+              --title "Runtime catalog" \
+              --notes "Signed compatibility-runtime catalog (runtimes.json) and D3DMetal assets. Not a launcher release."
+          fi
+          # A published name is never replaced with other bytes (launchers may already pin it).
+          if gh release view runtimes --repo "$REPO" --json assets --jq '.assets[].name' | grep -qxF "$file"; then
+            mkdir -p "$RUNNER_TEMP/existing"
+            gh release download runtimes --repo "$REPO" --pattern "$file" --dir "$RUNNER_TEMP/existing"
+            echo "$sha  $RUNNER_TEMP/existing/$file" | sha256sum -c - ||
+              { echo "::error::$file is already published with other bytes"; exit 1; }
+            echo "$file is already published with these bytes"
+          else
+            gh release upload runtimes --repo "$REPO" "$RUNNER_TEMP/in/$file"
+          fi
+      - id: app
+        if: vars.RUNTIMES_BOT_CLIENT_ID != ''
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RUNTIMES_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.RUNTIMES_BOT_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Push runtimes/d3dmetal and open or update its pull request
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token || github.token }}
+          REPO: ${{ github.repository }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          if git diff --quiet -- runtimes/catalog.toml; then
+            echo "D3DMetal $VERSION is already pinned with these bytes"; exit 0
+          fi
+          {
+            cat "$RUNNER_TEMP/in/summary.md"
+            echo
+            echo "Review like code: merging lets release-runtimes.yml sign this catalog for every launcher."
+            echo "Opened by the runtimes-d3dmetal.yml run $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID."
+          } > "$RUNNER_TEMP/body.md"
+          git config user.name "vgames-runtimes-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          fragment=".changes/runtimes-d3dmetal-$(date -u +%Y%m%d%H%M).md"
+          printf -- '---\naudience: internal\ncomponent: launcher\ntype: changed\n---\nRuntime catalog: pinned D3DMetal %s (macOS, aarch64).\n' \
+            "$VERSION" > "$fragment"
+          cargo xtask changelog lint
+          git switch -c runtimes/d3dmetal
+          git add runtimes/catalog.toml "$fragment"
+          git commit -m "chore(runtimes): pin D3DMetal $VERSION"
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" HEAD:refs/heads/runtimes/d3dmetal
+          pr=$(gh pr list --repo "$REPO" --head runtimes/d3dmetal --state open --json number --jq '.[0].number')
+          if [ -n "$pr" ]; then
+            gh pr edit "$pr" --repo "$REPO" --title "chore(runtimes): pin D3DMetal $VERSION" --body-file "$RUNNER_TEMP/body.md"
+          else
+            gh pr create --repo "$REPO" --base main --head runtimes/d3dmetal \
+              --title "chore(runtimes): pin D3DMetal $VERSION" --body-file "$RUNNER_TEMP/body.md"
+          fi

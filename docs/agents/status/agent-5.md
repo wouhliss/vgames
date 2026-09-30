@@ -72,7 +72,9 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
   - `ArchiveFormat::Tar`, and `runtimes/**` + `scripts/runtimes/**` moved into the security-critical CODEOWNERS
     section.
   - 18 offline Python tests.
-  - Next: D3DMetal intake (needs a human with an Apple ID).
+  - D3DMetal intake: `runtimes-d3dmetal.yml` + `scripts/runtimes/d3dmetal_intake.sh` (Apple's own strict signature
+    required, packed unmodified with Apple's license, re-verified after unpacking). The first run needs a human
+    with an Apple ID to upload the Toolkit image (`docs/security/release.md`, "D3DMetal intake").
 - A5-T11 is done: security test matrix and gates (https://github.com/wouhliss/vgames/pull/95), the fs backend's
   expired-link e2e test (https://github.com/wouhliss/vgames/pull/97).
 - A5-T13: `docs/security/runbooks.md` is done (https://github.com/wouhliss/vgames/pull/98); the final security

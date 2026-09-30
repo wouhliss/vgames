@@ -146,6 +146,35 @@ Then create an environment `runtimes-bot` limited to `main`, and put the App's c
 `RUNTIMES_BOT_CLIENT_ID` and its private key in the secret `RUNTIMES_BOT_PRIVATE_KEY`. Without them, a maintainer
 pushes a commit to `runtimes/update`, for example rebasing it on `main`, to start CI.
 
+**D3DMetal intake (humans, for each Game Porting Toolkit release).** Apple's download needs an Apple ID, so the
+watcher cannot fetch it. vgames may redistribute D3DMetal because it is non-commercial (09-compatibility §3, §7):
+unmodified, complete, with Apple's license text, on Apple silicon only.
+
+1. Download the Game Porting Toolkit from Apple's developer site with your Apple ID.
+2. Upload the `.dmg` as an asset of the **draft** release `runtimes-intake` (create it once as a draft, never
+   publish it: drafts are visible only to people with write access, and the whole Toolkit is not ours to
+   redistribute).
+3. Run [`runtimes-d3dmetal.yml`](../../.github/workflows/runtimes-d3dmetal.yml) by hand. Its inputs:
+   - the Toolkit version, which becomes the catalog version;
+   - the `.dmg` file name;
+   - the path of Apple's license text inside the image.
+
+   The workflow then:
+   1. mounts the image read-only on an Apple silicon runner, with a read-only token, and finds exactly one
+      `D3DMetal.framework`;
+   2. requires Apple's own signature on it: `codesign --verify --deep --strict -R="anchor apple"`, which a
+      modified or re-signed framework fails;
+   3. packs it with the license text as `d3dmetal-<version>-macos-aarch64.tar.xz`, unpacks that, and checks the
+      signature and the contents (`diff -r`) against the image again;
+   4. uploads the archive to the `runtimes` release, refusing to replace a published name with other bytes;
+   5. opens a PR from `runtimes/d3dmetal` pinning it in `catalog.toml` (`macos`, `aarch64`,
+      `redistribution = "non-commercial"`), validated by the launcher's parser.
+4. Review and merge that PR; `release-runtimes.yml` signs the new catalog as for any other runtime. Afterwards,
+   delete the `.dmg` from the draft.
+
+If the Toolkit ships files D3DMetal needs outside the framework, extend `scripts/runtimes/d3dmetal_intake.sh`
+to pack them the same way (Apple-signed, unmodified) before pinning.
+
 **Build, sign and check by hand** (what the release workflow does):
 
 ```sh
