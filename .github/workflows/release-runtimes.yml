@@ -1,0 +1,136 @@
+# Signs and publishes the runtime catalog (A5-T12, 08-release §1, 09-compatibility §5). Owner: Agent 5.
+#
+# On a merge to main that changes runtimes/catalog.toml:
+# - build: runtimes.json from the catalog with the launcher's parser, numbered one above the
+#   published catalog (which is verified first), and every entry that is new since then is
+#   downloaded again and checked against its pinned size and SHA-256.
+# - publish: in the approval-gated `release` environment, signs it with the runtime-catalog key
+#   (VGAMES_RUNTIME_CATALOG_KEY), verifies the signature with runtimes/runtime-catalog.pub, and
+#   uploads runtimes.json (+ .minisig) and a versioned copy to the `runtimes` release.
+#
+# The `runtimes` release is never marked latest: launchers find their own updates at
+# releases/latest/download/latest.json. Key setup: docs/security/release.md.
+
+name: Release runtimes
+
+on:
+  push:
+    branches: [main]
+    paths: [runtimes/catalog.toml]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: release-runtimes
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and verify runtimes.json
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.build.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: The runtime-catalog public key is committed
+        run: |
+          test -s runtimes/runtime-catalog.pub || {
+            echo "::error::runtimes/runtime-catalog.pub is missing: create the key pair first (docs/security/release.md)"
+            exit 1
+          }
+      - name: Install toolchain (rust-toolchain.toml)
+        run: rustup toolchain install && rustup show active-toolchain
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: xtask
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo build --locked -p xtask
+      - name: The published catalog (verified; the new one must be newer)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/prev"
+          if gh release view runtimes --repo "$REPO" >/dev/null 2>&1; then
+            gh release download runtimes --repo "$REPO" --dir "$RUNNER_TEMP/prev" \
+              --pattern runtimes.json --pattern runtimes.json.minisig
+            target/debug/xtask runtimes verify "$RUNNER_TEMP/prev/runtimes.json"
+          else
+            echo "No runtimes release yet: this is catalog version 1."
+          fi
+      - id: build
+        name: Build runtimes.json
+        run: |
+          mkdir -p "$RUNNER_TEMP/out"
+          previous=()
+          if [ -f "$RUNNER_TEMP/prev/runtimes.json" ]; then previous=(--previous "$RUNNER_TEMP/prev/runtimes.json"); fi
+          target/debug/xtask runtimes build "${previous[@]}" --out "$RUNNER_TEMP/out/runtimes.json"
+          echo "version=$(jq .version "$RUNNER_TEMP/out/runtimes.json")" >> "$GITHUB_OUTPUT"
+      - name: Download and check every new entry against its pin
+        run: |
+          previous=()
+          if [ -f "$RUNNER_TEMP/prev/runtimes.json" ]; then previous=(--previous "$RUNNER_TEMP/prev/runtimes.json"); fi
+          python3 scripts/runtimes/verify_new.py "$RUNNER_TEMP/out/runtimes.json" "${previous[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: runtimes-json
+          path: ${{ runner.temp }}/out/runtimes.json
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Sign and publish
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: release
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install toolchain (rust-toolchain.toml)
+        run: rustup toolchain install && rustup show active-toolchain
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: xtask
+          save-if: false
+      # Built before any secret is in the environment.
+      - run: cargo build --locked -p xtask
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: runtimes-json
+          path: ${{ runner.temp }}/out
+      - name: Sign
+        env:
+          VGAMES_RUNTIME_CATALOG_KEY: ${{ secrets.VGAMES_RUNTIME_CATALOG_KEY }}
+          VGAMES_RUNTIME_CATALOG_KEY_PASSWORD: ${{ secrets.VGAMES_RUNTIME_CATALOG_KEY_PASSWORD }}
+        run: target/debug/xtask runtimes sign "$RUNNER_TEMP/out/runtimes.json"
+      - name: Verify with the committed public key (as a launcher would)
+        run: target/debug/xtask runtimes verify --last-version "$((VERSION - 1))" "$RUNNER_TEMP/out/runtimes.json"
+      - name: Publish to the `runtimes` release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        working-directory: ${{ runner.temp }}/out
+        run: |
+          if ! gh release view runtimes --repo "$REPO" >/dev/null 2>&1; then
+            gh release create runtimes --repo "$REPO" --target "$GITHUB_SHA" --latest=false \
+              --title "Runtime catalog" \
+              --notes "Signed compatibility-runtime catalog (runtimes.json) and D3DMetal assets. Not a launcher release."
+          fi
+          cp runtimes.json "runtimes-v$VERSION.json"
+          cp runtimes.json.minisig "runtimes-v$VERSION.json.minisig"
+          # Versioned copies first, so the current files never point at something missing.
+          gh release upload runtimes --repo "$REPO" "runtimes-v$VERSION.json" "runtimes-v$VERSION.json.minisig"
+          gh release upload runtimes --repo "$REPO" --clobber runtimes.json runtimes.json.minisig
+          echo "Published runtime catalog version $VERSION" >> "$GITHUB_STEP_SUMMARY"

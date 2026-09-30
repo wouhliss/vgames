@@ -19,4 +19,3 @@
 
 # vgames is non-commercial (09-compatibility §7). Setting this to true makes every
 # non-commercial entry (D3DMetal) fail the build: remove them in the same change.
-commercial = false

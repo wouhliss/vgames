@@ -56,14 +56,27 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
 - **CI runs on GitHub again (the repository is public since 2026-09-26; Actions minutes are free).** Nothing changes
   in the workflow: open the PR, wait for the required checks, merge. `scripts/ci/local.sh` runs the same jobs locally
   before you push (optional, but it saves a round trip). The manual-only note of 2026-09-26 morning is withdrawn.
-- A5-T12 part 2 (runtime watcher `runtimes.yml`, `release-runtimes.yml`, `cargo xtask runtimes upsert`, `tar`
-  archives, smoke tests): https://github.com/wouhliss/vgames/pull/46, green, waits for the maintainer's
-  runtime-catalog key (`runtimes/runtime-catalog.pub` on main, secrets in `release`).
-- A5-T11: security test matrix and gates (https://github.com/wouhliss/vgames/pull/95), then the fs backend's
-  expired-link e2e test.
-- A5-T13: `docs/security/runbooks.md` (keys, revocation drill with timing, root rotation, updater and catalog key
-  compromise, antivirus false positives, compromised server or admin account, communication templates), then the
-  final security review.
+- A5-T12 part 2 (https://github.com/wouhliss/vgames/pull/46, waits for the maintainer's runtime-catalog key:
+  `runtimes/runtime-catalog.pub` on main, secrets in `release`):
+  - `runtimes.yml`, the daily upstream watcher. It downloads each new release and verifies it (size, GitHub's
+    SHA-256 digest, upstream `.sha512sum`, license allowlist, unchanged repository license), smoke-tests it, and
+    opens or updates ONE PR from `runtimes/update`.
+  - The smoke tests. Linux runs a D3D11 test program under umu-run with the new Proton, on lavapipe in Xvfb. macOS
+    runs Wine with a fresh prefix and the same program, reported NOT VERIFIED when the runner has no GPU. I checked
+    the program under Wine locally: it renders, and exits 2 when there is no device.
+  - `release-runtimes.yml`: verifies the published catalog, builds the next version, downloads every new entry
+    again and checks it against its pin, then signs in the `release` environment and publishes to the `runtimes`
+    release (never marked latest).
+  - `cargo xtask runtimes upsert` writes `catalog.toml` in one canonical form and never re-pins a version with
+    other bytes.
+  - `ArchiveFormat::Tar`, and `runtimes/**` + `scripts/runtimes/**` moved into the security-critical CODEOWNERS
+    section.
+  - 18 offline Python tests.
+  - Next: D3DMetal intake (needs a human with an Apple ID).
+- A5-T11 is done: security test matrix and gates (https://github.com/wouhliss/vgames/pull/95), the fs backend's
+  expired-link e2e test (https://github.com/wouhliss/vgames/pull/97).
+- A5-T13: `docs/security/runbooks.md` is done (https://github.com/wouhliss/vgames/pull/98); the final security
+  review is next.
 
 ## Interfaces delivered (other agents may now rely on these)
 - **Signatures, key ids, fingerprints** (A5-T03 slice 1, for Agents 1, 2, 3):
@@ -191,6 +204,8 @@ DevOps & Security (`crates/vgames-core`, `crates/vgames-cli`, `xtask`, `.github/
     `size` while downloading and `sha256` **before** extracting (09 §5).
   - Test vectors: `crates/vgames-core/tests/vectors/runtimes/` (valid v2, older v1 = rollback, tampered catalog, wrong
     key, the pinned archive and a tampered copy; README lists the expected outcome of each). Use them in your tests.
+  - **`archive` can also be `"tar"`** (uncompressed: umu-launcher's zipapp, MoltenVK), besides `tar.gz`, `tar.xz`,
+    `tar.zst` and `zip`: your extractor needs all five, with the package path-safety rules.
   - The real public key will be `runtimes/runtime-catalog.pub` (created by humans, `docs/security/release.md`); compile it
     in at build time and keep the runtime manager off in builds without it. Publication: the `runtimes` GitHub release
     (`runtimes.json` + `runtimes.json.minisig`), from `release-runtimes.yml` (next PR).

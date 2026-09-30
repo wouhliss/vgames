@@ -7,27 +7,30 @@
 //!   entries, compact JSON) apart from `generated_at`.
 //! - `sign`: minisign (prehashed) with the runtime-catalog key; writes `.minisig`.
 //! - `verify`: `vgames_core::runtimes::verify_catalog` against a public key.
+//! - `upsert`: adds entries found by the upstream watcher (`runtimes.yml`) and
+//!   rewrites `catalog.toml` in its canonical form. A pinned entry never changes:
+//!   the same id + version + os + arch with other bytes is refused.
 
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use vgames_core::Timestamp;
 use vgames_core::runtimes::{
     self, Arch, ArchiveFormat, Catalog, Os, Redistribution, Runtime, RuntimeId,
 };
 
 /// `runtimes/catalog.toml`.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CatalogToml {
     /// Required and explicit: the tripwire for non-commercial entries (D3DMetal).
     pub commercial: bool,
-    #[serde(default, rename = "runtime")]
+    #[serde(default, rename = "runtime", skip_serializing_if = "Vec::is_empty")]
     pub runtimes: Vec<RuntimeToml>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RuntimeToml {
     pub id: RuntimeId,
@@ -40,12 +43,24 @@ pub struct RuntimeToml {
     pub archive: ArchiveFormat,
     pub license: String,
     pub min_launcher_version: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub rosetta_required: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub macos_max_supported: Option<u32>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub redistribution: Option<Redistribution>,
+}
+
+impl RuntimeToml {
+    fn key(&self) -> (RuntimeId, Os, Arch, &str) {
+        (self.id, self.os, self.arch, &self.version)
+    }
+
+    fn describe(&self) -> String {
+        let os = format!("{:?}", self.os).to_lowercase();
+        let arch = format!("{:?}", self.arch).to_lowercase();
+        format!("{} {} ({os}, {arch})", self.id.as_str(), self.version)
+    }
 }
 
 impl From<RuntimeToml> for Runtime {
@@ -72,6 +87,43 @@ pub fn read_toml(path: &Path) -> Result<CatalogToml> {
     let text =
         std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
     toml::from_str(&text).with_context(|| format!("parsing {}", path.display()))
+}
+
+/// The comment block `upsert` writes at the top of `catalog.toml`.
+const HEADER: &str = include_str!("runtimes_header.toml");
+
+/// `catalog.toml` in its canonical form: the header, then the entries sorted
+/// like `runtimes.json`.
+pub fn to_canonical_toml(catalog: &CatalogToml) -> Result<String> {
+    let mut sorted = CatalogToml {
+        commercial: catalog.commercial,
+        runtimes: catalog.runtimes.clone(),
+    };
+    sorted.runtimes.sort_by(|a, b| a.key().cmp(&b.key()));
+    Ok(format!("{HEADER}{}", toml::to_string(&sorted)?))
+}
+
+/// Adds `entries` to `catalog`; returns a line per added entry. Entries already
+/// pinned identically are skipped; a pinned entry with other bytes is an error.
+pub fn upsert(catalog: &mut CatalogToml, entries: Vec<RuntimeToml>) -> Result<Vec<String>> {
+    let mut added = Vec::new();
+    for entry in entries {
+        match catalog.runtimes.iter().find(|r| r.key() == entry.key()) {
+            Some(existing) if *existing == entry => {}
+            Some(existing) => bail!(
+                "{} is already pinned with other values (sha256 {} → {}): an upstream asset \
+                 changed under the same version; investigate before pinning anything",
+                entry.describe(),
+                existing.sha256,
+                entry.sha256
+            ),
+            None => {
+                added.push(entry.describe());
+                catalog.runtimes.push(entry);
+            }
+        }
+    }
+    Ok(added)
 }
 
 /// Builds `runtimes.json` bytes. `previous`: the last published `runtimes.json`.
@@ -206,6 +258,40 @@ min_launcher_version = "0.2.0"
         );
         let err = build(toml::from_str(&dup).unwrap(), None, now()).unwrap_err();
         assert!(err.to_string().contains("duplicate"), "{err:#}");
+    }
+
+    #[test]
+    fn the_committed_catalog_is_canonical() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../runtimes/catalog.toml");
+        let text = std::fs::read_to_string(&path).unwrap();
+        let catalog: CatalogToml = toml::from_str(&text).unwrap();
+        assert_eq!(to_canonical_toml(&catalog).unwrap(), text);
+    }
+
+    #[test]
+    fn upsert_adds_new_entries_and_never_changes_a_pin() {
+        let mut catalog: CatalogToml = toml::from_str(TOML).unwrap();
+        let existing = catalog.runtimes[1].clone();
+        let mut newer = existing.clone();
+        newer.version = "GE-Proton10-18".into();
+        newer.url = newer.url.replace("10-17", "10-18");
+        newer.sha256 = "c".repeat(64);
+        // Already pinned identically: skipped. New version: added.
+        let added = upsert(&mut catalog, vec![existing.clone(), newer.clone()]).unwrap();
+        assert_eq!(added, vec![newer.describe()]);
+        assert_eq!(catalog.runtimes.len(), 3);
+        // The same version with other bytes is refused, and nothing is added.
+        let mut swapped = existing.clone();
+        swapped.sha256 = "d".repeat(64);
+        let err = upsert(&mut catalog, vec![swapped]).unwrap_err();
+        assert!(err.to_string().contains("already pinned"), "{err:#}");
+        assert_eq!(catalog.runtimes.len(), 3);
+        // The canonical form round-trips and builds.
+        let text = to_canonical_toml(&catalog).unwrap();
+        assert!(text.starts_with(HEADER));
+        let reparsed: CatalogToml = toml::from_str(&text).unwrap();
+        assert_eq!(to_canonical_toml(&reparsed).unwrap(), text);
+        build(reparsed, None, now()).unwrap();
     }
 
     #[test]

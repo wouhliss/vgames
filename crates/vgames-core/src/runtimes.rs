@@ -84,6 +84,9 @@ pub enum Arch {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ArchiveFormat {
+    /// Uncompressed tar (umu-launcher's zipapp, MoltenVK).
+    #[serde(rename = "tar")]
+    Tar,
     #[serde(rename = "tar.gz")]
     TarGz,
     #[serde(rename = "tar.xz")]

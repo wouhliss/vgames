@@ -1,0 +1,122 @@
+# Upstream releases runtimes.yml watches (A5-T12, 09-compatibility §5). Owner: Agent 5.
+#
+# For each upstream, the watcher takes the newest release whose tag matches `tag` and which has exactly one
+# asset matching `asset`, then:
+# - downloads it, and checks its size and GitHub's own SHA-256 digest, when GitHub publishes one
+# - cross-checks the upstream checksum file (`checksum_asset`)
+# - checks that the repository license GitHub reports is still `repo_license`
+# - checks that every license in `license` is in `license_allowlist`
+# - runs the smoke test, then proposes the entry in a PR.
+# A pinned version is never re-pinned with other bytes. Patterns are Python regular expressions, matched
+# against the whole tag or asset name. Review changes here like code: this file decides what the launcher may
+# run.
+#
+# Fields: id, repo, tag, asset, archive, os, arch, license (the catalog's SPDX expression), repo_license (GitHub's
+# license detection for the repository, e.g. "MIT" or "NOASSERTION"; unset = the watcher only reports what GitHub
+# says, so a human can record it), checksum_asset + checksum ("sha256" | "sha512"), version_prefix (removed from the
+# tag), rosetta_required, smoke ("proton" | "umu" | "wine-macos" | "none").
+
+# Licenses a runtime may use. Adding one is a legal decision, not a technical one.
+license_allowlist = [
+  "Apache-2.0",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "GPL-2.0-or-later",
+  "GPL-3.0-only",
+  "GPL-3.0-or-later",
+  "LGPL-2.1-only",
+  "LGPL-2.1-or-later",
+  "MIT",
+  "Zlib",
+]
+# min_launcher_version of new entries.
+min_launcher_version = "0.1.0"
+
+[[upstream]]
+id = "ge-proton"
+repo = "GloriousEggroll/proton-ge-custom"
+tag = 'GE-Proton\d+-\d+'
+asset = 'GE-Proton\d+-\d+\.tar\.gz'
+checksum_asset = 'GE-Proton\d+-\d+\.sha512sum'
+checksum = "sha512"
+archive = "tar.gz"
+os = "linux"
+arch = "x86_64"
+license = "BSD-3-Clause AND LGPL-2.1-or-later AND Zlib AND MIT"
+smoke = "proton"
+
+[[upstream]]
+id = "umu-proton"
+repo = "Open-Wine-Components/umu-proton"
+tag = 'UMU-Proton-[0-9][0-9A-Za-z.\-]*'
+asset = 'UMU-Proton-[0-9][0-9A-Za-z.\-]*\.tar\.gz'
+checksum_asset = 'UMU-Proton-[0-9][0-9A-Za-z.\-]*\.sha512sum'
+checksum = "sha512"
+archive = "tar.gz"
+os = "linux"
+arch = "x86_64"
+license = "BSD-3-Clause AND LGPL-2.1-or-later AND Zlib AND MIT"
+smoke = "proton"
+
+[[upstream]]
+id = "umu-launcher"
+repo = "Open-Wine-Components/umu-launcher"
+tag = '\d+\.\d+(\.\d+)?'
+asset = 'umu-launcher-[0-9.]+-zipapp\.tar'
+archive = "tar"
+os = "linux"
+arch = "x86_64"
+license = "GPL-3.0-only"
+smoke = "umu"
+
+[[upstream]]
+id = "wine-macos"
+repo = "Gcenx/macOS_Wine_builds"
+tag = '\d+\.0(\.\d+)?'
+asset = 'wine-stable-[0-9.]+-osx64\.tar\.xz'
+archive = "tar.xz"
+os = "macos"
+arch = "x86_64"
+rosetta_required = true
+license = "LGPL-2.1-or-later"
+smoke = "wine-macos"
+
+[[upstream]]
+id = "dxmt"
+repo = "3Shain/dxmt"
+tag = 'v\d+\.\d+(\.\d+)?'
+version_prefix = "v"
+asset = 'dxmt-v[0-9.]+(-builtin)?\.tar\.gz'
+archive = "tar.gz"
+os = "macos"
+arch = "x86_64"
+rosetta_required = true
+license = "Zlib"
+smoke = "none"
+
+[[upstream]]
+id = "dxvk-macos"
+repo = "Gcenx/DXVK-macOS"
+tag = 'v\d+\.\d+(\.\d+)?(-[0-9A-Za-z.\-]+)?'
+version_prefix = "v"
+asset = 'dxvk-macOS-v[0-9A-Za-z.\-]+\.tar\.gz'
+archive = "tar.gz"
+os = "macos"
+arch = "x86_64"
+rosetta_required = true
+license = "Zlib"
+smoke = "none"
+
+[[upstream]]
+id = "moltenvk"
+repo = "KhronosGroup/MoltenVK"
+tag = 'v\d+\.\d+\.\d+'
+version_prefix = "v"
+asset = 'MoltenVK-macos\.tar'
+archive = "tar"
+os = "macos"
+arch = "x86_64"
+rosetta_required = true
+license = "Apache-2.0"
+repo_license = "Apache-2.0"
+smoke = "none"
