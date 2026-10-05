@@ -1,5 +1,10 @@
 # Agent orchestration
 
+> **Phase 2 started on 2026-10-05.** Seven agents finish the project; start at
+> [phase-2/README.md](phase-2/README.md) and the evidence in
+> [phase-2/introspection-2026-10-05.md](phase-2/introspection-2026-10-05.md). Everything below describes
+> phase 1 and stays as the record that phase-2 tasks refer to.
+
 Five specialized agents build vgames in parallel. Each has one prompt file. Copy
 **everything below the `---` line** of that file into a fresh agent session running at
 the repository root (ideally its own git worktree).

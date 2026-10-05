@@ -4,6 +4,10 @@ Read this file completely before your first change. Then read, in order:
 `docs/architecture/00-overview.md` → `01-security.md` → the docs your task list names →
 your task list in `docs/agents/`.
 
+**Phase 2 (from 2026-10-05):** your task list is in `docs/agents/phase-2/`, and its README overrides this file
+where they differ: seven agents, an integrator (Agent 5) who merges `contract:` PRs, every agent merges its own
+green PRs, nothing waits on a person, and shared launcher files are append-only.
+
 ## 1. Non-negotiables
 
 1. **Security invariants** in `docs/architecture/01-security.md` (top of file) are release

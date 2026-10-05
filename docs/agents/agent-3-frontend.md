@@ -1,5 +1,8 @@
 # Agent 3 — Frontend UX/UI Developer
 
+> **Phase 1 prompt, closed on 2026-10-05.** Do not paste it into a new session: use the phase-2 file in
+> [phase-2/](phase-2/README.md). This file stays as the original specification that phase-2 tasks refer to.
+
 Paste everything below the line into the agent session.
 
 ---
