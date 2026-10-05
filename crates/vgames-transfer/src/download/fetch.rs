@@ -173,13 +173,7 @@ pub struct WorkerCtx<A> {
 /// there are more workers than the controller's target.
 pub async fn worker<A: PackUrlSource>(ctx: Arc<WorkerCtx<A>>) {
     loop {
-        let leave = ctx
-            .active
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |active| {
-                (active > ctx.target.load(Ordering::SeqCst)).then(|| active - 1)
-            })
-            .is_ok();
-        if leave {
+        if leave_if_above_target(&ctx.active, &ctx.target) {
             return;
         }
         match ctx.scheduler.next().await {
@@ -188,6 +182,23 @@ pub async fn worker<A: PackUrlSource>(ctx: Arc<WorkerCtx<A>>) {
                 ctx.active.fetch_sub(1, Ordering::SeqCst);
                 return;
             }
+        }
+    }
+}
+
+/// Decrements `active` and returns `true` when there are more workers than
+/// `target`; otherwise leaves `active` unchanged. `target` is re-read on every
+/// attempt, as the AIMD controller may lower it concurrently.
+fn leave_if_above_target(active: &AtomicUsize, target: &AtomicUsize) -> bool {
+    let mut current = active.load(Ordering::SeqCst);
+    loop {
+        if current <= target.load(Ordering::SeqCst) {
+            return false;
+        }
+        match active.compare_exchange_weak(current, current - 1, Ordering::SeqCst, Ordering::SeqCst)
+        {
+            Ok(_) => return true,
+            Err(observed) => current = observed,
         }
     }
 }
@@ -485,5 +496,45 @@ mod tests {
         assert_eq!(cache.rejected(0, &second), 2);
         cache.accepted(0);
         assert_eq!(cache.rejected(0, &second), 1);
+    }
+
+    #[test]
+    fn only_workers_above_the_target_leave() {
+        let active = AtomicUsize::new(5);
+        let target = AtomicUsize::new(3);
+        assert!(leave_if_above_target(&active, &target));
+        assert!(leave_if_above_target(&active, &target));
+        assert_eq!(active.load(Ordering::SeqCst), 3);
+        assert!(!leave_if_above_target(&active, &target));
+        assert_eq!(active.load(Ordering::SeqCst), 3);
+
+        target.store(0, Ordering::SeqCst);
+        assert!(leave_if_above_target(&active, &target));
+        assert_eq!(active.load(Ordering::SeqCst), 2);
+
+        let none = AtomicUsize::new(0);
+        assert!(!leave_if_above_target(&none, &target));
+        assert_eq!(none.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn concurrent_leavers_never_go_below_the_target() {
+        let active = Arc::new(AtomicUsize::new(64));
+        let target = Arc::new(AtomicUsize::new(16));
+        let left: usize = (0..8)
+            .map(|_| {
+                let (active, target) = (Arc::clone(&active), Arc::clone(&target));
+                std::thread::spawn(move || {
+                    (0..64)
+                        .filter(|_| leave_if_above_target(&active, &target))
+                        .count()
+                })
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|t| t.join().unwrap())
+            .sum();
+        assert_eq!(left, 48);
+        assert_eq!(active.load(Ordering::SeqCst), 16);
     }
 }
