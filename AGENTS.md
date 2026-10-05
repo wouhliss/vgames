@@ -5,8 +5,10 @@ Read this file completely before your first change. Then read, in order:
 your task list in `docs/agents/`.
 
 **Phase 2 (from 2026-10-05):** your task list is in `docs/agents/phase-2/`, and its README overrides this file
-where they differ: seven agents, an integrator (Agent 5) who merges `contract:` PRs, every agent merges its own
-green PRs, nothing waits on a person, and shared launcher files are append-only.
+where they differ: four independent agents (INS, PLAY, GAME, INT), each owning the Rust, UI and tests of its
+features; INT merges `contract:` PRs; every agent merges its own green PRs; when you need something from another
+slice and it is not there, you build it yourself; nothing waits on a person. Status files are
+`docs/agents/status/{ins,play,game,int}.md`.
 
 ## 1. Non-negotiables
 
