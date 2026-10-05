@@ -94,20 +94,20 @@ Rust core modules (`src-tauri/src/`):
 
 | Module | Responsibility |
 |---|---|
-| `servers` | Server profiles, `/.well-known/vgames.json` discovery, root-key pinning (TOFU), trust bundle cache. |
-| `auth` | Discord login through the server (PKCE + deep link), tokens in the OS keychain, refresh rotation. |
-| `api` | The only HTTP client. Retries, backoff, auth refresh, RFC 9457 error mapping. |
-| `library` | Storage directories (multiple, user-chosen), install registry, favorites, categories (user collections). |
-| `installs` | Install/update/repair/move/uninstall orchestration using `vgames-transfer`. |
-| `launch` *(Agent 6)* | Pre-launch verification, process spawn and tracking (Job Objects / process groups), playtime. |
-| `shortcuts` + `deeplink` *(Agent 6)* | `vgames://` registration and routing, desktop shortcuts. |
-| `saves` *(Agent 1)* | Cloud save snapshot/restore around launches. |
-| `controllers` *(Agent 6)* | SDL3 input thread, virtual pad backends, mapping profiles. |
-| `compat` *(Agent 7)* | Runtime catalog, Proton (umu) and Wine runtimes, per-package prefixes, signed compat profiles, launch-plan wrappers. |
-| `social` *(Agent 4)* | Realtime socket, friends, presence, Olm crypto, invites. |
-| `overlay` *(Agent 4)* | In-game overlay broker (loopback IPC to the injected renderer), injection/layer setup at launch, macOS NSPanel, fallbacks. |
-| `updater` *(Agent 5)* | Launcher self-update via `tauri-plugin-updater` and the user-facing changelog. |
-| `images` | `vgimg://` protocol serving cached cover art to the UI. |
+| `servers` *(INS)* | Server profiles, `/.well-known/vgames.json` discovery, root-key pinning (TOFU), trust bundle cache. |
+| `auth` *(INS)* | Discord login through the server (PKCE + deep link), tokens in the OS keychain, refresh rotation. |
+| `api` *(INS)* | The only HTTP client. Retries, backoff, auth refresh, RFC 9457 error mapping. |
+| `library` *(INS)* | Storage directories (multiple, user-chosen), install registry, favorites, categories (user collections). |
+| `installs` *(INS)* | Install/update/repair/move/uninstall orchestration using `vgames-transfer`. |
+| `launch` *(PLAY)* | Pre-launch verification, process spawn and tracking (Job Objects / process groups), playtime. |
+| `shortcuts` + `deeplink` *(PLAY)* | `vgames://` registration and routing, desktop shortcuts. |
+| `saves` *(PLAY)* | Cloud save snapshot/restore around launches. |
+| `controllers` *(PLAY)* | SDL3 input thread, virtual pad backends, mapping profiles. |
+| `compat` *(GAME)* | Runtime catalog, Proton (umu) and Wine runtimes, per-package prefixes, signed compat profiles, launch-plan wrappers. |
+| `social` *(GAME)* | Realtime socket, friends, presence, Olm crypto, invites. |
+| `overlay` *(GAME)* | In-game overlay broker (loopback IPC to the injected renderer), injection/layer setup at launch, macOS NSPanel, fallbacks. |
+| `updater` *(INT)* | Launcher self-update via `tauri-plugin-updater` and the user-facing changelog. |
+| `images` *(INS)* | `vgimg://` protocol serving cached cover art to the UI. |
 
 Custom URI scheme `vgames://` (all inputs are untrusted; see 01-security §7):
 
@@ -186,30 +186,19 @@ vgames/
 
 ## 5. Ownership map
 
-Agents work in parallel. Every path has one owner, and a non-owner changes it only
-through a small, separate PR the owner can review. Full rules are in `AGENTS.md`.
+Agents work in parallel. Every path has one owner. Phase 1 (2026-09-24 → 09-30) used five agents split by
+technology; phase 2 (from 2026-10-05) uses **four vertical slices**, each owning the Rust, the UI and the tests
+of its features, so that no feature waits on another agent. Roles, shared files and the "need it, build it"
+rule: [docs/agents/phase-2/README.md](../agents/phase-2/README.md).
 
-Phase 2 (from 2026-10-05) splits the launcher core between Agents 2, 6 and 7, and gives the cloud-save client
-to Agent 1. Roles and rules: [docs/agents/phase-2/README.md](../agents/phase-2/README.md).
-
-| Path | Owner |
+| Path | Owner (phase 2) |
 |---|---|
-| `apps/api/**` except `src/social/**` | Agent 1 |
-| `apps/desktop/src-tauri/src/saves/**` (cloud-save client) | Agent 1 |
-| `apps/api/src/social/**`, `crates/vgames-proto/src/{social,realtime}.rs` | Agent 4 |
-| `apps/desktop/src-tauri/src/{api,servers,libraries,images,installs,catalog,downloads,publishing,db}` | Agent 2 |
-| `apps/desktop/src-tauri/src/{launch,controllers,shortcuts,deeplink,logging,paths,events,error,state}`, `src-tauri/{build.rs,tauri.conf.json,resources,icons}`, packaging | Agent 6 |
-| `apps/desktop/src-tauri/src/compat/**` (release selection, runtimes, Proton, Wine, compat profiles), `crates/vgames-testapps/**` (shared with Agent 4) | Agent 7 |
-| Launcher registration points (`commands/mod.rs`, `commands/names.rs`, `capabilities/main.json`, `lib.rs`, `state.rs`, `db/migrations.rs`, generated `bindings.ts`) | Shared, append-only (phase-2 README §4) |
-| `apps/desktop/src-tauri/src/updater/**` | Agent 5 |
-| `apps/desktop/src-tauri/src/{social,overlay}/**`, `apps/desktop/src/overlay/**` | Agent 4 |
-| `apps/desktop/src/**` (except overlay), `apps/admin-web/**`, `packages/api-client/**` | Agent 3 |
-| `crates/vgames-pack/**`, `crates/vgames-transfer/**`, `packages/pack-wasm/**` (generated WASM wrapper) | Agent 2 |
-| `crates/vgames-core/**`, `crates/vgames-cli/**`, `xtask/**`, `.github/**`, `.changes/` tooling, `runtimes/**`, `scripts/release-notes/**` | Agent 5 (also the integrator: merges `contract:` PRs) |
-| `crates/vgames-overlay/**` | Agent 4 |
-| `apps/api/migrations/**` | Agent 1 (Agent 4 adds social migrations; append-only) |
-| `openapi/openapi.yaml` | Agent 1 (Agent 4 owns the `social`, `messaging`, `invites` tags) |
-| `docs/architecture/**` | Architect; changed through `contract:` PRs (merged by Agent 5 in phase 2) |
+| `apps/desktop/src-tauri/src/{api,servers,libraries,images,db}` and the new `{installs,catalog,downloads,publishing}`; `crates/vgames-pack/**`, `crates/vgames-transfer/**`, `packages/pack-wasm/**`; the onboarding, library, browse, package, downloads and publish screens and the Servers, Account, Storage and Downloads settings; `apps/desktop/e2e-real/**` | **INS** (install & library) |
+| `apps/desktop/src-tauri/src/{launch,controllers,shortcuts,deeplink,logging,paths,events,error}` and the new `saves`; `src-tauri/{build.rs,tauri.conf.json,resources,icons}`; packaging; `apps/desktop/perf/**`; the General, About, Controllers and Cloud saves settings and the cloud-save dialogs | **PLAY** (launch & platform) |
+| `apps/desktop/src-tauri/src/{social,overlay}` and the new `compat`; `apps/api/src/social/**`, social migrations, `crates/vgames-proto/src/{social,realtime}.rs`, the `social`, `messaging`, `invites` OpenAPI tags; `crates/vgames-overlay/**`, the new `crates/vgames-testapps/**`; `apps/desktop/src/overlay/**`, the friends screens and the Privacy, Overlay and Compatibility settings | **GAME** (in-game & social) |
+| `apps/api/**` except `src/social/**`, `crates/vgames-proto/**` except social, non-social migrations and OpenAPI tags; `apps/admin-web/**`, `packages/api-client/**`; `crates/vgames-core/**`, `crates/vgames-cli/**`, `xtask/**`, `.github/**`, `.changes/` tooling, `runtimes/**`, `scripts/**`; `apps/desktop/src-tauri/src/updater/**` and the update screens; security docs; merges `contract:` PRs | **INT** (integrator) |
+| Launcher registration points (`commands/mod.rs`, `commands/names.rs`, `capabilities/main.json`, `lib.rs`, `state.rs`, `db/migrations.rs`, generated `bindings.ts`) and the launcher UI foundation (`apps/desktop/src/{app,components,nav,i18n,ipc,mocks,styles}`, `apps/desktop/e2e/**`) | Shared (phase-2 README §5) |
+| `docs/architecture/**`, `openapi/openapi.yaml`, `apps/api/migrations/**` | Contracts: any agent proposes a `contract:` PR, INT merges (append-only migrations) |
 
 ## 6. Key flows (summaries; details live in the linked docs)
 
