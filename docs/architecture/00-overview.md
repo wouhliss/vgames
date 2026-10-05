@@ -99,11 +99,11 @@ Rust core modules (`src-tauri/src/`):
 | `api` | The only HTTP client. Retries, backoff, auth refresh, RFC 9457 error mapping. |
 | `library` | Storage directories (multiple, user-chosen), install registry, favorites, categories (user collections). |
 | `installs` | Install/update/repair/move/uninstall orchestration using `vgames-transfer`. |
-| `launch` | Pre-launch verification, process spawn and tracking (Job Objects / process groups), playtime. |
-| `shortcuts` + `deeplink` | `vgames://` registration and routing, desktop shortcuts. |
-| `saves` | Cloud save snapshot/restore around launches. |
-| `controllers` | SDL3 input thread, virtual pad backends, mapping profiles. |
-| `compat` | Runtime catalog, Proton (umu) and Wine runtimes, per-package prefixes, signed compat profiles, launch-plan wrappers. |
+| `launch` *(Agent 6)* | Pre-launch verification, process spawn and tracking (Job Objects / process groups), playtime. |
+| `shortcuts` + `deeplink` *(Agent 6)* | `vgames://` registration and routing, desktop shortcuts. |
+| `saves` *(Agent 1)* | Cloud save snapshot/restore around launches. |
+| `controllers` *(Agent 6)* | SDL3 input thread, virtual pad backends, mapping profiles. |
+| `compat` *(Agent 7)* | Runtime catalog, Proton (umu) and Wine runtimes, per-package prefixes, signed compat profiles, launch-plan wrappers. |
 | `social` *(Agent 4)* | Realtime socket, friends, presence, Olm crypto, invites. |
 | `overlay` *(Agent 4)* | In-game overlay broker (loopback IPC to the injected renderer), injection/layer setup at launch, macOS NSPanel, fallbacks. |
 | `updater` *(Agent 5)* | Launcher self-update via `tauri-plugin-updater` and the user-facing changelog. |
@@ -189,20 +189,27 @@ vgames/
 Agents work in parallel. Every path has one owner, and a non-owner changes it only
 through a small, separate PR the owner can review. Full rules are in `AGENTS.md`.
 
+Phase 2 (from 2026-10-05) splits the launcher core between Agents 2, 6 and 7, and gives the cloud-save client
+to Agent 1. Roles and rules: [docs/agents/phase-2/README.md](../agents/phase-2/README.md).
+
 | Path | Owner |
 |---|---|
 | `apps/api/**` except `src/social/**` | Agent 1 |
+| `apps/desktop/src-tauri/src/saves/**` (cloud-save client) | Agent 1 |
 | `apps/api/src/social/**`, `crates/vgames-proto/src/{social,realtime}.rs` | Agent 4 |
-| `apps/desktop/src-tauri/**` except `src/{social,overlay,updater}/**` | Agent 2 |
+| `apps/desktop/src-tauri/src/{api,servers,libraries,images,installs,catalog,downloads,publishing,db}` | Agent 2 |
+| `apps/desktop/src-tauri/src/{launch,controllers,shortcuts,deeplink,logging,paths,events,error,state}`, `src-tauri/{build.rs,tauri.conf.json,resources,icons}`, packaging | Agent 6 |
+| `apps/desktop/src-tauri/src/compat/**` (release selection, runtimes, Proton, Wine, compat profiles), `crates/vgames-testapps/**` (shared with Agent 4) | Agent 7 |
+| Launcher registration points (`commands/mod.rs`, `commands/names.rs`, `capabilities/main.json`, `lib.rs`, `state.rs`, `db/migrations.rs`, generated `bindings.ts`) | Shared, append-only (phase-2 README §4) |
 | `apps/desktop/src-tauri/src/updater/**` | Agent 5 |
 | `apps/desktop/src-tauri/src/{social,overlay}/**`, `apps/desktop/src/overlay/**` | Agent 4 |
 | `apps/desktop/src/**` (except overlay), `apps/admin-web/**`, `packages/api-client/**` | Agent 3 |
 | `crates/vgames-pack/**`, `crates/vgames-transfer/**`, `packages/pack-wasm/**` (generated WASM wrapper) | Agent 2 |
-| `crates/vgames-core/**`, `crates/vgames-cli/**`, `xtask/**`, `.github/**`, `.changes/` tooling, `runtimes/**`, `scripts/release-notes/**` | Agent 5 |
+| `crates/vgames-core/**`, `crates/vgames-cli/**`, `xtask/**`, `.github/**`, `.changes/` tooling, `runtimes/**`, `scripts/release-notes/**` | Agent 5 (also the integrator: merges `contract:` PRs) |
 | `crates/vgames-overlay/**` | Agent 4 |
 | `apps/api/migrations/**` | Agent 1 (Agent 4 adds social migrations; append-only) |
 | `openapi/openapi.yaml` | Agent 1 (Agent 4 owns the `social`, `messaging`, `invites` tags) |
-| `docs/architecture/**` | Architect; changed through `contract:` PRs |
+| `docs/architecture/**` | Architect; changed through `contract:` PRs (merged by Agent 5 in phase 2) |
 
 ## 6. Key flows (summaries; details live in the linked docs)
 
