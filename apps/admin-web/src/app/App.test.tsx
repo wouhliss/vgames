@@ -18,7 +18,7 @@ function renderAt(path: string, role: Role | null, ...overrides: RequestHandler[
   document.cookie = `__Host-vgames_csrf=${db.csrf}; path=/; secure`;
   server.use(...overrides, ...createHandlers(db));
   const router = createMemoryRouter(routes, { initialEntries: [path] });
-  const qc = createQueryClient({ onUnauthenticated: () => {}, onNetworkError: () => {} });
+  const qc = createQueryClient({ onNetworkError: () => {} });
   render(
     <QueryClientProvider client={qc}>
       <RouterProvider router={router} />

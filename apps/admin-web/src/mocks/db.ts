@@ -50,6 +50,8 @@ export interface MockDb {
     networkDown?: boolean;
     /** The network goes down after this many more accepted pieces. */
     downAfterPieces?: number;
+    /** Every admin API call but the session check fails like this (robustness e2e). */
+    api?: number | "offline" | undefined;
   };
   /** Published compat profiles per package id (all revisions). */
   compat: Record<string, Schemas["SignedCompatProfile"][]>;
