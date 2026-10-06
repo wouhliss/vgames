@@ -32,7 +32,7 @@
 /apps/desktop/src-tauri/src/libraries.rs                          @wouhliss # team: INS
 /apps/desktop/src-tauri/src/images.rs                             @wouhliss # team: INS
 /apps/desktop/src-tauri/src/db/                                   @wouhliss # team: INS
-/apps/desktop/src-tauri/src/catalog/                              @wouhliss # team: INS # pending: INS-01
+/apps/desktop/src-tauri/src/catalog/                              @wouhliss # team: INS
 /apps/desktop/src-tauri/src/installs/                             @wouhliss # team: INS # pending: INS-03
 /apps/desktop/src-tauri/src/downloads/                            @wouhliss # team: INS # pending: INS-03
 /apps/desktop/src-tauri/src/publishing/                           @wouhliss # team: INS # pending: INS-06
