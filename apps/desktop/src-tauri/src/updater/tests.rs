@@ -591,3 +591,10 @@ async fn checkpoint_releases_after_an_install_error_or_missing_update() {
         assert!(!queue.0.load(Ordering::SeqCst));
     }
 }
+
+#[test]
+fn updater_status_uses_the_packaged_version() {
+    let updater = super::Updater::new(semver::Version::new(0, 0, 1));
+    assert_eq!(updater.status().current_version, "0.0.1");
+    assert_ne!(updater.status().current_version, env!("CARGO_PKG_VERSION"));
+}
