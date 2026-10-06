@@ -3,9 +3,15 @@
 ## Done
 - Adopted the live phase-1 core, CLI, updater, security tooling and release pipeline on main at `d6d8798`; phase-1 status files remain frozen.
 
+- Integrator loop: fixed real-API admin authentication and fixtures in [#108](https://github.com/wouhliss/vgames/pull/108), merged at `7b8116c`. All PR checks green; main real E2E [37456550701](https://github.com/wouhliss/vgames/actions/runs/37456550701) green (2m29s).
+- INT-01 triage: closed #63 (superseded by `6e8f9ba`) and #68 (`ba00d98`) with explanatory comments.
+
 ## In progress
-- INT-01: integrator loop first repairs nightly real-API admin E2E (INT-05 scope). Latest CI and Desktop matrix green; E2E run https://github.com/wouhliss/vgames/actions/runs/37451870880 failed eight authentication/fixture assertions. Soak has no hosted proof yet.
-- Isolated worktree: `../vgames-int`, branch `int/p2-main-e2e`.
+- INT-01: exact stable policy, weekly/manual stable watcher, deliberate npm major pins, then reduced-motion and dependency groups.
+- Isolated worktree: `../vgames-int`, branch `int/p2-toolchain`.
+- Latest main CI [37456548013](https://github.com/wouhliss/vgames/actions/runs/37456548013) running; previous scheduled CI green (5m58s), Desktop matrix green (31m50s). No phase-2 ready/contract/merged-without-INT status lines exist yet.
+- #85 remains INS-01; #92 remains INT-05; utoipa #79–81 remains INT-04.
+- Local full checks: Rust 7m28s, SQLx 33s, WASM 46s, TypeScript 33s passed; remaining jobs running. Full all-ref secret scan sees only the deliberate unmerged historical proof `d679450` on `origin/agent5/gitleaks-proof`; current HEAD history scan passes (no allowlist added).
 
 ## Interfaces delivered (other agents may now rely on these)
 

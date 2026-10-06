@@ -116,6 +116,7 @@ pinned_tool() { # name version sha256 url-template(with {v}) -> prints the binar
 
 job_rust() {
   ensure_postgres
+  cargo xtask toolchain check
   cargo fmt --all -- --check
   cargo clippy --all-targets --locked -- -D warnings
   cargo test --locked
