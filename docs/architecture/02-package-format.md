@@ -79,6 +79,10 @@ an invalid tree, and the server and launcher refuse invalid manifests:
 - No component ends with `.` or space.
 - No component is a Windows reserved name, case-insensitive, with or without
   extension: `CON PRN AUX NUL COM0-9 LPT0-9 CONIN$ CONOUT$`, plus the superscript digit forms `COM¹²³ LPT¹²³`.
+- Each component's **NFKC compatibility form** must also obey the structure, forbidden-character,
+  trailing-dot/space and reserved-device-name rules; the first component's compatibility form must
+  not be `.vgames`. Validate that form for safety without rewriting the original NFC path
+  (`vgames_core::paths::validate_path`, test `paths::tests::rule_compatibility_forms`).
 - Unique under Unicode simple case folding (portable to NTFS/APFS).
 - No path is a prefix directory of a file path that is also listed as a file.
 - The first component is not `.vgames` (reserved for launcher metadata).
@@ -177,12 +181,28 @@ description, images) lives in the API and is never used for execution.
 }
 ```
 
-Validation (`vgames-core::manifest::validate`, run by server and launcher):
+Validation (`vgames_core::manifest::parse_and_validate` and `Manifest::validate`, run by server and launcher):
 
 - `format` known; UUIDs valid; `sequence > 0`; `platform` in the allowed list; `chunk_size == 4194304`.
+- `version_label`: 1–64 Unicode scalar values, with no control character
+  (`vgames_core::manifest`, test `manifest::tests::rule_version_label`).
+- Duplicate JSON object keys are refused, including string-map fields such as environment variables;
+  do not interpret a last duplicate as authoritative (`vgames_core::manifest::parse_and_validate`,
+  test `manifest::tests::rejects_duplicate_json_keys`).
+- Input is bounded to 256 MiB. Counts are bounded: at most 64 launch targets, 64 save locations,
+  256 combined include/exclude patterns per save location, and 256 environment variables per target.
+  Arguments total at most 64 KiB; each environment value is at most 32 KiB. Enforced by
+  `vgames_core::manifest`; tests `manifest::tests::bounded_counts`,
+  `manifest::tests::rule_launch_args_limit`, `manifest::tests::rule_env_keys_and_values` and
+  `manifest::tests::rejects_oversized_and_malformed_json`.
 - Chunks: contiguous within each pack in order (`offset` = previous `offset + stored_size`),
   `size ≤ chunk_size`, `stored_size ≤ size + 64 KiB` (zstd worst case), `raw ⇒ stored_size == size`.
 - Packs: `size == Σ stored_size` of their chunks, `≤ 256 MiB`.
+- Files must be strictly ordered by their original UTF-8 path bytes, without locale-aware sorting
+  (`vgames_core::manifest`, test `manifest::tests::rule_files_sorted`).
+- An empty file has no chunk, zero offset and the BLAKE3 of zero bytes:
+  `af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262`
+  (`vgames_core::manifest::EMPTY_BLAKE3`, test `manifest::tests::rule_empty_files`).
 - Files: layout exactly matches §4 (recomputed from sizes in order). Every chunk byte is
   covered exactly once. `Σ size == totals.bytes`, counts match `totals`.
 - Paths valid (§3); `directories` valid and not files.

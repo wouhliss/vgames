@@ -876,3 +876,71 @@ proptest! {
         let _ = parse_and_validate(&b);
     }
 }
+
+#[test]
+fn bounded_counts() {
+    let mut m = example();
+    let t = target(&mut m).clone();
+    let launch = m.launch.as_mut().unwrap();
+    launch.targets = (0..MAX_LAUNCH_TARGETS)
+        .map(|i| {
+            let mut t = t.clone();
+            if i > 0 {
+                t.id = format!("target_{i}");
+            }
+            t
+        })
+        .collect();
+    check(&m).unwrap();
+    m.launch.as_mut().unwrap().targets.push(t);
+    assert_eq!(
+        check(&m),
+        Err(ManifestError::Launch(LaunchFault::TooManyTargets))
+    );
+
+    let mut m = example();
+    let location = save(&mut m).clone();
+    m.saves.as_mut().unwrap().locations = (0..MAX_SAVE_LOCATIONS)
+        .map(|i| {
+            let mut l = location.clone();
+            l.id = format!("save_{i}");
+            l
+        })
+        .collect();
+    check(&m).unwrap();
+    m.saves.as_mut().unwrap().locations.push(location);
+    assert!(matches!(
+        check(&m),
+        Err(ManifestError::Save {
+            fault: SaveFault::TooMany,
+            ..
+        })
+    ));
+
+    let mut m = example();
+    save(&mut m).include = vec!["*.sav".into(); MAX_SAVE_PATTERNS];
+    save(&mut m).exclude.clear();
+    check(&m).unwrap();
+    save(&mut m).exclude.push("*.bak".into());
+    assert!(matches!(
+        check(&m),
+        Err(ManifestError::Save {
+            fault: SaveFault::TooManyPatterns,
+            ..
+        })
+    ));
+
+    let mut m = example();
+    target(&mut m).env = (0..MAX_ENV_VARS)
+        .map(|i| (format!("GAME_{i}"), "v".into()))
+        .collect();
+    check(&m).unwrap();
+    target(&mut m).env.insert("EXTRA".into(), "v".into());
+    assert!(matches!(
+        check(&m),
+        Err(ManifestError::Env {
+            fault: EnvFault::TooMany,
+            ..
+        })
+    ));
+}
