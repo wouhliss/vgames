@@ -270,3 +270,34 @@ async fn a_lost_listen_connection_makes_clients_resync(pool: PgPool) {
     .unwrap();
     assert_eq!(next_event(&mut ws).await["type"], "invite.created");
 }
+
+/// A persistent listener must not compete with queries for a request-pool slot.
+#[sqlx::test(migrations = "./migrations")]
+async fn listener_starts_while_request_pool_is_exhausted(pool: PgPool) {
+    let requests = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .acquire_timeout(Duration::from_secs(1))
+        .connect_lazy_with((*pool.connect_options()).clone());
+    let held = requests.acquire().await.unwrap();
+    let state = common::state(requests.clone());
+    let listening = tokio::spawn(bus::listen(state.clone()));
+    let mut ready = state.realtime_ready.subscribe();
+    tokio::time::timeout(Duration::from_secs(10), ready.wait_for(|r| *r))
+        .await
+        .unwrap()
+        .unwrap();
+    drop(held);
+    assert_eq!(
+        sqlx::query_scalar::<_, i32>("SELECT 1")
+            .fetch_one(&requests)
+            .await
+            .unwrap(),
+        1
+    );
+    state.shutdown.cancel();
+    tokio::time::timeout(Duration::from_secs(1), listening)
+        .await
+        .unwrap()
+        .unwrap();
+    requests.close().await;
+}
