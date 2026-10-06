@@ -73,10 +73,16 @@ pub enum JobState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum JobTransition {
     PauseQueued,
-    PauseActive { reason: String },
+    PauseActive {
+        reason: String,
+    },
     Resume,
     Retry,
-    FailActive { error: String },
+    FailActive {
+        error: String,
+    },
+    /// Back in the queue without being paused (checkpoint before an update).
+    RequeueActive,
 }
 
 impl JobTransition {
@@ -87,6 +93,7 @@ impl JobTransition {
             Self::Resume => ("paused", "queued", None),
             Self::Retry => ("failed", "queued", None),
             Self::FailActive { error } => ("active", "failed", Some(error)),
+            Self::RequeueActive => ("active", "queued", None),
         }
     }
 }
