@@ -154,6 +154,12 @@ pub struct DownloadOptions {
     pub aimd_interval: Duration,
     pub progress_interval: Duration,
     pub client: ClientOptions,
+    /// Manifest paths fetched and verified before anything else (the launch
+    /// target, so a launcher can inspect it early). With a non-empty list,
+    /// [`crate::install::install`] downloads only these files and returns
+    /// `PriorityFilesReady`; call it again with the list cleared for the rest.
+    /// Paths the manifest does not list are ignored.
+    pub priority_files: Vec<String>,
 }
 
 impl Default for DownloadOptions {
@@ -177,6 +183,7 @@ impl Default for DownloadOptions {
             aimd_interval: Duration::from_secs(2),
             progress_interval: Duration::from_millis(250),
             client: ClientOptions::default(),
+            priority_files: Vec::new(),
         }
     }
 }
