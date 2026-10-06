@@ -149,3 +149,56 @@ test("a list inside a dialog opens above it and works with the mouse", async ({ 
   await expect(page.getByRole("listbox")).toBeHidden();
   await expect(dialog).toBeVisible();
 });
+
+const dialogCases = [
+  { section: "Servers", button: /^Remove .*…$/, title: /^Remove .*\?$/ },
+  { section: "Account", button: "Sign out", title: /^Sign out of .*\?$/ },
+  { section: "Account", button: /^Sign out .+/, title: /^Sign out .+\?$/ },
+  { section: "Storage", button: /^Remove the library /, title: /^Remove the library .*\?$/ },
+  { section: "Storage", button: /^Move the packages in /, title: /^Move \d+ packages from / },
+  { section: "About", button: "Third-party licenses", title: "Third-party licenses" },
+];
+
+for (const item of dialogCases) {
+  for (const input of ["keyboard", "controller"] as const) {
+    test(`${input} opens and closes ${item.section} dialog ${String(item.title)}`, async ({
+      page,
+    }) => {
+      await toSettings(page);
+      if (item.section === "Account") {
+        await page.evaluate(() => {
+          const state = window.__vgamesMock?.backend.state;
+          const server = state?.servers[0];
+          if (!state || !server) throw new Error("Missing signed-in server fixture");
+          state.sessions[server.id] = [
+            {
+              id: "settings-dialog-other-device",
+              device_name: "Another computer",
+              platform: "linux",
+              current: false,
+              created_at: "2026-10-01T00:00:00Z",
+              last_used_at: null,
+            },
+          ];
+        });
+      }
+      await sections(page).getByRole("link", { name: item.section }).click();
+      const section = page.getByRole("region", { name: item.section });
+      const opener = section.getByRole("button", { name: item.button, exact: true }).first();
+      await expect(opener).toBeVisible();
+      await opener.focus();
+      if (input === "keyboard") await page.keyboard.press("Enter");
+      else await pad(page, "accept");
+      const dialog = page.locator('[role="dialog"], [role="alertdialog"]').filter({
+        has: page.getByRole("heading", { name: item.title }),
+      });
+      await expect(dialog).toBeVisible();
+      await expect(page.getByRole("status").filter({ hasText: "Loading" })).toHaveCount(0);
+      await axeScan(page);
+      if (input === "keyboard") await page.keyboard.press("Escape");
+      else await pad(page, "back");
+      await expect(dialog).toBeHidden();
+      await expect(opener).toBeFocused();
+    });
+  }
+}

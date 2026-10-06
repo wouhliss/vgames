@@ -93,8 +93,8 @@ coverage test reads the production router, so a new screen needs a scan case.
 | Add friend, invite, safety number and invite install | Activate the dialog action, review details, confirm/cancel and restore focus. | `friends.spec.ts` and `FriendsPage.test.tsx` |
 | `/downloads` | Select a job, pause/resume, reorder and confirm cancellation. | `downloads.spec.ts` keyboard/controller and queue/menu/dialog scans |
 | `/settings/*` | Move between every section; tab to its controls and toggle a setting. | `settings.spec.ts` every-section scan and keyboard/controller cases |
-| Server removal, session sign-out, library removal/move | Review the named confirmation, cancel or confirm and restore focus. | `SettingsPage.test.tsx` named-dialog cases; browser coverage expands as slice commands land |
-| How a game runs, compatibility licenses and third-party licenses | Open, read/scroll, change allowed options and close. | `settings.spec.ts` game options keyboard scan; settings units cover license dialogs |
+| Server removal, session sign-out, library removal/move | Review the named confirmation, cancel or confirm and restore focus. | `settings.spec.ts` keyboard/controller confirmation scans and focus return; `SettingsPage.test.tsx` mutation cases |
+| How a game runs, compatibility licenses and third-party licenses | Open, read/scroll, change allowed options and close. | `settings.spec.ts` game options keyboard scan; `settings.spec.ts` third-party license keyboard/controller scans; settings units cover runtime licenses |
 | What's new | Open the update banner, scroll notes, choose Later or Install and restart. | `update.spec.ts` keyboard/controller and long-changelog scans |
 
 `routes.spec.ts` scans every production screen. `memory.spec.ts` measures navigation after warmup;
