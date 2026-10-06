@@ -195,7 +195,11 @@ job_desktop() {
   pnpm_install
   pnpm --filter @vgames/desktop build
   cargo clippy -p vgames-desktop --all-targets --locked -- -D warnings
-  cargo test -p vgames-desktop --lib --locked updater::
+  need xvfb-run "apt-get install xvfb"
+  ensure_postgres
+  export VGAMES_TEST_DATABASE_URL="${VGAMES_TEST_DATABASE_URL:-$DATABASE_URL}"
+  xvfb-run -a cargo test -p vgames-desktop --locked
+  scripts/ci/desktop-db-tests.sh
 }
 
 job_supply-chain() {
