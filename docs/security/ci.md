@@ -117,3 +117,5 @@ INT).
 - `Dependency review` now runs on every PR (it is free on public repositories). Add it to the required checks.
 - `soak.yml` uses a self-hosted runner. It never runs on `pull_request`, so fork code cannot reach that runner; keep it
   that way, and restrict the runner group to this repository.
+
+INT-03 throwaway docs-only proof: the always-running desktop gate must report success.
