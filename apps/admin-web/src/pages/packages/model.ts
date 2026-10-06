@@ -1,6 +1,8 @@
 // The package form: fields, the same limits as the API (lengths in Unicode code points after
 // trimming, like the server), the merge patch built from what changed, and the slug preview.
+
 import type { Schemas } from "@vgames/api-client";
+import { z } from "zod";
 import type { AdminPackage, FieldSource, PackageStatus } from "../../api/schemas";
 
 export const STATUSES: readonly PackageStatus[] = ["draft", "published", "hidden", "archived"];
@@ -93,6 +95,19 @@ export const FIELDS: readonly FieldSpec[] = [
 ];
 
 export type FormValues = Record<FieldName, string>;
+
+export const FormValuesSchema: z.ZodType<FormValues> = z.object({
+  title: z.string(),
+  slug: z.string(),
+  summary: z.string(),
+  description: z.string(),
+  developer: z.string(),
+  publisher: z.string(),
+  release_date: z.string(),
+  genres: z.string(),
+  steam_app_id: z.string(),
+  igdb_id: z.string(),
+});
 
 export function fromPackage(pkg: AdminPackage): FormValues {
   return {
