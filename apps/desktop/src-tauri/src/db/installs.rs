@@ -152,3 +152,78 @@ pub async fn row(db: &Db, package: PackageRef) -> Result<Option<InstallRow>, DbE
     })
     .await
 }
+
+/// The install finished: playable from now on.
+pub async fn set_installed(
+    db: &Db,
+    package: PackageRef,
+    version_id: uuid::Uuid,
+    sequence: i64,
+    size_bytes: u64,
+) -> Result<(), DbError> {
+    db.call(move |conn| {
+        conn.execute(
+            "UPDATE installs SET state = 'installed', version_id = ?3, sequence = ?4,
+                    size_bytes = ?5, installed_at = coalesce(installed_at, ?6)
+              WHERE server_id = ?1 AND package_id = ?2",
+            rusqlite::params![
+                package.server_id.to_string(),
+                package.package_id.to_string(),
+                version_id.to_string(),
+                sequence,
+                i64::try_from(size_bytes).unwrap_or(i64::MAX),
+                super::now_unix(),
+            ],
+        )?;
+        Ok(())
+    })
+    .await
+}
+
+/// Forgets an install (cancelled with delete, uninstalled).
+pub async fn delete(db: &Db, package: PackageRef) -> Result<(), DbError> {
+    db.call(move |conn| {
+        conn.execute(
+            "DELETE FROM installs WHERE server_id = ?1 AND package_id = ?2",
+            [
+                package.server_id.to_string(),
+                package.package_id.to_string(),
+            ],
+        )?;
+        Ok(())
+    })
+    .await
+}
+
+/// Catalog data recorded when the install started.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct CatalogInfo {
+    pub title: String,
+    pub slug: String,
+    pub version_label: String,
+    pub cover_asset_id: Option<uuid::Uuid>,
+}
+
+pub async fn catalog_info(db: &Db, package: PackageRef) -> Result<Option<CatalogInfo>, DbError> {
+    db.call(move |conn| {
+        let mut statement = conn.prepare(
+            "SELECT title, slug, version_label, cover_asset_id FROM installs
+              WHERE server_id = ?1 AND package_id = ?2",
+        )?;
+        let mut rows = statement.query([
+            package.server_id.to_string(),
+            package.package_id.to_string(),
+        ])?;
+        let Some(row) = rows.next()? else {
+            return Ok(None);
+        };
+        let cover: Option<String> = row.get(3)?;
+        Ok(Some(CatalogInfo {
+            title: row.get(0)?,
+            slug: row.get(1)?,
+            version_label: row.get(2)?,
+            cover_asset_id: cover.and_then(|c| uuid::Uuid::parse_str(&c).ok()),
+        }))
+    })
+    .await
+}
