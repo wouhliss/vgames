@@ -92,6 +92,7 @@ pub const MAIN_WINDOW_COMMANDS: &[&str] = &[
     "collection_add_package",
     "collection_remove_package",
     "favorite_set",
+    "installs_list",
 ];
 
 /// Commands the in-game overlay window may call. Only `overlay_*` commands

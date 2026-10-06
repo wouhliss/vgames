@@ -62,6 +62,8 @@ export const commands = {
 	 *  `install-progress`, the end through `install-finished`.
 	 */
 	installStart: (packageId: string, libraryId: string) => typedError<null, InstallStartError>(__TAURI_INVOKE("install_start", { packageId, libraryId })),
+	/**  Installed (and incomplete) packages of the active server. */
+	installsList: () => typedError<InstalledPackage[], AppError>(__TAURI_INVOKE("installs_list")),
 	downloadsList: () => typedError<DownloadQueue, AppError>(__TAURI_INVOKE("downloads_list")),
 	downloadPause: (pkg: PackageRef) => typedError<null, DownloadActionError>(__TAURI_INVOKE("download_pause", { pkg })),
 	/**  Resumes a paused job (it runs when its turn comes). */
@@ -255,6 +257,15 @@ export type AuthOutcome = { kind: "signed_in"; account: Account } | { kind: "fai
 /**  How the package would run on this machine, or why it can't (09 §1). */
 export type Availability = "native" | "rosetta" | "proton" | "wine" | "unavailable";
 
+export type AvailableUpdate = {
+	version_label: string,
+	sequence: number,
+	/**  Bytes to download (changed files only). */
+	download_bytes: number,
+	/**  The installed version was withdrawn: offered even with a lower sequence. */
+	installed_yanked: boolean,
+};
+
 /**  Why an update check or install must wait. */
 export type Blocked = "game_running" | "downloads_active";
 
@@ -315,6 +326,12 @@ export type ChosenLibraryFolder = {
 	total_bytes: number,
 };
 
+/**
+ *  Cloud save state of an install (06). `unsupported`: no saves declared,
+ *  or no cloud-save client (PLAY-06 plugs one in).
+ */
+export type CloudSaveState = "unsupported" | "synced" | "syncing" | "pending" | "conflict";
+
 export type Collection = {
 	id: string,
 	/**  1–100 characters. */
@@ -353,6 +370,9 @@ status: CompatStatus;
 notes: string | null; 
 /**  Community rating, informational only (never used to decide anything). */
 protondb_tier: ProtonDbTier | null; blockers: CompatBlocker[] } | { kind: "unavailable" };
+
+/**  How the package runs on this machine (09 §1). */
+export type CompatLayer = "native" | "proton" | "wine";
 
 export type CompatRunner = "proton" | "wine";
 
@@ -634,6 +654,40 @@ export type InstallStartError = { kind: "not_found" } |
 { kind: "trust_expired" } | { kind: "io"; detail: string };
 
 /**
+ *  Where an install is. `incomplete`: not installed and no download job
+ *  exists (02 §10: resume or remove). `installing` covers queued and active
+ *  downloads.
+ */
+export type InstallState = "installed" | "incomplete" | "installing" | "updating" | "repairing" | "moving" | "uninstalling";
+
+export type InstalledPackage = {
+	package: PackageRef,
+	slug: string,
+	title: string,
+	/**  `vgimg:` URL of the cached cover, served by the Rust core. */
+	cover_url: string | null,
+	library_id: string,
+	/**  Absolute install directory, for display only. */
+	install_path: string,
+	platform: Platform,
+	version_label: string,
+	sequence: number,
+	size_bytes: number,
+	installed_at: string | null,
+	last_played_at: string | null,
+	playtime_seconds: number,
+	state: InstallState,
+	update: AvailableUpdate | null,
+	favorite: boolean,
+	collection_ids: string[],
+	running: boolean,
+	/**  Empty for incomplete installs (the manifest is not verified yet). */
+	targets: LaunchTarget[],
+	compat: CompatLayer,
+	cloud_saves: CloudSaveState,
+};
+
+/**
  *  Installed packages changed (state, favorites, collections, versions); re-read
  *  `installs_list` (INS-04).
  */
@@ -694,6 +748,13 @@ export type LaunchError = { kind: "not_installed" } | { kind: "incomplete" } | {
 { kind: "key_revoked" } | { kind: "compat_unavailable"; detail: string } | { kind: "rate_limited" } | 
 /**  A cloud save conflict must be resolved first (A2-T11 sends the conflict). */
 { kind: "save_conflict"; conflict_id: string } | { kind: "io"; detail: string };
+
+export type LaunchTarget = {
+	id: string,
+	label: string,
+	/**  The manifest's `launch.default`. */
+	is_default: boolean,
+};
 
 /**  Errors expected by the launcher's library screens. */
 export type LibraryActionError = { kind: "not_writable" } | { kind: "system_directory" } | { kind: "nested_in_library"; library_path: string } | { kind: "contains_library"; library_path: string } | { kind: "already_added" } | { kind: "not_found" } | { kind: "io"; detail: string };

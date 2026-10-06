@@ -9,6 +9,7 @@ mod catalog;
 mod collections;
 mod downloads;
 mod games;
+mod installs;
 mod libraries;
 pub mod names;
 mod servers;
@@ -55,6 +56,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             catalog::package_details,
             catalog::install_plan,
             catalog::install_start,
+            installs::installs_list,
             downloads::downloads_list,
             downloads::download_pause,
             downloads::download_resume,

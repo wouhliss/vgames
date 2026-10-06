@@ -139,6 +139,11 @@ impl<C: Connections> Catalog<C> {
         &self.connections
     }
 
+    /// This machine's platform (`None` on an unsupported one).
+    pub fn host(&self) -> Option<Host> {
+        self.host
+    }
+
     pub fn covers(&self) -> &Arc<Covers> {
         &self.covers
     }

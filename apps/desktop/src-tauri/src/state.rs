@@ -50,6 +50,8 @@ pub struct AppState {
     pub catalog: Arc<Catalog<Servers>>,
     /// The install queue and its worker (INS-03).
     pub downloads: Arc<Downloads<ServerBackend>>,
+    /// Installed packages: updates found, launch targets, cloud-save state (INS-04).
+    pub installs: Arc<crate::installs::Installs>,
 }
 
 impl AppState {
@@ -88,6 +90,7 @@ impl AppState {
             paths,
             catalog,
             downloads,
+            installs: Arc::default(),
             games,
             launcher,
             db,

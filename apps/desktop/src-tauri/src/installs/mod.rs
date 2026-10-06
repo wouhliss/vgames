@@ -3,6 +3,10 @@
 //! plan → checks → register the install and queue its job. Progress and the
 //! end are the queue worker's `install-progress` and `install-finished`.
 
+pub mod list;
+
+pub use list::*;
+
 use std::collections::HashSet;
 use std::path::Path;
 
