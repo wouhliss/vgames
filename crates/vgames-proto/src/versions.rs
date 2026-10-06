@@ -169,7 +169,8 @@ pub struct SignatureEnvelope {
     pub format: String,
     /// Always `ed25519`.
     pub alg: String,
-    /// `vgames/manifest/v1` or `vgames/compat/v1`.
+    // Keep the enum documentation on SignatureContext: utoipa 6 otherwise adds an
+    // object-typed description schema to allOf around this inline string enum.
     #[cfg_attr(feature = "openapi", schema(inline))]
     pub context: SignatureContext,
     #[cfg_attr(feature = "openapi", schema(pattern = "^[0-9a-f]{32}$"))]
@@ -180,6 +181,7 @@ pub struct SignatureEnvelope {
     pub signature: String,
 }
 
+/// `vgames/manifest/v1` or `vgames/compat/v1`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub enum SignatureContext {
