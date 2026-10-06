@@ -6,6 +6,7 @@
 pub mod actions;
 pub mod list;
 pub mod manage;
+pub mod updates;
 
 pub use actions::InstallActionError;
 pub use list::*;

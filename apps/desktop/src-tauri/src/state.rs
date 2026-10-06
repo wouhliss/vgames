@@ -52,6 +52,8 @@ pub struct AppState {
     pub downloads: Arc<Downloads<ServerBackend>>,
     /// Installed packages: updates found, launch targets, cloud-save state (INS-04).
     pub installs: Arc<crate::installs::Installs>,
+    /// Wakes update detection (window focus, catalog refresh).
+    pub update_triggers: Arc<crate::installs::updates::UpdateTriggers>,
 }
 
 impl AppState {
@@ -107,6 +109,7 @@ impl AppState {
             catalog,
             downloads,
             installs,
+            update_triggers: Arc::default(),
             games,
             launcher,
             db,
