@@ -4,7 +4,7 @@ import { Button } from "../../components/Button";
 import { Icon } from "../../components/Icon";
 import { Notice } from "../../components/Notice";
 import { formatBytes, t } from "../../i18n";
-import { commands, type FolderPick } from "../../ipc";
+import { type ChosenLibraryFolder, commands } from "../../ipc";
 import { queryKeys } from "../../ipc/query";
 import { libraryErrorMessage } from "./messages";
 import styles from "./Onboarding.module.css";
@@ -12,7 +12,7 @@ import { StepHeading } from "./StepHeading";
 
 export function LibraryStep({ onDone }: { onDone: () => void }) {
   const client = useQueryClient();
-  const [pick, setPick] = useState<FolderPick | null>(null);
+  const [pick, setPick] = useState<ChosenLibraryFolder | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"pick" | "add" | null>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
@@ -28,11 +28,7 @@ export function LibraryStep({ onDone }: { onDone: () => void }) {
     const result = await commands.libraryPickFolder();
     setBusy(null);
     if (result.status === "error") {
-      setError(
-        t("onboarding.library.errors.io", {
-          detail: "detail" in result.error ? result.error.detail : result.error.kind,
-        }),
-      );
+      setError(libraryErrorMessage(result.error));
       return;
     }
     if (result.data) setPick(result.data);

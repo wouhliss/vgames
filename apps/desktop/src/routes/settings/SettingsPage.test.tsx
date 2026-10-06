@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { routes } from "../../app/router";
-import type { Library, ServerProfile } from "../../ipc";
+import type { LibraryInfo, ServerProfile } from "../../ipc";
 import {
   fail,
   installMockBackend,
@@ -33,7 +33,7 @@ const OTHER: ServerProfile = {
   } as ServerProfile["account"],
 };
 
-const SSD: Library = {
+const SSD: LibraryInfo = {
   ...MOCK_LIBRARY,
   id: "01920000-0000-7000-8000-0000000000b3",
   path: "/mnt/ssd",
@@ -249,7 +249,7 @@ describe("settings", () => {
       ).toBeVisible();
     });
 
-    it("explains why a library can't be removed, and removes an empty one", async () => {
+    it("explains why a library can't be removed, and removes empty ones", async () => {
       const { user, backend } = start("/settings/storage", {
         installs: makeInstalls(2, MOCK_SERVER, [SSD]),
       });
@@ -267,12 +267,12 @@ describe("settings", () => {
       expect(await within(storage).findByRole("alert")).toHaveTextContent(
         "2 packages are still installed there. Move or uninstall them first.",
       );
+      // Removing the default library promotes another one, as the launcher core does.
       await confirm("/home/sam/Games");
-      await waitFor(() =>
-        expect(within(storage).getByRole("alert")).toHaveTextContent(
-          "This is the default library. Make another library the default first.",
-        ),
-      );
+      expect(await screen.findByText("/home/sam/Games removed")).toBeVisible();
+      expect(
+        within(screen.getByRole("listitem", { name: "Fast SSD" })).getByText("Default"),
+      ).toBeVisible();
       backend.state.installs = [];
       await confirm("/mnt/ssd");
       expect(await screen.findByText("/mnt/ssd removed")).toBeVisible();

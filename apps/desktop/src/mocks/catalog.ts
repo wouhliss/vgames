@@ -15,7 +15,7 @@ import type {
   InstallPlan,
   InstallPlanError,
   InstallStartError,
-  Library,
+  LibraryInfo,
   PackageDetails,
   Platform,
   ProtonDbTier,
@@ -254,7 +254,7 @@ export function catalogHandlers(
   state: CatalogState &
     DownloadsState & {
       installs: InstalledPackage[];
-      libraries: Library[];
+      libraries: LibraryInfo[];
       servers: ServerProfile[];
     },
 ): Record<string, Handler> {

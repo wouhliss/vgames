@@ -1,5 +1,5 @@
 // Commands and events the UI needs that are NOT in the generated `src/bindings.ts` yet: app,
-// servers, accounts and libraries (Agent 2, A2-T01/T07/T08).
+// servers, accounts and the libraries-changed event (INS-04).
 //
 // Same shape as tauri-specta output (`Result`, snake_case payload fields, camelCase argument keys), so
 // the UI can be built and tested today against mockIPC. This is the request list for Agent 2 and
@@ -41,36 +41,6 @@ export type AppearanceSettings = {
   /** Forces reduced motion regardless of the OS setting. */
   reduce_motion: boolean;
 };
-
-// ------------------------------------------------------------------------------------------------
-// Libraries (A2-T08)
-
-export type Library = {
-  id: string;
-  path: string;
-  label: string | null;
-  is_default: boolean;
-  /** False when the drive or folder is missing ("library offline"). */
-  online: boolean;
-  free_bytes: number | null;
-  total_bytes: number | null;
-  install_count: number;
-};
-
-export type FolderPick = {
-  path: string;
-  free_bytes: number;
-  total_bytes: number;
-};
-
-export type LibraryError =
-  | { kind: "not_writable" }
-  | { kind: "system_directory" }
-  | { kind: "nested_in_library"; library_path: string }
-  | { kind: "contains_library"; library_path: string }
-  | { kind: "already_added" }
-  | { kind: "not_found" }
-  | { kind: "io"; detail: string };
 
 // ------------------------------------------------------------------------------------------------
 // Events
@@ -116,17 +86,6 @@ export const coreCommands = {
   },
   async appearanceSet(settings: AppearanceSettings): Promise<Result<AppearanceSettings, AppError>> {
     return call("appearance_set", { settings });
-  },
-
-  async librariesList(): Promise<Result<Library[], AppError>> {
-    return call("libraries_list");
-  },
-  /** Opens the native folder picker (Rust side). `null` when the user cancels. */
-  async libraryPickFolder(): Promise<Result<FolderPick | null, AppError>> {
-    return call("library_pick_folder");
-  },
-  async libraryAdd(path: string, makeDefault: boolean): Promise<Result<Library, LibraryError>> {
-    return call("library_add", { path, makeDefault });
   },
 };
 

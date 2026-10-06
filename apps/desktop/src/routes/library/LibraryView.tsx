@@ -5,7 +5,7 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { type RefObject, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { t } from "../../i18n";
-import type { Library } from "../../ipc";
+import type { LibraryInfo } from "../../ipc";
 import styles from "./Library.module.css";
 import {
   buildRows,
@@ -47,7 +47,7 @@ export function LibraryView({
 }: {
   sections: readonly Section[];
   view: ViewMode;
-  libraries: readonly Library[];
+  libraries: readonly LibraryInfo[];
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const width = useWidth(containerRef);

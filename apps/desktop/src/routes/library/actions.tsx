@@ -13,7 +13,7 @@ import {
   commands,
   type InstallActionError,
   type InstalledPackage,
-  type Library,
+  type LibraryInfo,
   type Result,
 } from "../../ipc";
 import { queryKeys } from "../../ipc/query";
@@ -79,7 +79,7 @@ export function LibraryActionsProvider({
   installs,
   children,
 }: {
-  libraries: readonly Library[];
+  libraries: readonly LibraryInfo[];
   collections: readonly Collection[];
   installs: readonly InstalledPackage[];
   children: ReactNode;

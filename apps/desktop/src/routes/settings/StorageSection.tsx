@@ -12,16 +12,20 @@ import { ProgressBar } from "../../components/ProgressBar";
 import { RadioGroup } from "../../components/RadioGroup";
 import { useToast } from "../../components/Toast";
 import { formatBytes, t } from "../../i18n";
-import { commands, type InstalledPackage, type Library, type LibraryRemoveError } from "../../ipc";
+import {
+  commands,
+  type InstalledPackage,
+  type LibraryInfo,
+  type LibraryRemovalError,
+} from "../../ipc";
 import { queryKeys } from "../../ipc/query";
 import { libraryErrorMessage } from "../onboarding/messages";
 import styles from "./Settings.module.css";
 import { Section } from "./SettingsPage";
 
-function removeErrorMessage(error: LibraryRemoveError): string {
+function removeErrorMessage(error: LibraryRemovalError): string {
   if (error.kind === "not_empty")
     return t("settings.storage.errors.not_empty", { count: error.install_count });
-  if (error.kind === "is_default") return t("settings.storage.errors.is_default");
   return libraryErrorMessage(error);
 }
 
@@ -31,8 +35,8 @@ function MoveAllDialog({
   installs,
   onClose,
 }: {
-  source: Library;
-  libraries: readonly Library[];
+  source: LibraryInfo;
+  libraries: readonly LibraryInfo[];
   installs: readonly InstalledPackage[];
   onClose: () => void;
 }) {
@@ -40,7 +44,7 @@ function MoveAllDialog({
   const { toast } = useToast();
   const needed = installs.reduce((sum, i) => sum + i.size_bytes, 0);
   const targets = libraries.filter((l) => l.id !== source.id);
-  const fits = (l: Library) => l.online && (l.free_bytes === null || l.free_bytes >= needed);
+  const fits = (l: LibraryInfo) => l.online && (l.free_bytes === null || l.free_bytes >= needed);
   const [target, setTarget] = useState<string | null>(targets.find(fits)?.id ?? null);
   const [busy, setBusy] = useState(false);
 
@@ -114,14 +118,14 @@ export function StorageSection() {
   const installs = useInstalls();
   const client = useQueryClient();
   const { toast } = useToast();
-  const [removing, setRemoving] = useState<Library | null>(null);
-  const [moving, setMoving] = useState<Library | null>(null);
+  const [removing, setRemoving] = useState<LibraryInfo | null>(null);
+  const [moving, setMoving] = useState<LibraryInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   const refresh = () => client.invalidateQueries({ queryKey: queryKeys.libraries });
 
-  const makeDefault = async (library: Library) => {
+  const makeDefault = async (library: LibraryInfo) => {
     setBusy(library.id);
     setError(null);
     const result = await commands.librarySetDefault(library.id).catch(() => null);
@@ -140,7 +144,7 @@ export function StorageSection() {
       );
   };
 
-  const remove = async (library: Library) => {
+  const remove = async (library: LibraryInfo) => {
     setError(null);
     const result = await commands.libraryRemove(library.id).catch(() => null);
     setRemoving(null);
@@ -183,7 +187,7 @@ export function StorageSection() {
     }
   };
 
-  const installsIn = (library: Library) =>
+  const installsIn = (library: LibraryInfo) =>
     (installs.data ?? []).filter((i) => i.library_id === library.id);
 
   let body: ReactNode;

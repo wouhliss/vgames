@@ -1,6 +1,6 @@
 // User-facing text for every error the onboarding commands can return.
 import { t } from "../../i18n";
-import type { AuthError, LibraryError, ServerError } from "../../ipc";
+import type { AuthError, LibraryActionError, ServerError } from "../../ipc";
 
 export function serverErrorMessage(error: ServerError): string {
   switch (error.kind) {
@@ -53,7 +53,7 @@ export function authErrorMessage(error: AuthError): string {
   }
 }
 
-export function libraryErrorMessage(error: LibraryError): string {
+export function libraryErrorMessage(error: LibraryActionError): string {
   switch (error.kind) {
     case "not_writable":
       return t("onboarding.library.errors.notWritable");

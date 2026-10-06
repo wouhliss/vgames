@@ -5,7 +5,7 @@ import type {
   InstallActionError,
   InstalledPackage,
   LaunchError,
-  Library,
+  LibraryInfo,
   PackageRef,
   ServerProfile,
   UninstallPlan,
@@ -198,7 +198,7 @@ export const MOCK_COLLECTIONS: Collection[] = [
   { id: mockId("01920000-0000-7000-c011", 3), name: "Finished", position: 2 },
 ];
 
-export const OFFLINE_LIBRARY: Library = {
+export const OFFLINE_LIBRARY: LibraryInfo = {
   id: "01920000-0000-7000-8000-0000000000b2",
   path: "/media/sam/External",
   label: "External drive",
@@ -240,7 +240,7 @@ export const BASE_TIME = Date.parse("2026-09-24T12:00:00Z");
 export function makeInstalls(
   count: number,
   server: ServerProfile,
-  libraries: readonly Library[],
+  libraries: readonly LibraryInfo[],
 ): InstalledPackage[] {
   const random = seeded(42);
   const collectionIds = MOCK_COLLECTIONS.map((c) => c.id);
@@ -336,7 +336,7 @@ function validName(raw: unknown): string | null {
 }
 
 export function libraryHandlers(
-  state: LibraryState & { libraries: Library[] },
+  state: LibraryState & { libraries: LibraryInfo[] },
 ): Record<string, Handler> {
   const changed = () => void events.installsChanged.emit({});
   const collectionsChanged = () => void events.collectionsChanged.emit({});

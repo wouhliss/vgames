@@ -9,6 +9,7 @@
 //! notifications or cancellation tokens.
 
 pub mod api;
+pub mod catalog;
 pub mod commands;
 pub mod controllers;
 pub mod db;

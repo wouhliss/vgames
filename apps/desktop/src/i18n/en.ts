@@ -914,7 +914,6 @@ export const en = {
           one: "{count} package is still installed there. Move or uninstall it first.",
           other: "{count} packages are still installed there. Move or uninstall them first.",
         },
-        is_default: "This is the default library. Make another library the default first.",
         failed: "Couldn't change the library. Try again.",
       },
       add: "Add a library…",
