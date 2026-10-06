@@ -87,7 +87,6 @@ export type UninstallPlan = {
   has_prefix: boolean;
 };
 
-
 export const libraryCommands = {
   /** Installed (and incomplete) packages of the active server. */
   async installsList(): Promise<Result<InstalledPackage[], AppError>> {
