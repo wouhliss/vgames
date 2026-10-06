@@ -98,7 +98,6 @@ pub struct Updater {
     busy: Arc<tokio::sync::Mutex<()>>,
 }
 
-
 fn key(p: &PackageRef) -> (uuid::Uuid, uuid::Uuid) {
     (p.server_id, p.package_id)
 }
