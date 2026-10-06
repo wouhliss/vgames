@@ -8,8 +8,9 @@ let ownerCookies: Awaited<ReturnType<BrowserContext["cookies"]>> | undefined;
 
 // Exercise the web OAuth flow, including the callback cookie, against the debug-only
 // fake provider. The synthetic account is the nightly stack's bootstrap owner.
-export async function signIn(page: Page) {
+export async function signIn(page: Page, fresh = false) {
   if (!realApi) return;
+  if (fresh) ownerCookies = undefined;
   if (ownerCookies) {
     await page.context().addCookies(ownerCookies);
     await page.goto("/admin/");
