@@ -64,7 +64,7 @@ the variable. Secrets are never logged.
 |---|---|---|
 | `DATABASE_URL` | required | `postgres://` URL of the runtime role. |
 | `DATABASE_MIGRATION_URL` | `DATABASE_URL` | Role that owns the schema, used only by `--migrate`. |
-| `VGAMES_DB_MAX_CONNECTIONS` | `20` | Pool size per process (1–500). |
+| `VGAMES_DB_MAX_CONNECTIONS` | `20` | Request pool size per process (1–500). Realtime uses one additional dedicated LISTEN connection so idle sockets cannot consume request-pool slots. |
 
 **Discord sign-in**
 
