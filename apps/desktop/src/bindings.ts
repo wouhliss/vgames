@@ -51,6 +51,12 @@ export const commands = {
 	libraryAdd: (path: string, makeDefault: boolean) => typedError<LibraryInfo, LibraryActionError>(__TAURI_INVOKE("library_add", { path, makeDefault })),
 	librarySetDefault: (libraryId: string) => typedError<null, LibraryActionError>(__TAURI_INVOKE("library_set_default", { libraryId })),
 	libraryRemove: (libraryId: string) => typedError<null, LibraryRemovalError>(__TAURI_INVOKE("library_remove", { libraryId })),
+	catalogList: (query: CatalogQuery) => typedError<CatalogPage, CatalogError>(__TAURI_INVOKE("catalog_list", { query })),
+	/**  Genres in the catalog with package counts (for the filter). */
+	catalogGenres: () => typedError<GenreCount[], CatalogError>(__TAURI_INVOKE("catalog_genres")),
+	packageDetails: (packageId: string) => typedError<PackageDetails, CatalogError>(__TAURI_INVOKE("package_details", { packageId })),
+	/**  Sizes for the install dialog. Nothing is downloaded yet. */
+	installPlan: (packageId: string) => typedError<InstallPlan, InstallPlanError>(__TAURI_INVOKE("install_plan", { packageId })),
 	/**
 	 *  Creates a desktop shortcut that opens `vgames://launch/<package id>`.
 	 *  Returns the shortcut's path.
@@ -211,6 +217,9 @@ export type AuthFlow = {
 /**  How a sign-in ended (the `AuthFinished` event). */
 export type AuthOutcome = { kind: "signed_in"; account: Account } | { kind: "failed"; error: AuthError };
 
+/**  How the package would run on this machine, or why it can't (09 §1). */
+export type Availability = "native" | "rosetta" | "proton" | "wine" | "unavailable";
+
 /**  Why an update check or install must wait. */
 export type Blocked = "game_running" | "downloads_active";
 
@@ -222,6 +231,39 @@ export type BlockedUser = {
 
 /**  An install that is busy with something else. */
 export type BusyState = "installing" | "updating" | "repairing" | "moving" | "uninstalling";
+
+export type CatalogError = 
+/**  The package doesn't exist anymore, or isn't published. */
+{ kind: "not_found" } | { kind: "offline" } | { kind: "unauthenticated" } | { kind: "server"; code: string; message: string };
+
+export type CatalogItem = {
+	package_id: string,
+	slug: string,
+	title: string,
+	summary: string | null,
+	genres: string[],
+	/**  `vgimg:` URL served by the Rust core. */
+	cover_url: string | null,
+	platforms: Platform[],
+	availability: Availability,
+	updated_at: string,
+};
+
+export type CatalogPage = {
+	items: CatalogItem[],
+	next_cursor: string | null,
+};
+
+export type CatalogQuery = {
+	/**  Title search, 0–100 characters (`q`). */
+	query: string,
+	genre: string | null,
+	sort: CatalogSort,
+	/**  From the previous page; null for the first. */
+	cursor: string | null,
+};
+
+export type CatalogSort = "title" | "recent";
 
 export type ChangeEntry = {
 	type: ChangeType,
@@ -243,6 +285,29 @@ export type CommandError = {
 	code: ErrorCode,
 	message: string,
 };
+
+/**  Something that stops (or will stop) a compat launch on this machine (09 §3). */
+export type CompatBlocker = 
+/**  A DirectX 12 title on a Mac: D3DMetal is deferred, so no Mac runs DX12 yet. */
+{ kind: "d3d12_unsupported_on_mac" } | 
+/**  Rosetta 2 isn't installed; `rosetta_install` installs it after the user confirms. */
+{ kind: "needs_rosetta" } | 
+/**  x86_64-only path that Apple's Rosetta policy may end. Not blocking. */
+{ kind: "rosetta_sunset"; last_macos: string };
+
+export type CompatInfo = { kind: "native" } | 
+/**  An Intel macOS build on Apple silicon, through Rosetta 2. */
+{ kind: "rosetta"; blockers: CompatBlocker[] } | { kind: "compat"; layer: CompatRunner; 
+/**  From the signed compat profile; `untested` without one. */
+status: CompatStatus; 
+/**  Plain text from the signed profile. */
+notes: string | null; 
+/**  Community rating, informational only (never used to decide anything). */
+protondb_tier: ProtonDbTier | null; blockers: CompatBlocker[] } | { kind: "unavailable" };
+
+export type CompatRunner = "proton" | "wine";
+
+export type CompatStatus = "verified" | "playable" | "unsupported" | "untested";
 
 /**  Whether the launcher could reach a server on its last attempt. */
 export type ConnectivityChanged = {
@@ -382,6 +447,23 @@ export type GameStopped = {
 	exit: GameExit,
 };
 
+export type GenreCount = {
+	genre: string,
+	count: number,
+};
+
+/**  The release this machine would install (native first, then a compatibility layer). */
+export type HostRelease = {
+	platform: Platform,
+	version_id: string,
+	version_label: string,
+	sequence: number,
+	/**  Bytes of the whole release (the installed size). */
+	total_size: number,
+	published_at: string,
+	via: Availability,
+};
+
 /**  An install, update or repair finished (successfully or not). */
 export type InstallFinished = {
 	package: PackageRef,
@@ -393,6 +475,19 @@ export type InstallOutcome = { kind: "installed" } | { kind: "cancelled"; kept_p
 
 /**  Phase of an install, update or repair (02-package-format §7). */
 export type InstallPhase = "queued" | "verifying_manifest" | "allocating" | "downloading" | "finalizing" | "verifying" | "paused";
+
+export type InstallPlan = {
+	package_id: string,
+	release: HostRelease,
+	/**  Bytes to download. */
+	download_bytes: number,
+	/**  Free space needed on the chosen library: total size + 64 MiB (02 §7). */
+	required_bytes: number,
+};
+
+export type InstallPlanError = { kind: "not_found" } | 
+/**  No build for this machine and no compatibility path. */
+{ kind: "no_release" } | { kind: "already_installed" } | { kind: "offline" } | { kind: "blocked"; blocker: CompatBlocker } | { kind: "server"; code: string; message: string };
 
 /**  Progress of the active install. Emitted at most 4 times per second. */
 export type InstallProgress = {
@@ -569,6 +664,28 @@ export type OverlayView = {
 /**  `overlay-view`: the overlay window's view model changed. */
 export type OverlayViewChanged = OverlayView;
 
+export type PackageDetails = {
+	package_id: string,
+	slug: string,
+	title: string,
+	summary: string | null,
+	/**  CommonMark from the server's admins; render only through SafeMarkdown. */
+	description: string | null,
+	developer: string | null,
+	publisher: string | null,
+	/**  YYYY-MM-DD */
+	release_date: string | null,
+	genres: string[],
+	platforms: Platform[],
+	cover_url: string | null,
+	hero_url: string | null,
+	logo_url: string | null,
+	screenshots: Screenshot[],
+	/**  Null when no release can run here (see `compat.kind === "unavailable"`). */
+	release: HostRelease | null,
+	compat: CompatInfo,
+};
+
 /**  The per-package "In-game overlay" switch and its safety valve (Settings → Overlay). */
 export type PackageOverlay = {
 	package: PackageRef,
@@ -583,6 +700,9 @@ export type PackageRef = {
 	server_id: string,
 	package_id: string,
 };
+
+/**  A package build's target (OpenAPI `Platform`). */
+export type Platform = "windows-x86_64" | "windows-aarch64" | "linux-x86_64" | "linux-aarch64" | "macos-aarch64" | "macos-x86_64";
 
 export type Presence = {
 	status: PresenceStatus,
@@ -599,6 +719,8 @@ export type PresenceChanged = {
 
 export type PresenceStatus = "online" | "away" | "in_game" | "offline";
 
+export type ProtonDbTier = "platinum" | "gold" | "silver" | "bronze" | "borked" | "pending";
+
 export type RegistrationMode = "open" | "allowlist" | "closed";
 
 export type ReleaseNotes = {
@@ -608,6 +730,12 @@ export type ReleaseNotes = {
 };
 
 export type Role = "user" | "admin" | "owner";
+
+export type Screenshot = {
+	url: string,
+	width: number,
+	height: number,
+};
 
 /**
  *  A `vgames://server/add` link was opened; the UI starts onboarding with

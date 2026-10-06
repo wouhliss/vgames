@@ -98,6 +98,15 @@ pub fn select_release(releases: &[ReleaseInfo], host: Platform) -> Option<Select
     })
 }
 
+/// The build a package listing only `platforms` (a catalog page entry) would
+/// install here, and how it would run: the same order as [`select_release`].
+pub fn route_for(platforms: &[WirePlatform], host: Platform) -> Option<(WirePlatform, Route)> {
+    preferences(host)
+        .iter()
+        .map(|&(platform, route)| (wire(platform), route))
+        .find(|(platform, _)| platforms.contains(platform))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -222,5 +231,27 @@ mod tests {
             assert_eq!(wire(platform).as_str(), platform.as_str());
         }
         assert_eq!(Platform::ALL.len(), WirePlatform::ALL.len());
+    }
+
+    #[test]
+    fn route_for_agrees_with_select_release() {
+        for host in Platform::ALL {
+            for mask in 0u32..(1 << Platform::ALL.len()) {
+                let offered: Vec<WirePlatform> = Platform::ALL
+                    .into_iter()
+                    .enumerate()
+                    .filter(|(i, _)| mask & (1 << i) != 0)
+                    .map(|(_, p)| wire(p))
+                    .collect();
+                let releases: Vec<ReleaseInfo> = Platform::ALL
+                    .into_iter()
+                    .filter(|p| offered.contains(&wire(*p)))
+                    .map(|p| release(p, 1))
+                    .collect();
+                let selected =
+                    select_release(&releases, host).map(|s| (s.release.platform, s.route));
+                assert_eq!(route_for(&offered, host), selected, "host {host:?}");
+            }
+        }
     }
 }

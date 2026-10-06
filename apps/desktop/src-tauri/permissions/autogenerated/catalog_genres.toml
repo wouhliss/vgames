@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-catalog-genres"
+description = "Enables the catalog_genres command without any pre-configured scope."
+commands.allow = ["catalog_genres"]
+
+[[permission]]
+identifier = "deny-catalog-genres"
+description = "Denies the catalog_genres command without any pre-configured scope."
+commands.deny = ["catalog_genres"]

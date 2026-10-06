@@ -62,6 +62,10 @@
     "allow-invite-decline",
     "allow-invite-cancel",
     "allow-package-overlays-list",
-    "allow-package-overlay-set"
+    "allow-package-overlay-set",
+    "allow-catalog-list",
+    "allow-catalog-genres",
+    "allow-package-details",
+    "allow-install-plan"
   ]
 }

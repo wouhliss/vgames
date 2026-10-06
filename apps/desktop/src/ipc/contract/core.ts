@@ -13,8 +13,8 @@
 // - Event names are the kebab-case type name (`UiNav` → "ui-nav").
 import type { AppError, ControllerKind } from "../../bindings";
 
-// Now generated; re-exported so contract files can keep importing it from here.
-export type { AppError } from "../../bindings";
+// Now generated (Platform: INS-02); re-exported so contract files can keep importing them from here.
+export type { AppError, Platform } from "../../bindings";
 
 import { call, get, makeEvents, type Result } from "./runtime";
 
@@ -25,15 +25,6 @@ export type { Result } from "./runtime";
 
 export type Os = "windows" | "linux" | "macos";
 export type Arch = "x86_64" | "aarch64";
-/** A package build's target (OpenAPI `Platform`). */
-export type Platform =
-  | "windows-x86_64"
-  | "windows-aarch64"
-  | "linux-x86_64"
-  | "linux-aarch64"
-  | "macos-aarch64"
-  | "macos-x86_64";
-
 export type Theme = "system" | "dark" | "light" | "high_contrast";
 
 export type AppearanceSettings = {
