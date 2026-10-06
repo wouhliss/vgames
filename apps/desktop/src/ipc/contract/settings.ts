@@ -3,7 +3,7 @@
 // (Agent 4's `SocialSettings`, 05-social-notes §5) and third-party licenses (Agents 2 and 4).
 // Requested shapes; see core.ts for the conventions.
 import type { PackageOverlay, PackageRef, SocialError } from "../../bindings";
-import type { AppError, LibraryError } from "./core";
+import type { AppError } from "./core";
 import { call, get, type Result } from "./runtime";
 
 export type SessionPlatform = "windows" | "linux" | "macos" | "web" | "cli";
@@ -49,13 +49,6 @@ export type HotkeyError =
 /** What saving social settings can report: the generated errors plus the requested hotkey ones. */
 export type SocialSettingsError = SocialError | HotkeyError;
 
-export type LibraryRemoveError =
-  | LibraryError
-  /** Installs still live there: move or uninstall them first. */
-  | { kind: "not_empty"; install_count: number }
-  /** The default library can't be removed; make another one the default first. */
-  | { kind: "is_default" };
-
 export const settingsCommands = {
   async accountSessions(serverId: string): Promise<Result<AccountSession[], AppError>> {
     return call("account_sessions", { serverId });
@@ -65,14 +58,6 @@ export const settingsCommands = {
   },
   async credentialStorage(): Promise<CredentialStorage> {
     return get("credential_storage");
-  },
-
-  async librarySetDefault(libraryId: string): Promise<Result<null, LibraryError>> {
-    return call("library_set_default", { libraryId });
-  },
-  /** Forgets a library. Files on disk are left alone. */
-  async libraryRemove(libraryId: string): Promise<Result<null, LibraryRemoveError>> {
-    return call("library_remove", { libraryId });
   },
 
   async downloadSettingsGet(): Promise<DownloadSettings> {

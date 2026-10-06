@@ -8,3 +8,8 @@ export const events = { ...pendingEvents, ...generatedEvents };
 
 export type * from "../bindings";
 export type * from "./contract";
+
+/** What the native folder picker returns (generated inline, named here for the screens). */
+export type FolderPick = NonNullable<
+  Extract<Awaited<ReturnType<typeof generatedCommands.libraryPickFolder>>, { status: "ok" }>["data"]
+>;

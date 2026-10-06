@@ -3,14 +3,14 @@ import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { routes } from "../../app/router";
-import { events, type InstalledPackage, type Library } from "../../ipc";
+import { events, type InstalledPackage, type LibraryInfo } from "../../ipc";
 import { installMockBackend, MOCK_LIBRARY, MOCK_SERVER, type MockState } from "../../mocks/backend";
 import { MOCK_COLLECTIONS, makeInstalls, OFFLINE_LIBRARY } from "../../mocks/library";
 import { flush, renderWithProviders, setRect } from "../../test/render";
 
 const [COOP, BACKLOG, FINISHED] = MOCK_COLLECTIONS.map((c) => c.id) as [string, string, string];
 
-const SSD: Library = {
+const SSD: LibraryInfo = {
   ...MOCK_LIBRARY,
   id: "01920000-0000-7000-8000-0000000000b3",
   path: "/mnt/ssd",

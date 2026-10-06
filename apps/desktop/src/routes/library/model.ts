@@ -1,6 +1,6 @@
 // Pure library logic: filtering, sorting, sections and the rows the virtualized view renders.
 import { currentLocale } from "../../i18n";
-import type { InstalledPackage, Library } from "../../ipc";
+import type { InstalledPackage, LibraryInfo } from "../../ipc";
 
 export type SortKey = "recent" | "name" | "size" | "installed";
 export type ViewMode = "grid" | "list";
@@ -129,7 +129,7 @@ export function rowHeight(row: Row, view: ViewMode, width: number, columns: numb
 }
 
 /** Whether the package's library drive is missing. */
-export function isOffline(pkg: InstalledPackage, libraries: readonly Library[]): boolean {
+export function isOffline(pkg: InstalledPackage, libraries: readonly LibraryInfo[]): boolean {
   return libraries.find((l) => l.id === pkg.library_id)?.online === false;
 }
 

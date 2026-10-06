@@ -11,7 +11,7 @@ import { Notice } from "../../components/Notice";
 import { RadioGroup, type RadioOption } from "../../components/RadioGroup";
 import { useToast } from "../../components/Toast";
 import { formatBytes, t } from "../../i18n";
-import { commands, type InstallPlanError, type Library } from "../../ipc";
+import { commands, type InstallPlanError, type LibraryInfo } from "../../ipc";
 import { CommandError, queryKeys } from "../../ipc/query";
 import { focusElement } from "../../nav/focus";
 import { installErrorMessage } from "./messages";
@@ -52,7 +52,8 @@ export function InstallDialog({
   const planError =
     plan.error instanceof CommandError ? (plan.error.error as InstallPlanError) : null;
   const required = plan.data?.required_bytes ?? 0;
-  const usable = (l: Library) => l.online && (l.free_bytes === null || l.free_bytes >= required);
+  const usable = (l: LibraryInfo) =>
+    l.online && (l.free_bytes === null || l.free_bytes >= required);
   const list = libraries.data ?? [];
   const fallback = list.find((l) => l.is_default && usable(l)) ?? list.find(usable);
   const selected = choice ?? fallback?.id ?? null;

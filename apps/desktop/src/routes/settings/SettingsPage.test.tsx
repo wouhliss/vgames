@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { routes } from "../../app/router";
-import type { Library, ServerProfile } from "../../ipc";
+import type { LibraryInfo, ServerProfile } from "../../ipc";
 import {
   fail,
   installMockBackend,
@@ -12,6 +12,7 @@ import {
   type MockState,
   OTHER_FINGERPRINT,
 } from "../../mocks/backend";
+import { makeJob } from "../../mocks/downloads";
 import { makeInstalls, OFFLINE_LIBRARY } from "../../mocks/library";
 import { renderWithProviders } from "../../test/render";
 import { parseLimit } from "./DownloadsSection";
@@ -33,7 +34,7 @@ const OTHER: ServerProfile = {
   } as ServerProfile["account"],
 };
 
-const SSD: Library = {
+const SSD: LibraryInfo = {
   ...MOCK_LIBRARY,
   id: "01920000-0000-7000-8000-0000000000b3",
   path: "/mnt/ssd",
@@ -267,15 +268,49 @@ describe("settings", () => {
       expect(await within(storage).findByRole("alert")).toHaveTextContent(
         "2 packages are still installed there. Move or uninstall them first.",
       );
-      await confirm("/home/sam/Games");
-      await waitFor(() =>
-        expect(within(storage).getByRole("alert")).toHaveTextContent(
-          "This is the default library. Make another library the default first.",
-        ),
-      );
       backend.state.installs = [];
       await confirm("/mnt/ssd");
       expect(await screen.findByText("/mnt/ssd removed")).toBeVisible();
+    });
+
+    it("removes the default library, and the one left becomes the default", async () => {
+      const { user, backend } = start("/settings/storage");
+      await section("Storage");
+      await user.click(screen.getByRole("button", { name: "Remove the library /home/sam/Games…" }));
+      await user.click(
+        within(
+          screen.getByRole("alertdialog", { name: "Remove the library /home/sam/Games?" }),
+        ).getByRole("button", { name: "Remove" }),
+      );
+      expect(await screen.findByText("/home/sam/Games removed")).toBeVisible();
+      const ssd = await screen.findByRole("listitem", { name: "Fast SSD" });
+      expect(within(ssd).getByText("Default")).toBeVisible();
+      expect(backend.state.libraries.map((l) => [l.path, l.is_default])).toEqual([
+        ["/mnt/ssd", true],
+      ]);
+    });
+
+    it("explains that downloads keep a library in use", async () => {
+      const { user, backend } = start("/settings/storage");
+      await section("Storage");
+      backend.state.downloads = [
+        makeJob(
+          { id: "0192a6f0-1c2d-7e3f-8a9b-0000000000d1", slug: "d", title: "Queued" },
+          MOCK_SERVER.id,
+          SSD.id,
+        ),
+      ];
+      await user.click(screen.getByRole("button", { name: "Remove the library /mnt/ssd…" }));
+      await user.click(
+        within(screen.getByRole("alertdialog", { name: "Remove the library /mnt/ssd?" })).getByRole(
+          "button",
+          { name: "Remove" },
+        ),
+      );
+      const storage = screen.getByRole("region", { name: "Storage" });
+      expect(await within(storage).findByRole("alert")).toHaveTextContent(
+        "Finish or cancel downloads in this library before removing it.",
+      );
     });
 
     it("adds a library, and explains a folder that can't be used", async () => {
@@ -294,6 +329,16 @@ describe("settings", () => {
       await user.click(screen.getByRole("button", { name: "Add a library…" }));
       expect(await screen.findByText("/data/games added")).toBeVisible();
       expect(screen.getByRole("listitem", { name: "/data/games" })).toBeVisible();
+    });
+
+    it("explains why the folder picker's choice can't be used", async () => {
+      const { user } = start("/settings/storage", {
+        folderPick: { error: { kind: "system_directory" } },
+      });
+      await section("Storage");
+      await user.click(screen.getByRole("button", { name: "Add a library…" }));
+      const storage = screen.getByRole("region", { name: "Storage" });
+      expect(await within(storage).findByRole("alert")).toHaveTextContent(/system folder/i);
     });
 
     it("moves every package of a library to another one", async () => {
