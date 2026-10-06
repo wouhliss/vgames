@@ -368,3 +368,25 @@ pub async fn set_version_label(db: &Db, package: PackageRef, label: String) -> R
     })
     .await
 }
+
+/// Records a moved install's new library and folder.
+pub async fn set_location(
+    db: &Db,
+    package: PackageRef,
+    library_id: uuid::Uuid,
+    dir_name: String,
+) -> Result<(), DbError> {
+    db.call(move |conn| {
+        conn.execute(
+            "UPDATE installs SET library_id = ?3, dir_name = ?4 WHERE server_id = ?1 AND package_id = ?2",
+            [
+                package.server_id.to_string(),
+                package.package_id.to_string(),
+                library_id.to_string(),
+                dir_name,
+            ],
+        )?;
+        Ok(())
+    })
+    .await
+}
