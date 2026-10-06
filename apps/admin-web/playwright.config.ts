@@ -17,7 +17,8 @@ export default defineConfig({
   reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : "list",
   use: {
     baseURL: external ?? `http://localhost:${PORT}`,
-    trace: "retain-on-failure",
+    // Real traces include authenticated session cookies; keep them out of artifacts.
+    trace: external ? "off" : "retain-on-failure",
     ...(executablePath ? { launchOptions: { executablePath } } : {}),
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
