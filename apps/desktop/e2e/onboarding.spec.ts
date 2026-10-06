@@ -1,6 +1,7 @@
 // A3-T03 acceptance: one test per onboarding edge case, against mockIPC fixtures (src/mocks).
 import { expect, test } from "@playwright/test";
 import {
+  axeScan,
   commandCalls,
   emit,
   FINGERPRINT,
@@ -10,6 +11,10 @@ import {
   submitAddress,
   VALID_CODE,
 } from "./helpers";
+
+test.afterEach(async ({ page }) => {
+  await axeScan(page);
+});
 
 test.describe("server address", () => {
   test.beforeEach(async ({ page }) => {

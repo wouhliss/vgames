@@ -72,3 +72,32 @@ for the launcher and its WebKit processes.
 - **The second launch does nothing:** that is expected. It forwards its arguments to the running instance and
   exits. Use a different `VGAMES_PROFILE` in debug builds to run two launchers.
 - **Blank window under WSLg or in VMs:** try `WEBKIT_DISABLE_DMABUF_RENDERER=1`.
+
+## Keyboard and controller walkthrough (INT-10)
+
+Run `pnpm --filter @vgames/desktop e2e`. Use Tab/Shift+Tab and Enter/Space on the keyboard;
+use D-pad/left stick and A to activate, B to close a dialog with a controller. Tests emit the typed
+`ui-nav` actions; physical-pad detection is PLAY-04. Focus must remain visible and return to the
+opener after every dialog. `e2e/helpers.ts::axeScan` rejects serious and critical findings. The route
+coverage test reads the production router, so a new screen needs a scan case.
+
+| Route or dialog | Keyboard and controller steps | Automated evidence |
+|---|---|---|
+| `/onboarding` | Enter address, confirm fingerprint, sign in, choose storage; cancel and retry each step. | `onboarding.spec.ts` full first-run keyboard/controller cases and shared scans |
+| `/library` | Search, change view, select a package, play and open its menu. | `library.spec.ts` keyboard/controller and grid/list scans |
+| Collections and package collections | Open from the library menu, select a collection, close to the opener. | `library.spec.ts` collection keyboard case and dialog scan |
+| `/browse` | Search, move between cards, open package details and return. | `browse.spec.ts` keyboard/controller cases |
+| `/package/:packageId` | Reach Install/Play and screenshots; open and close the install and screenshot dialogs. | `browse.spec.ts` details/install/screenshots scans and controller case |
+| Install, Rosetta confirmation and screenshots | Choose storage with arrows, confirm with Enter/A, cancel with Escape/B. | `browse.spec.ts` and `PackagePage.test.tsx` Rosetta cases |
+| `/friends/*` | Switch Friends/Requests/Chats, add a code and send a message. | `friends.spec.ts` screen/dialog scans and keyboard cases |
+| Add friend, invite, safety number and invite install | Activate the dialog action, review details, confirm/cancel and restore focus. | `friends.spec.ts` and `FriendsPage.test.tsx` |
+| `/downloads` | Select a job, pause/resume, reorder and confirm cancellation. | `downloads.spec.ts` keyboard/controller and queue/menu/dialog scans |
+| `/settings/*` | Move between every section; tab to its controls and toggle a setting. | `settings.spec.ts` every-section scan and keyboard/controller cases |
+| Server removal, session sign-out, library removal/move | Review the named confirmation, cancel or confirm and restore focus. | `SettingsPage.test.tsx` named-dialog cases; browser coverage expands as slice commands land |
+| How a game runs, compatibility licenses and third-party licenses | Open, read/scroll, change allowed options and close. | `settings.spec.ts` game options keyboard scan; settings units cover license dialogs |
+| What's new | Open the update banner, scroll notes, choose Later or Install and restart. | `update.spec.ts` keyboard/controller and long-changelog scans |
+
+`routes.spec.ts` scans every production screen. `memory.spec.ts` measures navigation after warmup;
+`library.perf.spec.ts` measures 5,000 items independently. Initial production scripts and modulepreloads
+must total at most 250,000 gzipped bytes, checked by `scripts/ci/bundle-size.mjs` in CI and local checks.
+Real-application navigation awaits INS-09's harness; the same scan helper is available to it.

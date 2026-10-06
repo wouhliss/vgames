@@ -2,7 +2,7 @@
 // Chrome DevTools Protocol after forced garbage collection; also checks DOM nodes and event
 // listeners, which catch leaked subscriptions (e.g. Tauri event listeners not removed on unmount).
 import { type CDPSession, expect, type Page, test } from "@playwright/test";
-import { open } from "./helpers";
+import { axeScan, open } from "./helpers";
 
 const ROUTES = ["Browse", "Friends", "Downloads", "Settings", "Library"];
 
@@ -31,6 +31,7 @@ test("navigating all routes 100 times does not grow memory (steady state)", asyn
   // about what navigation leaves behind, so it measures an otherwise idle app.
   await open(page, "ready", { downloadRate: 0 });
   await expect(page.getByRole("heading", { level: 1, name: "Library" })).toBeVisible();
+  await axeScan(page);
   const cdp = await page.context().newCDPSession(page);
   await cdp.send("Performance.enable");
 

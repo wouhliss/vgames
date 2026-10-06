@@ -1,8 +1,7 @@
 // A3-T05 acceptance: Browse and package details with keyboard only, with a controller only, and
 // accessibility of the grid, the details page, the install dialog and the screenshot viewer.
-import AxeBuilder from "@axe-core/playwright";
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { commandCalls, emit, open } from "./helpers";
+import { axeScan, commandCalls, emit, open } from "./helpers";
 
 const pad = (page: Page, action: string) =>
   emit(page, "ui-nav", { action, controller: "xinput", repeat: false });
@@ -44,7 +43,7 @@ test("has no serious accessibility violations (grid, details, install, screensho
 }) => {
   await toBrowse(page, "empty");
   const scan = async () => {
-    const results = await new AxeBuilder({ page }).analyze();
+    const results = await axeScan(page);
     const serious = results.violations.filter(
       (v) => v.impact === "serious" || v.impact === "critical",
     );

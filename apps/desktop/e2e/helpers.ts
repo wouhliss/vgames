@@ -1,3 +1,4 @@
+import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page } from "@playwright/test";
 
 export const FINGERPRINT = "VG1-7K2M-Q9XD-4HT8-B3NW-RC5E-X1JP-V6GA-M0ZF";
@@ -39,4 +40,16 @@ export async function reachSignIn(page: Page, address: string): Promise<void> {
   await submitAddress(page, address);
   await page.getByRole("button", { name: "It matches, continue" }).click();
   await expect(page.getByRole("heading", { name: /^Sign in to/ })).toBeVisible();
+}
+
+/** One scanner for mock and real launcher suites; include a dialog when appropriate. */
+export async function axeScan(page: Page, include?: string) {
+  const builder = new AxeBuilder({ page });
+  if (include) builder.include(include);
+  const results = await builder.analyze();
+  const serious = results.violations.filter(
+    (violation) => violation.impact === "serious" || violation.impact === "critical",
+  );
+  expect(serious, JSON.stringify(serious, null, 2)).toEqual([]);
+  return results;
 }

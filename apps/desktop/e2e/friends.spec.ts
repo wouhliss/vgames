@@ -1,15 +1,14 @@
 // A3-T09 in the browser: the friends, messages and requests screens, the add-friend and safety-number
 // dialogs and the invite card pass axe; the invite card works from the keyboard and from a controller
 // through to the install dialog.
-import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
-import { commandCalls, emit, open } from "./helpers";
+import { axeScan, commandCalls, emit, open } from "./helpers";
 
 const pad = (page: Page, action: string) =>
   emit(page, "ui-nav", { action, controller: "xinput", repeat: false });
 
 async function serious(page: Page, name: string) {
-  const results = await new AxeBuilder({ page }).analyze();
+  const results = await axeScan(page);
   const found = results.violations.filter((v) => v.impact === "serious" || v.impact === "critical");
   expect(found, `${name}: ${JSON.stringify(found, null, 2)}`).toEqual([]);
 }

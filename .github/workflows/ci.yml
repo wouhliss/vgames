@@ -233,6 +233,11 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+      - name: Initial launcher JavaScript budget
+        run: |
+          node --test scripts/ci/bundle-size.test.mjs
+          pnpm --filter @vgames/desktop build
+          node scripts/ci/bundle-size.mjs
       - run: pnpm openapi:lint
 
   desktop-e2e:

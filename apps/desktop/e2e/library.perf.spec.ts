@@ -2,12 +2,13 @@
 // Runs in the "perf" project, alone and after every other test (playwright.config.ts), so the frames
 // measured here share the CPU with nothing else from the suite.
 import { expect, test } from "@playwright/test";
-import { open } from "./helpers";
+import { axeScan, open } from "./helpers";
 
 test("5,000 installed packages scroll without dropped frames", async ({ page }) => {
   test.setTimeout(90_000);
   await open(page, "huge");
   await expect(page.getByRole("tab", { name: "All 5000" })).toBeVisible();
+  await axeScan(page);
   const domTiles = await page.getByRole("article").count();
   expect(domTiles).toBeLessThan(150);
 

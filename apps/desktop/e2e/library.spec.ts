@@ -1,8 +1,7 @@
 // A3-T04 acceptance: the library with keyboard only, with a controller only, and accessibility.
 // Scrolling performance is measured alone in library.perf.spec.ts.
-import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
-import { commandCalls, emit, open } from "./helpers";
+import { axeScan, commandCalls, emit, open } from "./helpers";
 
 const pad = (page: Page, action: string) =>
   emit(page, "ui-nav", { action, controller: "xinput", repeat: false });
@@ -18,7 +17,7 @@ test("has no serious accessibility violations (grid, list, dialogs)", async ({ p
   await open(page, "ready");
   await expect(page.getByRole("tab", { name: "All 40" })).toBeVisible();
   const scan = async () => {
-    const results = await new AxeBuilder({ page }).analyze();
+    const results = await axeScan(page);
     const serious = results.violations.filter(
       (v) => v.impact === "serious" || v.impact === "critical",
     );

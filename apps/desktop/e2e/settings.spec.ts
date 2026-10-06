@@ -1,8 +1,7 @@
 // A3-T07 acceptance in the browser: every settings section passes axe, and settings work with the
 // keyboard only and with a controller only.
-import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
-import { emit, open } from "./helpers";
+import { axeScan, emit, open } from "./helpers";
 
 const pad = (page: Page, action: string) =>
   emit(page, "ui-nav", { action, controller: "xinput", repeat: false });
@@ -36,7 +35,7 @@ test("every section has no serious accessibility violations", async ({ page }) =
     await expect(page.getByRole("region", { name })).toBeVisible();
     // Wait for the section's data before scanning.
     await expect(page.getByRole("status").filter({ hasText: "Loading" })).toHaveCount(0);
-    const results = await new AxeBuilder({ page }).analyze();
+    const results = await axeScan(page);
     const serious = results.violations.filter(
       (v) => v.impact === "serious" || v.impact === "critical",
     );
@@ -105,7 +104,7 @@ test("customizes how a Windows game runs, with the keyboard only", async ({ page
   await page.keyboard.press("Enter");
   const dialog = page.getByRole("dialog", { name: /^How .* runs$/ });
   await expect(dialog).toBeVisible();
-  const results = await new AxeBuilder({ page }).include("[role=dialog]").analyze();
+  const results = await axeScan(page, "[role=dialog]");
   const serious = results.violations.filter(
     (v) => v.impact === "serious" || v.impact === "critical",
   );
