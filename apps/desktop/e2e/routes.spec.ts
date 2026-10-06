@@ -15,7 +15,15 @@ const cases = [
 
 test("every production screen has an accessibility case", () => {
   const source = readFileSync("src/app/router.tsx", "utf8");
-  const paths = [...source.matchAll(/path:\s*"([^"]+)"/g)].map((match) => match[1] ?? "");
+  const properties = [...source.matchAll(/\bpath\s*:/g)];
+  const paths = [...source.matchAll(/\bpath:\s*"([^"]+)"/g)].map((match) => match[1] ?? "");
+  // Reject computed/shorthand paths instead of silently omitting them from coverage.
+  expect(paths.length, "Computed route paths need an explicit coverage case").toBe(
+    properties.length,
+  );
+  expect(source, "Shorthand route paths need an explicit coverage case").not.toMatch(
+    /\bpath\s*[,}]/,
+  );
   expect(paths.filter((route) => !["/", "*", "dev/gallery"].includes(route)).sort()).toEqual(
     cases.map((item) => item.route).sort(),
   );
