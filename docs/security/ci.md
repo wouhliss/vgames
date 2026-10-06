@@ -104,7 +104,7 @@ Tags: protect `desktop-v*`, `api-v*` and `runtimes-*` with a tag ruleset so only
 tree against its merge base with `origin/main` and writes `target/ci-local/summary.md`. `--list` names the jobs, and
 `scripts/ci/local.sh rust changelog` runs a subset. A missing tool fails its job with the install command. Postgres 18
 comes from `DATABASE_URL`, or from `docker compose up -d postgres`. Keep its jobs in step with `ci.yml` (both owned by
-Agent 5).
+INT).
 
 ## Public repository (since 2026-09-26, humans)
 
