@@ -41,7 +41,7 @@ async fn two_launchers_chat_and_a_new_device_gets_only_new_messages() {
         .unwrap();
     alice.send(conv.id, "hello bob").await;
     let got = bob.received_text("hello bob").await;
-    assert!(!got.mine);
+    assert!(got.mine, "INT-03 deliberately broken social assertion");
     assert_eq!(got.sender_user_id, alice_id);
     assert_eq!(got.conversation_id, conv.id);
 
