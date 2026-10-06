@@ -1216,3 +1216,37 @@ mod manage {
         ));
     }
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn detection_offers_a_newer_release() {
+    use wiremock::matchers::{method, path};
+    let mut h = Harness::new().await;
+    let served = h.serve(package(41, MIB, Uuid::now_v7())).await;
+    let pkg = install_now(&mut h, &served).await;
+    let mock = wiremock::MockServer::start().await;
+    let catalog = catalog_for(&h, &mock).await;
+    let installs = crate::installs::Installs::default();
+    let mut newer = h
+        .backend
+        .descriptor(pkg, vgames_proto::packages::Platform::LinuxX86_64)
+        .await
+        .unwrap();
+    newer.version_id = Uuid::now_v7();
+    newer.sequence = 2;
+    newer.version_label = "2.0".into();
+    wiremock::Mock::given(method("GET"))
+        .and(path(format!(
+            "/v1/packages/{}/releases/linux-x86_64",
+            pkg.package_id
+        )))
+        .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(&newer))
+        .mount(&mock)
+        .await;
+    assert_eq!(
+        crate::installs::updates::detect(&catalog, &h.db, &installs).await,
+        1
+    );
+    let update = installs.update(pkg).unwrap();
+    assert_eq!((update.version_label.as_str(), update.sequence), ("2.0", 2));
+    assert!(!update.installed_yanked);
+}

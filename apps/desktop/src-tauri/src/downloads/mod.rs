@@ -860,19 +860,30 @@ fn unix_rfc3339(seconds: i64) -> String {
         .unwrap_or_default()
 }
 
-/// Starts the worker and re-checks paused jobs whenever the main window
-/// gains focus (a drive plugged back in, space freed meanwhile).
+/// Starts the worker and update detection (INS-04). When the main window
+/// gains focus, paused jobs are re-checked (a drive plugged back in, space
+/// freed meanwhile) and updates looked for.
 pub fn init(app: &tauri::AppHandle, state: &crate::state::AppState) {
     use tauri::Manager as _;
     state.downloads.start();
     let Some(window) = app.get_webview_window(crate::MAIN_WINDOW) else {
         return;
     };
+    crate::installs::updates::spawn(
+        Arc::clone(&state.catalog),
+        state.db.clone(),
+        Arc::clone(&state.installs),
+        state.bus.clone(),
+        Arc::clone(&state.update_triggers),
+        state.shutdown.child_token(),
+    );
     let downloads = Arc::clone(&state.downloads);
+    let triggers = Arc::clone(&state.update_triggers);
     window.on_window_event(move |event| {
         if let tauri::WindowEvent::Focused(true) = event {
             let downloads = Arc::clone(&downloads);
             tauri::async_runtime::spawn(async move { downloads.recheck().await });
+            triggers.focus.notify_one();
         }
     });
 }

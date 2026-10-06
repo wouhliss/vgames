@@ -21,6 +21,10 @@ pub async fn catalog_list(
     state: State<'_, AppState>,
     query: CatalogQuery,
 ) -> Result<CatalogPage, CatalogError> {
+    if query.cursor.is_none() {
+        // A refresh of the catalog: look for updates too (INS-04).
+        state.update_triggers.refresh.notify_one();
+    }
     state.catalog.list(query).await
 }
 
@@ -38,6 +42,7 @@ pub async fn package_details(
     package_id: String,
 ) -> Result<PackageDetails, CatalogError> {
     let id = self::package_id(&package_id).ok_or(CatalogError::NotFound)?;
+    state.update_triggers.refresh.notify_one();
     state.catalog.details(id).await
 }
 
