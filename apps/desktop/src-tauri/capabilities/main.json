@@ -86,6 +86,9 @@
     "allow-collection-add-package",
     "allow-collection-remove-package",
     "allow-favorite-set",
-    "allow-installs-list"
+    "allow-installs-list",
+    "allow-install-update",
+    "allow-install-verify",
+    "allow-install-resume"
   ]
 }

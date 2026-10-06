@@ -7,8 +7,8 @@ use tauri::State;
 
 use crate::db::{collections, download_jobs, installs as store};
 use crate::error::AppError;
-use crate::events::PackageRef;
-use crate::installs::{InstalledPackage, ListContext};
+use crate::events::{AppEvent, InstallsChanged, PackageRef};
+use crate::installs::{InstallActionError, InstalledPackage, ListContext, actions};
 use crate::state::AppState;
 
 /// Installed (and incomplete) packages of the active server.
@@ -56,4 +56,48 @@ pub async fn installs_list(state: State<'_, AppState>) -> Result<Vec<InstalledPa
     })
     .await
     .map_err(|e| AppError::internal("list the installs", &e))
+}
+
+async fn queue(
+    state: &AppState,
+    pkg: PackageRef,
+    kind: download_jobs::JobKind,
+) -> Result<(), InstallActionError> {
+    actions::queue(&state.db, pkg, kind, state.games.is_running(pkg)).await?;
+    state.downloads.queued();
+    state
+        .bus
+        .publish(AppEvent::InstallsChanged(InstallsChanged {}));
+    Ok(())
+}
+
+/// Queues the available update; it shows up in Downloads.
+#[tauri::command]
+#[specta::specta]
+pub async fn install_update(
+    state: State<'_, AppState>,
+    pkg: PackageRef,
+) -> Result<(), InstallActionError> {
+    queue(&state, pkg, download_jobs::JobKind::Update).await
+}
+
+/// Re-hashes every file and repairs mismatches (02 §9). An install whose
+/// signing key was rotated adopts the server's new signature (F1).
+#[tauri::command]
+#[specta::specta]
+pub async fn install_verify(
+    state: State<'_, AppState>,
+    pkg: PackageRef,
+) -> Result<(), InstallActionError> {
+    queue(&state, pkg, download_jobs::JobKind::Repair).await
+}
+
+/// Queues an incomplete install again from its journal.
+#[tauri::command]
+#[specta::specta]
+pub async fn install_resume(
+    state: State<'_, AppState>,
+    pkg: PackageRef,
+) -> Result<(), InstallActionError> {
+    queue(&state, pkg, download_jobs::JobKind::Install).await
 }

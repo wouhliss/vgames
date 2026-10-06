@@ -93,6 +93,9 @@ pub const MAIN_WINDOW_COMMANDS: &[&str] = &[
     "collection_remove_package",
     "favorite_set",
     "installs_list",
+    "install_update",
+    "install_verify",
+    "install_resume",
 ];
 
 /// Commands the in-game overlay window may call. Only `overlay_*` commands

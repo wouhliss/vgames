@@ -478,8 +478,8 @@ export function libraryHandlers(
     },
 
     install_update: (args) => {
-      forced("install_update", args.package);
-      const pkg = find(args.package);
+      forced("install_update", args.pkg);
+      const pkg = find(args.pkg);
       requireIdle(pkg);
       update(pkg.package, { state: "updating" });
       later(state.actionDelayMs * 3, () => {
@@ -495,16 +495,16 @@ export function libraryHandlers(
       return null;
     },
     install_verify: (args) => {
-      forced("install_verify", args.package);
-      const pkg = find(args.package);
+      forced("install_verify", args.pkg);
+      const pkg = find(args.pkg);
       requireIdle(pkg);
       update(pkg.package, { state: "repairing" });
       later(state.actionDelayMs, () => update(pkg.package, { state: "installed" }));
       return null;
     },
     install_resume: (args) => {
-      forced("install_resume", args.package);
-      const pkg = find(args.package);
+      forced("install_resume", args.pkg);
+      const pkg = find(args.pkg);
       requireIdle(pkg);
       update(pkg.package, { state: "installing" });
       return null;
