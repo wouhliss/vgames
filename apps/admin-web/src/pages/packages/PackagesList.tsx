@@ -7,6 +7,7 @@ import { ApiError } from "../../api/errors";
 import { listPackages, type PackageFilters, packageKeys } from "../../api/packages";
 import { type PackageStatus, PackageStatusSchema } from "../../api/schemas";
 import { ErrorView, ForbiddenPage, Loading } from "../../app/ErrorView";
+import { SpacerRow, useTableWindow } from "../../components/tableWindow";
 import { length, STATUS_LABEL, STATUSES } from "./model";
 
 function readFilters(params: URLSearchParams): PackageFilters {
@@ -47,9 +48,10 @@ export function PackagesList() {
     setParams(next);
   };
 
+  const items = pages.data?.pages.flatMap((p) => p.items) ?? [];
+  const win = useTableWindow(items);
   if (pages.error instanceof ApiError && pages.error.status === 403) return <ForbiddenPage />;
 
-  const items = pages.data?.pages.flatMap((p) => p.items) ?? [];
   const filtered = filters.q !== "" || filters.status !== "";
 
   return (
@@ -127,7 +129,7 @@ export function PackagesList() {
         )
       ) : (
         <>
-          <div className="table-wrap">
+          <div className="table-wrap" ref={win.scrollRef}>
             <table>
               <caption className="visually-hidden">
                 Packages{filtered ? " (filtered)" : ""}, {items.length} shown
@@ -142,8 +144,9 @@ export function PackagesList() {
                 </tr>
               </thead>
               <tbody>
-                {items.map((p) => (
-                  <tr key={p.id}>
+                <SpacerRow height={win.before} columns={5} />
+                {win.rows.map(({ item: p, index }) => (
+                  <tr key={p.id} ref={win.measure} data-index={index}>
                     <td>
                       <Link to={`/packages/${p.id}`} dir="auto">
                         {p.title}
@@ -157,6 +160,7 @@ export function PackagesList() {
                     </td>
                   </tr>
                 ))}
+                <SpacerRow height={win.after} columns={5} />
               </tbody>
             </table>
           </div>
