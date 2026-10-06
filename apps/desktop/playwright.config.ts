@@ -23,7 +23,13 @@ export default defineConfig({
     {
       name: "chromium",
       testIgnore: /\.perf\.spec\.ts$/,
-      use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 } },
+      // Reduced motion sets every transition to 0 ms (tokens.css), so accessibility scans see final
+      // colours: a scan during a 150 ms dialog fade-in measured the caption's contrast mid-fade.
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1280, height: 800 },
+        reducedMotion: "reduce",
+      },
     },
     {
       // Frame-time measurements run alone, after every other test, so parallel workers (garbage

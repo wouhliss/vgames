@@ -17,8 +17,8 @@
     "openapi:lint": "redocly lint openapi/openapi.yaml"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.14",
-    "@redocly/cli": "^2.54.2",
+    "@biomejs/biome": "^2.5.15",
+    "@redocly/cli": "^2.57.0",
     "typescript": "^7.0.2"
   }
 }
