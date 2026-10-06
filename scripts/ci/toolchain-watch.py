@@ -12,7 +12,7 @@ def gh(*args):
 
 def main():
     title = "Rust stable toolchain upgrade"
-    issues = json.loads(gh("issue", "list", "--state", "open", "--limit", "100", "--json", "number,title"))
+    issues = json.loads(gh("issue", "list", "--state", "open", "--search", '"Rust stable toolchain upgrade" in:title', "--limit", "100", "--json", "number,title"))
     matches = [issue["number"] for issue in issues if issue["title"] == title]
     pin, stable = os.environ["WATCH_PIN"], os.environ["WATCH_STABLE"]
     if not pin or not stable:
