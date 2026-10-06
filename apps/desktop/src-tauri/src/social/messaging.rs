@@ -124,6 +124,16 @@ fn conversation_from(c: vgames_proto::social::Conversation) -> (Conversation, i6
     (conversation, created)
 }
 
+/// The conversation a received message belongs to (receipts and duplicates add none).
+fn conversation_of(received: &Received) -> Option<Uuid> {
+    match received {
+        Received::Message(message) | Received::InviteJoin { message, .. } => {
+            Some(message.conversation_id)
+        }
+        Received::Receipt { .. } | Received::Duplicate => None,
+    }
+}
+
 /// Failures that retrying cannot fix: the message fails until the user retries it.
 fn is_permanent(e: &SocialError) -> bool {
     matches!(
@@ -459,11 +469,16 @@ impl SocialService {
                 match attempt {
                     Ok(received) => {
                         acks.push(env.id);
-                        if let Some(m) = self.announce(&received)
-                            && !self.is_known_conversation(server, m.conversation_id).await
+                        // Store a new conversation before announcing its first message, so
+                        // a reply sent right away finds it.
+                        if let Some(id) = conversation_of(&received)
+                            && !self.is_known_conversation(server, id).await
+                            && let Err(error) = self.sync_conversations(session).await
                         {
+                            tracing::debug!(%error, "conversations not refreshed yet");
                             new_conversation = true;
                         }
+                        self.announce(&received);
                     }
                     Err(ReceiveError::Store(error)) => {
                         // Keep this envelope on the server and stop: it is retried next time.
@@ -502,14 +517,13 @@ impl SocialService {
         Ok(())
     }
 
-    /// Tells the UI about a received message and returns it.
-    fn announce(&self, received: &Received) -> Option<Message> {
+    /// Tells the UI about a received message.
+    fn announce(&self, received: &Received) {
         match received {
             Received::Message(message) | Received::InviteJoin { message, .. } => {
                 self.inner.events.message_received(message);
-                Some(message.clone())
             }
-            Received::Receipt { .. } | Received::Duplicate => None,
+            Received::Receipt { .. } | Received::Duplicate => {}
         }
     }
 

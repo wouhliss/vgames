@@ -11,7 +11,7 @@
     clippy::indexing_slicing
 )]
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -38,7 +38,7 @@ use crate::db::Db;
 use crate::events::EventBus;
 use crate::social::crypto::SecretKey32;
 use crate::social::model::{
-    DeviceNotice, Message, MessageBody, MessageStatus, SocialConnection, SocialError,
+    Conversation, DeviceNotice, Message, MessageBody, MessageStatus, SocialConnection, SocialError,
 };
 use crate::social::ports::{IdleSource, ServerSession, SessionSlot};
 use crate::social::realtime::Timing;
@@ -79,6 +79,8 @@ struct RelayState {
     bound: HashMap<String, Uuid>,
     devices: Vec<Dev>,
     conversations: Vec<(Uuid, Vec<Uuid>)>,
+    /// Left out of `GET /conversations` until an inbox page serves a message from them.
+    unlisted: HashSet<Uuid>,
     envelopes: Vec<Env>,
     tickets: HashMap<String, String>,
 }
@@ -89,6 +91,8 @@ struct Relay {
     events: broadcast::Sender<(Uuid, String, Value)>,
     /// Sends answer 503 while set.
     down: AtomicBool,
+    /// New conversations are unlisted while set, as if created between two syncs.
+    unlist_new: AtomicBool,
 }
 
 type R = Arc<Relay>;
@@ -399,7 +403,7 @@ async fn conversations(State(r): State<R>, h: HeaderMap) -> Response {
     let items: Vec<Value> = st
         .conversations
         .iter()
-        .filter(|c| c.1.contains(&user))
+        .filter(|c| c.1.contains(&user) && !st.unlisted.contains(&c.0))
         .map(|c| r.conversation_json(c.0, &c.1))
         .collect();
     axum::Json(json!({ "items": items })).into_response()
@@ -428,6 +432,9 @@ async fn create_conversation(
         None => {
             let id = Uuid::now_v7();
             st.conversations.push((id, vec![user, user_id]));
+            if r.unlist_new.load(Ordering::SeqCst) {
+                st.unlisted.insert(id);
+            }
             (id, StatusCode::CREATED)
         }
     };
@@ -534,10 +541,19 @@ async fn inbox(State(r): State<R>, h: HeaderMap) -> Response {
         Ok(c) => c,
         Err(e) => return *e,
     };
-    let st = r.st.lock().unwrap();
+    let mut st = r.st.lock().unwrap();
     let Some(&device) = st.bound.get(&token) else {
         return problem(StatusCode::FORBIDDEN, "device_required");
     };
+    let served: Vec<Uuid> = st
+        .envelopes
+        .iter()
+        .filter(|e| e.recipient == device && e.id != Uuid::nil())
+        .map(|e| e.conversation)
+        .collect();
+    for conversation in served {
+        st.unlisted.remove(&conversation);
+    }
     let items: Vec<Value> = st
         .envelopes
         .iter()
@@ -575,6 +591,7 @@ async fn start_relay() -> (R, SocketAddr) {
         st: Mutex::new(RelayState::default()),
         events: broadcast::channel(256).0,
         down: AtomicBool::new(false),
+        unlist_new: AtomicBool::new(false),
     });
     let app = Router::new()
         .route("/v1/realtime/ticket", post(ticket))
@@ -607,6 +624,7 @@ enum Seen {
     Status(Uuid, MessageStatus),
     Notice(DeviceNotice),
     Typing(Uuid, Uuid),
+    Conversations(Vec<Uuid>),
 }
 
 struct Recorder(mpsc::UnboundedSender<Seen>);
@@ -627,6 +645,11 @@ impl SocialEvents for Recorder {
     }
     fn typing(&self, conversation: Uuid, user: Uuid) {
         let _ = self.0.send(Seen::Typing(conversation, user));
+    }
+    fn conversations_changed(&self, conversations: &[Conversation]) {
+        let _ = self.0.send(Seen::Conversations(
+            conversations.iter().map(|c| c.id).collect(),
+        ));
     }
 }
 
@@ -786,11 +809,34 @@ async fn two_launchers_chat_and_a_new_device_only_gets_new_messages() {
     let mut alice = launcher(&r, addr, ALICE).await;
     let mut bob = launcher(&r, addr, BOB).await;
     registered(&r, &[&alice, &bob]).await;
+    // Bob learns of the conversation from its first message, not from a sync.
+    r.unlist_new.store(true, Ordering::SeqCst);
 
     let conversation = alice.service.conversation_open_direct(BOB).await.unwrap();
     let id = send_text(&alice, conversation.id, "hi bob").await;
     alice.sent(id).await;
-    let got = bob.received("hi bob").await;
+    // Bob's launcher stores the new conversation before announcing its first message, so
+    // a reply sent at once finds it.
+    let mut known = false;
+    let got = loop {
+        match bob
+            .next("conversation or message", |s| {
+                matches!(s, Seen::Conversations(_) | Seen::Message(_))
+            })
+            .await
+        {
+            Seen::Conversations(ids) => known |= ids.contains(&conversation.id),
+            Seen::Message(m) => break m,
+            _ => {}
+        }
+    };
+    assert!(known, "the conversation is listed before its first message");
+    assert_eq!(
+        got.body,
+        MessageBody::Text {
+            text: "hi bob".into()
+        }
+    );
     assert!(!got.mine);
     assert_eq!(got.sender_user_id, ALICE);
     assert_eq!(got.conversation_id, conversation.id);
