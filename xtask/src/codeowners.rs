@@ -114,6 +114,7 @@ impl Rule {
 pub fn parse(text: &str) -> Result<Vec<Rule>> {
     let mut rules = Vec::new();
     let mut security = false;
+    let pending_task = regex::Regex::new(r"^(INS|PLAY|GAME|INT)-[0-9]{2}$")?;
     for (i, raw) in text.lines().enumerate() {
         let line = i + 1;
         if raw.starts_with(SECURITY_MARKER) {
@@ -151,7 +152,7 @@ pub fn parse(text: &str) -> Result<Vec<Rule>> {
         let mut rule = Rule::new(line, pattern, owners, security)?;
         if let Some((_, task)) = comment.split_once("pending:") {
             let task = task.split_whitespace().next().unwrap_or("");
-            if !regex::Regex::new(r"^(INS|PLAY|GAME|INT)-[0-9]{2}$")?.is_match(task) {
+            if !pending_task.is_match(task) {
                 bail!("line {line}: pending must name a phase-2 task, e.g. INS-03");
             }
             rule.pending = Some(task.to_owned());
