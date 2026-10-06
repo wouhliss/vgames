@@ -11,6 +11,7 @@
 pub mod api;
 pub mod catalog;
 pub mod commands;
+pub mod compat;
 pub mod controllers;
 pub mod db;
 pub mod deeplink;
