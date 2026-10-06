@@ -63,5 +63,7 @@ export function collectionErrorMessage(error: CollectionError): string {
       return t("library.collections.errors.nameTaken");
     case "not_found":
       return t("library.collections.errors.notFound");
+    case "io":
+      return t("library.collections.errors.io", { detail: error.detail });
   }
 }

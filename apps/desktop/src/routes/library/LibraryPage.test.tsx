@@ -290,7 +290,7 @@ describe("library", () => {
     const menu = await openMenu(user, "Crimson Canyon");
     await user.click(within(menu).getByRole("menuitem", { name: "Add to favorites" }));
     expect(backend.callsTo("favorite_set")[0]?.args).toEqual({
-      package: CRIMSON.package,
+      pkg: CRIMSON.package,
       favorite: true,
     });
     await waitFor(() =>
@@ -311,7 +311,7 @@ describe("library", () => {
     expect(within(dialog).getByRole("checkbox", { name: "Backlog" })).toHaveFocus();
     expect(backend.callsTo("collection_add_package")[0]?.args).toEqual({
       collectionId: BACKLOG,
-      package: CRIMSON.package,
+      pkg: CRIMSON.package,
     });
     await waitFor(() =>
       expect(within(dialog).getByRole("checkbox", { name: "Backlog" })).toBeChecked(),
@@ -406,7 +406,7 @@ describe("library", () => {
     await waitFor(() =>
       expect(backend.callsTo("collection_add_package")[0]?.args).toEqual({
         collectionId: FINISHED,
-        package: CRIMSON.package,
+        pkg: CRIMSON.package,
       }),
     );
     expect(await screen.findByText("Added Crimson Canyon to Finished")).toBeVisible();
