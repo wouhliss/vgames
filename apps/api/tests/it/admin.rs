@@ -132,7 +132,7 @@ async fn authorization_matrix_covers_every_admin_route(pool: PgPool) {
     let (_, _, admin) = seed_session(&pool, "admin").await;
     let (_, _, owner) = seed_session(&pool, "owner").await;
     let ops = admin_operations();
-    assert_eq!(ops.len(), 33);
+    assert_eq!(ops.len(), 34);
 
     for (method, path) in &ops {
         let op = format!("{method} {path}");
