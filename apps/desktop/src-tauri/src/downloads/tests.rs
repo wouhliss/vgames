@@ -47,6 +47,8 @@ struct Served {
     package: TestPackage,
     rig: Rig,
     api: Arc<MockApi>,
+    /// What the release descriptor carries (a re-signed envelope for F1).
+    envelope: Mutex<vgames_core::Envelope>,
 }
 
 /// Pack links from the rig, shared with the test.
@@ -89,8 +91,8 @@ impl Backend for TestBackend {
             package_id: package.package_id,
             version_id: p.expected.version_id,
             platform,
-            sequence: 1,
-            version_label: "1.1".into(),
+            sequence: p.expected.sequence as i64,
+            version_label: format!("1.{}", p.expected.sequence),
             total_size: p.total_bytes() as i64,
             pack_count: p.packs.len() as i32,
             manifest: ManifestLink {
@@ -99,7 +101,7 @@ impl Backend for TestBackend {
                 blake3: Digest::of(&p.manifest).to_hex(),
                 expires_at: time::OffsetDateTime::now_utc() + time::Duration::hours(1),
             },
-            signature: serde_json::from_slice(&p.envelope.to_bytes()).unwrap(),
+            signature: serde_json::from_slice(&served.envelope.lock().unwrap().to_bytes()).unwrap(),
             yanked_version_ids: vec![],
             published_at: time::OffsetDateTime::now_utc(),
         })
@@ -220,7 +222,13 @@ impl Harness {
     async fn serve(&self, package: TestPackage) -> Arc<Served> {
         let rig = Rig::start(package.manifest.clone(), package.packs.clone()).await;
         let api = MockApi::new(&rig, package.packs.iter().map(|p| p.len() as u64).collect());
-        let served = Arc::new(Served { package, rig, api });
+        let envelope = Mutex::new(package.envelope.clone());
+        let served = Arc::new(Served {
+            package,
+            rig,
+            api,
+            envelope,
+        });
         self.backend
             .served
             .lock()
@@ -863,4 +871,181 @@ async fn installs_start_queues_and_reports_progress_and_the_end() {
             ..
         })
     ));
+}
+
+async fn install_now(h: &mut Harness, served: &Served) -> PackageRef {
+    let package = h.queue(served).await;
+    assert!(matches!(
+        h.finished(package).await,
+        InstallOutcome::Installed
+    ));
+    package
+}
+
+fn small_files(count: usize, changed: Option<usize>) -> Vec<FileSpec> {
+    (0..count)
+        .map(|i| {
+            let seed = if Some(i) == changed { 1_000_000 + i } else { i } as u64;
+            FileSpec::random(&format!("data/{:05}.bin", i), 100, seed)
+        })
+        .collect()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn an_update_of_one_file_in_ten_thousand_fetches_only_its_chunks() {
+    let mut h = Harness::new().await;
+    let package_id = Uuid::now_v7();
+    let v1 = TestPackage::build_with(
+        &small_files(10_000, None),
+        &[],
+        Compression::None,
+        24 * MIB,
+        &Identity {
+            package_id,
+            ..Identity::default()
+        },
+    );
+    let first = h.serve(v1).await;
+    let package = install_now(&mut h, &first).await;
+
+    let v2 = TestPackage::build_with(
+        &small_files(10_000, Some(4_321)),
+        &[],
+        Compression::None,
+        24 * MIB,
+        &Identity {
+            package_id,
+            version_id: Uuid::now_v7(),
+            sequence: 2,
+            ..Identity::default()
+        },
+    );
+    let second = h.serve(v2).await;
+    let before = h.downloads.chunks_verified();
+    crate::installs::actions::queue(
+        &h.db,
+        package,
+        crate::db::download_jobs::JobKind::Update,
+        false,
+    )
+    .await
+    .unwrap();
+    h.downloads.queued();
+    assert!(matches!(
+        h.finished(package).await,
+        InstallOutcome::Installed
+    ));
+    let installed = read_tree(&h.root(&second));
+    assert_eq!(installed, read_tree(second.package.source.path()));
+    let row = db::installs::row(&h.db, package).await.unwrap().unwrap();
+    assert_eq!((row.state.as_str(), row.sequence), ("installed", 2));
+    // The changed file shares one chunk with its neighbours: that chunk only.
+    let manifest = second.package.release().manifest().clone();
+    let changed = manifest
+        .files
+        .iter()
+        .find(|f| f.path == "data/04321.bin")
+        .unwrap();
+    let chunk = &manifest.chunks[changed.chunk.unwrap() as usize];
+    assert_eq!(h.downloads.chunks_verified() - before, 1);
+    assert!(
+        second.rig.pack_bytes() <= chunk.stored_size,
+        "fetched {} bytes for a {}-byte chunk",
+        second.rig.pack_bytes(),
+        chunk.stored_size
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn verify_repairs_a_damaged_file_from_its_chunks() {
+    let mut h = Harness::new().await;
+    let served = h.serve(package(21, 9 * MIB, Uuid::now_v7())).await;
+    let package = install_now(&mut h, &served).await;
+    let damaged = h.root(&served).join("Data/b.txt");
+    std::fs::write(&damaged, b"tampered").unwrap();
+    let requests = served.rig.pack_requests();
+    crate::installs::actions::queue(
+        &h.db,
+        package,
+        crate::db::download_jobs::JobKind::Repair,
+        false,
+    )
+    .await
+    .unwrap();
+    h.downloads.queued();
+    assert!(matches!(
+        h.finished(package).await,
+        InstallOutcome::Installed
+    ));
+    assert_installed(&h, &served);
+    assert!(
+        served.rig.pack_requests() > requests,
+        "the damaged file was fetched again"
+    );
+    // Nothing damaged: a verify downloads nothing.
+    let requests = served.rig.pack_requests();
+    crate::installs::actions::queue(
+        &h.db,
+        package,
+        crate::db::download_jobs::JobKind::Repair,
+        false,
+    )
+    .await
+    .unwrap();
+    h.downloads.queued();
+    assert!(matches!(
+        h.finished(package).await,
+        InstallOutcome::Installed
+    ));
+    assert_eq!(served.rig.pack_requests(), requests);
+}
+
+/// Security review F1: install → the publisher key is revoked (bundle v2) and
+/// the version re-signed with a new key → the install no longer verifies for
+/// a launch → verify adopts the new signature → it verifies again, and no
+/// pack byte was downloaded.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn verify_adopts_a_resigned_manifest_without_downloading() {
+    use vgames_core::verify::{VerifyError, VerifyMode};
+    use vgames_transfer::install::{InstallError, load_local_release};
+
+    let mut h = Harness::new().await;
+    let served = h.serve(package(22, 9 * MIB, Uuid::now_v7())).await;
+    let package = install_now(&mut h, &served).await;
+    let root = h.root(&served);
+    let expected = served.package.expected.clone();
+
+    let rotated = Arc::new(vgames_transfer::testkit::trust_state_rotated(2));
+    *h.backend.trust.lock().unwrap() = Arc::clone(&rotated);
+    *served.envelope.lock().unwrap() = vgames_core::Envelope::sign(
+        &vgames_transfer::testkit::second_publisher_key(),
+        vgames_core::Context::Manifest,
+        &served.package.manifest,
+    );
+    // What the pre-launch check runs: refused, the key is revoked.
+    assert!(matches!(
+        load_local_release(&root, &rotated, &expected, VerifyMode::Launch),
+        Err(InstallError::Verify(VerifyError::RevokedKey(_)))
+    ));
+
+    let (requests, bytes) = (served.rig.pack_requests(), served.rig.pack_bytes());
+    crate::installs::actions::queue(
+        &h.db,
+        package,
+        crate::db::download_jobs::JobKind::Repair,
+        false,
+    )
+    .await
+    .unwrap();
+    h.downloads.queued();
+    assert!(matches!(
+        h.finished(package).await,
+        InstallOutcome::Installed
+    ));
+    load_local_release(&root, &rotated, &expected, VerifyMode::Launch).expect("verifies again");
+    assert_eq!(
+        (served.rig.pack_requests(), served.rig.pack_bytes()),
+        (requests, bytes)
+    );
+    assert_installed(&h, &served);
 }

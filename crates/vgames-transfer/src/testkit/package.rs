@@ -178,11 +178,45 @@ pub fn trust_state() -> TrustState {
     trust_state_with(1, false)
 }
 
+/// The key a publisher rotates to (see [`trust_state_rotated`]).
+pub fn second_publisher_key() -> SecretKey {
+    SecretKey::from_seed(&[3; 32])
+}
+
 /// Bundle `version`, optionally revoking [`publisher_key`].
 pub fn trust_state_with(version: u64, revoke_publisher: bool) -> TrustState {
+    bundle_state(version, revoke_publisher, false)
+}
+
+/// Bundle `version` after a key rotation: [`publisher_key`] revoked,
+/// [`second_publisher_key`] trusted (security review finding F1).
+pub fn trust_state_rotated(version: u64) -> TrustState {
+    bundle_state(version, true, true)
+}
+
+fn bundle_state(version: u64, revoke_publisher: bool, second: bool) -> TrustState {
     let root = root_key();
     let publisher = publisher_key();
     let ts = |s: &str| -> Timestamp { s.parse().unwrap() };
+    let mut publishers = vec![PublisherKey {
+        key_id: publisher.public_key().key_id(),
+        public_key: publisher.public_key(),
+        holder_user_id: ADMIN_ID,
+        label: "test@rig".into(),
+        not_before: ts("2026-01-01T00:00:00Z"),
+        not_after: ts("2036-01-01T00:00:00Z"),
+    }];
+    if second {
+        let key = second_publisher_key();
+        publishers.push(PublisherKey {
+            key_id: key.public_key().key_id(),
+            public_key: key.public_key(),
+            holder_user_id: ADMIN_ID,
+            label: "test@rig rotated".into(),
+            not_before: ts("2026-01-01T00:00:00Z"),
+            not_after: ts("2036-01-01T00:00:00Z"),
+        });
+    }
     let bundle = TrustBundle {
         format: "vgames.trust/1".into(),
         server_id: SERVER_ID,
@@ -190,14 +224,7 @@ pub fn trust_state_with(version: u64, revoke_publisher: bool) -> TrustState {
         issued_at: ts("2026-09-24T10:00:00Z"),
         expires_at: None,
         root_key_id: root.public_key().key_id(),
-        publishers: vec![PublisherKey {
-            key_id: publisher.public_key().key_id(),
-            public_key: publisher.public_key(),
-            holder_user_id: ADMIN_ID,
-            label: "test@rig".into(),
-            not_before: ts("2026-01-01T00:00:00Z"),
-            not_after: ts("2036-01-01T00:00:00Z"),
-        }],
+        publishers,
         revoked: if revoke_publisher {
             vec![Revocation {
                 key_id: publisher.public_key().key_id(),

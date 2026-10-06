@@ -26,7 +26,7 @@ use crate::libraries::{self, LibraryPresence, LibraryRoot};
 /// Longest wait for the next manifest byte.
 const MANIFEST_STALL: Duration = Duration::from_secs(20);
 
-fn io_error(path: &Path, detail: impl std::fmt::Display) -> DownloadError {
+pub(super) fn io_error(path: &Path, detail: impl std::fmt::Display) -> DownloadError {
     DownloadError::Io {
         path: path.to_string_lossy().into_owned(),
         detail: detail.to_string(),
@@ -39,10 +39,8 @@ impl<B: Backend> Downloads<B> {
         let end = match job.kind {
             JobKind::Install => self.install(job, control).await,
             // INS-04 runs updates and repairs through `update::execute`.
-            JobKind::Update | JobKind::Repair => End::Failed(DownloadError::Server {
-                code: "unsupported".into(),
-                message: "Updates and repairs are not available yet".into(),
-            }),
+            JobKind::Update => self.update(job, control).await,
+            JobKind::Repair => self.repair(job, control).await,
         };
         forward.cancel();
         end
@@ -158,7 +156,7 @@ impl<B: Backend> Downloads<B> {
             platform: host_platform,
             sequence,
         };
-        let release = match self.fetch(&descriptor, &expected).await {
+        let release = match self.fetch(&descriptor, &expected, None, false).await {
             Ok(release) => Arc::new(release),
             Err(end) => return end,
         };
@@ -252,10 +250,12 @@ impl<B: Backend> Downloads<B> {
 
     /// Manifest bytes (size + BLAKE3) → `verify_manifest`. An unknown signing
     /// key refreshes the trust bundle once and tries again.
-    async fn fetch(
+    pub(super) async fn fetch(
         &self,
         descriptor: &vgames_proto::versions::ReleaseDescriptor,
         expected: &ExpectedRelease,
+        installed_sequence: Option<u64>,
+        allow_older: bool,
     ) -> Result<Release, End> {
         let link = ManifestLink::try_from(&descriptor.manifest)
             .map_err(|_| End::Failed(DownloadError::SignatureInvalid))?;
@@ -277,7 +277,7 @@ impl<B: Backend> Downloads<B> {
             };
             let mode = VerifyMode::Install {
                 now: Timestamp::new(time::OffsetDateTime::now_utc()),
-                allow_older: false,
+                allow_older,
             };
             let result = install::fetch_release(
                 self.backend().transfer_http(),
@@ -285,7 +285,7 @@ impl<B: Backend> Downloads<B> {
                 envelope.clone(),
                 &trust,
                 expected,
-                None,
+                installed_sequence,
                 mode,
                 MANIFEST_STALL,
             )
@@ -314,7 +314,7 @@ impl<B: Backend> Downloads<B> {
         }
     }
 
-    async fn install_error(
+    pub(super) async fn install_error(
         &self,
         library: &LibraryRoot,
         root: &Path,
@@ -363,7 +363,7 @@ impl<B: Backend> Downloads<B> {
     }
 
     /// `None` when the install fits; otherwise the pause (or failure) to record.
-    async fn space_check(
+    pub(super) async fn space_check(
         &self,
         library: &LibraryRoot,
         root: &Path,
@@ -418,11 +418,26 @@ impl<B: Backend> Downloads<B> {
         }
     }
 
-    async fn cancelled(&self, job: &Job, root: &Path, release: &Arc<Release>) -> End {
+    pub(super) async fn cancelled(&self, job: &Job, root: &Path, release: &Arc<Release>) -> End {
         let keep_partial = match self.stop_requested(job.package) {
             Some(Stop::Cancel { keep_partial }) => keep_partial,
             _ => true,
         };
+        // An update or repair keeps the installed version; only its staged
+        // files go (the next run starts over).
+        if job.kind != JobKind::Install {
+            if !keep_partial {
+                let root = root.to_owned();
+                let removed = tokio::task::spawn_blocking(move || {
+                    install::remove_tree_no_follow(&root.join(".vgames/staging"))
+                })
+                .await;
+                if !matches!(removed, Ok(Ok(()))) {
+                    tracing::warn!(?removed, "cannot remove a cancelled update's staging");
+                }
+            }
+            return End::Cancelled { keep_partial };
+        }
         if !keep_partial {
             let root = root.to_owned();
             let release = Arc::clone(release);
@@ -444,7 +459,7 @@ impl<B: Backend> Downloads<B> {
 }
 
 /// Signature and trust failures: never retried automatically, nothing written.
-fn verify_failure(error: &InstallError) -> Option<DownloadError> {
+pub(super) fn verify_failure(error: &InstallError) -> Option<DownloadError> {
     Some(match error {
         InstallError::Verify(VerifyError::TrustExpired) => DownloadError::TrustExpired,
         InstallError::Verify(
@@ -463,7 +478,7 @@ fn verify_failure(error: &InstallError) -> Option<DownloadError> {
     })
 }
 
-async fn library_online(library: &LibraryRoot) -> bool {
+pub(super) async fn library_online(library: &LibraryRoot) -> bool {
     let library = library.clone();
     matches!(
         tokio::task::spawn_blocking(move || libraries::inspect_root(&library)).await,
