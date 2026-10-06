@@ -6,6 +6,7 @@
 
 mod app;
 mod catalog;
+mod downloads;
 mod games;
 mod libraries;
 pub mod names;
@@ -52,6 +53,17 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             catalog::catalog_genres,
             catalog::package_details,
             catalog::install_plan,
+            catalog::install_start,
+            downloads::downloads_list,
+            downloads::download_pause,
+            downloads::download_resume,
+            downloads::download_retry,
+            downloads::download_remove,
+            downloads::download_cancel,
+            downloads::downloads_reorder,
+            downloads::downloads_history_clear,
+            downloads::download_settings_get,
+            downloads::download_settings_set,
             shortcuts::shortcut_create,
             games::game_launch,
             games::game_stop,
@@ -121,7 +133,8 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             crate::social::commands::InviteChanged,
             crate::social::commands::InviteInstallRequested,
             crate::overlay::commands::OverlayViewChanged,
-            crate::overlay::commands::OverlayPackageDisabled
+            crate::overlay::commands::OverlayPackageDisabled,
+            crate::downloads::DownloadsChanged
         ])
         .error_handling(tauri_specta::ErrorHandlingMode::Result)
         // Byte counts and ids that are u64 in Rust stay below 2^53.

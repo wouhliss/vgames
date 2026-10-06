@@ -181,6 +181,12 @@ impl<B: Backend> Downloads<B> {
         self.wake.notify_one();
     }
 
+    /// A job was queued (`installs::start`): announce it and run it.
+    pub fn queued(&self) {
+        self.changed();
+        self.wake();
+    }
+
     fn changed(&self) {
         self.bus
             .publish(AppEvent::DownloadsChanged(DownloadsChanged {}));
@@ -755,7 +761,7 @@ impl<B: Backend> Downloads<B> {
         self.options.clone()
     }
 
-    pub(crate) fn free_space(&self, path: &std::path::Path) -> u64 {
+    pub fn free_space(&self, path: &std::path::Path) -> u64 {
         (self.free_space)(path)
     }
 
@@ -769,7 +775,7 @@ impl<B: Backend> Downloads<B> {
         self.verified.load(std::sync::atomic::Ordering::Relaxed)
     }
 
-    pub(crate) fn db(&self) -> &Db {
+    pub fn db(&self) -> &Db {
         &self.db
     }
 
@@ -777,7 +783,7 @@ impl<B: Backend> Downloads<B> {
         &self.bus
     }
 
-    pub(crate) fn backend(&self) -> &Arc<B> {
+    pub fn backend(&self) -> &Arc<B> {
         &self.backend
     }
 
@@ -832,6 +838,23 @@ fn unix_rfc3339(seconds: i64) -> String {
     time::OffsetDateTime::from_unix_timestamp(seconds)
         .map(crate::catalog::rfc3339)
         .unwrap_or_default()
+}
+
+/// Starts the worker and re-checks paused jobs whenever the main window
+/// gains focus (a drive plugged back in, space freed meanwhile).
+pub fn init(app: &tauri::AppHandle, state: &crate::state::AppState) {
+    use tauri::Manager as _;
+    state.downloads.start();
+    let Some(window) = app.get_webview_window(crate::MAIN_WINDOW) else {
+        return;
+    };
+    let downloads = Arc::clone(&state.downloads);
+    window.on_window_event(move |event| {
+        if let tauri::WindowEvent::Focused(true) = event {
+            let downloads = Arc::clone(&downloads);
+            tauri::async_runtime::spawn(async move { downloads.recheck().await });
+        }
+    });
 }
 
 #[cfg(test)]

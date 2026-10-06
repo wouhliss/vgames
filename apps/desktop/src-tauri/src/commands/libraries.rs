@@ -216,6 +216,9 @@ fn parse_action_id(id: &str) -> Result<Uuid, LibraryActionError> {
 #[tauri::command]
 #[specta::specta]
 pub async fn libraries_list(state: State<'_, AppState>) -> CommandResult<Vec<LibraryInfo>> {
+    // A library that reappeared resumes its paused downloads (INS-03).
+    let downloads = std::sync::Arc::clone(&state.downloads);
+    tauri::async_runtime::spawn(async move { downloads.recheck().await });
     let libraries = store::list(&state.db).await.map_err(map_error)?;
     let counts: HashMap<Uuid, u64> = store::install_counts(&state.db).await.map_err(map_error)?;
     tokio::task::spawn_blocking(move || {

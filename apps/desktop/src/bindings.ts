@@ -58,6 +58,29 @@ export const commands = {
 	/**  Sizes for the install dialog. Nothing is downloaded yet. */
 	installPlan: (packageId: string) => typedError<InstallPlan, InstallPlanError>(__TAURI_INVOKE("install_plan", { packageId })),
 	/**
+	 *  Queues the install into `library_id`; progress follows through
+	 *  `install-progress`, the end through `install-finished`.
+	 */
+	installStart: (packageId: string, libraryId: string) => typedError<null, InstallStartError>(__TAURI_INVOKE("install_start", { packageId, libraryId })),
+	downloadsList: () => typedError<DownloadQueue, AppError>(__TAURI_INVOKE("downloads_list")),
+	downloadPause: (pkg: PackageRef) => typedError<null, DownloadActionError>(__TAURI_INVOKE("download_pause", { pkg })),
+	/**  Resumes a paused job (it runs when its turn comes). */
+	downloadResume: (pkg: PackageRef) => typedError<null, DownloadActionError>(__TAURI_INVOKE("download_resume", { pkg })),
+	/**  Queues a failed job again, from its journal. */
+	downloadRetry: (pkg: PackageRef) => typedError<null, DownloadActionError>(__TAURI_INVOKE("download_retry", { pkg })),
+	/**  Removes a failed job from the queue (its partial files are kept). */
+	downloadRemove: (pkg: PackageRef) => typedError<null, DownloadActionError>(__TAURI_INVOKE("download_remove", { pkg })),
+	/**
+	 *  Stops the job. `keep_partial`: keep the downloaded files so the install
+	 *  can be resumed later; otherwise delete them.
+	 */
+	downloadCancel: (pkg: PackageRef, keepPartial: boolean) => typedError<null, DownloadActionError>(__TAURI_INVOKE("download_cancel", { pkg, keepPartial })),
+	/**  The new order of the waiting jobs; running jobs keep running. */
+	downloadsReorder: (packages: PackageRef[]) => typedError<null, DownloadActionError>(__TAURI_INVOKE("downloads_reorder", { packages })),
+	downloadsHistoryClear: () => typedError<null, AppError>(__TAURI_INVOKE("downloads_history_clear")),
+	downloadSettingsGet: () => __TAURI_INVOKE<DownloadSettings>("download_settings_get"),
+	downloadSettingsSet: (settings: DownloadSettings) => typedError<DownloadSettings, SettingsError>(__TAURI_INVOKE("download_settings_set", { settings })),
+	/**
 	 *  Creates a desktop shortcut that opens `vgames://launch/<package id>`.
 	 *  Returns the shortcut's path.
 	 */
@@ -144,6 +167,7 @@ export const events = {
 	controllerEvent: makeEvent<ControllerEvent>("controller-event"),
 	conversationsChanged: makeEvent<ConversationsChanged>("conversations-changed"),
 	deviceNotice: makeEvent<DeviceNoticeEvent>("device-notice"),
+	downloadsChanged: makeEvent<DownloadsChanged>("downloads-changed"),
 	friendRequestReceived: makeEvent<FriendRequestReceived>("friend-request-received"),
 	friendsChanged: makeEvent<FriendsChanged>("friends-changed"),
 	gameStarted: makeEvent<GameStarted>("game-started"),
@@ -373,6 +397,79 @@ export type DeviceNoticeEvent = {
 
 export type DevicePlatform = "windows" | "linux" | "macos";
 
+export type DownloadActionError = { kind: "not_found" } | { kind: "insufficient_space"; required_bytes: number; available_bytes: number } | { kind: "library_offline"; library_path: string } | { kind: "offline" } | { kind: "io"; detail: string };
+
+/**  Why a job stopped for good (until the player retries or removes it). */
+export type DownloadError = 
+/**
+ *  A chunk failed its hash twice (02 §7.10). `reported`: the launcher sent
+ *  an integrity report, so the server's admins know.
+ */
+{ kind: "damaged_file"; reported: boolean } | 
+/**  The manifest's signature doesn't verify (01 §3.4). Nothing was written. */
+{ kind: "signature_invalid" } | 
+/**  The manifest was signed with a revoked or unknown publisher key. */
+{ kind: "untrusted_key" } | 
+/**  The server's trust bundle expired: new downloads wait until it is renewed. */
+{ kind: "trust_expired" } | 
+/**  The version was withdrawn or deleted on the server. */
+{ kind: "version_unavailable" } | 
+/**  Any other I/O error, with the OS message and the path (the journal is kept). */
+{ kind: "io"; path: string; detail: string } | { kind: "server"; code: string; message: string } | 
+/**
+ *  A compatibility check of the launch target refused the package
+ *  (GAME-06, through the priority-files hook). Partial files are removed.
+ */
+{ kind: "blocked"; blocker: CompatBlocker };
+
+export type DownloadHistoryEntry = {
+	id: string,
+	package: PackageRef,
+	title: string,
+	kind: DownloadKind,
+	version_label: string,
+	bytes_total: number,
+	finished_at: string,
+	outcome: InstallOutcome,
+};
+
+export type DownloadJob = {
+	package: PackageRef,
+	title: string,
+	/**  `vgimg:` URL of the cached cover. */
+	cover_url: string | null,
+	kind: DownloadKind,
+	/**  The version being installed (for a repair: the installed one). */
+	version_label: string,
+	library_id: string,
+	/**  Last known progress; running jobs report live progress through `install-progress`. */
+	bytes_done: number,
+	bytes_total: number,
+	state: DownloadState,
+	queued_at: string,
+};
+
+export type DownloadKind = "install" | "update" | "repair";
+
+export type DownloadQueue = {
+	/**  In queue order: running jobs first, then the rest in the order they will run. */
+	jobs: DownloadJob[],
+	/**  Newest first, at most 100 entries. */
+	history: DownloadHistoryEntry[],
+};
+
+export type DownloadSettings = {
+	/**  Kibibytes per second; null = unlimited (02 §7.12). */
+	bandwidth_limit_kib: number | null,
+	/**  How many installs run at the same time, 1–3. */
+	concurrent_installs: number,
+};
+
+export type DownloadState = { kind: "active" } | { kind: "queued" } | { kind: "paused"; reason: PauseReason } | { kind: "failed"; error: DownloadError };
+
+/**  The queue or the history changed (jobs added, reordered, paused, finished, removed). */
+export type DownloadsChanged = Record<string, never>;
+
 /**  Stable, closed set of error codes for the UI. */
 export type ErrorCode = 
 /**  An argument failed validation (bad id, path outside a library, …). */
@@ -501,6 +598,15 @@ export type InstallProgress = {
 	eta_seconds: number | null,
 	connections: number,
 };
+
+export type InstallStartError = { kind: "not_found" } | 
+/**  No build for this machine and no compatibility path. */
+{ kind: "no_release" } | { kind: "already_installed" } | { kind: "offline" } | { kind: "blocked"; blocker: CompatBlocker } | { kind: "server"; code: string; message: string } | { kind: "insufficient_space"; required_bytes: number; available_bytes: number } | { kind: "library_offline"; library_path: string } | 
+/**
+ *  The server's trust bundle expired: installed games still launch, new
+ *  installs wait (01-security §3.2).
+ */
+{ kind: "trust_expired" } | { kind: "io"; detail: string };
 
 export type Invite = {
 	id: string,
@@ -701,6 +807,17 @@ export type PackageRef = {
 	package_id: string,
 };
 
+/**  Why a job waits (02 §7.10). Every reason except `user` clears by itself. */
+export type PauseReason = 
+/**  The player paused it. */
+{ kind: "user" } | 
+/**  The disk filled up; the job continues once enough space is free. */
+{ kind: "disk_full"; library_path: string; required_bytes: number; available_bytes: number } | 
+/**  The library's drive was disconnected; the job continues when it is back. */
+{ kind: "library_offline"; library_path: string } | 
+/**  The server can't be reached; the job continues when it is back. */
+{ kind: "offline" };
+
 /**  A package build's target (OpenAPI `Platform`). */
 export type Platform = "windows-x86_64" | "windows-aarch64" | "linux-x86_64" | "linux-aarch64" | "macos-aarch64" | "macos-x86_64";
 
@@ -806,6 +923,9 @@ export type ServerSwitched = {
 
 /**  The list of servers or one of their accounts changed; re-read `servers_list`. */
 export type ServersChanged = Record<string, never>;
+
+/**  A setting that could not be saved. */
+export type SettingsError = { kind: "invalid"; field: string; detail: string } | { kind: "io"; detail: string };
 
 export type SocialConnection = {
 	server_id: string | null,

@@ -9,6 +9,7 @@ import type {
   InstallProgress,
   PauseReason,
 } from "../../ipc";
+import { blockerText } from "../package/messages";
 
 export const refKey = (ref: PackageRef) => `${ref.server_id}/${ref.package_id}`;
 
@@ -131,6 +132,14 @@ export function failureView(error: DownloadError): FailureView {
         title: t("downloads.failed.serverTitle"),
         text: t("downloads.failed.server", { code: error.code }),
         retry: true,
+        security: false,
+      };
+    case "blocked":
+      return {
+        tone: "warning",
+        title: t("downloads.failed.blockedTitle"),
+        text: blockerText(error.blocker),
+        retry: false,
         security: false,
       };
   }

@@ -66,6 +66,17 @@
     "allow-catalog-list",
     "allow-catalog-genres",
     "allow-package-details",
-    "allow-install-plan"
+    "allow-install-plan",
+    "allow-install-start",
+    "allow-downloads-list",
+    "allow-download-pause",
+    "allow-download-resume",
+    "allow-download-retry",
+    "allow-download-remove",
+    "allow-download-cancel",
+    "allow-downloads-reorder",
+    "allow-downloads-history-clear",
+    "allow-download-settings-get",
+    "allow-download-settings-set"
   ]
 }

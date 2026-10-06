@@ -1,5 +1,5 @@
-// Settings that are not covered by another domain: account sessions and credential storage, library
-// management, download limits, the overlay's per-package switches, privacy and overlay preferences
+// Settings that are not covered by another domain: account sessions and credential storage, the
+// overlay's per-package switches, privacy and overlay preferences
 // (Agent 4's `SocialSettings`, 05-social-notes §5) and third-party licenses (Agents 2 and 4).
 // Requested shapes; see core.ts for the conventions.
 import type { PackageOverlay, PackageRef, SocialError } from "../../bindings";
@@ -26,17 +26,6 @@ export type AccountSession = {
  */
 export type CredentialStorage = { kind: "keychain" } | { kind: "file_fallback"; path: string };
 
-export type DownloadSettings = {
-  /** Kibibytes per second; null = unlimited (02-package-format §7.12). */
-  bandwidth_limit_kib: number | null;
-  /** How many installs run at the same time, 1–3. */
-  concurrent_installs: number;
-};
-
-export type SettingsError =
-  | { kind: "invalid"; field: string; detail: string }
-  | { kind: "io"; detail: string };
-
 // `social_settings_get|set` and `SocialSettings` (05-social-notes §5) are generated now; the typed
 // hotkey errors below are still requested as `SocialError` variants (A4-T10 registers the hotkey).
 
@@ -58,15 +47,6 @@ export const settingsCommands = {
   },
   async credentialStorage(): Promise<CredentialStorage> {
     return get("credential_storage");
-  },
-
-  async downloadSettingsGet(): Promise<DownloadSettings> {
-    return get("download_settings_get");
-  },
-  async downloadSettingsSet(
-    settings: DownloadSettings,
-  ): Promise<Result<DownloadSettings, SettingsError>> {
-    return call("download_settings_set", { settings });
   },
 
   async overlayPackages(): Promise<Result<PackageOverlay[], AppError>> {

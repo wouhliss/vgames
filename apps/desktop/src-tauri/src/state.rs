@@ -9,6 +9,8 @@ use tokio_util::sync::CancellationToken;
 use crate::catalog::Catalog;
 use crate::catalog::covers::Covers;
 use crate::db::Db;
+use crate::downloads::Downloads;
+use crate::downloads::backend::ServerBackend;
 use crate::events::EventBus;
 use crate::images::{ImageCache, ImageCacheError};
 use crate::launch::GameSessions;
@@ -46,6 +48,8 @@ pub struct AppState {
     pub servers: Arc<Servers>,
     /// The active server's catalog, release selection and covers (INS-02).
     pub catalog: Arc<Catalog<Servers>>,
+    /// The install queue and its worker (INS-03).
+    pub downloads: Arc<Downloads<ServerBackend>>,
 }
 
 impl AppState {
@@ -69,16 +73,28 @@ impl AppState {
             covers,
             crate::catalog::release::host_platform(),
         ));
+        let shutdown = CancellationToken::new();
+        let downloads = Downloads::new(
+            db.clone(),
+            bus.clone(),
+            Arc::new(ServerBackend::new(
+                Arc::clone(&catalog),
+                Arc::clone(&servers),
+            )?),
+            vgames_transfer::download::DownloadOptions::default(),
+            shutdown.child_token(),
+        );
         Ok(Self {
             paths,
             catalog,
+            downloads,
             games,
             launcher,
             db,
             images,
             bus,
             servers,
-            shutdown: CancellationToken::new(),
+            shutdown,
             ui_ready: CancellationToken::new(),
         })
     }

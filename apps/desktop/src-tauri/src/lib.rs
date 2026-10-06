@@ -19,6 +19,7 @@ pub mod downloads;
 pub mod error;
 pub mod events;
 pub mod images;
+pub mod installs;
 pub mod launch;
 pub mod libraries;
 pub mod logging;
@@ -193,6 +194,7 @@ fn setup(app: &AppHandle, profile: Option<String>) -> Result<(), Box<dyn std::er
         Err(error) => tracing::warn!(%error, "cannot read the launch deep link"),
     }
 
+    downloads::init(app, &state);
     updater::init(app, &state);
     social::commands::init(app, &state)?;
     app.manage(state);

@@ -775,6 +775,7 @@ export const en = {
       io: "{path}: {detail}",
       serverTitle: "The server had a problem",
       server: "It answered with an error ({code}). Try again later.",
+      blockedTitle: "This game can't run on this computer",
     },
     cancelDialog: {
       install: "Cancel installing {title}?",
