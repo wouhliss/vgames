@@ -22,7 +22,7 @@ test("includes modulepreloads once and ignores stylesheets", async () => {
   const entry = "console.log('entry');";
   const chunk = "export const example = 1;";
   await fixture(
-    '<script src="/main.js"></script><link rel="modulepreload" href="/chunk.js"><link rel="modulepreload" href="/chunk.js?v=2"><link rel="stylesheet" href="/absent.css">',
+    '<script src="/main.js"></script><link rel="modulepreload" href="/chunk.js"><link rel="MODULEPRELOAD" href="/chunk.js?v=2"><link rel="stylesheet" href="/absent.css">',
     { "main.js": entry, "chunk.js": chunk },
     (result) => {
       assert.equal(result.status, 0, result.stderr);

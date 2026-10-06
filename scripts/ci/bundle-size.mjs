@@ -16,7 +16,7 @@ for (const match of html.matchAll(/<(script|link)\b[^>]*>/gi)) {
   const src =
     match[1].toLowerCase() === "script"
       ? attributes.src
-      : attributes.rel?.split(/\s+/).includes("modulepreload")
+      : attributes.rel?.toLowerCase().split(/\s+/).includes("modulepreload")
         ? attributes.href
         : undefined;
   if (!src) continue;
