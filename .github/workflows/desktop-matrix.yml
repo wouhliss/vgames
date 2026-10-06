@@ -63,6 +63,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: INT-03 deliberately failed Linux matrix leg
+        if: runner.os == 'Linux'
+        run: exit 1
       - name: System libraries (Tauri 2 on Linux)
         if: runner.os == 'Linux'
         run: |
