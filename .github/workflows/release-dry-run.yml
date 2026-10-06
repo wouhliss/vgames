@@ -1,0 +1,82 @@
+# INT-06: no repository secrets, release environment, caches or GitHub release.
+name: Release dry run
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "41 3 * * 0"
+permissions: {}
+concurrency:
+  group: release-dry-run-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  CARGO_INCREMENTAL: "0"
+  SQLX_OFFLINE: "true"
+jobs:
+  prepare:
+    name: Check committed updater policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: bash scripts/release/check-updater.sh
+  build:
+    name: Dry build ${{ matrix.target }}
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-2025, target: x86_64-pc-windows-msvc, bundles: nsis }
+          - { os: ubuntu-24.04, target: x86_64-unknown-linux-gnu, bundles: "appimage,deb,rpm" }
+          - { os: macos-15, target: aarch64-apple-darwin, bundles: "app,dmg" }
+    env:
+      TARGET: ${{ matrix.target }}
+      BUNDLES: ${{ matrix.bundles }}
+      OVERLAY_DIR: apps/desktop/src-tauri/resources/overlay
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/desktop-release-setup
+      - name: Throwaway updater key, unsigned build and installation proof
+        shell: bash
+        run: bash scripts/release/dry-build.sh
+      - name: Remove all private throwaway files
+        if: always()
+        shell: bash
+        run: rm -rf "$RUNNER_TEMP/updater-dry-key"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dry-bundle-${{ matrix.target }}
+          path: out/${{ matrix.target }}/
+          if-no-files-found: error
+          retention-days: 7
+  verify:
+    name: Independently verify downloaded updater artifacts
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: dry-bundle-*
+          path: downloaded/
+      - name: Verify each platform against its throwaway public key
+        run: |
+          for dir in downloaded/dry-bundle-*; do
+            cargo xtask updater verify --latest "$dir/latest.json" --dir "$dir" --pubkey "$(cat "$dir/updater.pub")"
+          done
