@@ -9,7 +9,7 @@
 - INT-01 mismatch proof: [#112](https://github.com/wouhliss/vgames/pull/112) rejected by the required Rust policy step in [37457143357](https://github.com/wouhliss/vgames/actions/runs/37457143357); closed without merging.
 
 ## In progress
-- Pre-merge main `8b2c4d5`: [CI](https://github.com/wouhliss/vgames/actions/runs/37510034099) green; latest [real E2E](https://github.com/wouhliss/vgames/actions/runs/37465748125) green. No Ready for INT, contract acknowledgement or Merged without INT lines in live slice status files. The ownership merge starts a new main CI run; its result remains to be observed.
+- Pre-merge main `8b2c4d5`: [CI](https://github.com/wouhliss/vgames/actions/runs/37510034099) green; latest [real E2E](https://github.com/wouhliss/vgames/actions/runs/37465748125) green. No Ready for INT, contract acknowledgement or Merged without INT lines in live slice status files. The ownership merge’s [main CI](https://github.com/wouhliss/vgames/actions/runs/37511832034) is green (5m08s).
 - Local restart reproduced a fixture collision in the admin authorization matrix: the synthetic Discord suffix had only 16 random bits. INT-02 replaces it with a process-wide counter and proves 100,000 unique synthetic IDs; authorization assertions are unchanged.
 - INT-02: separate package-parser contract records the existing path, ordering, empty-file, label, duplicate-key and count limits. Production parsing is unchanged; the new count-boundary regression and whole core suite pass. All local gates pass; after INS’s rename, affected TypeScript, 55 launcher cases, changelog/security and secrets checks passed again.
 - INT-01 scheduled-run follow-up: next scheduled desktop/CI run remains to be observed; do not treat a manual run as a scheduled one.
@@ -39,3 +39,8 @@
 
 ## Package-format contract review (INT-02)
 - The contract records existing parser behavior, including NFKC safety checks while preserving accepted NFC text, byte-wise order, empty-file hashing, labels and duplicate-key rejection. Production parsing is unchanged. Added boundary regressions accept the maximum and reject one over for launch targets, saves, patterns and environment entries; the whole core suite passes.
+
+## Launcher CI consolidation prepared (INT-03)
+- Full local validation passes: Rust 3m33s, SQLx 10s, WASM 7s, TypeScript 51s, launcher mock 2m35s, admin mock 1m00s, desktop 1m58s, supply chain 4s, secrets 2s and workflow lint. The desktop step runs 268 normal tests plus all four ignored chat/chaos scenarios; the existing prelaunch benchmark and soak remain in their separate purposes.
+- Throwaway unit, chat assertion, failed matrix leg and docs-only branches are prepared; publish their proof PRs after the required workflow change, record results and close without merging. No negative proof is claimed green or merged.
+- INS-09's real-application harness and the future install/publish/save scenario files are absent on the current base. The single database step automatically includes each named scenario when its file lands; add real-app nightly and PR coverage when the harness exists.
