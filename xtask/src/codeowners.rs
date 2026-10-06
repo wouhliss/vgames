@@ -13,7 +13,7 @@ use globset::{GlobBuilder, GlobMatcher};
 pub const SECURITY_MARKER: &str = "# ---- SECURITY-CRITICAL";
 
 /// Paths whose owner must be the security owner (01-security invariants).
-/// Files do not need to exist yet: the rules are checked for these paths.
+/// Entries must exist; announced new paths require a pending task on their security rule.
 pub const SECURITY_CRITICAL: &[&str] = &[
     "crates/vgames-core/src/lib.rs",
     "crates/vgames-core/src/sign.rs",
@@ -22,8 +22,18 @@ pub const SECURITY_CRITICAL: &[&str] = &[
     "apps/api/src/trust.rs",
     "apps/api/src/versions.rs",
     "apps/api/src/uploads.rs",
-    "apps/desktop/src-tauri/src/deeplink/mod.rs",
-    "apps/desktop/src-tauri/src/auth/mod.rs",
+    "apps/desktop/src-tauri/src/deeplink.rs",
+    "apps/desktop/src-tauri/src/servers/auth.rs",
+    "apps/desktop/src-tauri/src/secrets.rs",
+    "apps/desktop/src-tauri/src/api/session.rs",
+    "apps/desktop/src-tauri/src/social/store.rs",
+    "apps/desktop/src-tauri/src/social/store/",
+    "apps/desktop/src-tauri/src/installs/",
+    "apps/desktop/src-tauri/src/downloads/",
+    "apps/desktop/src-tauri/src/publishing/",
+    "apps/desktop/src-tauri/src/saves/",
+    "apps/desktop/src-tauri/src/compat/",
+    "apps/desktop/src-tauri/src/overlay/inject.rs",
     "apps/desktop/src-tauri/src/launch/mod.rs",
     "apps/desktop/src-tauri/src/updater/mod.rs",
     "apps/desktop/src-tauri/src/social/crypto/mod.rs",
@@ -36,12 +46,23 @@ pub const SECURITY_CRITICAL: &[&str] = &[
     "pnpm-lock.yaml",
 ];
 
+/// Only these announced new security paths may be absent temporarily.
+const PENDING_CRITICAL: &[&str] = &[
+    "apps/desktop/src-tauri/src/installs/",
+    "apps/desktop/src-tauri/src/downloads/",
+    "apps/desktop/src-tauri/src/publishing/",
+    "apps/desktop/src-tauri/src/saves/",
+    "apps/desktop/src-tauri/src/compat/",
+    "apps/desktop/src-tauri/src/overlay/inject.rs",
+];
+
 #[derive(Debug)]
 pub struct Rule {
     pub line: usize,
     pub pattern: String,
     pub owners: Vec<String>,
     pub security: bool,
+    pub pending: Option<String>,
     matchers: Vec<GlobMatcher>,
 }
 
@@ -80,6 +101,7 @@ impl Rule {
             pattern: pattern.to_owned(),
             owners,
             security,
+            pending: None,
             matchers,
         })
     }
@@ -126,7 +148,15 @@ pub fn parse(text: &str) -> Result<Vec<Rule>> {
                 bail!("line {line}: {o:?} is not a @user, @org/team or email owner");
             }
         }
-        rules.push(Rule::new(line, pattern, owners, security)?);
+        let mut rule = Rule::new(line, pattern, owners, security)?;
+        if let Some((_, task)) = comment.split_once("pending:") {
+            let task = task.split_whitespace().next().unwrap_or("");
+            if !regex::Regex::new(r"^(INS|PLAY|GAME|INT)-[0-9]{2}$")?.is_match(task) {
+                bail!("line {line}: pending must name a phase-2 task, e.g. INS-03");
+            }
+            rule.pending = Some(task.to_owned());
+        }
+        rules.push(rule);
     }
     Ok(rules)
 }
@@ -145,8 +175,42 @@ pub fn problems(rules: &[Rule], files: &[&str]) -> Vec<String> {
             out.push(format!("{f} has no code owner"));
         }
     }
+    for rule in rules {
+        if !files.iter().any(|file| rule.matches(file)) && rule.pending.is_none() {
+            out.push(format!(
+                "line {}: {} matches no tracked file (announce new paths with # pending: TASK-ID)",
+                rule.line, rule.pattern
+            ));
+        }
+    }
     for p in SECURITY_CRITICAL {
-        match owner_rule(rules, p) {
+        let paths: Vec<&str> = files
+            .iter()
+            .copied()
+            .filter(|file| {
+                if p.ends_with('/') {
+                    file.starts_with(p)
+                } else {
+                    file == p
+                }
+            })
+            .collect();
+        let probe = format!("{p}pending.rs");
+        let rule = owner_rule(rules, if p.ends_with('/') { &probe } else { p });
+        if paths.is_empty()
+            && !(PENDING_CRITICAL.contains(p)
+                && rule.is_some_and(|r| r.pending.is_some() && r.security))
+        {
+            out.push(format!(
+                "{p} is security-critical but does not exist as a tracked path"
+            ));
+        }
+        for file in paths {
+            if !owner_rule(rules, file).is_some_and(|r| r.security) {
+                out.push(format!("{file} is inside security-critical {p} but resolves outside the security section"));
+            }
+        }
+        match rule {
             Some(r) if r.security => {}
             Some(r) => out.push(format!(
                 "{p} is security-critical but its last matching rule is line {} ({} {}), outside the security section",
@@ -245,6 +309,42 @@ mod tests {
             p.iter()
                 .any(|x| x.starts_with("crates/vgames-core/src/lib.rs") && x.contains("outside"))
         );
+    }
+
+    #[test]
+    fn dead_patterns_and_unannounced_security_paths_fail() {
+        let r = rules("/* @owner\n/dead/ @owner\n");
+        let found = problems(&r, &["Cargo.toml"]);
+        assert!(
+            found
+                .iter()
+                .any(|p| p.contains("/dead/") && p.contains("no tracked file"))
+        );
+        assert!(
+            found
+                .iter()
+                .any(|p| p.contains("deeplink.rs") && p.contains("does not exist"))
+        );
+    }
+
+    #[test]
+    fn pending_paths_require_a_valid_task_and_cannot_hide_lost_security_files() {
+        assert!(parse("/future/ @owner # pending: someday").is_err());
+        let r = rules(&format!(
+            "{SECURITY_MARKER}\n/apps/desktop/src-tauri/src/compat/ @owner # team: security # pending: GAME-03\n/apps/desktop/src-tauri/src/deeplink.rs @owner # team: security # pending: PLAY-07\n"
+        ));
+        let found = problems(&r, &[]);
+        assert!(
+            !found
+                .iter()
+                .any(|p| p.contains("compat/") && p.contains("does not exist"))
+        );
+        assert!(
+            found
+                .iter()
+                .any(|p| p.contains("deeplink.rs") && p.contains("does not exist"))
+        );
+        assert!(!found.iter().any(|p| p.contains("no tracked file")));
     }
 
     #[test]
