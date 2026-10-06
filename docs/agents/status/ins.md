@@ -14,6 +14,10 @@ Install & Library (phase 2, `docs/agents/phase-2/ins-install-library.md`).
   INS-02, INS-03, INS-04 and INS-08 (the install chain); session_01AChegfo4ZUhpjL2LgRbUk3 (this PR's author) takes
   INS-05, INS-06 and INS-07; INS-09 and INS-10 go to whoever finishes first. Each keeps the other's lines here.
 - INS-05 — Accounts, API client and cross-server isolation (next, session_01AChegfo4ZUhpjL2LgRbUk3).
+- INS-02 — catalog, package details, install plans, covers (session_016VNaVF…, `ins/p2-catalog`); prerequisite
+  rename #110.
+- INS-03 — `priority_files` in `vgames-transfer` (#114), queue history migration and storage (#117), queue worker
+  (`ins/p2-install-worker`), then the download commands and screens (session_016VNaVF…).
 
 ## Interfaces delivered (other agents may now rely on these)
 - Inherited from phase-1 Agent 2 and live on `main` (PR links in `agent-2.md` → Done), now owned by INS:
@@ -24,7 +28,8 @@ Install & Library (phase 2, `docs/agents/phase-2/ins-install-library.md`).
   - SQLite storage for collections and favorites, the install queue (`download_jobs`, atomic active claim, startup
     requeue, waiting-job reorder), the cover cache (10 MiB entries, 500 MB LRU) and the `vgimg://` protocol.
 
-- `catalog::release::{select_release, Route, SelectedRelease, host_platform}` (INS-01): the build this computer
+- `catalog::release::{select_release, route_for, Route, SelectedRelease, host_platform}` (INS-01; `route_for` from
+  INS-02): the build this computer
   installs from a package's catalog releases and how it runs (`Route::is_native()` for native and OS emulation,
   `Proton`, `Wine { needs_rosetta }`); `host_platform` is the launch path's own.
 
