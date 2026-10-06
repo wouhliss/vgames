@@ -13,6 +13,7 @@
 pub mod backend;
 pub mod hook;
 mod job;
+mod maintain;
 pub mod model;
 
 use std::collections::HashMap;
@@ -81,6 +82,10 @@ struct State {
     settings: DownloadSettings,
 }
 
+/// Called after an install's files or signature changed (update, repair):
+/// the launcher forgets its pre-launch stamps and cached launch targets.
+pub type FilesChanged = Arc<dyn Fn(PackageRef, &std::path::Path) + Send + Sync>;
+
 /// Free bytes on the drive holding a path.
 pub type FreeSpace = Arc<dyn Fn(&std::path::Path) -> u64 + Send + Sync>;
 
@@ -93,6 +98,7 @@ pub struct Downloads<B: Backend> {
     backend: Arc<B>,
     options: DownloadOptions,
     hook: RwLock<Arc<dyn PriorityHook>>,
+    files_changed: RwLock<Option<FilesChanged>>,
     state: Mutex<State>,
     wake: Notify,
     active: watch::Sender<usize>,
@@ -142,6 +148,7 @@ impl<B: Backend> Downloads<B> {
             backend,
             options,
             hook: RwLock::new(Arc::new(NoPriority)),
+            files_changed: RwLock::new(None),
             state: Mutex::new(State {
                 running: HashMap::new(),
                 held: false,
@@ -160,6 +167,19 @@ impl<B: Backend> Downloads<B> {
     pub fn set_priority_hook(&self, hook: Arc<dyn PriorityHook>) {
         if let Ok(mut slot) = self.hook.write() {
             *slot = hook;
+        }
+    }
+
+    pub fn set_files_changed(&self, hook: FilesChanged) {
+        if let Ok(mut slot) = self.files_changed.write() {
+            *slot = Some(hook);
+        }
+    }
+
+    pub(crate) fn files_changed(&self, package: PackageRef, root: &std::path::Path) {
+        let hook = self.files_changed.read().ok().and_then(|h| h.clone());
+        if let Some(hook) = hook {
+            hook(package, root);
         }
     }
 

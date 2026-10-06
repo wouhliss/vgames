@@ -334,3 +334,37 @@ pub async fn list(db: &Db, server_id: uuid::Uuid) -> Result<Vec<ListedInstall>, 
     })
     .await
 }
+
+/// Records what an install is busy with (`installed`, `updating`,
+/// `repairing`, `moving`, `uninstalling`); the launcher refuses to start a
+/// game that is not `installed`.
+pub async fn set_state(db: &Db, package: PackageRef, state: &'static str) -> Result<(), DbError> {
+    db.call(move |conn| {
+        conn.execute(
+            "UPDATE installs SET state = ?3 WHERE server_id = ?1 AND package_id = ?2",
+            [
+                package.server_id.to_string(),
+                package.package_id.to_string(),
+                state.to_owned(),
+            ],
+        )?;
+        Ok(())
+    })
+    .await
+}
+
+/// The label of the installed version (after an update).
+pub async fn set_version_label(db: &Db, package: PackageRef, label: String) -> Result<(), DbError> {
+    db.call(move |conn| {
+        conn.execute(
+            "UPDATE installs SET version_label = ?3 WHERE server_id = ?1 AND package_id = ?2",
+            [
+                package.server_id.to_string(),
+                package.package_id.to_string(),
+                label,
+            ],
+        )?;
+        Ok(())
+    })
+    .await
+}

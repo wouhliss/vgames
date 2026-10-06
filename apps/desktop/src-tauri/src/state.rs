@@ -86,11 +86,27 @@ impl AppState {
             vgames_transfer::download::DownloadOptions::default(),
             shutdown.child_token(),
         );
+        let installs: Arc<crate::installs::Installs> = Arc::default();
+        {
+            // After an update or repair: fresh pre-launch checks and launch
+            // targets, and no stale "update available".
+            let prelaunch = Arc::clone(launcher.prelaunch());
+            let installs = Arc::clone(&installs);
+            let bus = bus.clone();
+            downloads.set_files_changed(Arc::new(move |package, root| {
+                prelaunch.forget(root);
+                installs.forget(package);
+                installs.set_update(package, None);
+                bus.publish(crate::events::AppEvent::InstallsChanged(
+                    crate::events::InstallsChanged {},
+                ));
+            }));
+        }
         Ok(Self {
             paths,
             catalog,
             downloads,
-            installs: Arc::default(),
+            installs,
             games,
             launcher,
             db,

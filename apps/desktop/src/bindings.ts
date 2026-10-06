@@ -64,6 +64,15 @@ export const commands = {
 	installStart: (packageId: string, libraryId: string) => typedError<null, InstallStartError>(__TAURI_INVOKE("install_start", { packageId, libraryId })),
 	/**  Installed (and incomplete) packages of the active server. */
 	installsList: () => typedError<InstalledPackage[], AppError>(__TAURI_INVOKE("installs_list")),
+	/**  Queues the available update; it shows up in Downloads. */
+	installUpdate: (pkg: PackageRef) => typedError<null, InstallActionError>(__TAURI_INVOKE("install_update", { pkg })),
+	/**
+	 *  Re-hashes every file and repairs mismatches (02 §9). An install whose
+	 *  signing key was rotated adopts the server's new signature (F1).
+	 */
+	installVerify: (pkg: PackageRef) => typedError<null, InstallActionError>(__TAURI_INVOKE("install_verify", { pkg })),
+	/**  Queues an incomplete install again from its journal. */
+	installResume: (pkg: PackageRef) => typedError<null, InstallActionError>(__TAURI_INVOKE("install_resume", { pkg })),
 	downloadsList: () => typedError<DownloadQueue, AppError>(__TAURI_INVOKE("downloads_list")),
 	downloadPause: (pkg: PackageRef) => typedError<null, DownloadActionError>(__TAURI_INVOKE("download_pause", { pkg })),
 	/**  Resumes a paused job (it runs when its turn comes). */
@@ -605,6 +614,8 @@ export type HostRelease = {
 	published_at: string,
 	via: Availability,
 };
+
+export type InstallActionError = { kind: "not_found" } | { kind: "busy"; state: InstallState } | { kind: "running" } | { kind: "library_offline"; library_path: string } | { kind: "offline" } | { kind: "insufficient_space"; required_bytes: number; available_bytes: number } | { kind: "same_library" } | { kind: "io"; detail: string };
 
 /**  An install, update or repair finished (successfully or not). */
 export type InstallFinished = {
