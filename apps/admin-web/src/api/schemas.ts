@@ -293,6 +293,9 @@ export const SignedCompatProfileSchema = contract<Schemas["SignedCompatProfile"]
 export type SignedCompatProfile = z.infer<typeof SignedCompatProfileSchema>;
 
 export const CompatProfilesSchema = z.object({ items: z.array(SignedCompatProfileSchema) });
+export const CompatProfilePageSchema = contract<Schemas["CompatProfilePage"]>()(
+  CompatProfilesSchema.extend({ next_cursor: z.string().optional() }),
+);
 
 // ---------------------------------------------------------------- server admin (A3-T17)
 
