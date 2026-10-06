@@ -85,6 +85,7 @@
     "allow-collections-reorder",
     "allow-collection-add-package",
     "allow-collection-remove-package",
-    "allow-favorite-set"
+    "allow-favorite-set",
+    "allow-installs-list"
   ]
 }

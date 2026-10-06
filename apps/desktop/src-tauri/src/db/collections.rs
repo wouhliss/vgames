@@ -340,6 +340,39 @@ pub async fn favorite_ids(db: &Db, server_id: Uuid) -> Result<Vec<Uuid>, Collect
     .await?
 }
 
+/// The collections each package of `server_id` is in, in collection order.
+pub async fn memberships(
+    db: &Db,
+    server_id: Uuid,
+) -> Result<std::collections::HashMap<Uuid, Vec<Uuid>>, CollectionStoreError> {
+    db.call(move |conn| {
+        Ok(
+            (|| -> Result<std::collections::HashMap<Uuid, Vec<Uuid>>, CollectionStoreError> {
+                let mut query = conn.prepare(
+                    "SELECT i.package_id, i.collection_id FROM collection_items i
+                   JOIN collections c ON c.id = i.collection_id
+                  WHERE i.server_id = ?1 ORDER BY c.position, c.id",
+                )?;
+                let rows = query.query_map([server_id.to_string()], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })?;
+                let mut out: std::collections::HashMap<Uuid, Vec<Uuid>> =
+                    std::collections::HashMap::new();
+                for row in rows {
+                    let (package, collection) = row?;
+                    let package = Uuid::parse_str(&package)
+                        .map_err(|_| CollectionStoreError::InvalidStoredId)?;
+                    let collection = Uuid::parse_str(&collection)
+                        .map_err(|_| CollectionStoreError::InvalidStoredId)?;
+                    out.entry(package).or_default().push(collection);
+                }
+                Ok(out)
+            })(),
+        )
+    })
+    .await?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
