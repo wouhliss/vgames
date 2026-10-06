@@ -64,6 +64,11 @@ GET /v1/packages?limit=50&cursor=<opaque>&q=portal&sort=title
 `limit` defaults to 50, maximum 200. Cursors are opaque base64url, and the server rejects a
 cursor that was built with different filters (`400 invalid_cursor`). No offset pagination.
 
+Admin compat history orders by descending revision, unique per package and target. Its signed cursor
+is bound to the package and target; an unknown target is `400 invalid_path`, a missing/deleted package
+is `404`, and a non-admin is `403`. Empty history returns `items: []`; each revision includes
+`signature.key_id` and `created_at`, with `next_cursor` present only when more revisions exist.
+
 ## 4. Endpoint map
 
 Legend: 🔓 public · 👤 user · 🛡 admin · 👑 owner.
@@ -157,6 +162,7 @@ Legend: 🔓 public · 👤 user · 🛡 admin · 👑 owner.
 | POST | `/v1/admin/packages/{package_id}/metadata/apply` | Apply a candidate (chosen fields; images downloaded) |
 | POST | `/v1/admin/packages/{package_id}/assets` | Upload a custom image (multipart, ≤ 10 MiB) |
 | DELETE | `/v1/admin/assets/{asset_id}` | Remove an image |
+| GET | `/v1/admin/packages/{package_id}/compat/{target}` | 🛡 | All signed revisions, newest first, including unpublished packages; signed cursor paging |
 | PUT | `/v1/admin/packages/{package_id}/compat/{target}` | Publish a new signed compat profile revision |
 | GET/POST | `/v1/admin/packages/{package_id}/versions` | List / create version (returns id + sequence) |
 | GET/DELETE | `/v1/admin/versions/{version_id}` | Status / abort (unpublished only) |

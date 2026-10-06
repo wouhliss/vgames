@@ -19,8 +19,8 @@ use vgames_core::{
 use vgames_proto::{
     FieldError,
     versions::{
-        CompatProfileList, CompatStatus, CompatTarget, CompatUpload, SignatureContext,
-        SignatureEnvelope, SignedCompatProfile,
+        CompatProfileList, CompatProfilePage, CompatStatus, CompatTarget, CompatUpload,
+        SignatureContext, SignatureEnvelope, SignedCompatProfile,
     },
 };
 
@@ -30,7 +30,11 @@ use crate::{
     auth::{CurrentUser, RequestMeta, RequireAdmin},
     error::{ApiError, ApiResult},
     finalize::{parse_envelope, verify_error},
-    http::json::{Json, Validate},
+    http::{
+        json::{Json, Validate},
+        pagination::{CursorCodec, PageParams, finish_page},
+        query::Query,
+    },
     openapi_problems::{BadRequest, Conflict, Forbidden, NotFound, Unauthorized, Unprocessable},
     state::AppState,
     trust,
@@ -43,6 +47,7 @@ pub fn routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(list_profiles))
         .routes(routes!(put_profile))
+        .routes(routes!(list_history))
 }
 
 fn parse_target(s: &str) -> Option<CompatTarget> {
@@ -288,4 +293,75 @@ pub async fn put_profile(
     )
     .ok_or_else(ApiError::internal)?;
     Ok((StatusCode::CREATED, axum::Json(body)).into_response())
+}
+
+/// Every signed revision, newest first, including unpublished packages.
+#[utoipa::path(
+    get,
+    path = "/v1/admin/packages/{package_id}/compat/{target}",
+    tag = "admin-packages",
+    operation_id = "adminListCompatProfiles",
+    params(CompatPath,
+        ("limit" = Option<u32>, Query),
+        ("cursor" = Option<String>, Query)),
+    responses((status = 200, description = "Revision page (possibly empty)", body = CompatProfilePage),
+        BadRequest, Unauthorized, Forbidden, NotFound)
+)]
+pub async fn list_history(
+    State(state): State<AppState>,
+    _admin: RequireAdmin,
+    Path(CompatPath { package_id, target }): Path<CompatPath>,
+    Query(page): Query<PageParams>,
+) -> ApiResult<axum::Json<CompatProfilePage>> {
+    sqlx::query_scalar!(
+        "SELECT id FROM packages WHERE id = $1 AND deleted_at IS NULL",
+        package_id
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(ApiError::not_found)?;
+    let filters = json!({ "endpoint": "adminCompatHistory", "package": package_id, "target": target.as_str() });
+    let codec = CursorCodec::new(state.keys.cursor.expose());
+    let after = page
+        .cursor
+        .as_deref()
+        .map(|c| codec.decode::<i64, _>(c, &filters))
+        .transpose()?
+        .map(|(revision, _)| revision);
+    let limit = page.limit();
+    let rows = sqlx::query!(
+        r#"SELECT target, revision, status, document, signature, publisher_key_id, created_at
+           FROM package_compat_profiles
+           WHERE package_id = $1 AND target = $2 AND ($3::bigint IS NULL OR revision < $3)
+           ORDER BY revision DESC LIMIT $4"#,
+        package_id,
+        target.as_str(),
+        after,
+        i64::from(limit) + 1
+    )
+    .fetch_all(&state.db)
+    .await?;
+    let page = finish_page(rows, limit, |r| {
+        codec.encode(&r.revision, Uuid::nil(), &filters)
+    })?;
+    let items = page
+        .items
+        .into_iter()
+        .map(|r| {
+            to_wire(
+                &r.target,
+                r.revision,
+                &r.status,
+                &r.document,
+                &r.signature,
+                r.publisher_key_id,
+                r.created_at,
+            )
+            .ok_or_else(ApiError::internal)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(axum::Json(CompatProfilePage {
+        items,
+        next_cursor: page.next_cursor,
+    }))
 }

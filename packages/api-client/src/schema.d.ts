@@ -965,7 +965,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Signed compatibility revision history
+         * @description Every revision, newest first, including unpublished packages. Signed cursors are bound to this package and target. Each item carries its signer in signature.key_id and its created_at timestamp.
+         */
+        get: operations["adminListCompatProfiles"];
         /**
          * Publish a new signed compatibility profile revision
          * @description The document must be a valid vgames.compat/1 profile for this package and target, signed by a trusted publisher key held by the caller, with a revision greater than the current one.
@@ -1550,6 +1554,10 @@ export interface components {
             /** @description Versions of this package/platform that were withdrawn; launchers on them are offered this release even if its sequence is lower. */
             yanked_version_ids?: components["schemas"]["Uuid"][];
             published_at: components["schemas"]["Timestamp"];
+        };
+        CompatProfilePage: {
+            items: components["schemas"]["SignedCompatProfile"][];
+            next_cursor?: string;
         };
         SignedCompatProfile: {
             /** @enum {string} */
@@ -3747,6 +3755,37 @@ export interface operations {
             404: components["responses"]["NotFound"];
             413: components["responses"]["PayloadTooLarge"];
             415: components["responses"]["UnsupportedMediaType"];
+        };
+    };
+    adminListCompatProfiles: {
+        parameters: {
+            query?: {
+                limit?: components["parameters"]["Limit"];
+                /** @description Opaque cursor from a previous page */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path: {
+                package_id: components["parameters"]["PackageId"];
+                target: "linux" | "macos";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revision page (possibly empty) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompatProfilePage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     adminPutCompatProfile: {
