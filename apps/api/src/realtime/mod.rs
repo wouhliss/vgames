@@ -282,14 +282,24 @@ fn error_reply_owned(code: String, message: String) -> Option<Message> {
     .and_then(text)
 }
 
+#[derive(Debug, thiserror::Error)]
+enum FrameError {
+    #[error("realtime frame exceeds the size limit")]
+    TooLarge,
+    #[error("invalid realtime envelope")]
+    Malformed,
+    #[error("unsupported realtime protocol version")]
+    UnsupportedVersion,
+}
+
 /// The byte boundary is shared by the socket handler and adversarial-input tests.
-fn decode_frame(raw: &[u8]) -> Result<Envelope, ()> {
+fn decode_frame(raw: &[u8]) -> Result<Envelope, FrameError> {
     if raw.len() > MAX_FRAME {
-        return Err(());
+        return Err(FrameError::TooLarge);
     }
-    let frame: Envelope = serde_json::from_slice(raw).map_err(|_| ())?;
+    let frame: Envelope = serde_json::from_slice(raw).map_err(|_| FrameError::Malformed)?;
     if frame.v != 1 {
-        return Err(());
+        return Err(FrameError::UnsupportedVersion);
     }
     Ok(frame)
 }
