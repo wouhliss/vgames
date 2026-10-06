@@ -4,7 +4,7 @@ import type { CompatBlocker, InstallStartError } from "../../ipc";
 
 export function blockerText(blocker: CompatBlocker): string {
   switch (blocker.kind) {
-    case "needs_apple_silicon":
+    case "d3d12_unsupported_on_mac":
       return t("compat.needsAppleSilicon");
     case "needs_rosetta":
       return t("compat.needsRosetta");
@@ -15,7 +15,7 @@ export function blockerText(blocker: CompatBlocker): string {
 
 /** Blockers that stop an install (the Rosetta sunset is only a warning). */
 export function isHardBlocker(blocker: CompatBlocker): boolean {
-  return blocker.kind === "needs_apple_silicon" || blocker.kind === "needs_rosetta";
+  return blocker.kind === "d3d12_unsupported_on_mac" || blocker.kind === "needs_rosetta";
 }
 
 export function installErrorMessage(error: InstallStartError, title: string): string {

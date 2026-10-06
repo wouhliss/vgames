@@ -25,7 +25,7 @@ function BlockerNotice({ blocker, packageId }: { blocker: CompatBlocker; package
   const { toast } = useToast();
   const [confirming, setConfirming] = useState(false);
   switch (blocker.kind) {
-    case "needs_apple_silicon":
+    case "d3d12_unsupported_on_mac":
       return (
         <Notice tone="danger" role="status">
           <strong>{t("compat.needsAppleSilicon")}</strong> {t("compat.needsAppleSiliconText")}

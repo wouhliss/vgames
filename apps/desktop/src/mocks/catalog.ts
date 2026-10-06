@@ -221,7 +221,7 @@ function compatFor(pkg: MockPackage, state: CatalogState): CompatInfo {
     blockers.push({ kind: "rosetta_sunset", last_macos: "27" });
   }
   if (choice.via === "wine" && state.host === "macos-x86_64" && pkg.d3d12)
-    blockers.push({ kind: "needs_apple_silicon" });
+    blockers.push({ kind: "d3d12_unsupported_on_mac" });
   if (choice.via === "native") return { kind: "native" };
   if (choice.via === "rosetta") return { kind: "rosetta", blockers };
   return {
@@ -248,7 +248,7 @@ function releaseFor(pkg: MockPackage, state: CatalogState): HostRelease | null {
   };
 }
 
-const HARD_BLOCKERS = new Set(["needs_apple_silicon", "needs_rosetta"]);
+const HARD_BLOCKERS = new Set(["d3d12_unsupported_on_mac", "needs_rosetta"]);
 
 export function catalogHandlers(
   state: CatalogState &
