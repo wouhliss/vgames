@@ -52,6 +52,13 @@ updates:
         patterns: ["@anthropic-ai/*"]
       npm-minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      # api-client intentionally uses TS 5; monorepo major upgrades are manual.
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
+      # release-notes runs on Node 22; move engine and types together manually.
+      - dependency-name: "@types/node"
+        update-types: [version-update:semver-major]
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly, day: monday, time: "05:00", timezone: Etc/UTC }

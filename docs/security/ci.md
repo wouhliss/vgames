@@ -1,7 +1,23 @@
 # CI and branch protection
 
-Owner: Agent 5. Workflow: [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml). Humans configure
+Owner: INT. Workflow: [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml). Humans configure
 the GitHub settings below; agents cannot.
+
+## Toolchain policy (INT-01)
+
+The workspace `rust-version` equals the exact stable version in `rust-toolchain.toml` (currently
+`1.99.0`). `cargo xtask toolchain check` runs before the required Rust checks, locally and in CI,
+and rejects mismatches or non-stable pins. Raising the pin requires raising the workspace minimum
+in the same PR; no older MSRV is claimed.
+
+[`toolchain-watch.yml`](../../.github/workflows/toolchain-watch.yml) checks stable weekly and on demand.
+When stable is newer it runs fmt, workspace and desktop clippy with warnings denied, and both test
+suites against Postgres under Xvfb. It maintains one issue containing the run and required version
+diff; it never opens a PR or changes the pin, and closes the issue when the pin catches up.
+
+Dependabot major updates to TypeScript and Node types are manual: `packages/api-client` deliberately
+uses TypeScript 5, and `scripts/release-notes` has a Node 22 engine. The root npm entry covers the
+whole workspace, so the ignore rules apply across it.
 
 ## What runs on every PR and push to `main`
 
