@@ -453,3 +453,64 @@ async fn a_malformed_changelog_is_rejected_and_the_notes_are_used() {
         "Downloads now resume after your computer restarts."
     );
 }
+
+/// INS-03: `updater_install` first pauses every download at a checkpoint and
+/// only then waits for the launcher to be idle; without that pause an active
+/// download keeps it waiting.
+#[tokio::test]
+async fn install_waits_for_downloads_to_pause_at_a_checkpoint() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use tokio_util::sync::CancellationToken;
+
+    use super::{DownloadCheckpoint, Updater, quiesce};
+
+    struct Fake {
+        updater: Updater,
+        pauses: bool,
+        paused: AtomicBool,
+    }
+
+    impl DownloadCheckpoint for Fake {
+        async fn pause_all_at_checkpoint(&self) {
+            if self.pauses {
+                // What the worker's pause produces on the bus.
+                self.updater.with(|i| {
+                    i.activity
+                        .install_progress((uuid::Uuid::nil(), uuid::Uuid::nil()), true)
+                });
+                self.updater.activity_changed.notify_waiters();
+                self.paused.store(true, Ordering::SeqCst);
+            }
+        }
+
+        fn release_checkpoint(&self) {}
+    }
+
+    let updater = Updater::new();
+    updater.with(|i| {
+        i.activity
+            .install_progress((uuid::Uuid::nil(), uuid::Uuid::nil()), false)
+    });
+    let shutdown = CancellationToken::new();
+
+    let ignores = Fake {
+        updater: updater.clone(),
+        pauses: false,
+        paused: AtomicBool::new(false),
+    };
+    let waiting = tokio::time::timeout(
+        std::time::Duration::from_millis(200),
+        quiesce(&ignores, &updater, &shutdown),
+    )
+    .await;
+    assert!(waiting.is_err(), "an active download blocks the install");
+
+    let pauses = Fake {
+        updater: updater.clone(),
+        pauses: true,
+        paused: AtomicBool::new(false),
+    };
+    assert!(quiesce(&pauses, &updater, &shutdown).await);
+    assert!(pauses.paused.load(Ordering::SeqCst));
+}
