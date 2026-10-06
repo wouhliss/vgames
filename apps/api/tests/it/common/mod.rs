@@ -99,6 +99,21 @@ pub fn json_request(method: &str, uri: &str, body: &serde_json::Value) -> Reques
         .expect("request")
 }
 
+// A process-wide counter avoids birthday collisions from the old 16-bit random suffix.
+fn synthetic_discord_id() -> String {
+    static NEXT: std::sync::atomic::AtomicU64 =
+        std::sync::atomic::AtomicU64::new(600_000_000_000_000_000);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        .to_string()
+}
+
+#[test]
+fn synthetic_user_ids_remain_unique_beyond_the_old_random_space() {
+    let ids: std::collections::HashSet<_> = (0..100_000).map(|_| synthetic_discord_id()).collect();
+    assert_eq!(ids.len(), 100_000);
+    assert!(ids.iter().all(|id| id.len() == 18 && id.starts_with("600")));
+}
+
 /// Creates a user and a desktop session; returns `(user_id, session_id, access_token)`.
 pub async fn seed_session(pool: &PgPool, role: &str) -> (uuid::Uuid, uuid::Uuid, String) {
     use sha2::{Digest, Sha256};
@@ -108,10 +123,7 @@ pub async fn seed_session(pool: &PgPool, role: &str) -> (uuid::Uuid, uuid::Uuid,
         "vga_{}",
         base64::Engine::encode(&base64::engine::general_purpose::URL_SAFE_NO_PAD, raw)
     );
-    let discord_id = format!(
-        "{}",
-        600_000_000_000_000_000u64 + u64::from(raw[0]) * 1000 + u64::from(raw[1])
-    );
+    let discord_id = synthetic_discord_id();
     let user_id: uuid::Uuid = sqlx::query_scalar(
         "INSERT INTO users (discord_id, username, role) VALUES ($1, 'seeded', $2) RETURNING id",
     )
