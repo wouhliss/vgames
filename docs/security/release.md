@@ -1,6 +1,6 @@
 # Releasing the launcher
 
-Owner: Agent 5. Workflows: [`release-desktop.yml`](../../.github/workflows/release-desktop.yml) (tag
+Owner: INT. Workflows: [`release-desktop.yml`](../../.github/workflows/release-desktop.yml) (tag
 `desktop-v*`) and [`desktop-matrix.yml`](../../.github/workflows/desktop-matrix.yml) (unsigned builds and
 Rust tests on Windows, Linux and macOS for every relevant PR, nightly). Design: 08-release §1–§3.
 
@@ -8,8 +8,7 @@ Humans hold every key and approve every release; the workflow cannot publish any
 
 ## One-time setup (humans)
 
-1. **Environment `release`** (Settings → Environments): required reviewers (at least one person who is not
-   the tagger), "Prevent self-review", deployment branches and tags limited to `desktop-v*` and `api-v*`.
+1. **Environment `release`** (Settings → Environments): required reviewer: the owner; deployment branches and tags limited to `main`, `desktop-v*`, `api-v*` and `runtimes-*` (checklist A1).
    Every job that reads a secret runs in it.
 2. **Tag ruleset**: `desktop-v*`, `api-v*` and `runtimes-*` can be created only by maintainers, never
    deleted or moved.
@@ -22,13 +21,13 @@ Humans hold every key and approve every release; the workflow cannot publish any
    key file content as the secret `TAURI_SIGNING_PRIVATE_KEY` and its password as
    `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, both in the `release` environment only. Keep two offline copies:
    losing it means every launcher must be reinstalled by hand.
-4. **Windows code signing**: `WINDOWS_CERTIFICATE` (base64 of the `.pfx`) and
+4. **Optional Windows code signing** (absent in v1): `WINDOWS_CERTIFICATE` (base64 of the `.pfx`) and
    `WINDOWS_CERTIFICATE_PASSWORD`. Authenticode signs the launcher, its installer and every overlay binary
    (`vgames_overlay64.dll`, `vgames_overlay32.dll`, the 32-bit inject helper).
-5. **Apple**: `APPLE_CERTIFICATE` (base64 `.p12` with the Developer ID Application certificate),
+5. **Optional Apple signing and notarization** (absent in v1): `APPLE_CERTIFICATE` (base64 `.p12` with the Developer ID Application certificate),
    `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD` (app-specific
    password), `APPLE_TEAM_ID`. The bundler signs and notarizes; the workflow checks `codesign`, the stapled
-   ticket and Gatekeeper.
+   ticket and Gatekeeper when notarization credentials are present. Without the OS signing secrets, the workflow emits a notice, builds unsigned and marks the draft "Unsigned build". This never disables updater signing.
 6. **`ANTHROPIC_API_KEY`** for the release-notes agent (08-release §3.4). Without it the linted player
    fragments are published verbatim.
 
@@ -53,8 +52,7 @@ artifact verifies against the public key in `tauri.conf.json` and was signed for
      then `cargo xtask changelog release` (same guards again). Fails if the previous release's changelog PR was
      not merged.
    - **build** (Windows x64, Linux x64 on Ubuntu 22.04, macOS arm64): overlay binaries (Authenticode on
-     Windows), `tauri build` with OS signing and notarization, updater artifacts re-signed for the version,
-     OS signatures checked.
+     Windows), `tauri build` with OS signing when secrets exist and otherwise an unsigned-build notice; updater artifacts always re-signed for the version; OS signatures checked whenever signing ran.
    - **publish**: `latest.json` (every artifact verified), `changelog-user.json`, the agent's output
      (`release-notes-agent.json`), `release-changelog.patch`, CycloneDX SBOMs (Rust and npm), `SHA256SUMS`,
      build provenance attestations, and a **draft** release.
@@ -141,3 +139,23 @@ cargo xtask runtimes verify --last-version <published version> runtimes.json
 
 Status: the pipeline is in place; the dry run needs a fork with a test key (humans), and the first real
 release needs the secrets above.
+
+## Automated release dry run
+
+`release-dry-run.yml` runs weekly and on demand on hosted runners, without the protected release
+environment, repository secrets or a GitHub release. Its first step checks the committed updater public
+key and requires both `requireSignedVersion` and `createUpdaterArtifacts`; a placeholder key fails.
+The same build steps used by the real release build unsigned Windows, Linux and macOS bundles.
+Throwaway updater private keys stay within their build jobs and are deleted before artifacts upload.
+Each artifact is signed for the workspace version; a second job downloads the bundles and public keys,
+builds `latest.json`, and verifies all signatures and trusted versions independently.
+
+On Ubuntu 24.04 the dry run installs the deb and runs `--smoke-test` once PLAY-09 provides it;
+until then it checks the installed files. A second AppImage carries version `0.0.1` and the same
+throwaway public key. The update round trip serves the compiled-in GitHub updater/changelog URLs over
+loopback HTTPS with a throwaway trusted CA (no launcher override flag), then uses INS-09's real-app
+harness to install and restart. Until that harness exists the step reports `pending (INS-09)`.
+The hosts entry and throwaway keys are removed even on failure. Workflow artifacts contain bundles,
+public keys, signatures and player changelog data only.
+
+The server release remains keyless (cosign through GitHub OIDC) and needs no unsigned-build mode.
