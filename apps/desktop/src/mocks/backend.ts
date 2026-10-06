@@ -13,9 +13,9 @@ import type {
   AuthFlow,
   CommandError,
   FolderPick,
-  Library,
-  LibraryError,
-  LibraryRemoveError,
+  LibraryActionError,
+  LibraryInfo,
+  LibraryRemovalError,
   ServerError,
   ServerPreview,
   ServerProfile,
@@ -65,7 +65,7 @@ export const MOCK_SERVER: ServerProfile = {
   last_connected_at: "2026-09-24T10:00:00Z",
 };
 
-export const MOCK_LIBRARY: Library = {
+export const MOCK_LIBRARY: LibraryInfo = {
   id: "01920000-0000-7000-8000-0000000000b1",
   path: "/home/sam/Games",
   label: null,
@@ -86,11 +86,11 @@ export interface MockState
   appInfo: AppInfo;
   appearance: AppearanceSettings;
   servers: ServerProfile[];
-  libraries: Library[];
+  libraries: LibraryInfo[];
   /** Result of the native folder picker: a folder, `null` (cancelled) or an error. */
-  folderPick: FolderPick | null | { error: AppError };
+  folderPick: FolderPick | null | { error: LibraryActionError };
   /** Error for `library_add`, if any. */
-  libraryAddError: LibraryError | null;
+  libraryAddError: LibraryActionError | null;
   /** How long sign-in takes in the browser before `auth-finished` arrives (ms). */
   authDelayMs: number;
   diagnostics: string;
@@ -456,7 +456,7 @@ export function installMockBackend(overrides: Partial<MockState> = {}): MockBack
       if (state.libraryAddError) fail(state.libraryAddError);
       const path = String(args.path);
       const pick = state.folderPick && !("error" in state.folderPick) ? state.folderPick : null;
-      const library: Library = {
+      const library: LibraryInfo = {
         ...MOCK_LIBRARY,
         id: `01920000-0000-7000-8000-0000000000${String(state.libraries.length + 1).padStart(2, "0")}`,
         path,
@@ -474,18 +474,28 @@ export function installMockBackend(overrides: Partial<MockState> = {}): MockBack
 
     library_set_default: (args) => {
       const target = state.libraries.find((l) => l.id === args.libraryId);
-      if (!target) fail({ kind: "not_found" } satisfies LibraryError);
+      if (!target) fail({ kind: "not_found" } satisfies LibraryActionError);
       state.libraries = state.libraries.map((l) => ({ ...l, is_default: l.id === target.id }));
       void events.librariesChanged.emit({});
       return null;
     },
     library_remove: (args) => {
       const target = state.libraries.find((l) => l.id === args.libraryId);
-      if (!target) fail({ kind: "not_found" } satisfies LibraryError);
+      if (!target) fail({ kind: "not_found" } satisfies LibraryActionError);
       const count = state.installs.filter((i) => i.library_id === target.id).length;
-      if (count > 0) fail({ kind: "not_empty", install_count: count } satisfies LibraryRemoveError);
-      if (target.is_default) fail({ kind: "is_default" } satisfies LibraryRemoveError);
-      state.libraries = state.libraries.filter((l) => l !== target);
+      if (count > 0)
+        fail({ kind: "not_empty", install_count: count } satisfies LibraryRemovalError);
+      if (state.downloads.some((j) => j.library_id === target.id))
+        fail({
+          kind: "io",
+          detail: "Finish or cancel downloads in this library before removing it.",
+        } satisfies LibraryRemovalError);
+      // Like the Rust store: removing the default makes the oldest remaining library the default.
+      const rest = state.libraries.filter((l) => l !== target);
+      state.libraries =
+        target.is_default && rest[0] && !rest.some((l) => l.is_default)
+          ? rest.map((l, i) => (i === 0 ? { ...l, is_default: true } : l))
+          : rest;
       void events.librariesChanged.emit({});
       return null;
     },

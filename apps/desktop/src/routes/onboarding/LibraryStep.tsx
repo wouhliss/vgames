@@ -28,11 +28,7 @@ export function LibraryStep({ onDone }: { onDone: () => void }) {
     const result = await commands.libraryPickFolder();
     setBusy(null);
     if (result.status === "error") {
-      setError(
-        t("onboarding.library.errors.io", {
-          detail: "detail" in result.error ? result.error.detail : result.error.kind,
-        }),
-      );
+      setError(libraryErrorMessage(result.error));
       return;
     }
     if (result.data) setPick(result.data);

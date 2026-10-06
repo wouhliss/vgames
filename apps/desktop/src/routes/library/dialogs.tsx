@@ -18,7 +18,7 @@ import {
   type CollectionError,
   commands,
   type InstalledPackage,
-  type Library,
+  type LibraryInfo,
   type Result,
 } from "../../ipc";
 import { queryKeys } from "../../ipc/query";
@@ -385,14 +385,14 @@ export function MoveDialog({
   onClose,
 }: {
   pkg: InstalledPackage;
-  libraries: readonly Library[];
+  libraries: readonly LibraryInfo[];
   onClose: () => void;
 }) {
   const navigate = useNavigate();
   const { toast } = useToast();
   const client = useQueryClient();
   const others = libraries.filter((l) => l.id !== pkg.library_id);
-  const usable = (l: Library) =>
+  const usable = (l: LibraryInfo) =>
     l.online && (l.free_bytes === null || l.free_bytes >= pkg.size_bytes);
   const [target, setTarget] = useState<string | null>(others.find(usable)?.id ?? null);
   const [error, setError] = useState<string | null>(null);

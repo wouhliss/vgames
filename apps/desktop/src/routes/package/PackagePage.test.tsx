@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { routes } from "../../app/router";
-import type { InstalledPackage, Library } from "../../ipc";
+import type { InstalledPackage, LibraryInfo } from "../../ipc";
 import { installMockBackend, MOCK_LIBRARY, MOCK_SERVER, type MockState } from "../../mocks/backend";
 import { catalogHandlers, type MockPackage, makeCatalog } from "../../mocks/catalog";
 import { makeInstalls, OFFLINE_LIBRARY } from "../../mocks/library";
@@ -40,7 +40,7 @@ const ENGINE = pkg(5, "Electric Engine", {
   screenshots: [],
 });
 
-const SSD: Library = {
+const SSD: LibraryInfo = {
   ...MOCK_LIBRARY,
   id: "01920000-0000-7000-8000-0000000000b3",
   path: "/mnt/ssd",
