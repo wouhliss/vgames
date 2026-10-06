@@ -147,6 +147,8 @@ pub fn random_files(seed: u64, count: usize, max_size: u64) -> Vec<FileSpec> {
 /// Version identity of a test package.
 #[derive(Debug, Clone)]
 pub struct Identity {
+    /// [`PACKAGE_ID`] by default; set another one for several packages.
+    pub package_id: Uuid,
     pub version_id: Uuid,
     pub sequence: u64,
     pub platform: Platform,
@@ -155,6 +157,7 @@ pub struct Identity {
 impl Default for Identity {
     fn default() -> Self {
         Self {
+            package_id: PACKAGE_ID,
             version_id: Uuid::from_u128(0x0192_a6f1_aaaa_7bbb_8ccc_0000_0000_0001),
             sequence: 1,
             platform: Platform::LinuxX86_64,
@@ -292,7 +295,7 @@ impl TestPackage {
         let hashes = pack_source.hashes.finish().unwrap();
         let identity_out = VersionIdentity {
             server_id: SERVER_ID,
-            package_id: PACKAGE_ID,
+            package_id: identity.package_id,
             version_id: identity.version_id,
             sequence: identity.sequence,
             version_label: format!("1.{}", identity.sequence),
@@ -316,7 +319,7 @@ impl TestPackage {
             trust: trust_state(),
             expected: ExpectedRelease {
                 server_id: SERVER_ID,
-                package_id: PACKAGE_ID,
+                package_id: identity.package_id,
                 version_id: identity.version_id,
                 platform: identity.platform,
                 sequence: identity.sequence,

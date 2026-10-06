@@ -197,6 +197,8 @@ pub enum AppEvent {
     DeepLinkReceived {
         url: String,
     },
+    /// The install queue or its history changed (INS-03).
+    DownloadsChanged(crate::downloads::DownloadsChanged),
 }
 
 /// Cloneable handle to the internal broadcast bus.
@@ -250,6 +252,7 @@ pub fn spawn_ui_bridge<R: Runtime>(app: AppHandle<R>, bus: &EventBus, shutdown: 
                 Ok(AppEvent::ServerAddRequested(e)) => e.emit(&app),
                 Ok(AppEvent::AuthFinished(e)) => e.emit(&app),
                 Ok(AppEvent::DeepLinkReceived { .. }) => Ok(()),
+                Ok(AppEvent::DownloadsChanged(e)) => e.emit(&app),
                 Err(broadcast::error::RecvError::Lagged(skipped)) => {
                     tracing::warn!(skipped, "UI event bridge lagged");
                     Ok(())

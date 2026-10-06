@@ -196,7 +196,7 @@ impl From<proto::ProtonDbTier> for ProtonDbTier {
 }
 
 /// Something that stops (or will stop) a compat launch on this machine (09 §3).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CompatBlocker {
     /// A DirectX 12 title on a Mac: D3DMetal is deferred, so no Mac runs DX12 yet.

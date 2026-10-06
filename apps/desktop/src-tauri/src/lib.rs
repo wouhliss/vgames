@@ -15,6 +15,7 @@ pub mod compat;
 pub mod controllers;
 pub mod db;
 pub mod deeplink;
+pub mod downloads;
 pub mod error;
 pub mod events;
 pub mod images;
