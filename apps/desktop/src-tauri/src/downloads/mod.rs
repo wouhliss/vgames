@@ -385,6 +385,22 @@ impl<B: Backend> Downloads<B> {
                 jobs::transition(&self.db, package, JobTransition::RequeueActive).await
             }
         };
+        // A run that stopped before the engine started (fetching the
+        // manifest) reports no pause of its own; listeners such as the
+        // updater must see that it is not downloading.
+        if matches!(end, End::Paused(_) | End::Checkpoint) {
+            let (bytes_done, bytes_total) = bytes.unwrap_or((job.bytes_done, job.bytes_total));
+            self.bus
+                .publish(AppEvent::InstallProgress(crate::events::InstallProgress {
+                    package,
+                    phase: crate::events::InstallPhase::Paused,
+                    bytes_done,
+                    bytes_total,
+                    bytes_per_second: 0,
+                    eta_seconds: None,
+                    connections: 0,
+                }));
+        }
         if let Err(error) = result {
             tracing::error!(%error, "cannot record the end of a download");
         }
