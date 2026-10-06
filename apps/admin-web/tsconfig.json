@@ -1,6 +1,7 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    "allowImportingTsExtensions": true,
     "types": ["vite/client", "@testing-library/jest-dom/vitest"]
   },
   "include": ["src", "e2e", "vite.config.ts", "vitest.config.ts", "playwright.config.ts"]
