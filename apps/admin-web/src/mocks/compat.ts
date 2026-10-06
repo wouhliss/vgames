@@ -37,6 +37,26 @@ export function compatHandlers(db: MockDb) {
       return HttpResponse.json({ items: latest(pkg.id) });
     }),
 
+    http.get("*/v1/admin/packages/:id/compat/:target", ({ request, params }) => {
+      const denied = guard(db, request);
+      if (denied) return denied;
+      const id = String(params.id);
+      if (!db.packages.some((p) => p.id === id)) return problem(404, "not_found", "Not found");
+      if (!["linux", "macos"].includes(String(params.target)))
+        return problem(400, "invalid_path", "Unknown target");
+      const q = new URL(request.url).searchParams;
+      const after = q.get("cursor");
+      const limit = Number(q.get("limit") ?? 50);
+      const rows = (db.compat[id] ?? [])
+        .filter((p) => p.target === params.target && (!after || p.revision < Number(after)))
+        .sort((a, b) => b.revision - a.revision);
+      const items = rows.slice(0, limit);
+      return HttpResponse.json({
+        items,
+        ...(rows.length > limit ? { next_cursor: String(items.at(-1)?.revision) } : {}),
+      });
+    }),
+
     http.put("*/v1/admin/packages/:id/compat/:target", async ({ request, params }) => {
       const denied = guard(db, request);
       if (denied) return denied;

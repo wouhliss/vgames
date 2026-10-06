@@ -2,9 +2,16 @@
 // a new revision (document + signature made in the upload workers).
 import type { Schemas } from "@vgames/api-client";
 import { call, client } from "./http";
-import { CompatProfilesSchema, ServerIdSchema, SignedCompatProfileSchema } from "./schemas";
+import {
+  CompatProfilePageSchema,
+  CompatProfilesSchema,
+  ServerIdSchema,
+  SignedCompatProfileSchema,
+} from "./schemas";
 
 export const compatKeys = {
+  history: (packageId: string, target?: "linux" | "macos") =>
+    ["compat-history", packageId, ...(target ? [target] : [])] as const,
   profiles: (packageId: string) => ["compat-profiles", packageId] as const,
   server: ["server-info"] as const,
 };
@@ -36,5 +43,25 @@ export function putCompatProfile(
       params: { path: { package_id: packageId, target } },
       body,
     }),
+  );
+}
+
+export function compatHistory(
+  packageId: string,
+  target: "linux" | "macos",
+  cursor?: string,
+  signal?: AbortSignal,
+) {
+  return call(
+    CompatProfilePageSchema,
+    (o) =>
+      client.GET("/v1/admin/packages/{package_id}/compat/{target}", {
+        ...o,
+        params: {
+          path: { package_id: packageId, target },
+          query: { limit: 20, ...(cursor ? { cursor } : {}) },
+        },
+      }),
+    signal,
   );
 }

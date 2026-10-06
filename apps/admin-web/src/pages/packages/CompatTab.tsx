@@ -12,6 +12,7 @@ import { FINALIZE_ERRORS } from "../../api/versions";
 import { ErrorView, Loading } from "../../app/ErrorView";
 import { useUploadDeps } from "../../upload/context";
 import type { KeyChannel, PackChannel } from "../../upload/rpc";
+import { CompatHistory } from "./CompatHistory";
 import {
   buildDocument,
   type CompatForm,
@@ -184,7 +185,10 @@ function TargetEditor({
         signature: JSON.parse(signed.envelope),
       });
       setSaved(`Revision ${next} is published.`);
-      await client.invalidateQueries({ queryKey: compatKeys.profiles(packageId) });
+      await Promise.all([
+        client.invalidateQueries({ queryKey: compatKeys.profiles(packageId) }),
+        client.invalidateQueries({ queryKey: compatKeys.history(packageId) }),
+      ]);
     } catch (e) {
       if (e instanceof ApiError && e.status === 409)
         setFailure(
@@ -215,6 +219,7 @@ function TargetEditor({
       ) : (
         <p className="muted">No profile yet: launchers use the defaults (untested).</p>
       )}
+      <CompatHistory packageId={packageId} target={target} />
       {target === "linux" && protondb ? (
         <p className="muted">Hint: ProtonDB rates it {protondb}.</p>
       ) : null}
