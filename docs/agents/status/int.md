@@ -9,7 +9,7 @@
 - INT-01 mismatch proof: [#112](https://github.com/wouhliss/vgames/pull/112) rejected by the required Rust policy step in [37457143357](https://github.com/wouhliss/vgames/actions/runs/37457143357); closed without merging.
 
 ## In progress
-- Pre-merge main `8b2c4d5`: [CI](https://github.com/wouhliss/vgames/actions/runs/37510034099) green; latest [real E2E](https://github.com/wouhliss/vgames/actions/runs/37465748125) green. No Ready for INT, contract acknowledgement or Merged without INT lines in live slice status files. The ownership merge starts a new main CI run; its result remains to be observed.
+- Main `5f36ec4`: [CI](https://github.com/wouhliss/vgames/actions/runs/37513938040) green, including INS’s catalog, queue history and prefix helper. Latest [real E2E](https://github.com/wouhliss/vgames/actions/runs/37465748125) remains green. No Ready for INT, contract acknowledgement or Merged without INT lines in live slice status files.
 - Local restart reproduced a fixture collision in the admin authorization matrix: the synthetic Discord suffix had only 16 random bits. INT-02 replaces it with a process-wide counter and proves 100,000 unique synthetic IDs; authorization assertions are unchanged.
 - INT-02: separate package-parser contract records the existing path, ordering, empty-file, label, duplicate-key and count limits. Production parsing is unchanged; the new count-boundary regression and whole core suite pass. All local gates pass; after INS’s rename, affected TypeScript, 55 launcher cases, changelog/security and secrets checks passed again.
 - INT-01 scheduled-run follow-up: next scheduled desktop/CI run remains to be observed; do not treat a manual run as a scheduled one.
@@ -39,3 +39,5 @@
 
 ## Package-format contract review (INT-02)
 - The contract records existing parser behavior, including NFKC safety checks while preserving accepted NFC text, byte-wise order, empty-file hashing, labels and duplicate-key rejection. Production parsing is unchanged. Added boundary regressions accept the maximum and reject one over for launch targets, saves, patterns and environment entries; the whole core suite passes.
+
+- INT-02 parser contract: #128 passed every hosted check and all three OS legs, but the pre-merge fetch found INS’s catalog/queue/prefix changes on main. `int/p2-package-format-current` replaces it without force-pushing; all local gates passed with catalog/queue changes, then affected desktop/security/secret checks run with the prefix helper. Close #128 only after the replacement merges.
