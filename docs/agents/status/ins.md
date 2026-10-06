@@ -8,16 +8,25 @@ Install & Library (phase 2, `docs/agents/phase-2/ins-install-library.md`).
   `catalog/release.rs` (this PR; #85 closed as superseded). Evidence: a table test of every host against every set of
   available platforms (09 §1), and the native route matches `launch::orchestrate::runs_natively` for every
   host × platform pair; the acceptance grep finds no pending library call.
+- INS-02 — catalog, genres, package details, install plans and covers ([#126](https://github.com/wouhliss/vgames/pull/126)); D3D12 blocker renamed to
+  `d3d12_unsupported_on_mac` ([#110](https://github.com/wouhliss/vgames/pull/110)). Evidence: 12 wiremock tests (paging, cache, 401 refresh, offline,
+  hidden package, blockers, cover cap and type sniffing, no token on signed URLs); the grep finds no
+  `needs_apple_silicon`.
+- INS-03 — priority files first ([#114](https://github.com/wouhliss/vgames/pull/114)), queue history and concurrent claims ([#117](https://github.com/wouhliss/vgames/pull/117)), queue worker
+  ([#133](https://github.com/wouhliss/vgames/pull/133)), download commands, settings and `install_start` ([#136](https://github.com/wouhliss/vgames/pull/136)). Evidence:
+  `downloads/tests.rs` (install end to end, restart resume, pause/cancel mid-download, concurrency, offline
+  library, out of space, refused signature, updater checkpoint, priority order).
 
 ## In progress
 - Split agreed 2026-10-06 between the two INS sessions (the user started two): session_016VNaVFJqCdjyJ8qqaTzFtN takes
   INS-02, INS-03, INS-04 and INS-08 (the install chain); session_01AChegfo4ZUhpjL2LgRbUk3 (this PR's author) takes
   INS-05, INS-06 and INS-07; INS-09 and INS-10 go to whoever finishes first. Each keeps the other's lines here.
 - INS-05 — Accounts, API client and cross-server isolation (next, session_01AChegfo4ZUhpjL2LgRbUk3).
-- INS-02 — catalog, package details, install plans, covers (session_016VNaVF…, `ins/p2-catalog`); prerequisite
-  rename #110.
-- INS-03 — `priority_files` in `vgames-transfer` (#114), queue history migration and storage (#117), queue worker
-  (`ins/p2-install-worker`), then the download commands and screens (session_016VNaVF…).
+- Ready for INT: [#138](https://github.com/wouhliss/vgames/pull/138) — `updater_install` pauses every download at a checkpoint first (INS-03;
+  security path `updater/**`, not self-merged).
+- INS-04 (session_016VNaVF…) — collections and favorites done ([#123](https://github.com/wouhliss/vgames/pull/123)); `installs_list` (this PR), then
+  updates/repairs/resume with the F1 re-signed-envelope adoption, then move/uninstall/open-folder, update detection
+  and `libraries-changed`.
 
 ## Interfaces delivered (other agents may now rely on these)
 - Inherited from phase-1 Agent 2 and live on `main` (PR links in `agent-2.md` → Done), now owned by INS:
@@ -36,6 +45,8 @@ Install & Library (phase 2, `docs/agents/phase-2/ins-install-library.md`).
 ## Needs from others
 
 ## Built for you
+- For GAME: `compat::prefix_dir(data_dir, &PackageRef) -> PathBuf` = `<data_dir>/prefixes/<server_id>/<package_id>`
+  on every OS ([#125](https://github.com/wouhliss/vgames/pull/125)); INS uses it for `has_prefix` and prefix removal on uninstall.
 
 ## Blockers / contract questions
 - Closed (Q14): the phase-1 request "queue history needs a new migration" (`agent-2.md` → Agent 1). The launcher's
