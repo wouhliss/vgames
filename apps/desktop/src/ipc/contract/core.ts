@@ -1,5 +1,5 @@
 // Commands and events the UI needs that are NOT in the generated `src/bindings.ts` yet: app,
-// servers, accounts and libraries (Agent 2, A2-T01/T07/T08).
+// servers and accounts (Agent 2, A2-T01/T07).
 //
 // Same shape as tauri-specta output (`Result`, snake_case payload fields, camelCase argument keys), so
 // the UI can be built and tested today against mockIPC. This is the request list for Agent 2 and
@@ -58,8 +58,6 @@ export type UiNav = { action: NavAction; controller: ControllerKind; repeat: boo
 /** The controller family that last produced input, for button glyphs. `null` when none is connected. */
 export type ActiveControllerChanged = { controller: ControllerKind | null };
 
-export type LibrariesChanged = Record<string, never>;
-
 // ------------------------------------------------------------------------------------------------
 // Commands
 
@@ -86,9 +84,7 @@ export const coreCommands = {
 export const coreEvents = makeEvents<{
   uiNav: UiNav;
   activeControllerChanged: ActiveControllerChanged;
-  librariesChanged: LibrariesChanged;
 }>({
   uiNav: "ui-nav",
   activeControllerChanged: "active-controller-changed",
-  librariesChanged: "libraries-changed",
 });

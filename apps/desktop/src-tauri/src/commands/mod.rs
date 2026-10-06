@@ -154,7 +154,8 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             crate::overlay::commands::OverlayPackageDisabled,
             crate::downloads::DownloadsChanged,
             crate::events::InstallsChanged,
-            crate::events::CollectionsChanged
+            crate::events::CollectionsChanged,
+            crate::events::LibrariesChanged
         ])
         .error_handling(tauri_specta::ErrorHandlingMode::Result)
         // Byte counts and ids that are u64 in Rust stay below 2^53.

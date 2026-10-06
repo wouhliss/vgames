@@ -183,6 +183,11 @@ pub struct ControllerEvent {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, Type, tauri_specta::Event)]
 pub struct InstallsChanged {}
 
+/// Libraries were added, removed or a new default chosen; re-read
+/// `libraries_list` (INS-04).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Type, tauri_specta::Event)]
+pub struct LibrariesChanged {}
+
 /// Collections changed; re-read `collections_list` (INS-04).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, Type, tauri_specta::Event)]
 pub struct CollectionsChanged {}
@@ -210,6 +215,7 @@ pub enum AppEvent {
     DownloadsChanged(crate::downloads::DownloadsChanged),
     InstallsChanged(InstallsChanged),
     CollectionsChanged(CollectionsChanged),
+    LibrariesChanged(LibrariesChanged),
 }
 
 /// Cloneable handle to the internal broadcast bus.
@@ -266,6 +272,7 @@ pub fn spawn_ui_bridge<R: Runtime>(app: AppHandle<R>, bus: &EventBus, shutdown: 
                 Ok(AppEvent::DownloadsChanged(e)) => e.emit(&app),
                 Ok(AppEvent::InstallsChanged(e)) => e.emit(&app),
                 Ok(AppEvent::CollectionsChanged(e)) => e.emit(&app),
+                Ok(AppEvent::LibrariesChanged(e)) => e.emit(&app),
                 Err(broadcast::error::RecvError::Lagged(skipped)) => {
                     tracing::warn!(skipped, "UI event bridge lagged");
                     Ok(())
