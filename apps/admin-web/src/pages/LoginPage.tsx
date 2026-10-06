@@ -2,6 +2,7 @@ import { useMutation } from "@tanstack/react-query";
 import { Navigate, useSearchParams } from "react-router";
 import { call, client } from "../api/http";
 import { AuthStartResponseSchema } from "../api/schemas";
+import { signedInAgain } from "../app/drafts";
 import { ErrorView } from "../app/ErrorView";
 import { safeReturnTo, useMe } from "../app/session";
 
@@ -33,7 +34,11 @@ export function LoginPage() {
     onSuccess: (data) => navigation.assign(data.authorize_url),
   });
 
-  if (me.isSuccess) return <Navigate to={returnTo.replace(/^\/admin/, "") || "/"} replace />;
+  if (me.isSuccess) {
+    // Still signed in (the 401 was a blip): leave again with the usual unsaved-changes prompts.
+    signedInAgain();
+    return <Navigate to={returnTo.replace(/^\/admin/, "") || "/"} replace />;
+  }
 
   return (
     <main className="center">
