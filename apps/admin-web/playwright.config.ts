@@ -10,6 +10,8 @@ const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE;
 export default defineConfig({
   testDir: "e2e",
   fullyParallel: true,
+  // Each real worker signs in once; four OAuth flows fit the shared 20/minute auth budget.
+  ...(external ? { workers: 4 } : {}),
   forbidOnly: Boolean(process.env.CI),
   retries: 0,
   reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : "list",
