@@ -685,12 +685,14 @@ async fn priority_files_come_first_and_alone() {
     let InstallOutcome::PriorityFilesReady { paths } = outcome else {
         panic!("expected the priority files, got {outcome:?}");
     };
+    // The install root is canonical (`/private/var` on macOS, `\\?\` on Windows).
+    let root = std::fs::canonicalize(setup.root()).unwrap();
     assert_eq!(
-        paths,
-        vec![
-            setup.root().join("Game.exe"),
-            setup.root().join("readme.txt")
-        ]
+        paths
+            .iter()
+            .map(|p| std::fs::canonicalize(p).unwrap())
+            .collect::<Vec<_>>(),
+        vec![root.join("Game.exe"), root.join("readme.txt")]
     );
     assert_eq!(
         std::fs::read(&paths[0]).unwrap(),
