@@ -62,9 +62,11 @@ Where things stand (evidence: `docs/agents/phase-2/introspection-2026-10-05.md`)
   `shortcuts/`, `deeplink.rs`, `logging.rs`, `paths.rs`, `events.rs`, `error.rs`, the new `saves/` and `smoke.rs`,
   `commands/{app,games,shortcuts}.rs`, the new `commands/{controllers,saves}.rs`, and your appended migrations.
 - **Packaging and app config:** `src-tauri/{build.rs,tauri.conf.json,icons/}`, the new `src-tauri/resources/`,
-  `apps/desktop/perf/**`, and the packaging itself. INT reviews CSP, capability and updater changes: for those PRs,
-  write "Ready for INT: #<PR>" in `play.md` instead of merging. Expect three outside edits: INT-08 sets the pubkey,
-  GAME-10 may add `app.macOSPrivateApi`, and GAME-05/06 fill `ProtonPlan`/`WinePlan` in `launch/plan.rs`.
+  `apps/desktop/perf/**`, and the packaging itself. INT reviews the README §3 security paths (`app.security` and
+  `plugins.updater` in `tauri.conf.json`; capability changes other than appending `allow-<command>` for your own
+  commands): for those PRs, write "Ready for INT: #<PR>" in `play.md` instead of merging. Expect three outside edits:
+  INT-08 sets the pubkey, GAME-10 may add `app.macOSPrivateApi` plus the `macos-private-api` feature on `tauri` in
+  `src-tauri/Cargo.toml`, and GAME-05/06 fill `ProtonPlan`/`WinePlan` in `launch/plan.rs`.
 - **UI**, in `apps/desktop/src/`: `routes/settings/{GeneralSection,AboutSection}.tsx`, the new
   `ControllersSection.tsx` and `CloudSavesSection.tsx` (one entry each in `SettingsPage.tsx`), and the conflict
   dialog, sync notices and deep-link notice (mounted from `app/`). In `ipc/contract/`, your entries in
@@ -93,7 +95,8 @@ Where things stand (evidence: `docs/agents/phase-2/introspection-2026-10-05.md`)
 ## Tasks (in order; each ends with acceptance criteria)
 
 ### PLAY-01 — Restart and launch hooks v2 (was A6-T01; hook part of A2-T09)
-- Create `docs/agents/status/play.md` (AGENTS.md §6 format plus a "Built for you" section) and list what you inherit
+- Create, or adopt if another agent already created it (README §6), `docs/agents/status/play.md` (AGENTS.md §6
+  format plus a "Built for you" section) and list what you inherit
   from `docs/agents/status/agent-2.md`. Do not edit `agent-2.md`.
 - Replace the single `set_hooks` slot with a hook registry, run in a fixed order: plan source → saves →
   controllers → overlay. The plan runs first so a compat prefix exists before saves restore into it.
@@ -105,7 +108,11 @@ Where things stand (evidence: `docs/agents/phase-2/introspection-2026-10-05.md`)
   launcher restart.
 - **`PlanSource`** (new trait): native releases keep `LaunchPlan::Native`; for other releases the registered source
   returns Proton, Wine or `CompatUnavailable`. With no source registered, today's refusal stays. A new
-  `LaunchContext` carries the package, root, platform, layer and prefix directory.
+  `LaunchContext` carries the package, root, platform, layer and prefix directory (from `compat::prefix_dir`; write
+  it now with the README §1 signature if it is not on `main`). `PlanSource` is not one of the budgeted
+  `before_spawn` hooks: it may download a runtime, create a prefix and run winetricks, it can be cancelled, and an
+  error, panic or cancel fails the launch with `CompatUnavailable`. A non-native release never falls back to a
+  direct spawn.
 - Migrate `impl LaunchHooks for OverlayService` (GAME's file) in the same PR, and publish the API in `play.md` with
   a usage example.
 - **Acceptance:** orchestrate tests cover the hook order, a timeout, a veto (→ `save_conflict`, earlier hooks
@@ -145,9 +152,16 @@ Where things stand (evidence: `docs/agents/phase-2/introspection-2026-10-05.md`)
     (≤ 30 updates/s, only while the tester is open).
   - Driver states, each with a help link: `vigembus_missing`, `uinput_denied {udev_rule}`, `hidhide_missing`,
     `macos_entitlement_missing`.
-  - The same PR adds the pending entries and mocks in `src/ipc/contract/controllers.ts`.
+  - A separate PR, merged by you (README §4: commands are not contracts), adds the pending entries and mocks in
+    `src/ipc/contract/controllers.ts`, so the screen and the Rust never wait on the notes' merge.
   - It records that the input thread blocks in `SDL_WaitEvent`, replacing 07 §2's `SDL_WaitEventTimeout`, so an idle
     launcher has no periodic wakeups.
+- **Linking SDL3:** nothing calls `sdl3` today, so nothing links it. Ubuntu 24.04 has no `libsdl3-dev` and the
+  Windows and macOS runners have no SDL3, so the first real use fails to link everywhere. First, in its own small PR,
+  change the root workspace dependency to `sdl3 = { version = "0.20", features = ["build-from-source-static"] }`
+  (07 §2: statically linked; needs cmake and a C compiler, present on every runner and in the sandbox). That
+  changes features, not the version, so README §5 allows it. Note in `ins.md`, `game.md` and `int.md` that
+  `vgames-desktop` builds now compile SDL3.
 - **SDL3 input thread.** It blocks in `SDL_WaitEvent` (a pushed event wakes it for shutdown) and uses the HIDAPI
   drivers and a bundled `gamecontrollerdb.txt` (new). It classifies pads into `ControllerKind` (07 §2), debounces
   and auto-repeats `ui-nav` in Rust, and emits `active-controller-changed`. A 1 s Guide/PS hold publishes
@@ -156,7 +170,10 @@ Where things stand (evidence: `docs/agents/phase-2/introspection-2026-10-05.md`)
 - **Settings → Controllers:** pads, the live tester, the per-package override and remaps, and the driver status
   with help (ViGEmBus link, udev rule, the 07 §4.1 text on macOS). Mocked virtual-pad states until PLAY-05.
 - **Acceptance:** tests cover classification and the nav state machine (debounce, repeat, hot-plug). The thread
-  starts on all three runners, with zero wakeups when no pad is connected (`perf/idle.py`). UI tests cover every
+  (named `vgames-sdl`) starts on all three runners. On `ubuntu-24.04` it records 0 voluntary context switches over
+  60 s with no pad connected (extend `perf/idle.py`, which sums every thread today, with `--thread <name>` reading
+  `/proc/<pid>/task/<tid>/status`); on `windows-2025` and `macos-15` a test asserts its event-loop iteration counter
+  stays at 0 for 10 s with no pad connected. UI tests cover every
   driver state and persistence through a restart (mock). The screen is axe clean and passes keyboard-only and
   gamepad-only runs.
 
@@ -185,7 +202,7 @@ Where things stand (evidence: `docs/agents/phase-2/introspection-2026-10-05.md`)
   - Events: `save-sync-changed` and `save-conflict`.
   - The `cloud_saves` values (`CloudSaveState` in `contract/library.ts`) and the veto
     `LaunchError::SaveConflict`.
-  - Pending entries and mocks in `src/ipc/contract/saves.ts`, in the same PR.
+  - Pending entries and mocks in `src/ipc/contract/saves.ts`, in a separate PR merged by you (README §4).
 - **Client:** a new `src-tauri/src/saves/`, implementing 06 §1–3.
   - Save locations: known folders on Windows, plus the macOS and XDG bases, filtered with `globset`
     include/exclude.
@@ -195,8 +212,10 @@ Where things stand (evidence: `docs/agents/phase-2/introspection-2026-10-05.md`)
   - Conflict: emit the event and veto the launch.
   - Atomic restore, the 5 latest backups in `<app data>/save-backups/`, history and restore.
   - State lives in `save_sync_state`; extend it only through an appended migration.
-- **Compat launches:** bases resolve inside the prefix (09 §6) through `compat::prefix_dir`, and snapshots keep
-  Windows-relative paths. Fill `cloud_saves` in INS's `installs_list` from `saves::Saves::state(package)` (new).
+- **Compat launches:** bases resolve inside the prefix through `compat::prefix_dir` and `compat::save_base`
+  (README §1 signatures, 09 §6); never map save bases inside `saves/`. Snapshots keep Windows-relative paths.
+  Register `saves::Saves` (new) as the `cloud_saves` provider, the trait INS-04 defines in `installs/` (README §1),
+  so `installs_list` reports `saves::Saves::state(package)`; never edit `installs_list` itself.
   See "Touch points" for the fallbacks on both.
 - **UI:**
   - The conflict dialog, exactly as 06 §3: time, device and file count on both sides, then Keep cloud / Keep this
@@ -252,10 +271,13 @@ Where things stand (evidence: `docs/agents/phase-2/introspection-2026-10-05.md`)
   - Windows: per-user NSIS and the WebView2 bootstrapper are already set; add ViGEmBus/HidHide help links.
   - macOS: settle the minimum OS version (`minimumSystemVersion` is `12.0` today; `macos-15` is the only hosted
     proof) and make human-checklist B6 test that version; check the URL types in `Info.plist`.
-- A `bundle.resources` slot for GAME-11's overlay binaries (agree the paths in `play.md`). The launcher must run
-  without them.
+- A `bundle.resources` slot for GAME-11's overlay binaries (paths relative to Tauri's `resource_dir()`, which is
+  `/usr/lib/vgames/` in deb/rpm, `$APPDIR/usr/lib/vgames/` in the AppImage, `Contents/Resources/` in the `.app` and
+  the install directory on Windows; record them in `play.md`). The launcher must run without them.
 - `--smoke-test` (`src-tauri/src/smoke.rs`, one call from `lib.rs`): start, wait for `app_ready`, print one JSON line
   (`version`, `startup_ms`) and exit 0. Exit non-zero on failure, after 60 s, or if another instance holds the lock.
+  On Linux the single-instance plugin calls `exit(0)` before any app code runs when another instance holds the
+  lock, so `--smoke-test` checks for that itself before the plugin initialises.
   Windows release builds use the GUI subsystem, so make sure runners can read the line.
 - PR builds have no updater key: bundle with `createUpdaterArtifacts` off through `--config`, in that job only.
 - **Acceptance:** CI installs and smoke-runs the `.deb` and the AppImage on `ubuntu-24.04` (Xvfb), a silent NSIS
@@ -304,8 +326,9 @@ Announce each one in `play.md` the day it merges, with a usage example.
 
 | You need | From | Your fallback ("need it, build it", README §1) |
 |---|---|---|
-| `compat::prefix_dir` | GAME | Write the pure function in `src-tauri/src/compat/` with tests. Use GAME's signature if published, otherwise `prefix_dir(app_data: &Path, package: PackageRef) -> PathBuf` → `<app data>/prefixes/<server_id>/<package_id>`. Note it in `game.md` "Built for you". |
-| `installs_list` | INS-04 | Ship `saves_status(pkg)` and `saves::Saves::state` first, then fill `cloud_saves` yourself once INS-04 lands. |
+| `compat::prefix_dir` (PLAY-01 `LaunchContext`, PLAY-06) | GAME-02 | Write it in PLAY-01 with exactly the README §1 signature, `prefix_dir(data_dir: &Path, package: &events::PackageRef) -> PathBuf` → `<AppPaths::data_dir>/prefixes/<server_id>/<package_id>` on every OS, in `src-tauri/src/compat/mod.rs` with tests. Note it in `game.md` "Built for you". |
+| `compat::save_base` | GAME-05 | Write it with the README §1 signature in `src-tauri/src/compat/`, one test per 06 §1 base for Proton and Wine (09 §6); never a second mapping in `saves/`. Note it in `game.md` "Built for you". |
+| `cloud_saves` in `installs_list` | INS-04 | Ship `saves_status(pkg)` and `saves::Saves::state` first. If INS-04's provider trait is not on `main` when you need it, add the trait with its `unsupported` default in `installs/` (small PR, noted in `ins.md` "Built for you") and register against it. |
 | Proton/Wine plans | GAME-05/06 | None needed: with no plan source registered, today's refusal stays. Test with a fake. |
 | The overlay hook on v2 | GAME | Migrate `OverlayService` yourself in PLAY-01. |
 | Overlay binaries | GAME-11 | Ship the slot, plus a test that the launcher runs without them. |
@@ -313,7 +336,7 @@ Announce each one in `play.md` the day it merges, with a usage example.
 | Matrix steps (installers, smoke, saves, uinput) | INT | Add them to `.github/workflows/desktop-matrix.yml` in small PRs, noted in `int.md`. |
 | A hosted soak workflow | INT-07 | Add your job to `.github/workflows/soak.yml` yourself. |
 | The updater pubkey | INT-08 | Nothing to build: keep the placeholder, and bundle PR builds without updater artifacts. |
-| The "Resolve" toast action and tile refresh | INS (`routes/library/`) | Make the small edit yourself, keeping their tests green. |
+| The "Resolve" toast action and tile refresh | INS (`routes/library/`) | Make the small edit yourself once INS-04's `routes/library` switch is on `main` (see `ins.md` "Interfaces delivered"), on the generated types, keeping their tests green. Until then the conflict dialog opens from `save-conflict` only. |
 | Cached covers | INS (`images.rs`) | Read `images::ImageCache::get`, with the app icon as fallback. |
 
 ## How to work
@@ -325,7 +348,9 @@ Announce each one in `play.md` the day it merges, with a usage example.
    - Implement with tests that fail without the change, and add a changelog fragment (AGENTS.md §3).
    - Run the AGENTS.md §4 checks (`scripts/ci/local.sh`), then open the PR. The desktop matrix proves the Windows
      and macOS code.
-   - Once every check is green, **merge it yourself** (rebase merge) and update `play.md`.
+   - Once every check is green, `git fetch origin`; if `origin/main` moved, rebase, push and wait again (README §3).
+     Then **merge it yourself** (rebase merge; a README §3 security-path PR gets `Ready for INT: #<PR>` in `play.md`
+     instead) and update `play.md`.
 3. **Rules.** Keep PRs under ~600 changed lines. INT merges `contract:` PRs; build behind them while you wait for
    the merge. Never wait on a person or another agent, and keep going until the list is done.
 

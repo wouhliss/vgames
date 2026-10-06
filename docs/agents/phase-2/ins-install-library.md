@@ -80,21 +80,25 @@ and release gate G1 wait on INS-03 and INS-04. Land small PRs often.
 
 ### INS-01 — Restart and land release selection
 (was A2-T19, plus PR #85 from phase-1 A2-T08)
-- Create `docs/agents/status/ins.md` (AGENTS.md §6 plus "Built for you"). Carry over from
+- Create, or adopt if another agent already created it (README §6), `docs/agents/status/ins.md` (AGENTS.md §6 plus
+  "Built for you"). Carry over from
   `docs/agents/status/agent-2.md` only what is live on `main` (Q15); never edit the phase-1 file.
 - The queue history migration is for the launcher's SQLite, which is **yours**: record the phase-1 request for it
   as closed in `ins.md` (Q14); you add the migration in INS-03.
 - Rebase PR #85 and land it as the new `src-tauri/src/catalog/release.rs` (`select_release`, `host_platform`),
   covering the whole table of 09 §1 (Windows arm64 → `windows-x86_64` emulation; Linux → Windows via Proton; macOS
   arm64 → `macos-aarch64` → `macos-x86_64` with Rosetta → Windows via Wine). Nothing goes into `compat/` (GAME's).
-  Land it from your own branch and close #85 with a comment naming the superseding commit.
+  Land it from your own branch and close #85 with a comment naming the superseding commit. Keep **one**
+  `host_platform`: `catalog::release` re-exports the existing `launch::orchestrate::host_platform` instead of adding
+  #85's copy, and a test checks that `select_release` picks the native route exactly where
+  `launch::orchestrate::runs_natively` says so, for every host × platform pair.
 - Delete the pending UI entries already generated: `librariesList`, `libraryPickFolder`, `libraryAdd`
   (`contract/core.ts`), `librarySetDefault`, `libraryRemove` (`contract/settings.ts`) and their pending types; switch
   `routes/onboarding/LibraryStep.tsx`, `routes/settings/StorageSection.tsx`, `app/queries.ts` and
   `mocks/backend.ts` to the generated `LibraryInfo`, `LibraryActionError`, `LibraryRemovalError`.
 - **Acceptance:** `ins.md` matches `main`; a table test over every host × platform set of 09 §1 passes; #85 merged
-  or closed as superseded; `grep -E '"(libraries_list|library_[a-z_]+)"' apps/desktop/src/ipc/contract/*.ts` finds
-  nothing; `pnpm typecheck && pnpm test` green.
+  or closed as superseded; `grep -E 'call\("(libraries_list|library_(pick_folder|add|set_default|remove))"'
+  apps/desktop/src/ipc/contract/*.ts` finds nothing; `pnpm typecheck && pnpm test` green.
 
 ### INS-02 — Catalog and package details, end to end
 (was A2-T20, plus A3-T21 for Browse, package details and the install dialog)
@@ -106,6 +110,13 @@ and release gate G1 wait on INS-03 and INS-04. Land small PRs often.
   INS-01's selection, and the layer of `PackageDetails.compat` (compat entries default to `status: "untested"`, no
   notes, no tier, no blockers). Profile-based status, notes and blockers are an optional enrichment GAME fills later
   (GAME-07) through a small provider trait you define in `catalog/` (default: nothing).
+- **D3D12 on Mac (owner decision 3, 09 v1.1):** the Rust `CompatBlocker` you generate has `d3d12_unsupported_on_mac`,
+  `needs_rosetta` and `rosetta_sunset {last_macos}`, never the pending `needs_apple_silicon`. Before generating it,
+  run `grep -rn needs_apple_silicon apps/desktop/src`; if GAME-02's rename has not landed, do it first in its own
+  small PR (a pure rename in `contract/catalog.ts`, `mocks/catalog.ts`, `routes/package/messages.ts`,
+  `routes/package/CompatPanel.tsx` and their tests; GAME-07 owns when the blocker applies and its text), noted under
+  "Built for you" in `game.md`. `install_plan` and `install_start` return `blocked {blocker}` when the provider
+  reports `d3d12_unsupported_on_mac` or `needs_rosetta` (tested with a fake provider).
 - Covers: `GET /v1/assets/{asset_id}` through `ApiClient` (302 → signed URL) into the existing `ImageCache`
   (`images.rs`: 10 MiB cap, content sniffed), returned as `vgimg:` keys. A small in-memory cache for pages and
   details with explicit invalidation (server switch, sign-out, refresh); no timers.
@@ -114,7 +125,8 @@ and release gate G1 wait on INS-03 and INS-04. Land small PRs often.
   `mocks/catalog.ts` type-checks against `bindings.ts`.
 - **Acceptance (draft A2-T20):** tests with the mock server: paging with cursors, genre filter, offline →
   `offline`, 401 → one refresh then `unauthenticated`, package not found or hidden, no release for this host →
-  `no_release`, cover cache hit and miss, oversized or non-image cover refused; Browse and package suites green.
+  `no_release`, cover cache hit and miss, oversized or non-image cover refused, a hard blocker from a fake provider →
+  `blocked`; Browse and package suites green; `grep -rn needs_apple_silicon apps/desktop/src` finds nothing.
 
 ### INS-03 — Install worker and downloads, end to end (critical path)
 (was A2-T21 and A2-T08's queue part; A3-T21 for Downloads and Settings → Downloads)
@@ -136,8 +148,10 @@ and release gate G1 wait on INS-03 and INS-04. Land small PRs often.
 - Queue history: a new launcher migration appended in `db/migrations.rs` (finished jobs, ≤ 100, newest first).
   Resume incomplete jobs at startup from their journal (`recover_active` already requeues).
 - **Built in for INT's updater:** `downloads::pause_all_at_checkpoint()` resolves when every active install reports
-  `Paused` or finishes. Call it in `updater_install` (`updater/mod.rs`) before `wait_until_idle`: a small edit in
-  INT's area under "need it, build it", noted in `int.md`.
+  `Paused` or finishes; it ships in the worker PR. The call in `updater_install` (`updater/mod.rs`, before
+  `wait_until_idle`) goes in its **own** PR, never in the worker PR: `updater/**` is a README §3 security path, so you
+  do not merge it. Write `Ready for INT: #<PR>` in `ins.md`, keep it rebased and green, and go on; until INT merges
+  it, `updater_install` keeps today's `wait_until_idle`.
 - **Built in for GAME-06:** a "priority files" option (new field on `vgames_transfer::download::DownloadOptions`)
   that fetches and verifies the listed files first (the launch target), then calls a hook (new trait in
   `downloads/`, default: continue) with their verified paths. If the hook refuses with a `CompatBlocker`, the job
@@ -150,8 +164,9 @@ and release gate G1 wait on INS-03 and INS-04. Land small PRs often.
   → paused with `disk_full {required, available}` → space freed → resumes; library directory removed → paused →
   back → resumes; cancel with keep and with delete (only the library marker left); pause/resume verifies no chunk
   twice; restart mid-install resumes from the journal; flipped byte → `damaged_file` with the report sent; untrusted
-  signing key → `untrusted_key`, nothing written; `pause_all_at_checkpoint` resolves with two active installs and
-  `updater_install` waits on it; the priority hook sees only verified launch-target files and a refusal stops the
+  signing key → `untrusted_key`, nothing written; `pause_all_at_checkpoint` resolves with two active installs; the
+  separate PR that makes `updater_install` wait on it has that test, is green and is marked Ready for INT (INS-03 is
+  done without its merge); the priority hook sees only verified launch-target files and a refusal stops the
   install with no further pack request (asserted on the rig); `installs::start` emits progress and finished events.
 
 ### INS-04 — Library and install actions, end to end
@@ -167,11 +182,14 @@ and release gate G1 wait on INS-03 and INS-04. Land small PRs often.
 - `install_update`, `install_resume`, `install_move(package, library_id)`, `install_uninstall_plan`,
   `install_uninstall(package, remove_leftovers, remove_prefix)`, `install_open_folder`, on
   `vgames_transfer::{update::execute::{update_safe, repair_safe}, move_install::move_install,
-  install::{preview_uninstall, remove_install}}`. `has_prefix` and prefix removal use `compat::prefix_dir`; if GAME
-  has not landed it, write the pure function per 09 §2/§3 (`<app data>/prefixes/<server>/<package>`, on macOS under
-  `~/Library/Application Support/vgames/prefixes/`) in the new `src-tauri/src/compat/`, in its own PR, noted in
-  `game.md`.
-- `Prelaunch::forget(root)` (`launch/prelaunch.rs`) after every update, repair, move and uninstall.
+  install::{preview_uninstall, remove_install}}`. `has_prefix` and prefix removal use `compat::prefix_dir`; if it is
+  not on `main`, write it exactly as README §1 gives it, `compat::prefix_dir(data_dir: &Path, package:
+  &events::PackageRef) -> PathBuf` → `<AppPaths::data_dir>/prefixes/<server_id>/<package_id>` on every OS (no macOS
+  special case: GAME-02 aligns 09 §3's literal path with Tauri's app data directory), in the new
+  `src-tauri/src/compat/mod.rs`, in its own PR, noted under "Built for you" in `game.md`.
+- `Prelaunch::forget(root)` (`launch/prelaunch.rs`) after every update, repair, move and uninstall; after a successful
+  uninstall also `commands::shortcuts::remove_for_package` (PLAY's function, unused today: shortcuts go with the
+  install, phase-1 A2-T10), with a test.
 - **`install_verify` (F1):** re-hash (`update::verify::verify_install`) and repair; when the installed envelope no
   longer verifies (revoked key), fetch the release descriptor and, if it still names the installed version and its
   `signature` verifies under the current bundle **for the same manifest bytes**, replace `.vgames/manifest.sig`
@@ -220,7 +238,10 @@ and release gate G1 wait on INS-03 and INS-04. Land small PRs often.
   and verification progress, publish and yank with confirmation.
 - **Acceptance:** end to end against the real API in process (fs storage) publishing a generated 2 GB tree in CI
   (5 GB nightly); wrong passphrase, untrusted key, cancelled-then-resumed upload and failed verification each give
-  their typed error; UI fixture tests for those four cases; axe clean; the route is absent for non-admins.
+  their typed error; UI fixture tests for those four cases; axe clean; the route is absent for non-admins. The
+  in-process test is the new `apps/desktop/src-tauri/tests/publish_e2e.rs` (`#[ignore]`, Postgres, like
+  `social_chat`); if INT-03 has not wired it, add it to the required desktop job (2 GB, README §5 rule for the DB
+  step) and `e2e.yml` (5 GB) yourself, noted in `int.md`.
 
 ### INS-07 — Transfer hardening and download budgets
 (was A2-T25, and the download part of A2-T14)
@@ -233,8 +254,10 @@ and release gate G1 wait on INS-03 and INS-04. Land small PRs often.
   **release builds** on hosted Linux, Windows and macOS against 00-overview §7. If INT has no job for it, add one
   to `.github/workflows/` yourself and note it in `int.md`.
 - **Acceptance (draft A2-T25):** a test swaps a directory for a symlink (a junction on Windows) between checks and
-  proves no write lands outside the install, on Linux and Windows; the flaky test passes 200 consecutive CI runs;
-  budgets recorded in `ins.md` with run links.
+  proves no write lands outside the install, on Linux and Windows; the flaky test passes 200 consecutive iterations in
+  one CI job on `ubuntu-24.04` (a loop over `cargo test -p vgames-transfer --test download
+  protocol_violations_are_retried_once_on_a_fresh_connection`, debug and `--release`, run link in `ins.md`); budgets
+  recorded in `ins.md` with run links.
 
 ### INS-08 — M2 in-process test
 (was A2-T26)
@@ -256,15 +279,24 @@ and release gate G1 wait on INS-03 and INS-04. Land small PRs often.
   (`scripts/e2e/key-pipeline.sh` shows keys, trust bundle and publish).
 - Release builds refuse plain http even on loopback (`servers::discovery::normalize_url` allows it only in debug)
   and ignore `VGAMES_PROFILE` (`paths.rs`). Never add a flag that relaxes either: serve the API on
-  `https://localhost` with a throwaway CA trusted by the runner, and isolate instances with separate `HOME`/XDG
-  directories. Sign in through the fake Discord page (`scripts/e2e/fake-discord-browser.sh` shows the flow) and the
-  paste-code path (`auth_submit_code`), or hand the `vgames://` link to a second instance.
+  `https://localhost` with a throwaway CA trusted by the runner. The API listens on plain HTTP only
+  (`apps/api/src/server.rs`), so put a TLS-terminating proxy in front of it (e.g. `caddy reverse-proxy --from
+  https://localhost:8443 --to 127.0.0.1:8080` after `caddy trust`, or stunnel with a CA added through
+  `update-ca-certificates`) and set `VGAMES_PUBLIC_URL` to the HTTPS address (fake Discord still needs a debug API
+  build).
+- Isolate launcher instances with separate `HOME`, `XDG_*_HOME` and `XDG_RUNTIME_DIR` **and** a D-Bus session each
+  (`dbus-run-session -- …`): on Linux the single-instance lock is the session-bus name
+  `app.vgames.launcher.SingleInstance` and the Secret Service keychain is keyed by the bundle identifier, so a second
+  release instance on the same bus hands over its arguments and exits 0. Assert two live PIDs before driving them.
+  Sign in through the fake Discord page (`scripts/e2e/fake-discord-browser.sh` shows the flow) and the paste-code
+  path (`auth_submit_code`), or hand the `vgames://` link to a second process started inside that instance's D-Bus
+  session (same `DBUS_SESSION_BUS_ADDRESS` and `HOME`).
 - Part 1 (M1): add server (fingerprint shown) → sign in → library folder → empty library and catalog.
   Part 2 (M2): browse → install → progress → play (dummy exe) → stop → verify → uninstall.
 - The new `apps/desktop/e2e-real/README.md`: fixtures (API, CLI publishing, launcher instances per profile
   directory) and how PLAY and GAME add scenarios (GAME adds the M3 two-profile invite scenario in GAME-12).
 - CI: nightly job in `.github/workflows/e2e.yml`; part 1 on launcher PRs in `ci.yml` if under 10 minutes. If INT has
-  not wired them (INT-09), add them yourself and note it in `int.md`.
+  not wired them (INT-03), add them yourself and note it in `int.md`.
 - **Acceptance:** parts 1–2 green nightly on `main`; screenshots with fake data only attached as job artifacts.
 
 ### INS-10 — Handoff
@@ -283,12 +315,14 @@ and release gate G1 wait on INS-03 and INS-04. Land small PRs often.
 
 Announce each under "Interfaces delivered" in `ins.md` the day it merges.
 
-- INS-01/02 `catalog::release::{select_release, host_platform}`, `availability` → GAME (compat, invites); INS-02
+- INS-01/02 `catalog::release::{select_release, host_platform}` (the latter re-exported from `launch::orchestrate`),
+  `availability` → GAME (compat, invites); INS-02
   catalog compat provider trait → GAME-07
 - INS-03 `InstallProgress`/`InstallFinished` for every install, `installs::start(package, library)` → GAME-12;
   `downloads::pause_all_at_checkpoint()` wired into `updater_install` → INT; "priority files" hook → GAME-06
-- INS-04 `cloud_saves` provider trait, install root and running state, after-uninstall hook → PLAY-06; the same
-  hook and `has_prefix` → GAME (prefix removal)
+- INS-04 `cloud_saves` provider trait, install root and running state, after-uninstall hook → PLAY-06 (drop save
+  state) and GAME-03 (runtime reference counts); `has_prefix` and prefix removal stay in INS-04 through
+  `compat::prefix_dir`
 - INS-05 `ApiClient` problem body and refresh hook → GAME-01; INS-08 `install_e2e.rs` → INT (required job, M2);
   INS-09 `e2e-real` harness → GAME-12, PLAY, INT-09
 
@@ -299,14 +333,14 @@ Nothing blocks you. When something is missing, apply README §1:
 | What you need | From | Your fallback ("need it, build it") |
 |---|---|---|
 | Postgres and the full launcher suite in the required desktop job; `install_e2e` at both scales | INT-03 | Add the steps to `ci.yml`/`e2e.yml`; note in `int.md` |
-| Nightly `e2e-real` job, part 1 on PRs | INT-09 | Add them to `e2e.yml`/`ci.yml`; note in `int.md` |
-| `compat::prefix_dir` | GAME | Write the pure function per 09 §2/§3 in `src-tauri/src/compat/` (INS-04) |
+| Nightly `e2e-real` job, part 1 on PRs | INT-03 | Add them to `e2e.yml`/`ci.yml`; note in `int.md` |
+| `compat::prefix_dir` | GAME | Write it with the README §1 signature in `src-tauri/src/compat/mod.rs` (INS-04) |
 | Profile-based compat status and blockers | GAME-07 | Ship `untested`, no blockers, through your default provider |
 | `cloud_saves` state in `installs_list` | PLAY-06 | Ship `unsupported` through your default provider |
 | New variants on the internal bus (`AppEvent` in `events.rs`) | PLAY | Append-only edit in your PR; note in `play.md` |
 | Main-window focus for update detection | PLAY | Your own focus listener, registered from your init |
 | `game_launch`/`game_stop` on Linux (INS-08/09) | PLAY | Already on `main` |
-| Checkpoint pause in `updater_install` | INT | You make the edit in INS-03; note in `int.md` |
+| Checkpoint pause in `updater_install` | INT | You make the edit in INS-03 in its own PR, marked `Ready for INT: #<PR>` in `ins.md` (README §3) |
 | G1 re-review | INT-11 | Request it in INS-10; never wait on it |
 
 ## How to work
@@ -316,8 +350,10 @@ Nothing blocks you. When something is missing, apply README §1:
 2. **Loop per task:** `git fetch origin && git rebase origin/main` → read `docs/agents/status/{ins,play,game,int}.md`
    → implement with tests (commits reference the task id: `feat(desktop): … (INS-03)`) → changelog fragment in
    `.changes/` (`AGENTS.md` §3; `audience: user` only for what players or admins see) → checks (`AGENTS.md` §4;
-   `scripts/ci/local.sh` runs every CI job) → PR → every check green → **merge it yourself** (rebase merge) →
-   update `ins.md` in the same PR or the next.
+   `scripts/ci/local.sh` runs every CI job) → PR → every check green → `git fetch origin`, and if `origin/main`
+   moved, rebase, push and wait for the checks again (README §3) → **merge it yourself** (rebase merge; a PR on a
+   README §3 security path, such as `updater/**`, gets `Ready for INT: #<PR>` in `ins.md` instead) → update `ins.md`
+   in the same PR or the next.
 3. **Small PRs** (< ~600 changed lines excluding generated files), each leaving `main` green; push at least once per
    task (idle containers are reclaimed).
 4. **Never wait on a person or another agent:** build behind the contract with fakes, apply "need it, build it",

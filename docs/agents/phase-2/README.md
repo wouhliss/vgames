@@ -31,7 +31,7 @@ The split follows the dependency graph, not the technology. Every feature is own
 | Windows "spawn suspended → inject → resume" | PLAY-02, second task | Built in, not requested |
 | Install events for invites, checkpoint pause for the updater, "launch target first" download option for the D3D12 check | INS-03 | Built in the worker task, not requested |
 | `cloud_saves` and `compat` fields in the library and catalog | PLAY-06 / GAME-07 | The fields are required in the contract, so INS ships a default (`unsupported`; `untested` with no blockers) behind a small provider trait (`installs/` for saves, `catalog/` for compat). PLAY-06 and GAME-07 register their providers; INS's commands never change for it |
-| Prefix path of a package (uninstall, save bases) | GAME-02 | The pure function `compat::prefix_dir(data_dir: &Path, package: &events::PackageRef) -> PathBuf`, giving `<data_dir>/prefixes/<server_id>/<package_id>` on every OS; `compat::save_base` (GAME-05) maps a 06 §1 save base inside it. Whoever needs either first writes it with this signature |
+| Prefix path of a package (launch context, uninstall, save bases) | GAME-02 | The pure function `compat::prefix_dir(data_dir: &Path, package: &events::PackageRef) -> PathBuf`, giving `<data_dir>/prefixes/<server_id>/<package_id>` on every OS, where `data_dir` is `AppPaths::data_dir` (Tauri's app data directory; no macOS special case). Save bases: `compat::save_base(prefix: &Path, runner: vgames_core::compat::RunnerKind, base: vgames_core::manifest::SaveBase) -> Option<PathBuf>` (GAME-05) maps a 06 §1 base inside the prefix per 09 §6 (`steamuser` for Proton, the Mac user for Wine; `None` for `install`, which resolves as on a native launch). Whoever needs either first (PLAY-01, INS-04, PLAY-06) writes it with exactly this signature in `src-tauri/src/compat/mod.rs`; nobody maps save bases anywhere else |
 | Runtime-catalog public key | INT-08 | GAME tests with the vectors and a test key until then; never blocks |
 
 **Need it, build it.** If a task needs something from another slice and it is not on `main` when you get there:
@@ -62,9 +62,23 @@ once every check is green; re-run a failed job **once** when the failure is clea
 packages in its sandbox (it runs as root); start Docker and Postgres; create issues and labels; and edit the shared
 files of §5.
 
-**Security paths are the exception to self-merge:** a PR that changes the CSP, capabilities or the updater block of
-`tauri.conf.json`, or `apps/desktop/src-tauri/src/updater/**`, is not merged by its author; write
-"Ready for INT: #<PR>" in your status file and continue with other work.
+**Merge on a current base.** `main` has no "branch up to date" protection until checklist A3, and the
+`Desktop matrix` (which runs `bindings_are_current` and the command/capability sync tests) has no push-to-`main`
+trigger. Right before merging, `git fetch origin`; if `origin/main` moved since your last push, rebase, push and wait
+for every check again. If your merge turns `main` red anyway, fixing it (or reverting your PR) comes before any other
+work.
+
+**Security paths are the exception to self-merge.** A PR is not merged by its author if it:
+- changes `app.security` (CSP, `devCsp`, the `capabilities` list) or `plugins.updater` in `tauri.conf.json`;
+- adds a capability file, or changes `capabilities/*.json` in any way other than appending `allow-<command>` lines
+  for commands the same PR adds to `commands/names.rs`;
+- touches `apps/desktop/src-tauri/src/updater/**`.
+
+Put such a change in its **own** PR, never inside feature work, write "Ready for INT: #<PR>" in your status file, keep
+it rebased and green, and continue with other work; no other task waits on its merge. Appending your own
+`allow-<command>` lines is routine and self-merged (`main_window_gets_every_main_command` and `cargo xtask security
+check` guard it), and every other `tauri.conf.json` key (`bundle`, resources, deep links) follows normal ownership.
+INT merges its own PRs on these paths after writing its review in `int.md`.
 
 **INT** additionally merges `contract:` PRs (§4), merges any green PR whose author wrote "Ready for INT: #<PR>" in
 their status file, closes superseded PRs with a comment naming the commits that superseded them, and makes the
@@ -75,24 +89,45 @@ Nobody may weaken a test or a check to get green, skip/disable/quarantine a test
 Anything only a person can do goes to [human-checklist.md](human-checklist.md) in the same PR as its automated
 substitute.
 
+### 3a. While INT is not running
+
+INT is running once `docs/agents/status/int.md` on `origin/main` lists an `INT-` task under "In progress" or "Done".
+Until then (or whenever INT has not acted for a day):
+
+1. **Additive `contract:` PRs** (§4): the author merges its own once every check is green and writes
+   `Merged without INT: #<PR>` under "Blockers / contract questions" in its status file. INT reviews each one in its
+   first integrator loop and fixes forward with a new `contract:` PR if needed. This meets an acceptance item that
+   says "merged by INT".
+2. **Breaking `contract:` PRs:** the author merges once every affected agent that is running has written
+   `contract ack: #<PR>`. For an affected agent that is not running, write `Ack pending: #<PR>` under "Built for you"
+   in its status file; that agent acks or objects in its first task, and an objection becomes a new `contract:` PR.
+3. **Security paths** (§3) are never self-merged, INT running or not. They stay open, green and listed under
+   "In progress"; nothing else waits on them.
+4. **Red `main`:** the agent whose merge turned it red fixes it or reverts its own PR before any other work. If the
+   cause is unclear, the first agent that sees it makes the smallest fix and notes it in the owner's status file.
+
 ## 4. Contracts
 
-`contract: …` PRs still change `docs/architecture/**`, `openapi/openapi.yaml`, shared migrations and cross-language
-command/event surfaces. **Additive** ones (new endpoint, field, command, event, section) are merged by INT as soon as
-CI is green. **Breaking** ones list the affected agents; each writes `contract ack: #<PR>` in its status file or
-objects there; INT merges when all acks are in, or decides after one working loop. Never block your implementation
-on a contract merge: build behind the proposed contract on your branch.
+`contract: …` PRs change `docs/architecture/**`, `openapi/openapi.yaml`, `apps/api/migrations/**`, and wire formats
+shared outside the launcher's IPC (`crates/vgames-proto`, the overlay broker protocol, realtime events). They do
+**not** cover the launcher's SQLite migrations (§5), Tauri commands and events (the pending-entry rule below), or
+`vgames-core` additions made under §1: those are ordinary PRs merged by their author. **Additive** ones (new endpoint,
+field, command, event, section) are merged by INT as soon as CI is green. **Breaking** ones list the affected agents;
+each writes `contract ack: #<PR>` in its status file or objects there; INT merges when all acks are in, or decides
+after one working loop. Never block your implementation on a contract merge: build behind the proposed contract on
+your branch.
 
 The launcher UI's pending contract (`apps/desktop/src/ipc/contract/*.ts`) and mocks (`apps/desktop/src/mocks/*`)
 are owned **per entry, not per file** (`core.ts`, `settings.ts` and `catalog.ts` mix slices). Each entry is edited by
 **the agent that implements the command**: it adds the pending entry and fixture first, implements
 the Rust, regenerates `bindings.ts`, then deletes the pending entry and switches the screen to the generated types.
+Whoever removes the last entry of a contract file deletes the file and its line in `contract/index.ts`.
 
 ## 5. Shared files (any agent; append or keep tests green)
 
 | File(s) | Rule |
 |---|---|
-| `src-tauri/src/commands/mod.rs`, `commands/names.rs`, `capabilities/main.json` | Append your commands/events; the existing tests keep them in sync |
+| `src-tauri/src/commands/mod.rs`, `commands/names.rs`, `capabilities/main.json` | Append your commands/events and their `allow-<command>` lines (self-merged, §3); the existing tests keep them in sync |
 | `src-tauri/src/lib.rs`, `src-tauri/src/state.rs` | One `pub mod` + one init call / one field per service |
 | `src-tauri/src/db/migrations.rs` | Append a `Migration`; on a numbering collision after rebase, **renumber yours** |
 | `src-tauri/Cargo.toml`, root `[workspace.dependencies]` | Add-only; never change an existing version in a feature PR |
@@ -102,7 +137,9 @@ the Rust, regenerates `bindings.ts`, then deletes the pending entry and switches
 | `src-tauri/src/events.rs` (`AppEvent`), `src-tauri/src/error.rs` (PLAY's) | Append a variant or a field; never rename or remove one |
 | `src/routes/settings/SettingsPage.tsx` | One entry per section, appended |
 | `src-tauri/src/launch/plan.rs` (PLAY's) | GAME edits the `ProtonPlan`/`WinePlan` fields only |
-| `.github/workflows/**` (INT's) | A slice may add its own job or step under "need it, build it" (noted in `int.md`); INT consolidates in INT-03 |
+| `.github/workflows/**` (INT's) | A slice may add its own job or step under "need it, build it" (noted in `int.md`); INT consolidates in INT-03. DB-backed launcher tests have **one** home: job `desktop` in `ci.yml` gets one `postgres:18.6-alpine` service (as in the `sqlx` job) and `VGAMES_TEST_DATABASE_URL`. The first slice that needs it adds them; later ones only append `--test <name>` to the single `cargo test -p vgames-desktop --locked --test … -- --ignored` step. Never `--include-ignored` on the whole crate: `tests/social_soak.rs` is the soak (INT-07) |
+| `Cargo.lock`, `pnpm-lock.yaml` | Never hand-merge; never `cargo update`/`pnpm update` in a feature PR. On conflict: `git checkout origin/main -- Cargo.lock pnpm-lock.yaml`, then `cargo check --workspace --all-targets`, `cargo check -p vgames-desktop` and `pnpm install`, so only your new entries are added (CI runs `--locked`/`--frozen-lockfile`) |
+| Every append-only list above (`names.rs`, `capabilities/main.json`, `collect_commands!`, `AppEvent`, `MIGRATIONS`, `contract/*.ts`, `mocks/backend.ts`) | On a rebase conflict keep both sides, `origin/main`'s lines first and yours after; never drop another slice's line. Then `cargo test -p vgames-desktop --lib -- commands:: db::migrations` and `pnpm typecheck && pnpm test` |
 | `docs/security/test-matrix.md` (INT's) | Add the row for a test you wrote |
 
 `src` means `apps/desktop/src`, `src-tauri` means `apps/desktop/src-tauri`. The ownership map in
@@ -111,9 +148,14 @@ the Rust, regenerates `bindings.ts`, then deletes the pending entry and switches
 ## 6. Task ids, branches, status files
 
 - Task ids: `INS-01…`, `PLAY-01…`, `GAME-01…`, `INT-01…`; reference them in commits (`feat(desktop): … (INS-03)`).
-- Branches: `ins/<topic>`, `play/<topic>`, `game/<topic>`, `int/<topic>`, one per PR, from `origin/main`.
+- Branches: `ins/p2-<topic>`, `play/p2-<topic>`, `game/p2-<topic>`, `int/p2-<topic>`, one per PR, from `origin/main`.
 - Status files: `docs/agents/status/{ins,play,game,int}.md` (format of `AGENTS.md` §6, plus a "Built for you"
   section). Phase-1 files (`agent-1.md` … `agent-5.md`) stay as the record; do not edit them.
+- **A status file that does not exist yet** (its agent has not started): create it with only the `AGENTS.md` §6
+  headings plus "Built for you", and add your note; if it appears on `origin/main` meanwhile, rebase and append. Each
+  agent's first task **adopts** its file: it keeps every line others wrote ("Built for you", "Needs from others",
+  `Ready for INT`, `Ack pending`, `Merged without INT`), reads them before its first task, and extends each "Built for
+  you" item (§1) instead of rewriting it.
 - Every phase-1 task that was unfinished maps to a phase-2 task:
 
 | Phase-1 task (status on 2026-10-05) | Phase-2 task |
@@ -150,17 +192,22 @@ INT-08 catalog key + PR #46 ─▶ GAME-03 runtime manager (tests run on vectors
 | **2** | 04–06 | 05–08 | 05–09 | 04–08 |
 | **3** | 07–10 | 09–11 | 10–14 | 09–12 |
 
+**Starting fewer than four agents:** start **INS and INT** first. INT merges `contract:` and security-path PRs,
+puts Postgres in the required desktop job for INS-08, and needs nothing from PLAY or GAME, so the pair barely
+overlaps. Start PLAY next (PLAY-01/02 unblock GAME and Windows launching), then GAME, which consumes the most from the
+others. §3a covers any time INT is not running.
+
 ## 8. Milestones (automated)
 
 A milestone is reached when its job is green on `main`; INT-09 collects them in one place.
 
 | Milestone | Proved by | Gate |
 |---|---|---|
-| **M1 · Hello server** | INS-09 real-app E2E, part 1 (Linux, Xvfb, fake Discord) | INS-02, PLAY-04 (`ui-nav`) |
+| **M1 · Hello server** | INS-09 real-app E2E, part 1 (Linux, Xvfb, fake Discord), PLAY-04's `ui-nav` tests, and the admin web's real-API sign-in (INT-05) | INS-02, PLAY-04 (`ui-nav`), INT-05 |
 | **M2 · Publish → install** | INS-08 (in-process, kill/resume, flipped byte) + INS-09 part 2 (real app) | INS-03, INS-04 |
-| **M3 · Social** | GAME-12 (real install path) + its INS-09 scenario (two instances with separate `HOME`/XDG directories, API on `https://localhost` with a throwaway CA: release builds ignore `VGAMES_PROFILE` and refuse plain http, and no flag may relax that) + GAME-08 (overlay toast in a GL/Vulkan app) | GAME-12 |
+| **M3 · Social** | GAME-12 (real install path) + its INS-09 scenario (two instances, each under its own `dbus-run-session` and with separate `HOME`/XDG directories, API on `https://localhost` with a throwaway CA: release builds ignore `VGAMES_PROFILE` and refuse plain http, no flag may relax that, and on Linux the single-instance lock (`app.vgames.launcher.SingleInstance`) and the Secret Service keychain are keyed by the bundle identifier and the D-Bus session, not by `HOME`) + GAME-08 (overlay toast in a GL/Vulkan app) | GAME-12 |
 | **M3b · Everywhere** | Desktop matrix: Windows D3D11 test app with overlay (GAME-09), Linux D3D11 via Proton (GAME-05), macOS D3D11 via Wine + DXMT (GAME-06, if the runner has Metal), cloud-save round trip across the three runners in sequence (PLAY-06; server state passed between jobs as a `pg_dump` plus fs-storage artifact) | PLAY-02/03, GAME-05/06/09 |
-| **M4 · Release candidate** | `release-dry-run.yml` (INT-06), hosted soak (INT-07), budgets on release builds (INS-07, PLAY-10), security sign-off (INT-11) | everything |
+| **M4 · Release candidate** | `release-dry-run.yml` (INT-06) including its update round trip from a lower version (What's new shows only player-facing lines), hosted soak (INT-07), budgets on release builds (INS-07, PLAY-10), security sign-off (INT-11) | everything |
 
 ## 9. Environment notes for cloud sessions (checked 2026-10-05)
 
