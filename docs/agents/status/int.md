@@ -8,6 +8,7 @@
 - INT-01 mismatch proof: [#112](https://github.com/wouhliss/vgames/pull/112) rejected by the required Rust policy step in [37457143357](https://github.com/wouhliss/vgames/actions/runs/37457143357); closed without merging.
 
 ## In progress
+- Main `ef06cf1`: [CI](https://github.com/wouhliss/vgames/actions/runs/37465740115) and [real E2E](https://github.com/wouhliss/vgames/actions/runs/37465748125) green. No Ready for INT, contract acknowledgement or Merged without INT lines in live slice status files.
 - INT-02: phase-2 ownership rules and dead-pattern/security-path checks, plus a separate parser-contract PR. Six ownership regressions pass; core count-boundary test and whole core suite pass.
 - INT-01 scheduled-run follow-up: next scheduled desktop/CI run remains to be observed; do not treat a manual run as a scheduled one.
 - Full local CI on the maintenance commit: all gates pass, with Vitest workers bounded to two for this machine's memory. Unbounded local UI workers delayed a lazy route beyond its unchanged wait; the same assertions pass with the supported worker limit.
@@ -32,4 +33,4 @@
 - vodozemac 0.11.1 changes HPKE check-code derivation; vgames uses Olm/Megolm, not that HPKE interface. Crypto tests remain required. Reviewed upstream 0.11.0…0.11.1 source diff.
 - tauri-plugin-updater 2.13.1 preserves signed-version and artifact verification, removes process-wide Linux certificate environment mutation, and otherwise changes documentation, dependencies and equivalent let-chain syntax. `requireSignedVersion` and `createUpdaterArtifacts` remain true. Reviewed upstream 2.12.0…2.13.1 production source diff.
 - Action updates retain immutable SHA pins: install-action updates tool manifests/checksums; sbom-action updates Syft 1.51.1→1.54.0 and build tooling. Permissions stay unchanged. The blocking 1.6.2 pin is intact.
-- Require every hosted check, including all three desktop OS legs, on the current base before merging. Local full CI reproduced the readiness flake: SQLx test pools share a global 20-connection parent, while realtime listeners permanently borrow request-pool connections; fixed by dedicated bounded/cancellable LISTEN connection; regression passes, 50 consecutive parallel group runs underway (INT-04).
+- Require every hosted check, including all three desktop OS legs, on the current base before merging. Local full CI reproduced the readiness flake: SQLx test pools share a global 20-connection parent, while realtime listeners permanently borrow request-pool connections; fixed by dedicated bounded/cancellable LISTEN connection; regression and 50 consecutive parallel group runs pass (INT-04); final server changes will repeat this proof.
