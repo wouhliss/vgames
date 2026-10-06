@@ -74,3 +74,11 @@ pub const MAIN_WINDOW_COMMANDS: &[&str] = &[
 /// Commands the in-game overlay window may call. Only `overlay_*` commands
 /// belong here (Agent 4 adds them).
 pub const OVERLAY_WINDOW_COMMANDS: &[&str] = &["overlay_view", "overlay_action"];
+
+#[cfg(test)]
+mod int03_required_gate_proof {
+    #[test]
+    fn deliberately_broken_launcher_unit() {
+        assert_eq!(std::hint::black_box(1), 2);
+    }
+}
