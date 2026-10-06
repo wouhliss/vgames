@@ -89,6 +89,8 @@ struct Inner {
 /// Managed by Tauri; cheap to clone.
 #[derive(Clone)]
 pub struct Updater {
+    /// The packaged application version, also used by tauri-plugin-updater.
+    version: Version,
     inner: Arc<Mutex<Inner>>,
     /// Signalled when games or downloads start or stop.
     activity_changed: Arc<Notify>,
@@ -96,9 +98,6 @@ pub struct Updater {
     busy: Arc<tokio::sync::Mutex<()>>,
 }
 
-fn current_version() -> Version {
-    Version::parse(env!("CARGO_PKG_VERSION")).unwrap_or_else(|_| Version::new(0, 0, 0))
-}
 
 fn key(p: &PackageRef) -> (uuid::Uuid, uuid::Uuid) {
     (p.server_id, p.package_id)
@@ -109,8 +108,9 @@ fn url(s: &str) -> Result<Url, UpdateError> {
 }
 
 impl Updater {
-    fn new() -> Self {
+    fn new(version: Version) -> Self {
         Self {
+            version,
             inner: Arc::new(Mutex::new(Inner {
                 state: UpdaterState::Idle,
                 activity: Activity::default(),
@@ -133,7 +133,7 @@ impl Updater {
 
     pub fn status(&self) -> UpdaterStatus {
         self.with(|i| UpdaterStatus {
-            current_version: current_version().to_string(),
+            current_version: self.version.to_string(),
             state: i.state.clone(),
             blocked: i.activity.blocked(),
         })
@@ -216,7 +216,7 @@ async fn quiesce<'a, D: DownloadCheckpoint>(
 /// Registers the updater state and starts its background tasks. Call from `setup`
 /// after the plugin is registered and `AppState` is managed.
 pub fn init(app: &AppHandle, state: &AppState) {
-    let updater = Updater::new();
+    let updater = Updater::new(app.package_info().version.clone());
     app.manage(updater.clone());
     spawn_activity_tracker(app.clone(), updater.clone(), state);
     spawn_scheduler(app.clone(), updater, state);
@@ -419,7 +419,7 @@ pub async fn updater_whats_new(updater: State<'_, Updater>) -> CommandResult<Wha
     let whats_new = policy::whats_new(
         changelog.as_deref(),
         notes.as_deref(),
-        &current_version(),
+        &updater.version,
         &new,
     );
     updater.with(|i| i.whats_new = Some(whats_new.clone()));
