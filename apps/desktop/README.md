@@ -88,13 +88,13 @@ coverage test reads the production router, so a new screen needs a scan case.
 | Collections and package collections | Open from the library menu, select a collection, close to the opener. | `library.spec.ts` collection keyboard case and dialog scan |
 | `/browse` | Search, move between cards, open package details and return. | `browse.spec.ts` keyboard/controller cases |
 | `/package/:packageId` | Reach Install/Play and screenshots; open and close the install and screenshot dialogs. | `browse.spec.ts` details/install/screenshots scans and controller case |
-| Install, Rosetta confirmation and screenshots | Choose storage with arrows, confirm with Enter/A, cancel with Escape/B. | `browse.spec.ts` and `PackagePage.test.tsx` Rosetta cases |
+| Install, Rosetta confirmation and screenshots | Choose storage with arrows, confirm with Enter/A, cancel with Escape/B. | `browse.spec.ts`, `settings.spec.ts` Rosetta keyboard/controller confirmation scans and `PackagePage.test.tsx` |
 | `/friends/*` | Switch Friends/Requests/Chats, add a code and send a message. | `friends.spec.ts` screen/dialog scans and keyboard cases |
 | Add friend, invite, safety number and invite install | Activate the dialog action, review details, confirm/cancel and restore focus. | `friends.spec.ts` and `FriendsPage.test.tsx` |
 | `/downloads` | Select a job, pause/resume, reorder and confirm cancellation. | `downloads.spec.ts` keyboard/controller and queue/menu/dialog scans |
 | `/settings/*` | Move between every section; tab to its controls and toggle a setting. | `settings.spec.ts` every-section scan and keyboard/controller cases |
 | Server removal, session sign-out, library removal/move | Review the named confirmation, cancel or confirm and restore focus. | `settings.spec.ts` keyboard/controller confirmation scans and focus return; `SettingsPage.test.tsx` mutation cases |
-| How a game runs, compatibility licenses and third-party licenses | Open, read/scroll, change allowed options and close. | `settings.spec.ts` game options keyboard scan; `settings.spec.ts` third-party license keyboard/controller scans; settings units cover runtime licenses |
+| How a game runs, compatibility licenses and third-party licenses | Open, read/scroll, change allowed options and close. | `settings.spec.ts` game options keyboard scan; `settings.spec.ts` keyboard/controller scans of runtime and third-party licenses |
 | What's new | Open the update banner, scroll notes, choose Later or Install and restart. | `update.spec.ts` keyboard/controller and long-changelog scans |
 
 `routes.spec.ts` scans every production screen. `memory.spec.ts` measures navigation after warmup;

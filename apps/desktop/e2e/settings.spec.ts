@@ -6,8 +6,8 @@ import { axeScan, emit, open } from "./helpers";
 const pad = (page: Page, action: string) =>
   emit(page, "ui-nav", { action, controller: "xinput", repeat: false });
 
-async function toSettings(page: Page): Promise<void> {
-  await open(page, "ready");
+async function toSettings(page: Page, state?: Record<string, unknown>): Promise<void> {
+  await open(page, "ready", state);
   await page
     .getByRole("navigation", { name: "Main" })
     .getByRole("link", { name: "Settings" })
@@ -157,6 +157,13 @@ const dialogCases = [
   { section: "Storage", button: /^Remove the library /, title: /^Remove the library .*\?$/ },
   { section: "Storage", button: /^Move the packages in /, title: /^Move \d+ packages from / },
   { section: "About", button: "Third-party licenses", title: "Third-party licenses" },
+  { section: "Compatibility", button: "Runtime licenses", title: "Runtime licenses" },
+  {
+    section: "Compatibility",
+    button: "Install Rosetta 2",
+    title: "Install Rosetta 2?",
+    state: { host: "macos-aarch64", rosettaInstalled: false },
+  },
 ];
 
 for (const item of dialogCases) {
@@ -164,7 +171,7 @@ for (const item of dialogCases) {
     test(`${input} opens and closes ${item.section} dialog ${String(item.title)}`, async ({
       page,
     }) => {
-      await toSettings(page);
+      await toSettings(page, "state" in item ? item.state : undefined);
       if (item.section === "Account") {
         await page.evaluate(() => {
           const state = window.__vgamesMock?.backend.state;
