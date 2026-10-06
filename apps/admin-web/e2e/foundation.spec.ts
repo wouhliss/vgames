@@ -1,5 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
+import { realApi, signIn } from "./helpers";
 
 test("signed-out users land on sign-in and can start Discord login", async ({ page }) => {
   await page.goto("/admin/users?mock=anon");
@@ -8,11 +9,14 @@ test("signed-out users land on sign-in and can start Discord login", async ({ pa
   await page.route("https://discord.example/**", (route) => route.fulfill({ body: "discord" }));
   await page.getByRole("button", { name: "Sign in with Discord" }).click();
   expect((await request).postDataJSON()).toEqual({ client: "web", return_to: "/admin/users" });
-  await expect(page).toHaveURL(/discord\.example/);
+  await expect(page).toHaveURL(
+    realApi ? /\/v1\/auth\/dev\/fake-discord\?state=/ : /discord\.example/,
+  );
 });
 
 test("admins see the navigation; every page is reachable by keyboard", async ({ page }) => {
-  await page.goto("/admin/?mock=admin");
+  await signIn(page);
+  await page.goto(realApi ? "/admin/" : "/admin/?mock=admin");
   await expect(page.getByRole("heading", { name: "Packages" })).toBeVisible();
   const nav = page.getByRole("navigation", { name: "Admin" });
   for (const name of ["Users", "Allowlist", "Settings", "Trust", "Jobs", "Audit log", "Packages"]) {
@@ -23,7 +27,8 @@ test("admins see the navigation; every page is reachable by keyboard", async ({ 
 });
 
 test("no animations or transitions anywhere", async ({ page }) => {
-  await page.goto("/admin/?mock=admin");
+  await signIn(page);
+  await page.goto(realApi ? "/admin/" : "/admin/?mock=admin");
   await expect(page.getByRole("heading", { name: "Packages" })).toBeVisible();
   const moving = await page.evaluate(
     () =>
@@ -43,7 +48,8 @@ for (const [name, path] of [
   ["shell", "/admin/packages?mock=admin"],
 ] as const) {
   test(`no serious accessibility violations: ${name}`, async ({ page }) => {
-    await page.goto(path);
+    if (name === "shell") await signIn(page);
+    await page.goto(realApi ? (path.split("?")[0] ?? path) : path);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     const results = await new AxeBuilder({ page }).analyze();
     const serious = results.violations.filter(

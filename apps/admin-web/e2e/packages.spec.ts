@@ -3,9 +3,14 @@
 // second browser page instead of the mock server).
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
+import { signIn } from "./helpers";
 
 const external = Boolean(process.env.ADMIN_E2E_BASE_URL);
 const mock = external ? "" : "?mock=admin";
+
+test.beforeEach(async ({ page }) => {
+  await signIn(page);
+});
 
 async function serious(page: Page) {
   const results = await new AxeBuilder({ page }).analyze();
@@ -21,6 +26,7 @@ async function createPackage(page: Page, title: string): Promise<string> {
 }
 
 test("list, create and editor have no serious accessibility violations", async ({ page }) => {
+  if (external) await createPackage(page, `List fixture ${Date.now()}`);
   await page.goto(`/admin/packages${mock}`);
   await expect(page.getByRole("table")).toBeVisible();
   expect(await serious(page)).toEqual([]);
@@ -48,12 +54,12 @@ test("double-clicking Create makes exactly one package", async ({ page }) => {
   await expect(page.getByRole("table").getByRole("link", { name: title })).toHaveCount(1);
 });
 
-test("412 on a concurrent edit keeps my input and offers a diff", async ({ page, browser }) => {
+test("412 on a concurrent edit keeps my input and offers a diff", async ({ page }) => {
   const url = await createPackage(page, `Concurrent ${Date.now()}`);
   await page.getByLabel("Summary").fill("Mine");
 
   if (external) {
-    const other = await browser.newPage();
+    const other = await page.context().newPage();
     await other.goto(url);
     await other.getByLabel("Summary").fill("Theirs");
     await other.getByRole("button", { name: "Save changes" }).click();
@@ -115,14 +121,16 @@ test("every field boundary: empty, max, max+1, unicode, RTL and emoji", async ({
 });
 
 test("keyboard only: filter the list and open a package", async ({ page }) => {
+  const title = external ? `Hollow Harbor ${Date.now()}` : "Hollow Harbor";
+  if (external) await createPackage(page, title);
   await page.goto(`/admin/packages${mock}`);
   await expect(page.getByRole("table")).toBeVisible();
   await page.getByLabel("Search title or slug").focus();
   await page.keyboard.type("harbor");
   await page.keyboard.press("Enter");
-  const link = page.getByRole("table").getByRole("link", { name: "Hollow Harbor" });
+  const link = page.getByRole("table").getByRole("link", { name: title });
   await expect(link).toBeVisible();
   await link.focus();
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("heading", { level: 1, name: "Hollow Harbor" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: title })).toBeVisible();
 });
