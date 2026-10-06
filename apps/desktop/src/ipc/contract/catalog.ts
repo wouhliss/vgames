@@ -62,8 +62,8 @@ export type ProtonDbTier = "platinum" | "gold" | "silver" | "bronze" | "borked" 
 
 /** Something that stops (or will stop) a compat launch on this machine (09-compatibility §3). */
 export type CompatBlocker =
-  /** A DirectX 12 title on an Intel Mac: only D3DMetal runs DX12, and it needs Apple silicon. */
-  | { kind: "needs_apple_silicon" }
+  /** A DirectX 12 title on a Mac: D3DMetal is deferred (owner decision 3), so no Mac runs DX12 yet. */
+  | { kind: "d3d12_unsupported_on_mac" }
   /** Rosetta 2 isn't installed; `rosetta_install` installs it after the user confirms. */
   | { kind: "needs_rosetta" }
   /** x86_64-only path that Apple's Rosetta policy may end ("may stop working on macOS 28+"). Not blocking. */
