@@ -109,7 +109,8 @@ Where things stand (evidence: `docs/agents/phase-2/introspection-2026-10-05.md`)
 
 ### GAME-01 — Restart and security fixes F4, F5, Q4
 (was A4-T14; review findings F4, F5 launcher side, introspection Q4)
-- Create `docs/agents/status/game.md` (AGENTS.md §6 plus "Built for you") with only what is live on `main` from
+- Create, or adopt if another agent already created it (README §6), `docs/agents/status/game.md` (AGENTS.md §6 plus
+  "Built for you") with only what is live on `main` from
   `docs/agents/status/agent-4.md` (Q15); never edit phase-1 status files.
 - F4: a manual `Debug` for `vgames_overlay::protocol::ToBroker` (and any type holding the token) printing `[redacted]`.
 - F5: `social/realtime.rs` connects with `connect_async_with_config`, `max_message_size`/`max_frame_size` a small
@@ -117,13 +118,18 @@ Where things stand (evidence: `docs/agents/phase-2/introspection-2026-10-05.md`)
   `vgames_proto::realtime` (yours) with a one-line re-export in INT's file (note it in `int.md`). Factor the envelope
   decoding (the `serde_json::from_str::<Envelope>` call sites) into one function with a no-panic `proptest`
   (arbitrary and mutated frames).
-- Q4: `social/api.rs` uses `redirect(Policy::none())` and reads every body through `api::read_capped`, now. Then move
-  social REST onto `ApiClient` once INS-05 exposes the problem body and the refresh hook; if it is not on `main` when you
-  need it, add both to `api/mod.rs` yourself (note it in `ins.md`).
+- Q4: `social/api.rs` uses `redirect(Policy::none())` and reads every body through `api::read_capped`, now. Moving
+  social REST onto `ApiClient` belongs to GAME-04 (which uses `ApiClient` anyway), not here.
+- Delete the pending entries in `src/ipc/contract/settings.ts` that are already generated or obsolete:
+  `overlayPackages`/`overlayPackageSet` (generated as `packageOverlaysList`/`packageOverlaySet`), `HotkeyError` and
+  `SocialSettingsError` (the generated `SocialError` already has `invalid` and `in_use {by}`). Switch
+  `routes/settings/OverlaySection.tsx`, `routes/settings/socialSettings.ts`, `SettingsPage.test.tsx` and
+  `mocks/settings.ts` to the generated names and types.
 - **Acceptance:** tests that fail without each fix: a mock server answering 302 (nothing follows, the token never
   reaches the target), one streaming 100 MiB (refused at the cap), a 2 MiB realtime frame (refused unbuffered),
   `format!("{hello:?}")` without the token's hex; the decoder property test runs in CI; F4/F5 closure requested from
-  INT-11 in `int.md`.
+  INT-11 in `int.md`; `grep -nE 'package_overlay|HotkeyError|SocialSettingsError'
+  apps/desktop/src/ipc/contract/settings.ts` finds nothing and `pnpm typecheck && pnpm test` are green.
 
 ### GAME-02 — Contract 09-compatibility v1.1
 (was A7-T01 minus PR #85, which INS lands in INS-01; the contract part of phase-1 A2-T16/T17)
@@ -134,14 +140,17 @@ Where things stand (evidence: `docs/agents/phase-2/introspection-2026-10-05.md`)
   (a profile hint decides before any byte, otherwise INS-03's priority-files option fetches the launch executable first
   and the PE scan decides); prefixes at `<AppPaths::data_dir>/prefixes/<server_id>/<package_id>` on every OS (align
   §3's literal macOS path with Tauri's app data directory). Same PR: the compatibility row of `00-overview.md` §2.
-- Its own small PR right after: rename the pending `CompatBlocker` variant `needs_apple_silicon` to
+- Its own small PR right after (skip it if `grep -rn needs_apple_silicon apps/desktop/src` already finds nothing
+  because INS-02 did it; if INS-02 generated the Rust `CompatBlocker` with the old name, rename it in `catalog/` too
+  and regenerate `bindings.ts`, noted in `ins.md`): rename the pending `CompatBlocker` variant `needs_apple_silicon` to
   `d3d12_unsupported_on_mac` in `contract/catalog.ts`, `mocks/catalog.ts`, `routes/package/messages.ts`,
   `CompatPanel.tsx` and their tests, so INS-02/INS-03 generate the right name (note it in `ins.md`).
-- Another small PR: the pure function `compat::prefix_dir(data_dir, package: events::PackageRef)` in the new
-  `src-tauri/src/compat/mod.rs`, so INS-04 and PLAY-06 never write it (if one already did, keep it and extend it).
-- **Acceptance:** contract PR merged by INT; 09 and 00-overview offer no D3DMetal path in v1; every key
-  `is_launcher_owned_env_key` accepts is listed in 09; `grep -rn needs_apple_silicon apps/desktop/src` finds nothing;
-  `prefix_dir` merged with a per-OS test.
+- Another small PR: the pure function `compat::prefix_dir(data_dir: &Path, package: &events::PackageRef) -> PathBuf`
+  (README §1) in the new `src-tauri/src/compat/mod.rs`, so INS-04 and PLAY-01/06 never write it (if one already did
+  with that signature, keep it and extend it).
+- **Acceptance:** contract PR merged (by INT, or under README §3a while INT is not running); 09 and 00-overview offer
+  no D3DMetal path in v1; every key `is_launcher_owned_env_key` accepts is listed in 09; `grep -rn needs_apple_silicon
+  apps/desktop/src` finds nothing; `prefix_dir` merged with a per-OS test.
 
 ### GAME-03 — Runtime manager
 (was A7-T03; the runtime part of phase-1 A2-T16; finding F2)
@@ -155,7 +164,10 @@ Where things stand (evidence: `docs/agents/phase-2/introspection-2026-10-05.md`)
   `runtimes::key_id(public_key)` with a test (INT's crate; note it in `int.md`).
 - Download with the transfer stack's HTTP client (resumable, size enforced), SHA-256, then extract every
   `ArchiveFormat` the core accepts into `<data_dir>/runtimes/<id>/<version>/` (temp directory, then rename); reference
-  counting by installed packages, garbage collection, `runtime_remove`. Update `runbooks.md` §7 step 4 to the per-key
+  counting by installed packages (updated from INS's after-uninstall hook, INS-04; until it is on `main`, count
+  references from `db::installs` when garbage collection runs), garbage collection, `runtime_remove`. Fetch the
+  runtime a package needs when INS reports `InstallFinished` for a compat install; `plan_for` fetches it only if it is
+  still missing at launch. Update `runbooks.md` §7 step 4 to the per-key
   behaviour (INT's file; note it in `int.md`).
 - **Acceptance:** tests with the vectors (valid v2; v1 after v2 → rollback; tampered catalog; other-key signature;
   tampered archive refused **before** any file is extracted); generated archives with `../`, an absolute path, an
@@ -168,14 +180,19 @@ Where things stand (evidence: `docs/agents/phase-2/introspection-2026-10-05.md`)
   target, the highest revision per (server, package, target) in a launcher migration, `CompatProfile::applies_to`.
   Fetched with package details, before an install and before a compat launch, never on a timer; a profile that fails
   verification is ignored with a status the UI can show (GAME-07).
+- Move social REST (`social/api.rs`) onto `ApiClient` here, keeping GAME-01's redirect and body caps: it brings the
+  problem body and the single 401 refresh. If INS-05 has not exposed both when you start, add them to `api/mod.rs`
+  yourself (`ApiClient::authed` already refreshes once), noted in `ins.md`.
 - **Acceptance:** tests: a newer revision replaces, an older one is refused, a profile signed by a revoked key is
   ignored with that status, a profile carrying a launcher-owned env key is refused, `applies_to` bounds hold, the stored
-  profile survives a restart.
+  profile survives a restart; GAME-01's 302 and 100 MiB tests still pass with social REST on `ApiClient`.
 
 ### GAME-05 — Test apps and Proton on Linux
 (was A7-T05; the Proton part of phase-1 A2-T16)
 - New `crates/vgames-testapps` (in `members`, not `default-members`): D3D11 and D3D12 executables cross-built for
   `x86_64-pc-windows-gnu` that draw a known colour for N frames and exit 0 (a non-zero code names the failing step).
+  In the same PR add an owner line for it to `.github/CODEOWNERS` (agent areas, above the contracts and security
+  sections), or `cargo xtask codeowners check` fails; note it in `int.md`.
   GAME-08 and GAME-09 add GL, D3D9 and 32-bit variants.
 - `compat::plan_for` builds `LaunchPlan::Proton` per 09 §2: pinned umu-launcher and UMU-Proton/GE-Proton via
   `PROTONPATH`, `WINEPREFIX` from `prefix_dir`, `GAMEID`/`STORE` from the profile's umu id, profile env and
@@ -185,7 +202,8 @@ Where things stand (evidence: `docs/agents/phase-2/introspection-2026-10-05.md`)
   disk space (~1 GB).
 - Register `plan_for` through PLAY-01's `PlanSource`; if PLAY-01 is not on `main`, add the minimal call in
   `launch/orchestrate.rs` yourself (one registered source replaces the `CompatUnavailable` branch; none registered keeps
-  today's refusal), noted in `play.md`. `compat::save_base(package, base)` for PLAY-06 per 09 §6 for every 06 §1 base.
+  today's refusal), noted in `play.md`. `compat::save_base(prefix, runner, base)` (README §1 signature) for PLAY-06
+  per 09 §6 for every 06 §1 base (if PLAY already wrote it with that signature, keep and extend it).
 - **Acceptance (hosted `ubuntu-24.04`, Xvfb + lavapipe, a test catalog signed with a test key pinning real umu-launcher
   and UMU-Proton releases):** the D3D11 test app runs through Proton (DXVK) via `game_launch` and exits 0; a tampered
   runtime archive is refused before extraction; a catalog rollback is refused; the D3D12 app through VKD3D-Proton is
@@ -255,15 +273,22 @@ Where things stand (evidence: `docs/agents/phase-2/introspection-2026-10-05.md`)
   failure → the game resumes without the overlay. If PLAY-02 is not on `main` when you start, build the minimal
   suspended spawn + `pre_resume` in `launch/process/windows.rs` yourself (PLAY adds Job Object tracking and re-attach),
   noted in `play.md`. D3D9/11/12 and GL test apps in `crates/vgames-testapps`, 64- and 32-bit.
+- Register the Vulkan implicit layer on Windows under `HKCU\Software\Khronos\Vulkan\ImplicitLayers` in
+  `overlay::vulkan_layer` (its module doc defers that part to this task), and add a Vulkan test app to
+  `crates/vgames-testapps`.
 - **Acceptance (hosted `windows-2025`, WARP):** the toast lands in presented frames, windowed and borderless, for each
   test app (pixel assertion on a captured frame); a 32-bit app gets it through the helper; a forced hook panic turns
   the overlay off and the game keeps running; 50 open/close cycles without handle or memory growth; exclusive
-  fullscreen attempted and recorded (real GPU → human-checklist §B1); runbooks §10 current.
+  fullscreen attempted and recorded (real GPU → human-checklist §B1); the Vulkan test app shows the toast through
+  the layer and the DX hooks stood down (Mesa lavapipe for Windows; if it cannot run on the runner, record it and add
+  a human-checklist §B1 step); runbooks §10 current.
 
 ### GAME-10 — macOS overlay panel
 (was A4-T17; the macOS rest of phase-1 A4-T10)
-- `contract:` PR adding `app.macOSPrivateApi: true` to `apps/desktop/src-tauri/tauri.conf.json` (PLAY owns the file;
-  INT reviews and merges; needed for transparency, fine outside the Mac App Store). Build behind it meanwhile.
+- `contract:` PR adding `app.macOSPrivateApi: true` to `apps/desktop/src-tauri/tauri.conf.json` and, in the same PR,
+  `tauri = { workspace = true, features = ["macos-private-api"] }` in the `[dependencies]` of
+  `apps/desktop/src-tauri/Cargo.toml` (tauri-build refuses the config without the feature, on every OS). PLAY owns
+  the file; INT reviews and merges; needed for transparency, fine outside the Mac App Store. Build behind it meanwhile.
 - A non-activating `NSPanel` via `objc2` (new `src-tauri/src/overlay/macos_panel.rs`): `.canJoinAllSpaces |
   .fullScreenAuxiliary`, raised level, never key, same view models as the fallback window; record it in
   `05-social-notes.md` §7.
@@ -276,21 +301,32 @@ Where things stand (evidence: `docs/agents/phase-2/introspection-2026-10-05.md`)
 - Build the renderers per OS in `.github/workflows/desktop-matrix.yml` (both DLLs and the 32-bit helper,
   `libvgames_overlay.so`, layer manifests); INT's `release-desktop.yml` stages them (if INT-06 has not added staging,
   add it yourself, noted in `int.md`); list them in `bundle.resources` through PLAY-09's slot (or add the entries
-  yourself, noted in `play.md`). The launcher finds them next to its binary (`overlay::vulkan_layer` logic), writes the
-  layer manifest only while the renderer ships, and runs without them.
+  yourself, noted in `play.md`). The launcher finds them through Tauri's resource directory (`app.path().resource_dir()`,
+  where `bundle.resources` lands: `/usr/lib/vgames/` for deb/rpm, `$APPDIR/usr/lib/vgames/` in the AppImage,
+  `Contents/Resources/` in the `.app`, the install directory on Windows, the executable's directory for `cargo`
+  builds) under the staged names (`overlay/vgames_overlay64.dll`, `overlay/vgames_overlay32.dll`,
+  `overlay/libvgames_overlay.so`), not next to its binary as `overlay::vulkan_layer` does today: change
+  `register_for_this_install` to take that directory. It writes the layer manifest only while the renderer ships,
+  and runs without them.
+- Show `overlay-package-disabled` as a plain-text notice in the app shell, naming the game, with "Turn it back on"
+  (`packageOverlaySet(packageRef, true)`, which also clears the safety valve).
 - **Acceptance:** the INT-06 dry run's installers contain the renderers (until it exists, the matrix lists bundle
   contents: `dpkg -c`, the `.app` tree, the NSIS install directory); a smoke test per OS finds the files where the
-  launcher looks.
+  launcher looks (the path the launcher resolves equals the installed path); a UI test for the
+  `overlay-package-disabled` notice and its re-enable action; axe clean.
 
 ### GAME-12 — Invites on the real install path
 (was A4-T18; ordered late because it consumes INS-03 and INS-04)
 - Replace the fakes behind `social::ports::Games` with the real pipeline: `invite-install-requested` → install dialog
   → `install_start` (INS's `installs::start`); progress from `InstallProgress`; `ready` only after `InstallFinished`; an
   outdated install updates first (INS-04); failure codes mapped as today (`space`/`disk_full` → `insufficient_space`).
-- Add the M3 scenario to INS's `apps/desktop/e2e-real/` (INS-09): two instances with separate `HOME`/XDG directories
-  (release builds ignore `VGAMES_PROFILE`): friend code → chat → invite to a package Bob lacks → install dialog →
-  Alice sees progress → joined. Without the harness on `main`, keep the in-process test, do GAME-13/14's independent
-  parts, and add the scenario when it lands.
+- Add the M3 scenario to INS's `apps/desktop/e2e-real/` (INS-09): two instances, each inside its own D-Bus session
+  (`dbus-run-session`) and with separate `HOME`, `XDG_*_HOME` and `XDG_RUNTIME_DIR` (release builds ignore
+  `VGAMES_PROFILE`; on Linux the single-instance lock `app.vgames.launcher.SingleInstance` and the Secret Service
+  keychain follow the bundle identifier and the D-Bus session, so a second instance on the same bus exits 0; assert
+  two live PIDs), against the API behind INS-09's TLS proxy: friend code → chat → invite to a package Bob lacks →
+  install dialog → Alice sees progress → joined. Without the harness on `main`, keep the in-process test, do
+  GAME-13/14's independent parts, and add the scenario when it lands.
 - **Acceptance:** `tests/social_chat.rs::invite_install_ready_join_handshake` (or a new test) runs with the real install
   worker and `vgames_transfer::testkit::rig` in the required Linux desktop job (INT-03; else add Postgres and the social
   tests to `ci.yml` yourself, noted in `int.md`); the M3 scenario green nightly once INS-09 is on `main`.
@@ -321,7 +357,7 @@ Announce each under "Interfaces delivered" in `game.md` the day it merges, with 
 | Task | You ship | Used by |
 |---|---|---|
 | GAME-01 | `vgames_proto::realtime::MAX_FRAME` | INT-04 (server F5 test) |
-| GAME-02 | 09 v1.1 (blocker name, env list, prefix path); `compat::prefix_dir` | INS-02/03/04, PLAY-06 |
+| GAME-02 | 09 v1.1 (blocker name, env list, prefix path); `compat::prefix_dir` | INS-02/03/04, PLAY-01, PLAY-06 |
 | GAME-05 | `compat::plan_for` as the plan source; `compat::save_base`; `crates/vgames-testapps` | PLAY-01, PLAY-06, INT-09 |
 | GAME-06 | the priority-files hook (PE scan, `d3d12_unsupported_on_mac`) | INS-03 |
 | GAME-07 | INS's catalog compat provider, filled; the eight compat commands | INS-02 (details), the UI |
@@ -342,7 +378,7 @@ Nothing blocks you. When something is missing, apply README §1 ("need it, build
 | Priority-files option and hook (GAME-06) | INS-03 | Profile hint; then add the option and hook as INS-03 specifies |
 | Install events, `installs::start` (GAME-12) | INS-03/04 | Ordered late; do GAME-13/14's independent parts first |
 | Catalog compat provider trait (GAME-07) | INS-02 | Add the trait in `catalog/` with a default provider |
-| `ApiClient` problem body + refresh hook (GAME-01/04) | INS-05 | Add both to `api/mod.rs` |
+| `ApiClient` problem body + refresh hook (GAME-04) | INS-05 | Add both to `api/mod.rs` (note it in `ins.md`) |
 | `e2e-real` harness (GAME-12) | INS-09 | Keep the in-process test; add the scenario when it lands |
 | SQLite `cache_size` (GAME-13) | INS | One-line pragma in `db/mod.rs` |
 | Runtime-catalog key, first signed catalog | INT-08, PR #46 | Vectors and a test key; manager off without the `.pub` |
@@ -364,7 +400,9 @@ Every fallback is a small PR in the owner's area, noted under "Built for you" in
    → implement with tests that fail without the change (`feat(desktop): … (GAME-05)`) → changelog fragment in
    `.changes/` (`AGENTS.md` §3; `audience: user` only for what players see) → checks (`AGENTS.md` §4,
    `scripts/ci/local.sh`, `cargo test -p vgames-overlay --features renderer`) → PR → every check green, desktop matrix
-   included → **merge it yourself** (rebase merge) → update `game.md`.
+   included → `git fetch origin`; if `origin/main` moved, rebase, push and wait again (README §3) → **merge it
+   yourself** (rebase merge; a README §3 security-path PR, such as a `capabilities/overlay.json` change or anything
+   beyond appending your own `allow-<command>`, gets `Ready for INT: #<PR>` in `game.md` instead) → update `game.md`.
 3. **Small PRs** (< ~600 changed lines excluding generated files), each leaving `main` green; push once per task at
    least. INT merges `contract:` PRs (README §4); build behind them meanwhile.
 4. **Never wait on a person or another agent:** apply "need it, build it", put person-only steps in

@@ -100,7 +100,8 @@ Where things stand (evidence: `docs/agents/phase-2/introspection-2026-10-05.md`)
    contract questions", lines `Ready for INT: #<PR>`, `contract ack: #<PR>` and objections.
 3. **Merge what is ready.** Additive `contract:` PRs merge as soon as CI is green. Breaking ones merge when every
    listed agent wrote its ack, or you decide after one loop and write the decision in `int.md`. PRs marked
-   "Ready for INT" (CSP, capabilities, updater, `tauri.conf.json`) get a security review, then a merge when green.
+   "Ready for INT" (the security paths of README §3) get a security review, then a merge when green. Review every
+   `Merged without INT: #<PR>` line (README §3a) and fix forward where needed.
 4. **Sweep open PRs.** Green PRs with no activity for a day: ask in the owner's status file, or merge if marked
    ready. Close superseded PRs with a comment naming the commits that superseded them.
 5. **Keep `human-checklist.md` in sync.** Nothing in it may block a task; every manual step has its automated
@@ -109,7 +110,8 @@ Where things stand (evidence: `docs/agents/phase-2/introspection-2026-10-05.md`)
 ## Tasks (in order; each ends with acceptance criteria)
 
 ### INT-01 — Toolchain policy and PR triage (was A5-T14)
-- Create `docs/agents/status/int.md` (AGENTS.md §6 format plus "Built for you"). Carry over from
+- Create, or adopt if another agent already created it (README §6), `docs/agents/status/int.md` (AGENTS.md §6
+  format plus "Built for you"). Carry over from
   `docs/agents/status/agent-5.md` only what is live on `main` (Q15); never edit the phase-1 file.
 - Already done by this PR: the pin to `1.99.0` and the `fetch_update` replacement. Confirm `CI` is green on `main`.
 - **Toolchain policy (Q1).** Pick one and write the rule in `docs/security/ci.md`. Default: raise `rust-version`
@@ -137,11 +139,13 @@ Where things stand (evidence: `docs/agents/phase-2/introspection-2026-10-05.md`)
 - **Q6:** the security section names paths that do not exist (`/apps/desktop/src-tauri/src/deeplink/`,
   `/apps/desktop/src-tauri/src/auth/`, `/apps/api/src/social.rs`), and so does `SECURITY_CRITICAL` in
   `xtask/src/codeowners.rs`. Replace them so that `src-tauri/src/deeplink.rs`, `servers/auth.rs`, `secrets.rs`,
-  `api/session.rs`, `social/store.rs` + `social/store/`, `launch/process/` and the new `compat/` (GAME's runtime
-  extraction) are security-critical.
+  `api/session.rs`, `social/store.rs` + `social/store/`, `launch/`, and the new `installs/` and `downloads/` (G1,
+  invariant 1: INS-03, INS-04), `publishing/` (publisher key decryption: INS-06), `saves/` (restore writes: PLAY-06),
+  `compat/` (runtime extraction: GAME-03) and `overlay/inject.rs` (DLL injection: GAME-09) are security-critical.
+  New crates (e.g. GAME-05's `crates/vgames-testapps`) get an owner line too, so the check never fails on them.
 - Extend `cargo xtask codeowners check` to **fail on any pattern that matches no tracked file**, and require every
   `SECURITY_CRITICAL` entry to exist. A path announced but not created yet (the new `compat/`) is allowed only
-  with a `# pending: <task id>` comment on its line.
+  with a `# pending: <task id>` comment on its line (any new path above).
 - **Q7:** one `contract:` PR to `02-package-format.md` recording what `vgames-core` already enforces: the NFKC path
   rule, byte-wise file order, the empty-file hash, `version_label` 1–64 characters, duplicate JSON keys refused,
   bounded counts. Name the module and the test for each. (09 rides with GAME-02, 08 with INT-06, 03-api §6 with
@@ -156,12 +160,17 @@ Where things stand (evidence: `docs/agents/phase-2/introspection-2026-10-05.md`)
 - In `ci.yml`, the required job `desktop` gets a `postgres:18` service and `VGAMES_TEST_DATABASE_URL`, and runs
   the **whole** suite under Xvfb: `xvfb-run -a cargo test -p vgames-desktop --locked`. Then it runs the non-soak
   DB tests: `cargo test -p vgames-desktop --locked --test social_chat --test social_chaos -- --ignored`, adding
-  `--test install_e2e` (INS-08) and `--test saves_e2e` (PLAY-06) at PR scale as they land. Never use
+  `--test install_e2e` (INS-08), `--test publish_e2e` (INS-06) and `--test saves_e2e` (PLAY-06) at PR scale as they
+  land, in the single DB step of README §5. Never use
   `--include-ignored` on the whole crate: `tests/social_soak.rs` belongs to INT-07.
 - Gate for the path-filtered `desktop-matrix.yml`: a required, always-running `Desktop matrix gate` job. It passes
   when the matrix was skipped by its path filter and fails when any leg failed or was cancelled. Add matrix legs as
   slices land them (GAME-09 overlay on Windows, GAME-05/06 compat smoke, PLAY-02/03/06/09 steps) and keep the
-  matrix under its timeout.
+  matrix under its timeout. Implementation: a gate inside a workflow with a workflow-level `paths:` filter never
+  reports and would block docs-only PRs, so remove that filter, add a first `changes` job (`git diff --name-only`
+  against the PR base, no third-party action) whose output gates the legs through `if:`, and add
+  `gate: needs: [changes, build]`, `if: always()`, failing only when `needs.build.result` is `failure` or
+  `cancelled`.
 - Wire INS-09's `apps/desktop/e2e-real`: nightly in `e2e.yml`, plus part 1 on PRs touching `apps/desktop/**` if it
   stays under 10 minutes.
 - Slices may add their own steps first under "need it, build it". You then consolidate them (one job per purpose,
@@ -179,9 +188,10 @@ Where things stand (evidence: `docs/agents/phase-2/introspection-2026-10-05.md`)
 - **Maintenance:** upgrade `utoipa` 6, `utoipa-axum` 0.3 and `utoipa-swagger-ui` 10 together in one PR. The drift
   test (`apps/api/tests/openapi_contract.rs`) stays green with `apps/api/tests/openapi_unimplemented.txt` empty.
   Close #79, #80 and #81 with a link to it.
-- **Flake (Q13):** the realtime/presence integration tests wait a fixed 10 s for the gateway
-  (`apps/api/tests/it/realtime.rs`) and time out under the parallel suite. Fix the root cause with a readiness
-  signal, not a longer timeout.
+- **Flake (Q13):** `instance()` in `apps/api/tests/it/realtime.rs` already waits on the readiness signal
+  `state.realtime_ready` with a 10 s timeout, and under the parallel suite readiness itself takes longer (it passes
+  alone and serially). Find what delays `realtime::start` becoming ready under load (e.g. the LISTEN connection
+  waiting for a pool slot or for Postgres `max_connections`) and fix that. Never raise the timeout.
 - **Compat history:** a `contract:` PR adding `GET /v1/admin/packages/{package_id}/compat/{target}` (beside the
   existing `PUT`) to `openapi/openapi.yaml` and `03-api.md`: every revision, newest first, signed cursors, with
   signer key id and `created_at`; admins only, unpublished packages included. Implement it in
@@ -211,21 +221,33 @@ Where things stand (evidence: `docs/agents/phase-2/introspection-2026-10-05.md`)
 - `release-desktop.yml`: replace the fork-only `UNSIGNED` logic (`vars.VGAMES_UNSIGNED_DRY_RUN`) with "sign when
   the secrets exist" (Windows: `WINDOWS_CERTIFICATE`; macOS: `APPLE_CERTIFICATE`/`APPLE_SIGNING_IDENTITY`).
   Otherwise build unsigned, add a `::notice::`, and say "Unsigned build" in the draft body. Keep every updater
-  check in `prepare`. `release-api.yml` skips with a notice, not a failure, when the `release` environment or its
-  secrets are missing. `release-runtimes.yml` comes with PR #46: give it the same rule when you rebase #46 in
-  INT-08.
+  check in `prepare`. `release-api.yml` needs no change for unsigned mode (it reads no secret: cosign keyless and
+  `GITHUB_TOKEN`); say so in `int.md`. `release-runtimes.yml` comes with PR #46: when you rebase #46 in INT-08, it
+  skips with a notice, not a failure, while the catalog-key secrets are missing.
 - New `.github/workflows/release-dry-run.yml` (manual + weekly; no `release` environment, no repository secrets,
   no GitHub release):
+  - first run the same `jq` checks as `release-desktop.yml` `prepare` (pubkey, `requireSignedVersion`,
+    `createUpdaterArtifacts`) against the committed `tauri.conf.json`, so the committed key is checked without a
+    tag;
   - generate a throwaway updater key inside the job and inject its public key with `--config`;
   - build Windows, Linux and macOS unsigned, with the build steps shared with `release-desktop.yml` (a reusable
     workflow or a composite action) so the dry run proves the real path;
   - `cargo xtask updater sign`, `manifest --pubkey <throwaway>` and `verify`;
   - install the `.deb` on `ubuntu-24.04` and run PLAY-09's `--smoke-test` under `xvfb-run`;
+  - **update round trip** (phase-1 M4): build a second Linux AppImage of the same commit with a lower version
+    (`--config '{"version":"0.0.1"}'`) and the same throwaway pubkey. The binary keeps its compiled-in
+    `remote::LATEST_URL`/`CHANGELOG_URL`; add no flag. For this step only, map `github.com` to `127.0.0.1` in
+    `/etc/hosts` and serve those two paths and the new AppImage over HTTPS with a throwaway CA the runner trusts:
+    this run's `latest.json` (signed with the throwaway key) and `changelog-user.json`. Start `0.0.1` under
+    `xvfb-run` and install the update through INS-09's `e2e-real` harness (until it exists, report the step
+    `pending (INS-09)`). Assert that the relaunched binary's `--smoke-test` prints the new version and that What's
+    new lists only `audience: user` lines. Remove the hosts entry after the step;
   - upload everything as workflow artifacts.
 - If `--smoke-test` is not on `main` yet, the job checks the installed files only. Track the extension in `int.md`
   and add the call when PLAY-09 lands. Stage GAME-11's overlay renderers the same way once they exist.
 - **Acceptance:** the dry run is green on `main`; a second job downloads its artifacts and they pass
-  `cargo xtask updater verify`; `release-desktop.yml` and the dry run share their build steps; `actionlint` and
+  `cargo xtask updater verify`; the update round trip passes (or reports `pending (INS-09)`); `release-desktop.yml`
+  and the dry run share their build steps; `actionlint` and
   `cargo xtask security check` are green.
 
 ### INT-07 — Hosted soak workflow (was A5-T18)
@@ -236,6 +258,8 @@ Where things stand (evidence: `docs/agents/phase-2/introspection-2026-10-05.md`)
   - **social chat:** `social_soak` `sustained_chat_keeps_memory_flat` with `VGAMES_SOAK_CHAT_SECS=3600` and a
     Postgres service;
   - **idle sockets:** `idle_sockets_stay_up` with `VGAMES_SOAK_IDLE_SECS=19800`.
+- Build the release binary and test binaries once, in a separate job, and pass them to the soak jobs as artifacts:
+  a 5.5 h soak plus apt, pnpm and a release build does not fit GitHub's 360-minute job limit.
 - Upload the RSS samples as artifacts, with a slope check that fails on growth above budget.
 - GAME-13 owns the social soak tests and their tuning; you own the workflow.
 - Keep the self-hosted 24 h job behind `vars.VGAMES_SOAK_RUNNER`, unchanged, as a separate job.
@@ -247,9 +271,13 @@ Where things stand (evidence: `docs/agents/phase-2/introspection-2026-10-05.md`)
   nothing, write why in `int.md` (no key material), and go on to INT-09.
 - **Generate the keys** in your session, **outside the repository** (scratchpad or `mktemp -d`, mode 700), with
   random passwords (32 bytes from the OS CSPRNG, base64) that never reach a log:
-  - updater: `pnpm --filter @vgames/desktop tauri signer generate -w <scratch>/vgames-updater.key`;
-  - runtime catalog: `minisign -G -p <scratch>/runtime-catalog.pub -s <scratch>/runtime-catalog.key` (install
-    `minisign` with apt or cargo).
+  - updater: write the password to `<scratch>/TAURI_SIGNING_PRIVATE_KEY_PASSWORD` first, then `set +x; CI=true pnpm
+    --filter @vgames/desktop tauri signer generate -w <scratch>/vgames-updater.key -p "$(cat
+    <scratch>/TAURI_SIGNING_PRIVATE_KEY_PASSWORD)"` (without `-p`/`--ci` it prompts and blocks);
+  - runtime catalog: `apt-get install -y minisign` (the `minisign` crate is a library: `cargo install minisign`
+    installs nothing), then `set +x; printf '%s\n%s\n' "$PW" "$PW" | minisign -G -p <scratch>/runtime-catalog.pub -s
+    <scratch>/runtime-catalog.key`. Check the pair with `cargo xtask runtimes sign`/`verify` on a scratch
+    `runtimes.json` before handing the files over.
 - **Commit only the public halves**, in one PR with an `audience: internal` fragment: `plugins.updater.pubkey` in
   `apps/desktop/src-tauri/tauri.conf.json` (it replaces `REPLACE_WITH_TAURI_UPDATER_PUBLIC_KEY`) and the new
   `runtimes/runtime-catalog.pub`. Record both key ids in `docs/security/release.md`.
@@ -262,12 +290,16 @@ Where things stand (evidence: `docs/agents/phase-2/introspection-2026-10-05.md`)
   rotate to offline keys" with exact steps. Updater: a release signed by the old key that ships the new public key.
   Catalog: a launcher release with the new key; per-key versions (F2) make the switch safe.
 - **Runtime pipeline:** rebase and merge PR #46 (`runtimes.yml` watcher, `release-runtimes.yml`,
-  `runtimes/upstreams.toml`, `scripts/runtimes/`), without its `agent-5.md` hunk. Then run the watcher once to seed
-  `runtimes/catalog.toml` with pinned umu-launcher, UMU-Proton and GE-Proton, wine-macos, DXMT, DXVK-macOS and
-  MoltenVK (no D3DMetal), and land that PR. If Actions may not create PRs (§A5), the watcher opens an issue
-  instead of failing.
+  `runtimes/upstreams.toml`, `scripts/runtimes/`), without its `agent-5.md` hunk. In that rebase, add a fallback to
+  `runtimes.yml`: when `gh pr create` fails (Actions may not create PRs, checklist §A5), `gh issue create` (or update)
+  one issue with the summary, with `issues: write` on that job only. Then seed `runtimes/catalog.toml` yourself:
+  run `python3 scripts/runtimes/watch.py` in your session (or download a watcher run's artifact), apply it with
+  `cargo xtask runtimes upsert`, pinning umu-launcher, UMU-Proton and GE-Proton, wine-macos, DXMT, DXVK-macOS and
+  MoltenVK (no D3DMetal), and open that PR from your own branch so CI runs (a PR opened with `GITHUB_TOKEN` starts no
+  `pull_request` workflows).
 - Park PR #102 (D3DMetal intake) as a draft labelled `deferred`, with a comment citing the owner decision.
-- **Acceptance:** both public keys are on `main`, and the `prepare` pubkey check in `release-desktop.yml` passes;
+- **Acceptance:** both public keys are on `main`, and the `prepare`-equivalent checks of INT-06's dry run pass on
+  `main` against the committed `tauri.conf.json`;
   `int.md` says the four files were delivered and deleted, with no key material; #46 is merged; the seeded catalog
   builds with `cargo xtask runtimes build` and verifies with a test-signed copy (`runtimes sign`/`verify` with a
   throwaway key); #102 is a draft labelled `deferred`; gitleaks is green.
@@ -275,11 +307,13 @@ Where things stand (evidence: `docs/agents/phase-2/introspection-2026-10-05.md`)
 ### INT-09 — Milestones automated (was A5-T20)
 - One entry point per milestone: the new `scripts/demo/m1.sh` … `m4.sh`, or a new `cargo xtask demo m<N>`. Each
   runs or collects the tests that prove it (README §8):
-  - M1: INS-09 part 1;
+  - M1: INS-09 part 1, PLAY-04's `ui-nav` state-machine tests, and INT-05's real-API admin sign-in
+    (`apps/admin-web/e2e/foundation.spec.ts` with `ADMIN_E2E_BASE_URL`);
   - M2: INS-08 `install_e2e`, plus INS-09 part 2;
   - M3: GAME-12's real-install-path invite test, its INS-09 two-profile scenario, and the GAME-08 overlay toast;
   - M3b: the desktop matrix legs of GAME-09, GAME-05 and GAME-06, plus PLAY-06's cross-OS round trip;
-  - M4: the INT-06 dry run, the INT-07 soak, the release-build budgets (INS-07, PLAY-10) and INT-11.
+  - M4: the INT-06 dry run and its update round trip, the INT-07 soak, the release-build budgets (INS-07,
+    PLAY-10) and INT-11.
 - A test that does not exist yet is reported `pending (<task id>)` and its milestone `not reached`. An existing
   test that fails turns the job red. Never skip an existing test.
 - Nightly `e2e.yml` runs M1–M3; `desktop-matrix.yml` runs M3b's per-OS parts; M4 reads the latest dry-run and soak
@@ -311,9 +345,12 @@ Where things stand (evidence: `docs/agents/phase-2/introspection-2026-10-05.md`)
   launcher F5 and Q4 (GAME-01).
 - **New attack surface:**
   - PLAY: process spawn on Windows and macOS (argv quoting, environment allowlist, working directory), cloud-save
-    restore paths (confinement, atomic restore, no symlinks out), deep-link repair;
+    restore paths (confinement, atomic restore, no symlinks out), deep-link repair, `open_external_url` scheme and
+    IDN-homograph filtering and `app_diagnostics` redaction (PLAY-08);
   - GAME: runtime download and extraction, the Proton/Wine environment (launcher-owned keys), DLL injection;
-  - INS-03's checkpoint pause in `updater_install`.
+  - INS: INS-03's checkpoint pause in `updater_install`; launcher admin publishing (INS-06): the passphrase never
+    reaches a log or returns to the WebView, the decrypted key is zeroized, and `key_path` and the publish folder
+    are validated.
 - Co-sign GAME-14's threat review of social and overlay. Fill `docs/security/test-matrix.md` rows for every new
   invariant, naming the tests.
 - Write the new `docs/security/review-<date>.md`. File each finding in the owning slice's status file.
@@ -324,7 +361,11 @@ Where things stand (evidence: `docs/agents/phase-2/introspection-2026-10-05.md`)
 - When every other task in the four files is done, or what remains is listed with owner and reason:
   - **Release-candidate PR.** Every version source checked by `release-desktop.yml` `prepare` says `0.1.0`: the
     `[workspace.package]` version in `Cargo.toml` and `apps/desktop/package.json`. They already do; bump only if
-    one moved. Include a `cargo xtask changelog release 0.1.0` preview.
+    one moved. Paste a release-notes preview into the PR body; never commit it. In a throwaway worktree run
+    `cargo xtask changelog export > <scratch>/fragments.json`, the release-notes agent in fallback mode on it
+    (`<scratch>/notes.json`), then `cargo xtask changelog release 0.1.0 --notes <scratch>/notes.json --date
+    $(date -u +%F) --out-dir <scratch>/dist`, and delete the worktree: the command deletes the consumed fragments,
+    which the tag-time `notes` job needs.
   - **Dry run.** INT-06's dry run is green on that commit.
   - **Release notes.** Run the release-notes agent (`scripts/release-notes`) in deterministic fallback mode on the
     real fragments, and with the live API if the owner pasted `ANTHROPIC_API_KEY` (§A4).
@@ -360,7 +401,7 @@ Nothing blocks you: you aggregate other slices' tests for CI and the milestones.
 
 | You need | From | Your fallback ("need it, build it", README §1) |
 |---|---|---|
-| `install_e2e.rs`, `saves_e2e.rs` | INS-08, PLAY-06 | Wire each the day it merges; until then the job runs what exists. |
+| `install_e2e.rs`, `publish_e2e.rs`, `saves_e2e.rs` | INS-08, INS-06, PLAY-06 | Wire each the day it merges; until then the job runs what exists. |
 | The `e2e-real` harness | INS-09 | Wire it when it lands; INT-09 reports M1/M2 parts as `pending (INS-09)`. |
 | `--smoke-test` | PLAY-09 | The dry run checks installed files only; add the call when it lands. |
 | `apps/desktop/perf/soak.py` | PLAY-10 | Write the smallest version yourself with the `--binary --hours --out` interface: RSS of the process tree per minute, CSV + summary JSON, non-zero exit on slope above budget. Note it in `play.md` "Built for you". |
@@ -369,7 +410,7 @@ Nothing blocks you: you aggregate other slices' tests for CI and the milestones.
 | Checkpoint pause in `updater_install` | INS-03 (edits your `updater/mod.rs`) | Review the edit; until it lands, `updater_install` keeps today's `wait_until_idle`. |
 | The G1 re-review request | INS-10 | Start the review on `main`'s code once INS-04 lands; do not wait for the request. |
 | The threat review to co-sign | GAME-14 | Review GAME's code directly; co-sign when the document lands. |
-| PRs marked "Ready for INT" (CSP, capabilities, updater, `tauri.conf.json`); the contracts of GAME-02, GAME-10, GAME-14, PLAY-04, PLAY-06 | PLAY, GAME | Review and merge in the integrator loop (README §3, §4). |
+| PRs marked "Ready for INT" (the security paths of README §3); the contracts of GAME-02, GAME-10, GAME-14, PLAY-04, PLAY-06 | PLAY, GAME | Review and merge in the integrator loop (README §3, §4). |
 
 ## How to work
 
@@ -381,7 +422,9 @@ Nothing blocks you: you aggregate other slices' tests for CI and the milestones.
    - Implement with tests that fail without the change; reference the task id in commits (`ci: … (INT-03)`).
    - Add a changelog fragment (AGENTS.md §3): `audience: user` only for what players or admins see.
    - Run the AGENTS.md §4 checks (`scripts/ci/local.sh`), then open the PR.
-   - Once every check is green, **merge it yourself** (rebase merge) and update `int.md`.
+   - Once every check is green, `git fetch origin`; if `origin/main` moved, rebase, push and wait again (README §3).
+     Then **merge it yourself** (rebase merge; for your own PRs on README §3 security paths, write your review in
+     `int.md` first) and update `int.md`.
 3. **Rules.** Keep PRs under ~600 changed lines (generated files excluded). Workflow changes are proved by a run
    on the branch or a manual dispatch, linked in the PR. Never wait on a person or another agent; keep going until
    the list is done.
