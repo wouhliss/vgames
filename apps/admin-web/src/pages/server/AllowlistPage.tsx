@@ -2,11 +2,16 @@
 // digits, checked before sending) with an optional note; remove after confirmation.
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
+import { z } from "zod";
 import { ApiError } from "../../api/errors";
 import { addAllowlist, listAllowlist, removeAllowlist, serverKeys } from "../../api/server";
+import { RESTORED_MESSAGE, useDraft } from "../../app/drafts";
 import { ErrorView, ForbiddenPage, Loading } from "../../app/ErrorView";
 import { Modal } from "../../components/Modal";
 import { when } from "./shared";
+
+const AddDraft = z.object({ id: z.string(), note: z.string() });
+type AddDraft = z.infer<typeof AddDraft>;
 
 export function AllowlistPage() {
   const client = useQueryClient();
@@ -14,11 +19,14 @@ export function AllowlistPage() {
     queryKey: serverKeys.allowlist,
     queryFn: async ({ signal }) => (await listAllowlist(signal)).data.items,
   });
-  const [id, setId] = useState("");
-  const [note, setNote] = useState("");
+  const restored = useDraft("allowlist-add", AddDraft, (): AddDraft | null =>
+    id || note ? { id, note } : null,
+  );
+  const [id, setId] = useState(restored?.id ?? "");
+  const [note, setNote] = useState(restored?.note ?? "");
   const [idError, setIdError] = useState<string | null>(null);
   const [failure, setFailure] = useState<unknown>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(restored ? RESTORED_MESSAGE : null);
   const [busy, setBusy] = useState(false);
   const [removing, setRemoving] = useState<string | null>(null);
 
