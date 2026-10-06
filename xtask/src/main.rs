@@ -15,6 +15,7 @@ mod codeowners;
 mod release;
 mod runtimes;
 mod security;
+mod toolchain;
 mod updater;
 
 use std::path::{Path, PathBuf};
@@ -34,6 +35,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
+    /// Require the workspace minimum Rust version to equal the pinned toolchain.
+    Toolchain {
+        #[command(subcommand)]
+        command: ToolchainCmd,
+    },
     /// Changelog fragments (.changes/*.md).
     Changelog {
         #[command(subcommand)]
@@ -69,6 +75,11 @@ enum Cmd {
         #[command(subcommand)]
         command: RuntimesCmd,
     },
+}
+
+#[derive(Subcommand)]
+enum ToolchainCmd {
+    Check,
 }
 
 #[derive(Subcommand)]
@@ -479,6 +490,9 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
     let root = repo_root();
     let result = match cli.command {
+        Cmd::Toolchain {
+            command: ToolchainCmd::Check,
+        } => toolchain::check(&root).map(|()| true),
         Cmd::Changelog {
             command: ChangelogCmd::Lint,
         } => lint_all(&root).map(|(ok, failures)| {

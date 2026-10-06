@@ -61,6 +61,8 @@ jobs:
         with:
           shared-key: rust
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Toolchain policy
+        run: cargo xtask toolchain check
       - name: rustfmt
         run: cargo fmt --all -- --check
       - name: clippy
