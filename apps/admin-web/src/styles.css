@@ -53,7 +53,10 @@ body {
   color: var(--fg);
 }
 
-:focus-visible {
+:focus-visible,
+/* Date inputs move focus through segments and a calendar button inside them; on the button the
+   input matches neither :focus nor :focus-visible (Chromium). Ring it while anything in it has focus. */
+input:focus-within {
   outline: 3px solid var(--focus);
   outline-offset: 2px;
 }
@@ -411,4 +414,10 @@ img.asset,
 
 progress {
   width: 240px;
+}
+
+/* Windowed tables (tableWindow.tsx): the space of rows that aren't rendered. */
+tr.spacer td {
+  padding: 0;
+  border: 0;
 }

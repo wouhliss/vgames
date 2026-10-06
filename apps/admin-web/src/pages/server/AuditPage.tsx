@@ -5,6 +5,7 @@ import { type FormEvent, useEffect, useState } from "react";
 import { ApiError } from "../../api/errors";
 import { type AuditFilters, listAudit, serverKeys } from "../../api/server";
 import { ErrorView, ForbiddenPage, Loading } from "../../app/ErrorView";
+import { SpacerRow, useTableWindow } from "../../components/tableWindow";
 import { LoadMore, useUrlFilters, when } from "./shared";
 
 const KEYS = ["actor", "action", "targetType", "targetId", "since", "until"] as const;
@@ -34,8 +35,9 @@ export function AuditPage() {
     initialPageParam: null as string | null,
     getNextPageParam: (last) => last.next_cursor ?? null,
   });
-  if (pages.error instanceof ApiError && pages.error.status === 403) return <ForbiddenPage />;
   const entries = pages.data?.pages.flatMap((p) => p.items) ?? [];
+  const win = useTableWindow(entries);
+  if (pages.error instanceof ApiError && pages.error.status === 403) return <ForbiddenPage />;
   const set = (k: keyof AuditFilters, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
   const submit = (e: FormEvent) => {
@@ -128,7 +130,7 @@ export function AuditPage() {
         <p role="status">No entries match.</p>
       ) : (
         <>
-          <div className="table-wrap">
+          <div className="table-wrap" ref={win.scrollRef}>
             <table>
               <caption className="visually-hidden">Audit entries, newest first</caption>
               <thead>
@@ -141,8 +143,9 @@ export function AuditPage() {
                 </tr>
               </thead>
               <tbody>
-                {entries.map((e) => (
-                  <tr key={e.id}>
+                <SpacerRow height={win.before} columns={5} />
+                {win.rows.map(({ item: e, index }) => (
+                  <tr key={e.id} ref={win.measure} data-index={index}>
                     <td>{when(e.created_at)}</td>
                     <td>{e.actor ? (e.actor.display_name ?? e.actor.username) : "system"}</td>
                     <th scope="row" className="mono">
@@ -161,6 +164,7 @@ export function AuditPage() {
                     </td>
                   </tr>
                 ))}
+                <SpacerRow height={win.after} columns={5} />
               </tbody>
             </table>
           </div>
