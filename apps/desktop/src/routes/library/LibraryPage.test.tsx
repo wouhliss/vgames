@@ -451,7 +451,7 @@ describe("library", () => {
     );
     await user.click(within(dialog).getByRole("button", { name: "Uninstall" }));
     expect(backend.callsTo("install_uninstall")[0]?.args).toEqual({
-      package: CRIMSON.package,
+      pkg: CRIMSON.package,
       removeLeftovers: true,
       removePrefix: false,
     });
@@ -472,7 +472,7 @@ describe("library", () => {
     await user.click(prefix);
     await user.click(within(dialog).getByRole("button", { name: "Uninstall" }));
     expect(backend.callsTo("install_uninstall")[0]?.args).toEqual({
-      package: SILENT.package,
+      pkg: SILENT.package,
       removeLeftovers: false,
       removePrefix: true,
     });
@@ -494,7 +494,7 @@ describe("library", () => {
     );
     await user.click(within(dialog).getByRole("button", { name: "Move" }));
     expect(backend.callsTo("install_move")[0]?.args).toEqual({
-      package: CRIMSON.package,
+      pkg: CRIMSON.package,
       libraryId: SSD.id,
     });
   });

@@ -89,6 +89,10 @@
     "allow-installs-list",
     "allow-install-update",
     "allow-install-verify",
-    "allow-install-resume"
+    "allow-install-resume",
+    "allow-install-move",
+    "allow-install-uninstall-plan",
+    "allow-install-uninstall",
+    "allow-install-open-folder"
   ]
 }

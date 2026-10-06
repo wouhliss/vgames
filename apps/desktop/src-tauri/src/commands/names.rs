@@ -96,6 +96,10 @@ pub const MAIN_WINDOW_COMMANDS: &[&str] = &[
     "install_update",
     "install_verify",
     "install_resume",
+    "install_move",
+    "install_uninstall_plan",
+    "install_uninstall",
+    "install_open_folder",
 ];
 
 /// Commands the in-game overlay window may call. Only `overlay_*` commands

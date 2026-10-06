@@ -510,8 +510,8 @@ export function libraryHandlers(
       return null;
     },
     install_move: (args) => {
-      forced("install_move", args.package);
-      const pkg = find(args.package);
+      forced("install_move", args.pkg);
+      const pkg = find(args.pkg);
       requireIdle(pkg);
       if (args.libraryId === pkg.library_id)
         fail({ kind: "same_library" } satisfies InstallActionError);
@@ -536,14 +536,14 @@ export function libraryHandlers(
       return null;
     },
     install_uninstall_plan: (args) => {
-      forced("install_uninstall_plan", args.package);
-      const pkg = find(args.package);
+      forced("install_uninstall_plan", args.pkg);
+      const pkg = find(args.pkg);
       requireIdle(pkg);
       return makeUninstallPlan(pkg);
     },
     install_uninstall: (args) => {
-      forced("install_uninstall", args.package);
-      const pkg = find(args.package);
+      forced("install_uninstall", args.pkg);
+      const pkg = find(args.pkg);
       requireIdle(pkg);
       update(pkg.package, { state: "uninstalling" });
       later(state.actionDelayMs, () => {
@@ -553,7 +553,7 @@ export function libraryHandlers(
       return null;
     },
     install_open_folder: (args) => {
-      find(args.package);
+      find(args.pkg);
       return null;
     },
     shortcut_create: (args) => {

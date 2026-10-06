@@ -125,9 +125,14 @@ pub struct ListContext<'a> {
     pub cover: &'a dyn Fn(PackageRef, Uuid) -> Option<String>,
 }
 
+/// Called after a package was uninstalled (PLAY-06 drops its save state,
+/// GAME-03 its runtime references).
+pub type AfterUninstall = Arc<dyn Fn(PackageRef) + Send + Sync>;
+
 /// Install-side state shared by the library commands.
 pub struct Installs {
     cloud: RwLock<Arc<dyn CloudSaveProvider>>,
+    after_uninstall: RwLock<Vec<AfterUninstall>>,
     updates: Mutex<HashMap<PackageRef, AvailableUpdate>>,
     /// Launch targets per (install, version): manifests are read once.
     targets: Mutex<HashMap<(PackageRef, String), Vec<InstallTarget>>>,
@@ -137,6 +142,7 @@ impl Default for Installs {
     fn default() -> Self {
         Self {
             cloud: RwLock::new(Arc::new(NoCloudSaves)),
+            after_uninstall: RwLock::new(Vec::new()),
             updates: Mutex::new(HashMap::new()),
             targets: Mutex::new(HashMap::new()),
         }
@@ -148,6 +154,26 @@ impl Installs {
     pub fn set_cloud_save_provider(&self, provider: Arc<dyn CloudSaveProvider>) {
         if let Ok(mut slot) = self.cloud.write() {
             *slot = provider;
+        }
+    }
+
+    /// Registers a listener for uninstalled packages.
+    pub fn on_uninstalled(&self, hook: AfterUninstall) {
+        if let Ok(mut hooks) = self.after_uninstall.write() {
+            hooks.push(hook);
+        }
+    }
+
+    pub fn uninstalled(&self, package: PackageRef) {
+        self.forget(package);
+        self.set_update(package, None);
+        let hooks = self
+            .after_uninstall
+            .read()
+            .map(|h| h.clone())
+            .unwrap_or_default();
+        for hook in hooks {
+            hook(package);
         }
     }
 
@@ -244,7 +270,7 @@ impl Installs {
     }
 }
 
-fn state_of(stored: &str, job: Option<JobKind>) -> InstallState {
+pub(crate) fn state_of(stored: &str, job: Option<JobKind>) -> InstallState {
     match (stored, job) {
         (_, Some(JobKind::Update)) => InstallState::Updating,
         (_, Some(JobKind::Repair)) => InstallState::Repairing,
