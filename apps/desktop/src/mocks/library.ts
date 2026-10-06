@@ -429,21 +429,21 @@ export function libraryHandlers(
     },
     collection_add_package: (args) => {
       const collection = collectionOrFail(args.collectionId);
-      const pkg = find(args.package);
+      const pkg = find(args.pkg);
       if (!pkg.collection_ids.includes(collection.id))
         update(pkg.package, { collection_ids: [...pkg.collection_ids, collection.id] });
       return null;
     },
     collection_remove_package: (args) => {
       const collection = collectionOrFail(args.collectionId);
-      const pkg = find(args.package);
+      const pkg = find(args.pkg);
       update(pkg.package, {
         collection_ids: pkg.collection_ids.filter((id) => id !== collection.id),
       });
       return null;
     },
     favorite_set: (args) => {
-      const pkg = find(args.package);
+      const pkg = find(args.pkg);
       update(pkg.package, { favorite: Boolean(args.favorite) });
       return null;
     },

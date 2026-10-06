@@ -77,6 +77,14 @@
     "allow-downloads-reorder",
     "allow-downloads-history-clear",
     "allow-download-settings-get",
-    "allow-download-settings-set"
+    "allow-download-settings-set",
+    "allow-collections-list",
+    "allow-collection-create",
+    "allow-collection-rename",
+    "allow-collection-delete",
+    "allow-collections-reorder",
+    "allow-collection-add-package",
+    "allow-collection-remove-package",
+    "allow-favorite-set"
   ]
 }

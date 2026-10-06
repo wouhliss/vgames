@@ -84,6 +84,14 @@ pub const MAIN_WINDOW_COMMANDS: &[&str] = &[
     "downloads_history_clear",
     "download_settings_get",
     "download_settings_set",
+    "collections_list",
+    "collection_create",
+    "collection_rename",
+    "collection_delete",
+    "collections_reorder",
+    "collection_add_package",
+    "collection_remove_package",
+    "favorite_set",
 ];
 
 /// Commands the in-game overlay window may call. Only `overlay_*` commands

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-collections-reorder"
+description = "Enables the collections_reorder command without any pre-configured scope."
+commands.allow = ["collections_reorder"]
+
+[[permission]]
+identifier = "deny-collections-reorder"
+description = "Denies the collections_reorder command without any pre-configured scope."
+commands.deny = ["collections_reorder"]

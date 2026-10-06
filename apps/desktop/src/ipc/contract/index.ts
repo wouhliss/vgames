@@ -2,7 +2,7 @@
 import { catalogCommands } from "./catalog";
 import { compatCommands } from "./compat";
 import { coreCommands, coreEvents } from "./core";
-import { libraryCommands, libraryEvents } from "./library";
+import { libraryCommands } from "./library";
 import { settingsCommands } from "./settings";
 
 export const pendingCommands = {
@@ -15,7 +15,6 @@ export const pendingCommands = {
 
 export const pendingEvents = {
   ...coreEvents,
-  ...libraryEvents,
 };
 
 export type * from "./catalog";

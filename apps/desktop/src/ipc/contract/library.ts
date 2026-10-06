@@ -1,8 +1,8 @@
-// Installed packages, favorites, collections, launching and per-install actions (Agent 2,
-// A2-T06/T08/T09/T10). Requested shapes; see core.ts for the conventions.
+// Installed packages and per-install actions (INS-04). Collections and favorites are generated
+// now. Requested shapes; see core.ts for the conventions.
 import type { AppError, PackageRef } from "../../bindings";
 import type { Platform } from "./core";
-import { call, makeEvents, type Result } from "./runtime";
+import { call, type Result } from "./runtime";
 
 /**
  * Where an install is. `incomplete` = `install.json` is not `installed` and no download job exists
@@ -66,19 +66,6 @@ export type InstalledPackage = {
   cloud_saves: CloudSaveState;
 };
 
-/** A user category. Collections are local and span servers; items carry their server. */
-export type Collection = {
-  id: string;
-  /** 1–100 characters. */
-  name: string;
-  position: number;
-};
-
-export type CollectionError =
-  | { kind: "invalid_name" }
-  | { kind: "name_taken" }
-  | { kind: "not_found" };
-
 export type InstallActionError =
   | { kind: "not_found" }
   | { kind: "busy"; state: InstallState }
@@ -100,47 +87,11 @@ export type UninstallPlan = {
   has_prefix: boolean;
 };
 
-export type InstallsChanged = Record<string, never>;
-export type CollectionsChanged = Record<string, never>;
 
 export const libraryCommands = {
   /** Installed (and incomplete) packages of the active server. */
   async installsList(): Promise<Result<InstalledPackage[], AppError>> {
     return call("installs_list");
-  },
-  async collectionsList(): Promise<Result<Collection[], AppError>> {
-    return call("collections_list");
-  },
-  async collectionCreate(name: string): Promise<Result<Collection, CollectionError>> {
-    return call("collection_create", { name });
-  },
-  async collectionRename(
-    collectionId: string,
-    name: string,
-  ): Promise<Result<Collection, CollectionError>> {
-    return call("collection_rename", { collectionId, name });
-  },
-  async collectionDelete(collectionId: string): Promise<Result<null, CollectionError>> {
-    return call("collection_delete", { collectionId });
-  },
-  /** The full new order; ids not listed keep their relative order after the listed ones. */
-  async collectionsReorder(collectionIds: string[]): Promise<Result<null, CollectionError>> {
-    return call("collections_reorder", { collectionIds });
-  },
-  async collectionAddPackage(
-    collectionId: string,
-    pkg: PackageRef,
-  ): Promise<Result<null, CollectionError>> {
-    return call("collection_add_package", { collectionId, package: pkg });
-  },
-  async collectionRemovePackage(
-    collectionId: string,
-    pkg: PackageRef,
-  ): Promise<Result<null, CollectionError>> {
-    return call("collection_remove_package", { collectionId, package: pkg });
-  },
-  async favoriteSet(pkg: PackageRef, favorite: boolean): Promise<Result<null, AppError>> {
-    return call("favorite_set", { package: pkg, favorite });
   },
 
   /** Queues the available update; it shows up in Downloads. */
@@ -173,11 +124,3 @@ export const libraryCommands = {
     return call("install_open_folder", { package: pkg });
   },
 };
-
-export const libraryEvents = makeEvents<{
-  installsChanged: InstallsChanged;
-  collectionsChanged: CollectionsChanged;
-}>({
-  installsChanged: "installs-changed",
-  collectionsChanged: "collections-changed",
-});

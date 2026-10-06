@@ -158,11 +158,21 @@ export const commands = {
 	overlayView: () => __TAURI_INVOKE<OverlayView>("overlay_view"),
 	/**  An action from the overlay window (accept/decline, quick reply, open launcher, close). */
 	overlayAction: (action: OverlayAction) => __TAURI_INVOKE<void>("overlay_action", { action }),
+	collectionsList: () => typedError<Collection[], AppError>(__TAURI_INVOKE("collections_list")),
+	collectionCreate: (name: string) => typedError<Collection, CollectionError>(__TAURI_INVOKE("collection_create", { name })),
+	collectionRename: (collectionId: string, name: string) => typedError<Collection, CollectionError>(__TAURI_INVOKE("collection_rename", { collectionId, name })),
+	collectionDelete: (collectionId: string) => typedError<null, CollectionError>(__TAURI_INVOKE("collection_delete", { collectionId })),
+	/**  The full new order; ids not listed keep their relative order after the listed ones. */
+	collectionsReorder: (collectionIds: string[]) => typedError<null, CollectionError>(__TAURI_INVOKE("collections_reorder", { collectionIds })),
+	collectionAddPackage: (collectionId: string, pkg: PackageRef) => typedError<null, CollectionError>(__TAURI_INVOKE("collection_add_package", { collectionId, pkg })),
+	collectionRemovePackage: (collectionId: string, pkg: PackageRef) => typedError<null, CollectionError>(__TAURI_INVOKE("collection_remove_package", { collectionId, pkg })),
+	favoriteSet: (pkg: PackageRef, favorite: boolean) => typedError<null, AppError>(__TAURI_INVOKE("favorite_set", { pkg, favorite })),
 };
 
 /** Events */
 export const events = {
 	authFinished: makeEvent<AuthFinished>("auth-finished"),
+	collectionsChanged: makeEvent<CollectionsChanged>("collections-changed"),
 	connectivityChanged: makeEvent<ConnectivityChanged>("connectivity-changed"),
 	controllerEvent: makeEvent<ControllerEvent>("controller-event"),
 	conversationsChanged: makeEvent<ConversationsChanged>("conversations-changed"),
@@ -174,6 +184,7 @@ export const events = {
 	gameStopped: makeEvent<GameStopped>("game-stopped"),
 	installFinished: makeEvent<InstallFinished>("install-finished"),
 	installProgress: makeEvent<InstallProgress>("install-progress"),
+	installsChanged: makeEvent<InstallsChanged>("installs-changed"),
 	inviteChanged: makeEvent<InviteChanged>("invite-changed"),
 	inviteInstallRequested: makeEvent<InviteInstallRequested>("invite-install-requested"),
 	inviteReceived: makeEvent<InviteReceived>("invite-received"),
@@ -303,6 +314,20 @@ export type ChosenLibraryFolder = {
 	free_bytes: number,
 	total_bytes: number,
 };
+
+export type Collection = {
+	id: string,
+	/**  1–100 characters. */
+	name: string,
+	position: number,
+};
+
+export type CollectionError = { kind: "invalid_name" } | { kind: "name_taken" } | { kind: "not_found" } | 
+/**  The launcher could not save the change (details in the log). */
+{ kind: "io"; detail: string };
+
+/**  Collections changed; re-read `collections_list` (INS-04). */
+export type CollectionsChanged = Record<string, never>;
 
 /**  Error payload of every command. */
 export type CommandError = {
@@ -607,6 +632,12 @@ export type InstallStartError = { kind: "not_found" } |
  *  installs wait (01-security §3.2).
  */
 { kind: "trust_expired" } | { kind: "io"; detail: string };
+
+/**
+ *  Installed packages changed (state, favorites, collections, versions); re-read
+ *  `installs_list` (INS-04).
+ */
+export type InstallsChanged = Record<string, never>;
 
 export type Invite = {
 	id: string,

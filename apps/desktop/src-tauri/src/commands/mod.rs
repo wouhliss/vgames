@@ -6,6 +6,7 @@
 
 mod app;
 mod catalog;
+mod collections;
 mod downloads;
 mod games;
 mod libraries;
@@ -105,7 +106,15 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             crate::overlay::commands::package_overlays_list,
             crate::overlay::commands::package_overlay_set,
             crate::overlay::commands::overlay_view,
-            crate::overlay::commands::overlay_action
+            crate::overlay::commands::overlay_action,
+            collections::collections_list,
+            collections::collection_create,
+            collections::collection_rename,
+            collections::collection_delete,
+            collections::collections_reorder,
+            collections::collection_add_package,
+            collections::collection_remove_package,
+            collections::favorite_set
         ])
         .events(tauri_specta::collect_events![
             GameStarted,
@@ -134,7 +143,9 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             crate::social::commands::InviteInstallRequested,
             crate::overlay::commands::OverlayViewChanged,
             crate::overlay::commands::OverlayPackageDisabled,
-            crate::downloads::DownloadsChanged
+            crate::downloads::DownloadsChanged,
+            crate::events::InstallsChanged,
+            crate::events::CollectionsChanged
         ])
         .error_handling(tauri_specta::ErrorHandlingMode::Result)
         // Byte counts and ids that are u64 in Rust stay below 2^53.
