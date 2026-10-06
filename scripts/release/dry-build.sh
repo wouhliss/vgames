@@ -17,7 +17,7 @@ export TAURI_SIGNING_PRIVATE_KEY="$key_dir/updater.key"
 export TAURI_SIGNING_PRIVATE_KEY_PASSWORD
 TAURI_SIGNING_PRIVATE_KEY_PASSWORD=$(cat "$key_dir/password")
 CI=true pnpm --filter @vgames/desktop tauri signer generate -w "$TAURI_SIGNING_PRIVATE_KEY" \
-  -p "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" > "$key_dir/generation.log" 2>&1
+  -p "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" > /dev/null 2>&1
 pubkey=$(cat "$key_dir/updater.key.pub")
 export BUILD_CONFIG="$key_dir/build.json"
 python3 - "$pubkey" "$BUILD_CONFIG" <<'PY'
