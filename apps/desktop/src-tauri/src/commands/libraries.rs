@@ -273,7 +273,14 @@ pub async fn library_add(
             LibraryPresence::Offline
         }
     };
+    libraries_changed(&state);
     Ok(library_info(library, presence, 0))
+}
+
+fn libraries_changed(state: &AppState) {
+    state.bus.publish(crate::events::AppEvent::LibrariesChanged(
+        crate::events::LibrariesChanged {},
+    ));
 }
 
 #[tauri::command]
@@ -285,7 +292,9 @@ pub async fn library_set_default(
     let id = parse_action_id(&library_id)?;
     store::set_default(&state.db, id)
         .await
-        .map_err(map_action_error)
+        .map_err(map_action_error)?;
+    libraries_changed(&state);
+    Ok(())
 }
 
 #[tauri::command]
@@ -314,5 +323,6 @@ pub async fn library_remove(
         }
         Err(error) => return Err(LibraryRemovalError::from(map_action_error(error))),
     }
+    libraries_changed(&state);
     Ok(())
 }

@@ -210,6 +210,7 @@ export const events = {
 	inviteChanged: makeEvent<InviteChanged>("invite-changed"),
 	inviteInstallRequested: makeEvent<InviteInstallRequested>("invite-install-requested"),
 	inviteReceived: makeEvent<InviteReceived>("invite-received"),
+	librariesChanged: makeEvent<LibrariesChanged>("libraries-changed"),
 	messageReceived: makeEvent<MessageReceived>("message-received"),
 	messageStatusChanged: makeEvent<MessageStatusChanged>("message-status-changed"),
 	overlayPackageDisabled: makeEvent<OverlayPackageDisabled>("overlay-package-disabled"),
@@ -782,6 +783,12 @@ export type Leftover = {
 	path: string,
 	size_bytes: number,
 };
+
+/**
+ *  Libraries were added, removed or a new default chosen; re-read
+ *  `libraries_list` (INS-04).
+ */
+export type LibrariesChanged = Record<string, never>;
 
 /**  Errors expected by the launcher's library screens. */
 export type LibraryActionError = { kind: "not_writable" } | { kind: "system_directory" } | { kind: "nested_in_library"; library_path: string } | { kind: "contains_library"; library_path: string } | { kind: "already_added" } | { kind: "not_found" } | { kind: "io"; detail: string };
