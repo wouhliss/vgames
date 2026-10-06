@@ -73,6 +73,17 @@ pub const MAIN_WINDOW_COMMANDS: &[&str] = &[
     "catalog_genres",
     "package_details",
     "install_plan",
+    "install_start",
+    "downloads_list",
+    "download_pause",
+    "download_resume",
+    "download_retry",
+    "download_remove",
+    "download_cancel",
+    "downloads_reorder",
+    "downloads_history_clear",
+    "download_settings_get",
+    "download_settings_set",
 ];
 
 /// Commands the in-game overlay window may call. Only `overlay_*` commands

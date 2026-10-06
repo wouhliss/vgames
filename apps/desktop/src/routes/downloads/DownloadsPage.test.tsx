@@ -192,7 +192,7 @@ describe("downloads", () => {
       const item = await waitFor(() => row("Crimson Canyon"));
       expect(item).toHaveTextContent("Paused · 0 B of 10.0 GB");
       await user.click(within(item).getByRole("button", { name: "Resume Crimson Canyon" }));
-      expect(backend.callsTo("download_resume")[0]?.args).toEqual({ package: CANYON.package });
+      expect(backend.callsTo("download_resume")[0]?.args).toEqual({ pkg: CANYON.package });
       await waitFor(() => expect(row("Crimson Canyon")).toHaveTextContent("Waiting for its turn"));
     });
 
@@ -331,7 +331,7 @@ describe("downloads", () => {
       ).toHaveTextContent("Frees 2.0 GB.");
       await user.click(within(dialog).getByRole("button", { name: "Cancel download" }));
       expect(backend.callsTo("download_cancel")[0]?.args).toEqual({
-        package: STATION.package,
+        pkg: STATION.package,
         keepPartial: true,
       });
       expect(await screen.findByText("Cancelled, files kept")).toBeVisible();
@@ -348,7 +348,7 @@ describe("downloads", () => {
       await user.click(within(dialog).getByRole("radio", { name: /Delete the downloaded files/ }));
       await user.click(within(dialog).getByRole("button", { name: "Cancel download" }));
       expect(backend.callsTo("download_cancel")[0]?.args).toEqual({
-        package: CANYON.package,
+        pkg: CANYON.package,
         keepPartial: false,
       });
       expect(await screen.findByText("Cancelled")).toBeVisible();
@@ -363,7 +363,7 @@ describe("downloads", () => {
       expect(within(dialog).queryByRole("radio")).toBeNull();
       await user.click(within(dialog).getByRole("button", { name: "Cancel download" }));
       expect(backend.callsTo("download_cancel")[0]?.args).toEqual({
-        package: GARDEN.package,
+        pkg: GARDEN.package,
         keepPartial: false,
       });
     });

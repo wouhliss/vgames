@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-downloads-history-clear"
+description = "Enables the downloads_history_clear command without any pre-configured scope."
+commands.allow = ["downloads_history_clear"]
+
+[[permission]]
+identifier = "deny-downloads-history-clear"
+description = "Denies the downloads_history_clear command without any pre-configured scope."
+commands.deny = ["downloads_history_clear"]

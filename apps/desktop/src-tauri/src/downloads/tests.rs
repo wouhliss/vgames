@@ -741,3 +741,126 @@ async fn a_refused_launch_target_stops_the_install_before_more_packs() {
     let queue = h.downloads.list(|_, _| None).await.unwrap();
     assert!(queue.jobs.is_empty());
 }
+
+/// The catalog against a mock API, for `installs::start`.
+struct MockConnections(crate::api::ApiClient);
+
+impl crate::catalog::Connections for MockConnections {
+    async fn active(&self) -> Result<crate::api::ApiClient, crate::catalog::CatalogError> {
+        Ok(self.0.clone())
+    }
+    async fn client(
+        &self,
+        _server_id: Uuid,
+    ) -> Result<crate::api::ApiClient, crate::catalog::CatalogError> {
+        Ok(self.0.clone())
+    }
+}
+
+async fn catalog_for(
+    h: &Harness,
+    mock: &wiremock::MockServer,
+) -> crate::catalog::Catalog<MockConnections> {
+    let base: url::Url = mock.uri().parse().unwrap();
+    let session = Arc::new(crate::api::Session::new(
+        SERVER_ID,
+        base.clone(),
+        crate::secrets::VaultHandle(Arc::new(crate::secrets::MemoryVault::default())),
+        Arc::new(|_| {}),
+    ));
+    session
+        .store(
+            &serde_json::from_value(serde_json::json!({
+                "access_token": "a", "refresh_token": "r", "token_type": "Bearer", "expires_in": 900,
+                "user": {"id": "01920000-0000-7000-8000-00000000000a", "username": "alice",
+                         "role": "user", "created_at": "2026-09-24T10:00:00Z"}
+            }))
+            .unwrap(),
+        )
+        .await;
+    let client = crate::api::ApiClient::new(crate::api::http_client().unwrap(), base, session);
+    let cache = Arc::new(crate::images::ImageCache::open(h._dir.path().join("images")).unwrap());
+    crate::catalog::Catalog::new(
+        Arc::new(MockConnections(client)),
+        h.db.clone(),
+        Arc::new(crate::catalog::covers::Covers::new(
+            cache,
+            reqwest::Client::new(),
+        )),
+        Some(vgames_core::manifest::Platform::LinuxX86_64),
+    )
+}
+
+async fn serve_detail(mock: &wiremock::MockServer, served: &Served, slug: &str) {
+    use wiremock::matchers::{method, path};
+    let p = &served.package;
+    wiremock::Mock::given(method("GET"))
+        .and(path(format!("/v1/packages/{}", p.expected.package_id)))
+        .respond_with(
+            wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": p.expected.package_id,
+                "slug": slug,
+                "title": "Gilded Garden",
+                "genres": [],
+                "platforms": ["linux-x86_64"],
+                "updated_at": "2026-10-01T12:00:00Z",
+                "releases": [{
+                    "platform": "linux-x86_64",
+                    "version_id": p.expected.version_id,
+                    "version_label": "1.1",
+                    "sequence": 1,
+                    "total_size": p.total_bytes(),
+                    "published_at": "2026-10-01T12:00:00Z"
+                }]
+            })),
+        )
+        .mount(mock)
+        .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn installs_start_queues_and_reports_progress_and_the_end() {
+    let mut h = Harness::new().await;
+    let served = h.serve(package(13, 9 * MIB, Uuid::now_v7())).await;
+    let mock = wiremock::MockServer::start().await;
+    // An unsafe slug never becomes a folder name: the package id does.
+    serve_detail(&mock, &served, "../escape").await;
+    let catalog = catalog_for(&h, &mock).await;
+    let target = Harness::package_ref(&served);
+    crate::installs::start(&catalog, &h.downloads, target, h.library.root.id)
+        .await
+        .unwrap();
+    let mut progress = false;
+    let outcome = loop {
+        match h.next_event().await {
+            AppEvent::InstallProgress(p) if p.package == target => progress = true,
+            AppEvent::InstallFinished(f) if f.package == target => break f.outcome,
+            _ => {}
+        }
+    };
+    assert!(progress);
+    assert!(matches!(outcome, InstallOutcome::Installed));
+    assert_installed(&h, &served);
+    assert_eq!(
+        crate::installs::start(&catalog, &h.downloads, target, h.library.root.id).await,
+        Err(crate::installs::InstallStartError::AlreadyInstalled)
+    );
+
+    // Not enough space: refused up front with the numbers.
+    let other = h.serve(package(14, MIB, Uuid::now_v7())).await;
+    serve_detail(&mock, &other, "other").await;
+    h.free.store(1000, Ordering::SeqCst);
+    assert!(matches!(
+        crate::installs::start(
+            &catalog,
+            &h.downloads,
+            Harness::package_ref(&other),
+            h.library.root.id
+        )
+        .await,
+        Err(crate::installs::InstallStartError::InsufficientSpace {
+            available_bytes: 1000,
+            ..
+        })
+    ));
+}

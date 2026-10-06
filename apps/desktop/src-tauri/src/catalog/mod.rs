@@ -389,14 +389,25 @@ impl<C: Connections> Catalog<C> {
         })
     }
 
+    /// The active server's id.
+    pub async fn active_server(&self) -> Result<Uuid, CatalogError> {
+        Ok(self.connections.active().await?.session().server_id())
+    }
+
     /// Sizes for the install dialog, and everything `install_start` needs.
     pub async fn plan(&self, package_id: Uuid) -> Result<PlannedInstall, InstallPlanError> {
-        let client = self.connections.active().await?;
-        let server_id = client.session().server_id();
-        let package = PackageRef {
+        let server_id = self.active_server().await?;
+        self.plan_for(PackageRef {
             server_id,
             package_id,
-        };
+        })
+        .await
+    }
+
+    /// Like [`Self::plan`] for a package of any registered server (invites).
+    pub async fn plan_for(&self, package: PackageRef) -> Result<PlannedInstall, InstallPlanError> {
+        let client = self.connections.client(package.server_id).await?;
+        let package_id = package.package_id;
         let detail = self.detail(&client, package_id, false).await?;
         let (release, route) = select(&detail.releases, self.host)
             .map(|(r, route)| (r.clone(), route))
