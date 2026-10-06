@@ -862,7 +862,7 @@ export const en = {
       sessionsText: "Sign out a device you don't recognize or don't use anymore.",
       thisDevice: "This device",
       lastUsed: "Last used {when}",
-      neverUsed: "Signed in {when}",
+      unknownDevice: "Unknown device",
       revoke: "Sign out",
       revokeTitle: "Sign out {device}",
       revokeConfirmTitle: "Sign out {device}?",
@@ -870,16 +870,10 @@ export const en = {
       revoked: "{device} signed out",
       revokeFailed: "Couldn't sign out that device. Try again.",
       loadFailed: "Couldn't load your devices",
-      platform: {
-        windows: "Windows",
-        linux: "Linux",
-        macos: "Mac",
-        web: "Web browser",
-        cli: "Command line",
-      },
+      client: { desktop: "vgames launcher", web: "Web browser" },
       keychainTitle: "Your sign-in is stored in a file",
       keychainText:
-        "vgames couldn't use your system's password storage, so it keeps your sign-in in {path}. Anyone who can read your files could use it. Set up your system's keyring and restart vgames to move it there.",
+        "vgames couldn't use your system's password storage, so it keeps your sign-in in a private file. Anyone who can read your files could use it. Set up your system's keyring and restart vgames to move it there.",
     },
     storage: {
       text: "Folders where games are installed. New installs go to the default library unless you pick another.",

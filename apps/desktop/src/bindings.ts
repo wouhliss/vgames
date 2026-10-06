@@ -129,6 +129,13 @@ export const commands = {
 	overlayView: () => __TAURI_INVOKE<OverlayView>("overlay_view"),
 	/**  An action from the overlay window (accept/decline, quick reply, open launcher, close). */
 	overlayAction: (action: OverlayAction) => __TAURI_INVOKE<void>("overlay_action", { action }),
+	/**  Sessions of the signed-in account on `server_id`, this launcher's own marked `current`. */
+	accountSessions: (serverId: string) => typedError<AccountSession[], AppError>(__TAURI_INVOKE("account_sessions", { serverId })),
+	/**
+	 *  Signs one session out on the server. Signing out this launcher's own session also forgets it
+	 *  locally, as signing out does.
+	 */
+	accountSessionRevoke: (serverId: string, sessionId: string) => typedError<null, AppError>(__TAURI_INVOKE("account_session_revoke", { serverId, sessionId })),
 };
 
 /** Events */
@@ -168,6 +175,22 @@ export type Account = {
 	username: string,
 	display_name: string | null,
 	role: Role,
+};
+
+/**  A signed-in session of this account on one server (`GET /v1/me/sessions`). */
+export type AccountSession = {
+	id: string,
+	client: SessionClient,
+	/**  The name the device gave when it signed in, if any (plain text from the server). */
+	device_name: string | null,
+	/**  The browser or launcher that signed in, if the server recorded it (plain text). */
+	user_agent: string | null,
+	/**  RFC 3339. */
+	created_at: string,
+	/**  RFC 3339. */
+	last_used_at: string,
+	/**  This launcher's own session. */
+	current: boolean,
 };
 
 /**
@@ -678,6 +701,9 @@ export type ServerSwitched = {
 
 /**  The list of servers or one of their accounts changed; re-read `servers_list`. */
 export type ServersChanged = Record<string, never>;
+
+/**  Which kind of client holds a session. */
+export type SessionClient = "desktop" | "web";
 
 export type SocialConnection = {
 	server_id: string | null,

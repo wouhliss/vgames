@@ -62,6 +62,8 @@
     "allow-invite-decline",
     "allow-invite-cancel",
     "allow-package-overlays-list",
-    "allow-package-overlay-set"
+    "allow-package-overlay-set",
+    "allow-account-sessions",
+    "allow-account-session-revoke"
   ]
 }

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-account-sessions"
+description = "Enables the account_sessions command without any pre-configured scope."
+commands.allow = ["account_sessions"]
+
+[[permission]]
+identifier = "deny-account-sessions"
+description = "Denies the account_sessions command without any pre-configured scope."
+commands.deny = ["account_sessions"]

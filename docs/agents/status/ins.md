@@ -11,9 +11,10 @@ Install & Library (phase 2, `docs/agents/phase-2/ins-install-library.md`).
 
 ## In progress
 - Split agreed 2026-10-06 between the two INS sessions (the user started two): session_016VNaVFJqCdjyJ8qqaTzFtN takes
-  INS-02, INS-03, INS-04 and INS-08 (the install chain); session_01AChegfo4ZUhpjL2LgRbUk3 (this PR's author) takes
+  INS-02, INS-03, INS-04 and INS-08 (the install chain); session_01AChegfo4ZUhpjL2LgRbUk3 takes
   INS-05, INS-06 and INS-07; INS-09 and INS-10 go to whoever finishes first. Each keeps the other's lines here.
-- INS-05 — Accounts, API client and cross-server isolation (next, session_01AChegfo4ZUhpjL2LgRbUk3).
+- INS-05 — Accounts, API client and cross-server isolation (session_01AChegfo4ZUhpjL2LgRbUk3): account commands,
+  problem bodies and the auth hook in this PR; the cross-server token test next.
 
 ## Interfaces delivered (other agents may now rely on these)
 - Inherited from phase-1 Agent 2 and live on `main` (PR links in `agent-2.md` → Done), now owned by INS:
@@ -27,6 +28,14 @@ Install & Library (phase 2, `docs/agents/phase-2/ins-install-library.md`).
 - `catalog::release::{select_release, Route, SelectedRelease, host_platform}` (INS-01): the build this computer
   installs from a package's catalog releases and how it runs (`Route::is_native()` for native and OS emulation,
   `Proton`, `Wine { needs_rosetta }`); `host_platform` is the launch path's own.
+
+- `ApiClient::with_auth(method, |http, token| request)` (INS-05): the "401 → refresh once → retry once" hook for any
+  authenticated request (the builder sets URL, query, body and the bearer header); a request still refused after
+  one refresh is `ApiError::Unauthenticated`. For GAME-01 to move `social/api.rs` off its own client.
+- `ApiError::problem()` / `ApiError::status()` (INS-05): the parsed problem body of an error response (title, detail,
+  up to 20 field errors, `Retry-After` seconds).
+- Commands `account_sessions(server_id)`, `account_session_revoke(server_id, session_id)` (INS-05); revoking this
+  launcher's own session forgets it locally (`Servers::forget_account`).
 
 ## Needs from others
 
