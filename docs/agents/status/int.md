@@ -1,22 +1,23 @@
 # INT status
 
 ## Done
+- INT-01: [#118](https://github.com/wouhliss/vgames/pull/118) merged at `ef06cf1`: exact stable minimum/pin policy, weekly watcher, reviewed #103–106 adoption and the reproduced request-pool readiness fix. All [CI checks](https://github.com/wouhliss/vgames/actions/runs/37463345825) and all [desktop OS checks](https://github.com/wouhliss/vgames/actions/runs/37463345682) passed before merge. [Manual toolchain watcher](https://github.com/wouhliss/vgames/actions/runs/37465743936) green. Superseded #103–106/#111/#116 closed with commit links; #76/#77 closed with the merged TS 5/Node 22 major-ignore rationale.
 - Adopted live phase-1 core, CLI, updater, security tooling and release automation at `d6d8798`; phase-1 status files remain frozen.
 - Integrator loop: fixed real-API admin authentication and fixtures in [#108](https://github.com/wouhliss/vgames/pull/108), merged at `7b8116c`. Main [CI](https://github.com/wouhliss/vgames/actions/runs/37456548013) green (5m40s); [real E2E](https://github.com/wouhliss/vgames/actions/runs/37456550701) green (2m29s).
 - INT-01 triage: closed #63 (superseded by `6e8f9ba`) and #68 (`ba00d98`), with comments.
 - INT-01 mismatch proof: [#112](https://github.com/wouhliss/vgames/pull/112) rejected by the required Rust policy step in [37457143357](https://github.com/wouhliss/vgames/actions/runs/37457143357); closed without merging.
 
 ## In progress
-- INT-01: [#118](https://github.com/wouhliss/vgames/pull/118) (replaces #111/#116) enforces the exact stable minimum/pin, adds the stable watcher and npm major ignores, and adopts #103–106's reviewed changes. #111 was fully green, but the pre-merge fetch found main had moved to `fffe666`; #116 rebases it without force-pushing.
-- Current base `9507913`: INS's release selection landed; [main CI](https://github.com/wouhliss/vgames/actions/runs/37459480482) green (5m48s). No ready/contract-ack/merged-without-INT lines in live status files.
-- #116's first CI exposed #103's known 150 ms lightbox fade contrast race (4.41/4.45:1); adopt reduced motion rather than retrying an application failure. Perf measurements retain their original project settings. The frozen #103 phase-1 hunk recorded the same evidence and is omitted.
-- Dependency adoption: npm units 275 desktop, 140 admin, 6 release-notes pass; lint/typecheck/OpenAPI lint, launcher mock 55 and admin mock 22 pass. Real admin ten active cases pass with four OAuth workers within the unchanged 20/minute auth budget; twelve existing mock-only cases remain. Real traces are disabled because they contain live test session cookies; assertions remain intact.
-- Local Rust and whole desktop suites pass for the dependency group. User-space desktop toolchain now works without sudo; local desktop gate 2m22s and supply-chain gate 7s pass. Earlier full local run: Rust 7m28s, SQLx 33s, WASM 46s, TypeScript 33s, launcher mock 2m37s, admin mock 1m03s.
-- Full all-ref local secret scan passes (342 commits). Pruning the deleted remote proof branch removed its stale tracking ref; no allowlist or check was weakened.
-- #85 stays with INS-01; #92 with INT-05; utoipa #79–81 with INT-04. Original #103–106 stay open until the replacement merges, then close with its superseding commit. #76/#77 close once the major-ignore policy merges.
-- INT-02 changes prepared locally: six ownership tests and core count-boundary test pass; contract remains separate from ownership implementation.
+- INT-02: phase-2 ownership rules and dead-pattern/security-path checks, plus a separate parser-contract PR. Six ownership regressions pass; core count-boundary test and whole core suite pass.
+- INT-01 scheduled-run follow-up: next scheduled desktop/CI run remains to be observed; do not treat a manual run as a scheduled one.
+- Full local CI on the maintenance commit: all gates pass, with Vitest workers bounded to two for this machine's memory. Unbounded local UI workers delayed a lazy route beyond its unchanged wait; the same assertions pass with the supported worker limit.
+- Readiness regression passes and restoring the old request-pool listener fails at the original ten-second timeout. The first repeated run passed 34 times before concurrent suites collided on SQLx database names; a dedicated PostgreSQL instance now isolates the restarted 50-run proof.
+- INT-03 CI/DB/matrix gate, INT-04 server hardening/history/utoipa, INT-06 contract and INT-07 hosted soak prepared on separate local branches while INT-01 OS validation ran; publish and merge in task order.
+- #92 stays with INT-05; utoipa #79–81 with INT-04. #85 was superseded by INS's release selection at `9507913`.
 
 ## Interfaces delivered (other agents may now rely on these)
+- Exact pinned stable policy: `cargo xtask toolchain check` (CI and local gate); weekly/manual `toolchain-watch.yml` maintains one upgrade issue (#118).
+- Realtime LISTEN uses one bounded, cancellable connection independent of the request pool (#118); test startup deadlines remain ten seconds.
 - `apps/admin-web/e2e/helpers.ts::signIn(page)` exercises the real fake-Discord web flow and caches session cookies in worker memory (#108).
 
 ## Needs from others
