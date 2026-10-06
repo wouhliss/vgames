@@ -1,13 +1,14 @@
 # 08 — CI/CD, Launcher Updates and the User-Facing Changelog
 
-## 1. Pipelines (GitHub Actions; humans provide secrets and runners)
+## 1. Pipelines (GitHub Actions; humans paste secrets and approve releases)
 
 | Workflow | Trigger | Jobs |
 |---|---|---|
 | `ci.yml` | PR, push to `main` | Rust fmt, clippy (`-D warnings`), tests (Postgres service), sqlx offline check, `cargo deny`, `cargo audit`; TS Biome, typecheck, unit tests; OpenAPI lint + drift check; migration check on empty DB and upgrade; changelog fragment lint; desktop build check (Linux) |
 | `desktop-matrix.yml` | PR touching `apps/desktop/**` or `crates/**`, nightly | Build the launcher on Windows x64, Linux x64, macOS arm64 (unsigned) + run Rust tests per OS |
 | `e2e.yml` | nightly, manual | docker compose stack, API + admin-web Playwright suite, transfer round-trip tests (pack → upload → download) |
-| `release-desktop.yml` | tag `desktop-v*` (protected) | Matrix build (includes the overlay binaries: `vgames_overlay64.dll`, `vgames_overlay32.dll` + 32-bit inject helper, `libvgames_overlay.so` + Vulkan layer manifests), OS code signing of every executable and DLL, updater signatures, `latest.json`, user changelog JSON (release-notes agent, §3.4), SBOM, provenance, draft GitHub Release. **Requires approval** of the `release` environment |
+| `release-desktop.yml` | tag `desktop-v*` (protected) | Matrix build (includes the overlay binaries: `vgames_overlay64.dll`, `vgames_overlay32.dll` + 32-bit inject helper, `libvgames_overlay.so` + Vulkan layer manifests), Optional OS code signing when certificates exist (otherwise the draft says "Unsigned build"), mandatory version-bound updater signatures, `latest.json`, user changelog JSON (release-notes agent, §3.4), SBOM, provenance, draft GitHub Release. **Requires approval** of the `release` environment |
+| `release-dry-run.yml` | weekly, manual | Same unsigned Windows, Linux and macOS build steps as the release, throwaway updater keys within each job, signed-version verification in an independent artifact job, installed-file/smoke check and update round trip (pending INS-09 until the real-app harness exists); no repository secrets or release environment |
 | `release-api.yml` | tag `api-v*` | Multi-arch container image (`ghcr.io/<owner>/vgames-api`, includes admin-web build), SBOM, provenance, signed with cosign keyless |
 | `soak.yml` | weekly, manual | 24 h launcher leak test (RSS/handle counts) on a self-hosted runner |
 | `runtimes.yml` | daily schedule, manual | Checks upstream releases of UMU-Proton, GE-Proton, umu-launcher, WineHQ macOS builds, DXMT, DXVK-macOS and MoltenVK; downloads, hashes, cross-checks upstream checksums, smoke-tests (Proton: run a D3D11 test exe headless under Xvfb; Wine: `wine --version` + a D3D11 test on a macOS runner) and **opens a PR** updating `runtimes/catalog.toml` |
@@ -24,7 +25,7 @@ no secrets in PR workflows from forks; caches keyed by lockfiles; `concurrency` 
 - Endpoint: `https://github.com/<owner>/vgames/releases/latest/download/latest.json` (static, HTTPS).
 - The Rust core checks at startup (after the UI is interactive), then every 6 h, and never while installing or playing.
   Verification: minisign signature over the artifact (plugin), semver strictly greater than the running version
-  (no downgrade), HTTPS only. On Windows/macOS the OS signature is also checked by the installer.
+  (no downgrade), HTTPS only. OS signatures are optional in v1 (owner decision 2026-10-05); installers are signed only when the relevant certificate secrets exist. Updater minisign signatures remain mandatory in every build, including unsigned OS builds.
 - UX: a non-blocking "Update available" banner → **What's new** dialog (the changelog below) →
   **Install and restart** / **Later**. Installing waits for downloads to reach a checkpoint and
   refuses while a package is running.
