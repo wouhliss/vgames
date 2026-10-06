@@ -304,16 +304,15 @@ fn is_entry_name(path: &Path) -> bool {
         && matches!(extension, "jpg" | "png" | "webp")
 }
 
-/// Serves only an opaque cache id. The custom protocol never fetches a remote
-/// URL, follows a user-supplied path, or exposes a cache miss as a filesystem
-/// error. Its Tauri callback runs this function on a blocking pool.
-pub fn protocol_response(cache: &ImageCache, request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
+/// The cache key of a `vgimg` request, or the response refusing it. Only an
+/// opaque cache id is accepted: never a remote URL or a user-supplied path.
+pub fn request_key(request: &Request<Vec<u8>>) -> Result<ImageKey, Box<Response<Vec<u8>>>> {
     if request.method() != Method::GET {
         let mut response = empty_response(StatusCode::METHOD_NOT_ALLOWED);
         response
             .headers_mut()
             .insert(header::ALLOW, http::HeaderValue::from_static("GET"));
-        return response;
+        return Err(Box::new(response));
     }
     let uri = request.uri();
     let valid_origin = matches!(
@@ -327,22 +326,34 @@ pub fn protocol_response(cache: &ImageCache, request: &Request<Vec<u8>>) -> Resp
         .path()
         .strip_prefix('/')
         .and_then(ImageKey::from_cache_id);
-    if !valid_origin || uri.query().is_some() || key.is_none() {
-        return empty_response(StatusCode::NOT_FOUND);
+    match key {
+        Some(key) if valid_origin && uri.query().is_none() => Ok(key),
+        _ => Err(Box::new(empty_response(StatusCode::NOT_FOUND))),
     }
-    let Some(key) = key else {
-        return empty_response(StatusCode::NOT_FOUND);
+}
+
+/// A cached image as the protocol's answer.
+pub fn image_response(image: CachedImage) -> Response<Vec<u8>> {
+    let mut response = Response::new(image.bytes);
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        http::HeaderValue::from_static(image.content_type),
+    );
+    secure_headers(&mut response);
+    response
+}
+
+/// Serves only an opaque cache id from the cache. The custom protocol never
+/// exposes a cache miss as a filesystem error. Blocking: run it on a blocking
+/// pool. Misses that the catalog knows about are fetched by
+/// `catalog::covers::Covers` instead.
+pub fn protocol_response(cache: &ImageCache, request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
+    let key = match request_key(request) {
+        Ok(key) => key,
+        Err(response) => return *response,
     };
     match cache.get(&key) {
-        Ok(Some(image)) => {
-            let mut response = Response::new(image.bytes);
-            response.headers_mut().insert(
-                header::CONTENT_TYPE,
-                http::HeaderValue::from_static(image.content_type),
-            );
-            secure_headers(&mut response);
-            response
-        }
+        Ok(Some(image)) => image_response(image),
         Ok(None) => empty_response(StatusCode::NOT_FOUND),
         Err(error) => {
             tracing::warn!(%error, "cannot read cached image");

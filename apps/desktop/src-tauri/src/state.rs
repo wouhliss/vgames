@@ -6,6 +6,8 @@ use std::sync::Arc;
 
 use tokio_util::sync::CancellationToken;
 
+use crate::catalog::Catalog;
+use crate::catalog::covers::Covers;
 use crate::db::Db;
 use crate::events::EventBus;
 use crate::images::{ImageCache, ImageCacheError};
@@ -13,6 +15,14 @@ use crate::launch::GameSessions;
 use crate::launch::orchestrate::Launcher;
 use crate::paths::AppPaths;
 use crate::servers::Servers;
+
+#[derive(Debug, thiserror::Error)]
+pub enum StateError {
+    #[error(transparent)]
+    Images(#[from] ImageCacheError),
+    #[error("cannot build the HTTP client")]
+    Http(#[from] reqwest::Error),
+}
 
 pub struct AppState {
     pub paths: AppPaths,
@@ -34,6 +44,8 @@ pub struct AppState {
     pub ui_ready: CancellationToken,
     /// Servers, trust and sign-in sessions (the only API client).
     pub servers: Arc<Servers>,
+    /// The active server's catalog, release selection and covers (INS-02).
+    pub catalog: Arc<Catalog<Servers>>,
 }
 
 impl AppState {
@@ -42,7 +54,7 @@ impl AppState {
         db: Db,
         bus: EventBus,
         servers: Arc<Servers>,
-    ) -> Result<Self, ImageCacheError> {
+    ) -> Result<Self, StateError> {
         let images = Arc::new(ImageCache::open(paths.cache_dir.join("images"))?);
         let games = GameSessions::new(db.clone(), bus.clone());
         let launcher = Arc::new(Launcher::new(
@@ -50,8 +62,16 @@ impl AppState {
             Arc::clone(&servers),
             games.clone(),
         ));
+        let covers = Arc::new(Covers::new(Arc::clone(&images), crate::api::http_client()?));
+        let catalog = Arc::new(Catalog::new(
+            Arc::clone(&servers),
+            db.clone(),
+            covers,
+            crate::catalog::release::host_platform(),
+        ));
         Ok(Self {
             paths,
+            catalog,
             games,
             launcher,
             db,
