@@ -1229,6 +1229,26 @@ paths:
         "413": { $ref: "#/components/responses/PayloadTooLarge" }
         "415": { $ref: "#/components/responses/UnsupportedMediaType" }
   /v1/admin/packages/{package_id}/compat/{target}:
+    get:
+      tags: [admin-packages]
+      operationId: adminListCompatProfiles
+      summary: Signed compatibility revision history
+      description: Every revision, newest first, including unpublished packages. Signed cursors are bound to this package and target. Each item carries its signer in signature.key_id and its created_at timestamp.
+      parameters:
+        - $ref: "#/components/parameters/PackageId"
+        - { name: target, in: path, required: true, schema: { type: string, enum: [linux, macos] } }
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: Revision page (possibly empty)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CompatProfilePage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
     put:
       tags: [admin-packages]
       operationId: adminPutCompatProfile
@@ -2129,6 +2149,12 @@ components:
           description: Versions of this package/platform that were withdrawn; launchers on them are offered this release even if its sequence is lower.
           items: { $ref: "#/components/schemas/Uuid" }
         published_at: { $ref: "#/components/schemas/Timestamp" }
+    CompatProfilePage:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/SignedCompatProfile" } }
+        next_cursor: { type: string }
     SignedCompatProfile:
       type: object
       required: [target, revision, status, document, signature, created_at]
