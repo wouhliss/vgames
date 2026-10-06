@@ -11,7 +11,7 @@
 - INT-02: phase-2 ownership rules and dead-pattern/security-path checks, plus a separate parser-contract PR. Six ownership regressions pass; core count-boundary test and whole core suite pass.
 - INT-01 scheduled-run follow-up: next scheduled desktop/CI run remains to be observed; do not treat a manual run as a scheduled one.
 - Full local CI on the maintenance commit: all gates pass, with Vitest workers bounded to two for this machine's memory. Unbounded local UI workers delayed a lazy route beyond its unchanged wait; the same assertions pass with the supported worker limit.
-- Readiness regression passes and restoring the old request-pool listener fails at the original ten-second timeout. The first repeated run passed 34 times before concurrent suites collided on SQLx database names; a dedicated PostgreSQL instance now isolates the restarted 50-run proof.
+- Readiness regression passes and restoring the old request-pool listener fails at the original ten-second timeout. The first repeated run passed 34 times before concurrent suites collided on SQLx database names. On a dedicated PostgreSQL 18.6 instance, the same readiness fix passes 50 consecutive parallel runs (10 realtime/presence tests, 500 passes, eight test threads). Test binary built from `2c17c63`; the identical listener implementation is merged in #118.
 - INT-03 CI/DB/matrix gate, INT-04 server hardening/history/utoipa, INT-06 contract and INT-07 hosted soak prepared on separate local branches while INT-01 OS validation ran; publish and merge in task order.
 - #92 stays with INT-05; utoipa #79–81 with INT-04. #85 was superseded by INS's release selection at `9507913`.
 
