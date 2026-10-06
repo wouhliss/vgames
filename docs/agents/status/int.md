@@ -9,6 +9,7 @@
 
 ## In progress
 - Main `ef06cf1`: [CI](https://github.com/wouhliss/vgames/actions/runs/37465740115) and [real E2E](https://github.com/wouhliss/vgames/actions/runs/37465748125) green. No Ready for INT, contract acknowledgement or Merged without INT lines in live slice status files.
+- Local restart reproduced a fixture collision in the admin authorization matrix: the synthetic Discord suffix had only 16 random bits. INT-02 replaces it with a process-wide counter and proves 100,000 unique synthetic IDs; authorization assertions are unchanged.
 - INT-02: phase-2 ownership rules and dead-pattern/security-path checks, plus a separate parser-contract PR. Six ownership regressions pass; core count-boundary test and whole core suite pass.
 - INT-01 scheduled-run follow-up: next scheduled desktop/CI run remains to be observed; do not treat a manual run as a scheduled one.
 - Full local CI on the maintenance commit: all gates pass, with Vitest workers bounded to two for this machine's memory. Unbounded local UI workers delayed a lazy route beyond its unchanged wait; the same assertions pass with the supported worker limit.
