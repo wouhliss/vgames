@@ -1,5 +1,7 @@
 //! Discord sign-in, tokens, the current user and sessions (docs/architecture/01-security.md §4).
 
+use std::fmt;
+
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -49,7 +51,7 @@ pub struct AuthStartResponse {
 }
 
 /// `POST /v1/auth/token` body, discriminated by `grant_type`.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(tag = "grant_type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum TokenRequest {
@@ -57,7 +59,7 @@ pub enum TokenRequest {
     RefreshToken { refresh_token: String },
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct TokenResponse {
     pub access_token: String,
@@ -132,4 +134,88 @@ pub struct Me {
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SessionList {
     pub items: Vec<Session>,
+}
+
+impl fmt::Debug for TokenRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::AuthorizationCode { .. } => f
+                .debug_struct("AuthorizationCode")
+                .field("code", &"[redacted]")
+                .field("code_verifier", &"[redacted]")
+                .finish(),
+            Self::RefreshToken { .. } => f
+                .debug_struct("RefreshToken")
+                .field("refresh_token", &"[redacted]")
+                .finish(),
+        }
+    }
+}
+
+impl fmt::Debug for TokenResponse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TokenResponse")
+            .field("access_token", &"[redacted]")
+            .field("refresh_token", &"[redacted]")
+            .field("token_type", &self.token_type)
+            .field("expires_in", &self.expires_in)
+            .field("user", &self.user)
+            .finish()
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn token_debug_redacts_credentials() {
+        let credentials = [
+            "sentinel-code",
+            "sentinel-verifier",
+            "sentinel-refresh",
+            "sentinel-access",
+        ];
+        let requests = [
+            TokenRequest::AuthorizationCode {
+                code: credentials[0].into(),
+                code_verifier: credentials[1].into(),
+            },
+            TokenRequest::RefreshToken {
+                refresh_token: credentials[2].into(),
+            },
+        ];
+        let response = TokenResponse {
+            access_token: credentials[3].into(),
+            refresh_token: credentials[2].into(),
+            token_type: "Bearer".into(),
+            expires_in: 900,
+            user: User {
+                id: Uuid::nil(),
+                discord_id: None,
+                username: "synthetic".into(),
+                display_name: None,
+                avatar_url: None,
+                role: Role::User,
+                created_at: OffsetDateTime::UNIX_EPOCH,
+            },
+        };
+        for output in requests
+            .iter()
+            .map(|r| format!("{r:?}"))
+            .chain([format!("{response:?}")])
+        {
+            assert!(output.contains("[redacted]"));
+            for credential in credentials {
+                assert!(!output.contains(credential), "credential leaked");
+            }
+        }
+        assert!(format!("{response:?}").contains("Bearer"));
+        // Redaction changes diagnostics only: credentials remain available on the wire.
+        assert_eq!(
+            serde_json::to_value(&response).unwrap()["access_token"],
+            credentials[3]
+        );
+    }
 }

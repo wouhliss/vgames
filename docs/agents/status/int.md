@@ -60,3 +60,7 @@
 - Queue review also found an in-flight SQLite claim could become active after the queue reported idle. Serialized the claim-and-register operation with entering the checkpoint; a real blocked-database regression proves checkpoint completion waits for that claim and leaves no active job. This is the smallest required change to INS's queue wiring for the updater boundary.
 
 - INT-03 latest library-base validation (`deebba1`): 308 normal launcher tests plus all four chat/chaos database scenarios pass under Xvfb; required desktop step 2m47s, changelog/security 3s, secrets 2s, workflow lint clean. On `6069524`, 312 normal launcher tests and all four chat/chaos database scenarios pass under Xvfb; desktop 2m44s, changelog/security and secrets 2s each, workflow lint clean.
+
+## Server hardening validation prepared (INT-04)
+- `auth::tests::token_debug_redacts_credentials` passes; deliberately printing the synthetic code makes it fail with "credential leaked". Serialization still carries the real field values.
+- Four `realtime::tests` decoder tests pass: arbitrary bytes, mutated valid frames, oversized valid frames and exact-limit/version boundaries. Removing the size bound fails `oversized_valid_realtime_frames_are_rejected` at `extra = 1`; no drift allowlist/check is relaxed.
