@@ -652,3 +652,83 @@ async fn link_api_errors_retry_or_fail() {
         "{err:?}"
     );
 }
+
+/// The launch target first (GAME-06 inspects it before the rest is fetched):
+/// only its byte ranges are requested, its bytes are verified and complete,
+/// and a second call installs the rest without fetching it again.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn priority_files_come_first_and_alone() {
+    let files = vec![
+        FileSpec::random("Data/big.pak", 9 * MIB, 1),
+        FileSpec::random("Game.exe", 3 * MIB, 2),
+        FileSpec::random("Data/small.txt", 5_000, 3),
+        FileSpec::random("readme.txt", 0, 4),
+    ];
+    let package = TestPackage::build_with(
+        &files,
+        &[],
+        Compression::None,
+        24 * MIB,
+        &Default::default(),
+    );
+    let setup = Setup::new(package).await;
+    let manifest = setup.package.release().manifest().clone();
+    let exe = manifest
+        .files
+        .iter()
+        .find(|f| f.path == "Game.exe")
+        .unwrap();
+    let mut first = options();
+    first.priority_files = vec!["Game.exe".into(), "readme.txt".into(), "not/listed".into()];
+
+    let (outcome, stats) = setup.install(&first).await.unwrap();
+    let InstallOutcome::PriorityFilesReady { paths } = outcome else {
+        panic!("expected the priority files, got {outcome:?}");
+    };
+    assert_eq!(
+        paths,
+        vec![
+            setup.root().join("Game.exe"),
+            setup.root().join("readme.txt")
+        ]
+    );
+    assert_eq!(
+        std::fs::read(&paths[0]).unwrap(),
+        files[1].bytes(),
+        "the launch target is complete"
+    );
+    assert_ne!(
+        std::fs::read(setup.root().join("Data/big.pak")).unwrap(),
+        files[0].bytes(),
+        "nothing else was fetched"
+    );
+    // Only the executable's chunks were requested.
+    let first_chunk = exe.chunk.unwrap();
+    let chunks = exe.size.div_ceil(manifest.chunk_size) as u32;
+    let wanted: std::collections::BTreeSet<(u32, u64)> = (first_chunk..first_chunk + chunks)
+        .map(|c| {
+            let chunk = &manifest.chunks[c as usize];
+            (chunk.pack, chunk.offset)
+        })
+        .collect();
+    for (pack, start, end) in setup.rig.ranges() {
+        assert!(
+            wanted
+                .iter()
+                .any(|(p, offset)| *p == pack && *offset >= start && *offset < end),
+            "unexpected request: pack {pack} bytes {start}..{end}"
+        );
+    }
+    assert_eq!(stats.chunks_verified, u64::from(chunks));
+    let record = install::read_record(&setup.root()).unwrap().unwrap();
+    assert_eq!(record.state, InstallState::Installing);
+
+    let (outcome, stats) = setup.install(&options()).await.unwrap();
+    assert!(matches!(outcome, InstallOutcome::Installed(_)));
+    setup.assert_identical();
+    assert_eq!(
+        stats.chunks_verified,
+        chunk_count(&setup.package) - u64::from(chunks),
+        "the priority chunks were not fetched again"
+    );
+}

@@ -29,7 +29,7 @@ use vgames_core::verify::{
 };
 use vgames_core::{Digest, Envelope};
 
-use crate::download::journal::{Journal, JournalKey};
+use crate::download::journal::{Bitset, Journal, JournalKey};
 use crate::download::manifest::{ManifestFetchError, ManifestLink, fetch_manifest};
 use crate::download::table::{ChunkTable, TableError};
 use crate::download::{
@@ -267,6 +267,13 @@ pub enum InstallOutcome {
     /// The partial install is kept; delete it with [`remove_install`] if the
     /// user does not want to keep it (02 §7.10).
     Cancelled,
+    /// Every file of `DownloadOptions::priority_files` is complete, each chunk
+    /// verified against the signed manifest; nothing else was requested yet.
+    /// `paths` are their locations in the install, in manifest order. Call
+    /// [`install`] again without priority files to fetch the rest.
+    PriorityFilesReady {
+        paths: Vec<PathBuf>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -305,13 +312,30 @@ pub async fn install<A: PackUrlSource>(
         targets,
         journal,
     } = prepared;
+    let priority = priority_chunks(
+        release.manifest(),
+        &table,
+        &targets,
+        &options.priority_files,
+    );
     let spec = DownloadSpec {
         table,
         targets: Arc::clone(&targets),
         journal,
-        wanted: None,
+        wanted: priority.as_ref().map(|(wanted, _)| wanted.clone()),
     };
     let report = download::run(spec, api, options, control).await?;
+    if let Some((_, paths)) = priority {
+        let outcome = match report.outcome {
+            RunOutcome::Completed => InstallOutcome::PriorityFilesReady { paths },
+            RunOutcome::Paused(reason) => InstallOutcome::Paused(reason),
+            RunOutcome::Cancelled => InstallOutcome::Cancelled,
+        };
+        return Ok(InstallReport {
+            outcome,
+            stats: report.stats,
+        });
+    }
     let outcome = match report.outcome {
         RunOutcome::Completed => {
             control.set_phase(Phase::Finalizing);
@@ -329,6 +353,42 @@ pub async fn install<A: PackUrlSource>(
         outcome,
         stats: report.stats,
     })
+}
+
+/// The chunks and target paths of the priority files, or `None` without any.
+fn priority_chunks(
+    manifest: &Manifest,
+    table: &ChunkTable,
+    targets: &[Option<PathBuf>],
+    wanted_paths: &[String],
+) -> Option<(Bitset, Vec<PathBuf>)> {
+    if wanted_paths.is_empty() {
+        return None;
+    }
+    let wanted_paths: HashSet<&str> = wanted_paths.iter().map(String::as_str).collect();
+    let mut wanted = Bitset::new(table.len());
+    let mut paths = Vec::new();
+    for (index, file) in manifest.files.iter().enumerate() {
+        if !wanted_paths.contains(file.path.as_str()) {
+            continue;
+        }
+        if let Some(first) = file.chunk {
+            let count = if file.size >= manifest.chunk_size {
+                file.size.div_ceil(manifest.chunk_size)
+            } else {
+                1
+            };
+            for k in 0..count {
+                if let Some(chunk) = u32::try_from(k).ok().and_then(|k| first.checked_add(k)) {
+                    wanted.set(chunk);
+                }
+            }
+        }
+        if let Some(Some(path)) = targets.get(index) {
+            paths.push(path.clone());
+        }
+    }
+    Some((wanted, paths))
 }
 
 struct Prepared {
