@@ -9,14 +9,6 @@ name: Desktop matrix
 
 on:
   pull_request:
-    paths:
-      - "apps/desktop/**"
-      - "crates/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "pnpm-lock.yaml"
-      - "rust-toolchain.toml"
-      - ".github/workflows/desktop-matrix.yml"
   schedule:
     - cron: "23 2 * * *"
   workflow_dispatch:
@@ -33,7 +25,28 @@ env:
   SQLX_OFFLINE: "true"
 
 jobs:
+  changes:
+    name: Desktop change detection
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      desktop: ${{ steps.diff.outputs.desktop }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - id: diff
+        env:
+          CHANGE_EVENT: ${{ github.event_name }}
+          CHANGE_BASE: ${{ github.event.pull_request.base.sha }}
+        run: python3 scripts/ci/desktop-changes.py
+
   build:
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
@@ -79,3 +92,21 @@ jobs:
           -p vgames-desktop -p vgames-core -p vgames-pack -p vgames-transfer -p vgames-overlay
       - name: Release build (unsigned, no bundle)
         run: cargo build --locked --release --target ${{ matrix.target }} -p vgames-desktop
+
+  gate:
+    name: Desktop matrix gate
+    needs: [changes, build]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Require a completed matrix or a deliberate scope skip
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+        run: |
+          case "$CHANGES_RESULT:$BUILD_RESULT" in
+            success:success|success:skipped) exit 0 ;;
+            *) echo "Desktop matrix did not pass: changes=$CHANGES_RESULT, build=$BUILD_RESULT"; exit 1 ;;
+          esac
