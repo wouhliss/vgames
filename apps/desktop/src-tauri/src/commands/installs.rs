@@ -8,6 +8,7 @@ use tauri::State;
 use crate::db::{collections, download_jobs, installs as store};
 use crate::error::AppError;
 use crate::events::{AppEvent, InstallsChanged, PackageRef};
+use crate::installs::manage::{self, UninstallPlan};
 use crate::installs::{InstallActionError, InstalledPackage, ListContext, actions};
 use crate::state::AppState;
 
@@ -100,4 +101,108 @@ pub async fn install_resume(
     pkg: PackageRef,
 ) -> Result<(), InstallActionError> {
     queue(&state, pkg, download_jobs::JobKind::Install).await
+}
+
+async fn target(state: &AppState, pkg: PackageRef) -> Result<manage::Target, InstallActionError> {
+    manage::target(&state.db, pkg, state.games.is_running(pkg)).await
+}
+
+fn changed(state: &AppState, pkg: PackageRef, root: &std::path::Path) {
+    state.launcher.prelaunch().forget(root);
+    state.installs.forget(pkg);
+    state
+        .bus
+        .publish(AppEvent::InstallsChanged(InstallsChanged {}));
+}
+
+/// Moves the install into another library (rename, or a verified copy).
+#[tauri::command]
+#[specta::specta]
+pub async fn install_move(
+    state: State<'_, AppState>,
+    pkg: PackageRef,
+    library_id: String,
+) -> Result<(), InstallActionError> {
+    let library_id =
+        uuid::Uuid::parse_str(&library_id).map_err(|_| InstallActionError::NotFound)?;
+    let target = target(&state, pkg).await?;
+    let old_root = target.row.root.clone();
+    let trust = state
+        .servers
+        .trust_state(pkg.server_id)
+        .await
+        .map_err(|e| InstallActionError::io("read the trust state", &e))?
+        .ok_or(InstallActionError::Io {
+            detail: "The server's trust bundle is not available".into(),
+        })?;
+    state
+        .bus
+        .publish(AppEvent::InstallsChanged(InstallsChanged {}));
+    let result = manage::move_to(&state.db, pkg, target, library_id, trust).await;
+    changed(&state, pkg, &old_root);
+    result.map(|_| ())
+}
+
+/// What uninstalling removes and what the player decides about.
+#[tauri::command]
+#[specta::specta]
+pub async fn install_uninstall_plan(
+    state: State<'_, AppState>,
+    pkg: PackageRef,
+) -> Result<UninstallPlan, InstallActionError> {
+    let target = target(&state, pkg).await?;
+    manage::uninstall_plan(
+        &target,
+        crate::compat::prefix_dir(&state.paths.data_dir, &pkg),
+    )
+    .await
+}
+
+/// Removes the install. Leftovers (files the package did not ship) and the
+/// Proton/Wine prefix are removed only when asked. Links are never followed.
+#[tauri::command]
+#[specta::specta]
+pub async fn install_uninstall(
+    state: State<'_, AppState>,
+    pkg: PackageRef,
+    remove_leftovers: bool,
+    remove_prefix: bool,
+) -> Result<(), InstallActionError> {
+    let target = target(&state, pkg).await?;
+    let root = target.row.root.clone();
+    let prefix = remove_prefix.then(|| crate::compat::prefix_dir(&state.paths.data_dir, &pkg));
+    state
+        .bus
+        .publish(AppEvent::InstallsChanged(InstallsChanged {}));
+    let result = manage::uninstall(&state.db, pkg, target, remove_leftovers, prefix).await;
+    if result.is_ok() {
+        if let Err(error) = super::shortcuts::remove_for_package(&state.db, pkg).await {
+            tracing::warn!(%error, "cannot remove the package's shortcuts");
+        }
+        state.installs.uninstalled(pkg);
+    }
+    changed(&state, pkg, &root);
+    result
+}
+
+/// Opens the install directory in the system file manager.
+#[tauri::command]
+#[specta::specta]
+pub async fn install_open_folder(
+    state: State<'_, AppState>,
+    pkg: PackageRef,
+) -> Result<(), AppError> {
+    let row = store::row(&state.db, pkg)
+        .await
+        .map_err(|e| AppError::internal("read the install", &e))?
+        .ok_or(AppError::NotFound)?;
+    tokio::task::spawn_blocking(move || {
+        let is_dir = std::fs::symlink_metadata(&row.root).is_ok_and(|m| m.is_dir());
+        if !is_dir {
+            return Err(AppError::NotFound);
+        }
+        open::that_detached(&row.root).map_err(|e| AppError::internal("open the folder", &e))
+    })
+    .await
+    .map_err(|e| AppError::internal("open the folder", &e))?
 }

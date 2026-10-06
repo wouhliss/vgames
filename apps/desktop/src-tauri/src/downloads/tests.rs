@@ -1049,3 +1049,170 @@ async fn verify_adopts_a_resigned_manifest_without_downloading() {
     );
     assert_installed(&h, &served);
 }
+
+mod manage {
+    use super::*;
+    use crate::installs::InstallActionError;
+    use crate::installs::manage;
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn uninstall_keeps_or_removes_leftovers_and_never_follows_links() {
+        for remove_leftovers in [false, true] {
+            let mut h = Harness::new().await;
+            let served = h.serve(package(31, MIB, Uuid::now_v7())).await;
+            let pkg = install_now(&mut h, &served).await;
+            let root = h.root(&served);
+            std::fs::write(root.join("Saves/slot1.sav"), b"progress").unwrap();
+            // A link to a folder outside the install, with a file behind it.
+            let outside = h._dir.path().join("outside");
+            std::fs::create_dir(&outside).unwrap();
+            std::fs::write(outside.join("keep.txt"), b"not the launcher's").unwrap();
+            #[cfg(unix)]
+            std::os::unix::fs::symlink(&outside, root.join("Data/link")).unwrap();
+            let prefix = h
+                ._dir
+                .path()
+                .join("prefixes")
+                .join(pkg.package_id.to_string());
+            std::fs::create_dir_all(prefix.join("drive_c")).unwrap();
+
+            let target = manage::target(&h.db, pkg, false).await.unwrap();
+            let plan = manage::uninstall_plan(&target, prefix.clone())
+                .await
+                .unwrap();
+            assert!(plan.has_prefix);
+            assert_eq!(plan.size_bytes, served.package.total_bytes());
+            let paths: Vec<_> = plan.leftovers.iter().map(|l| l.path.as_str()).collect();
+            assert!(paths.contains(&"Saves/slot1.sav"), "{paths:?}");
+            assert!(plan.leftover_bytes >= 8);
+
+            manage::uninstall(&h.db, pkg, target, remove_leftovers, Some(prefix.clone()))
+                .await
+                .unwrap();
+            assert!(db::installs::row(&h.db, pkg).await.unwrap().is_none());
+            assert!(!root.join("Game.exe").exists());
+            assert_eq!(root.join("Saves/slot1.sav").exists(), !remove_leftovers);
+            assert!(!prefix.exists());
+            assert_eq!(
+                std::fs::read(outside.join("keep.txt")).unwrap(),
+                b"not the launcher's",
+                "the link was not followed"
+            );
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn move_to_another_library_keeps_a_verified_install() {
+        let mut h = Harness::new().await;
+        let served = h.serve(package(32, 9 * MIB, Uuid::now_v7())).await;
+        let pkg = install_now(&mut h, &served).await;
+        let other_path = h._dir.path().join("Other");
+        std::fs::create_dir(&other_path).unwrap();
+        let other = crate::db::libraries::add(&h.db, &other_path, "Other")
+            .await
+            .unwrap();
+
+        let target = manage::target(&h.db, pkg, false).await.unwrap();
+        let trust = Arc::new(vgames_transfer::testkit::trust_state());
+        let destination = manage::move_to(&h.db, pkg, target, other.root.id, Arc::clone(&trust))
+            .await
+            .unwrap();
+        assert!(destination.starts_with(&other.root.path));
+        assert!(!h.root(&served).exists());
+        assert_eq!(
+            read_tree(&destination),
+            read_tree(served.package.source.path())
+        );
+        let row = db::installs::row(&h.db, pkg).await.unwrap().unwrap();
+        assert_eq!(
+            (row.root.as_path(), row.state.as_str()),
+            (destination.as_path(), "installed")
+        );
+        vgames_transfer::install::load_local_release(
+            &destination,
+            &trust,
+            &served.package.expected,
+            vgames_core::verify::VerifyMode::Launch,
+        )
+        .expect("still verifies");
+
+        let target = manage::target(&h.db, pkg, false).await.unwrap();
+        assert_eq!(
+            manage::move_to(&h.db, pkg, target, other.root.id, trust)
+                .await
+                .err(),
+            Some(InstallActionError::SameLibrary)
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn every_action_error_is_reported() {
+        let mut h = Harness::new().await;
+        let served = h.serve(package(33, MIB, Uuid::now_v7())).await;
+        let pkg = install_now(&mut h, &served).await;
+        let unknown = PackageRef {
+            server_id: SERVER_ID,
+            package_id: Uuid::now_v7(),
+        };
+        assert_eq!(
+            manage::target(&h.db, unknown, false).await.err(),
+            Some(InstallActionError::NotFound)
+        );
+        assert_eq!(
+            manage::target(&h.db, pkg, true).await.err(),
+            Some(InstallActionError::Running)
+        );
+        assert_eq!(
+            crate::installs::actions::queue(
+                &h.db,
+                pkg,
+                crate::db::download_jobs::JobKind::Update,
+                true
+            )
+            .await
+            .err(),
+            Some(InstallActionError::Running)
+        );
+        // Queued (the worker held, so it cannot start): busy.
+        h.downloads.pause_all_at_checkpoint().await;
+        jobs::enqueue(
+            &h.db,
+            pkg,
+            served.package.expected.version_id,
+            h.library.root.id,
+            crate::db::download_jobs::JobKind::Repair,
+            crate::db::download_jobs::JobOptions::default(),
+        )
+        .await
+        .unwrap();
+        assert!(matches!(
+            manage::target(&h.db, pkg, false).await.err(),
+            Some(InstallActionError::Busy { .. })
+        ));
+        h.downloads.cancel(pkg, true).await.unwrap();
+        h.downloads.release_checkpoint();
+        // Library unplugged.
+        let away = h.library.root.path.with_file_name("Games-away");
+        std::fs::rename(&h.library.root.path, &away).unwrap();
+        assert!(matches!(
+            manage::target(&h.db, pkg, false).await.err(),
+            Some(InstallActionError::LibraryOffline { .. })
+        ));
+        std::fs::rename(&away, &h.library.root.path).unwrap();
+        // Out of space while moving.
+        assert_eq!(
+            manage::file_error_for_test(vgames_transfer::install::InstallError::NotEnoughSpace {
+                required: 10,
+                available: 1
+            }),
+            InstallActionError::InsufficientSpace {
+                required_bytes: 10,
+                available_bytes: 1
+            }
+        );
+        assert!(matches!(
+            manage::file_error_for_test(vgames_transfer::install::InstallError::Cancelled),
+            InstallActionError::Io { .. }
+        ));
+    }
+}

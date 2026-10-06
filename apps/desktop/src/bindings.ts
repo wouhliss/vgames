@@ -73,6 +73,17 @@ export const commands = {
 	installVerify: (pkg: PackageRef) => typedError<null, InstallActionError>(__TAURI_INVOKE("install_verify", { pkg })),
 	/**  Queues an incomplete install again from its journal. */
 	installResume: (pkg: PackageRef) => typedError<null, InstallActionError>(__TAURI_INVOKE("install_resume", { pkg })),
+	/**  Moves the install into another library (rename, or a verified copy). */
+	installMove: (pkg: PackageRef, libraryId: string) => typedError<null, InstallActionError>(__TAURI_INVOKE("install_move", { pkg, libraryId })),
+	/**  What uninstalling removes and what the player decides about. */
+	installUninstallPlan: (pkg: PackageRef) => typedError<UninstallPlan, InstallActionError>(__TAURI_INVOKE("install_uninstall_plan", { pkg })),
+	/**
+	 *  Removes the install. Leftovers (files the package did not ship) and the
+	 *  Proton/Wine prefix are removed only when asked. Links are never followed.
+	 */
+	installUninstall: (pkg: PackageRef, removeLeftovers: boolean, removePrefix: boolean) => typedError<null, InstallActionError>(__TAURI_INVOKE("install_uninstall", { pkg, removeLeftovers, removePrefix })),
+	/**  Opens the install directory in the system file manager. */
+	installOpenFolder: (pkg: PackageRef) => typedError<null, AppError>(__TAURI_INVOKE("install_open_folder", { pkg })),
 	downloadsList: () => typedError<DownloadQueue, AppError>(__TAURI_INVOKE("downloads_list")),
 	downloadPause: (pkg: PackageRef) => typedError<null, DownloadActionError>(__TAURI_INVOKE("download_pause", { pkg })),
 	/**  Resumes a paused job (it runs when its turn comes). */
@@ -767,6 +778,11 @@ export type LaunchTarget = {
 	is_default: boolean,
 };
 
+export type Leftover = {
+	path: string,
+	size_bytes: number,
+};
+
 /**  Errors expected by the launcher's library screens. */
 export type LibraryActionError = { kind: "not_writable" } | { kind: "system_directory" } | { kind: "nested_in_library"; library_path: string } | { kind: "contains_library"; library_path: string } | { kind: "already_added" } | { kind: "not_found" } | { kind: "io"; detail: string };
 
@@ -1084,6 +1100,20 @@ export type TrustProblemKind = "fingerprint_mismatch";
 export type Typing = {
 	conversation_id: string,
 	user_id: string,
+};
+
+/**  What uninstalling removes, and what the player decides about (02 §9). */
+export type UninstallPlan = {
+	size_bytes: number,
+	/**
+	 *  Files the manifest does not list (mods, configs, local saves): at most
+	 *  50, relative paths.
+	 */
+	leftovers: Leftover[],
+	leftover_count: number,
+	leftover_bytes: number,
+	/**  A Proton/Wine prefix exists; it may hold local saves (09 §2). */
+	has_prefix: boolean,
 };
 
 /**
