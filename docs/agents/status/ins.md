@@ -17,15 +17,22 @@ Install & Library (phase 2, `docs/agents/phase-2/ins-install-library.md`).
   ([#133](https://github.com/wouhliss/vgames/pull/133)), download commands, settings and `install_start` ([#136](https://github.com/wouhliss/vgames/pull/136)). Evidence:
   `downloads/tests.rs` (install end to end, restart resume, pause/cancel mid-download, concurrency, offline
   library, out of space, refused signature, updater checkpoint, priority order).
+- INS-04 — collections and favorites ([#123](https://github.com/wouhliss/vgames/pull/123)), `installs_list` ([#139](https://github.com/wouhliss/vgames/pull/139)), updates, repairs and
+  resumed installs with the F1 re-signed-envelope adoption ([#140](https://github.com/wouhliss/vgames/pull/140)), move/uninstall/open-folder, update
+  detection without polling and `libraries-changed` ([#141](https://github.com/wouhliss/vgames/pull/141)). Evidence: `downloads/tests.rs` (an update of 1
+  file in 10,000 fetches only its chunk; verify repairs a damaged file and a clean verify downloads nothing; F1:
+  revoked key → launch refused → verify adopts the re-signed envelope with no pack byte fetched; uninstall with and
+  without leftovers never follows a link; a moved install still verifies; every `InstallActionError`), detection
+  against wiremock; no pending entry left in `contract/library.ts` (file deleted) nor `librariesChanged` in `core.ts`.
 
 ## In progress
 - Split agreed 2026-10-06 between the two INS sessions (the user started two): session_016VNaVFJqCdjyJ8qqaTzFtN takes
   INS-02, INS-03, INS-04 and INS-08 (the install chain); session_01AChegfo4ZUhpjL2LgRbUk3 (this PR's author) takes
   INS-05, INS-06 and INS-07; INS-09 and INS-10 go to whoever finishes first. Each keeps the other's lines here.
 - INS-05 — Accounts, API client and cross-server isolation (next, session_01AChegfo4ZUhpjL2LgRbUk3).
-- INS-04 (session_016VNaVF…) — collections and favorites done ([#123](https://github.com/wouhliss/vgames/pull/123)); `installs_list` (this PR), then
-  updates/repairs/resume with the F1 re-signed-envelope adoption, then move/uninstall/open-folder, update detection
-  and `libraries-changed`.
+- INS-08 (session_016VNaVF…) — `tests/install_e2e.rs` (this PR): small scale in the required `desktop` job (INT's
+  `scripts/ci/desktop-db-tests.sh` picks it up), 8 GiB nightly (`e2e.yml` job `install`); the first nightly run link
+  goes under Done once it has run.
 
 ## Interfaces delivered (other agents may now rely on these)
 - Inherited from phase-1 Agent 2 and live on `main` (PR links in `agent-2.md` → Done), now owned by INS:
