@@ -11,7 +11,7 @@
 - INT-01 mismatch proof: [#112](https://github.com/wouhliss/vgames/pull/112) rejected by the required Rust policy step in [37457143357](https://github.com/wouhliss/vgames/actions/runs/37457143357); closed without merging.
 
 ## In progress
-- Latest merged main `37aa9b6` (INT-03); its push CI is running. Previous main `6069524`: [push CI](https://github.com/wouhliss/vgames/actions/runs/37600335996) is green after the reviewed updater checkpoint merge. Prior main `deebba1`: [push CI](https://github.com/wouhliss/vgames/actions/runs/37534663887) and [scheduled CI](https://github.com/wouhliss/vgames/actions/runs/37594827481) are green. Latest [scheduled desktop matrix](https://github.com/wouhliss/vgames/actions/runs/37596490524) and [real E2E](https://github.com/wouhliss/vgames/actions/runs/37465748125) are green. The transient browser-download 403 on `0c129e2` cleared on subsequent unchanged browser installation; recovery dispatch was cancelled by the newer main push. No open Ready for INT, contract acknowledgement or Merged without INT lines remain after closing #138.
+- Current main `37aa9b6` (INT-03): [push CI](https://github.com/wouhliss/vgames/actions/runs/37602723125) is green. Previous main `6069524`: [push CI](https://github.com/wouhliss/vgames/actions/runs/37600335996) is green after the reviewed updater checkpoint merge. Prior main `deebba1`: [push CI](https://github.com/wouhliss/vgames/actions/runs/37534663887) and [scheduled CI](https://github.com/wouhliss/vgames/actions/runs/37594827481) are green. Latest [scheduled desktop matrix](https://github.com/wouhliss/vgames/actions/runs/37596490524) and [real E2E](https://github.com/wouhliss/vgames/actions/runs/37465748125) are green. The transient browser-download 403 on `0c129e2` cleared on subsequent unchanged browser installation; recovery dispatch was cancelled by the newer main push. No open Ready for INT, contract acknowledgement or Merged without INT lines remain after closing #138.
 - Local restart reproduced a fixture collision in the admin authorization matrix: the synthetic Discord suffix had only 16 random bits. INT-02 replaces it with a process-wide counter and proves 100,000 unique synthetic IDs; authorization assertions are unchanged.
 - INT-03: whole-launcher CI consolidation is next. INT-02’s merged package-parser contract records the existing path, ordering, empty-file, label, duplicate-key and count limits. Production parsing is unchanged; the public-parser count audit pins the documented 64/256 limits and passes. All local gates pass; after INS’s rename, affected TypeScript, 55 launcher cases, changelog/security and secrets checks passed again.
 - INT-01 scheduled-run acceptance: [scheduled CI](https://github.com/wouhliss/vgames/actions/runs/37594827481) is green on `deebba1`; [scheduled desktop matrix](https://github.com/wouhliss/vgames/actions/runs/37596490524) is green. Manual runs remain distinct evidence.
@@ -29,7 +29,7 @@
 ## Needs from others
 
 ## Blockers / contract questions
-- G1/F1 remain pending INS-03/04; F2/F4/launcher F5 remain pending GAME; server F3/F5 are INT-04.
+- G1/F1 wiring is now on main from INS-03/04; INT-11 review remains; F2/F4/launcher F5 remain pending GAME; server F3/F5 are INT-04.
 - INT-08: no file-sending tool has been discovered. No release keys generated; follow the prescribed no-generation fallback if still unavailable when reached.
 
 ## Built for you
@@ -70,3 +70,5 @@
 - Manual auth Debug implementations redact authorization codes, verifiers and both token types. Realtime decoding rejects frames above 64 KiB and unsupported version envelopes without panicking; mutation checks proved both fixes necessary.
 
 - INT-04 latest combined validation: F3/F5 Rust gate 3m50s, SQLx 12s, changelog/security and secrets 1s each on the latest library base. The utoipa trio also passes Rust/strict drift (3m48s) and SQLx (14s); the proposed history endpoint passes its paging/auth tests, strict drift and SQLx (3m50s/13s). Source changes are identical after the CI-only rebase.
+
+- After the INT-03 rebase, the server branch passes the whole launcher plus all four DB scenarios (3m12s), changelog/security (2s), secrets and workflow lint (1s each). No backend source changed during this rebase. Compat history UI also passes all eleven units and all three browser cases in mock and real-API mode; its temporary real fixture was removed.
