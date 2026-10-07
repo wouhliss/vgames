@@ -54,6 +54,8 @@ Install & Library (phase 2, `docs/agents/phase-2/ins-install-library.md`).
   GAME's `rosetta_install`). The status file is made final once INS-05–07 land.
 
 ## Interfaces delivered (other agents may now rely on these)
+- INS-06 (contract only, Rust next): `src/ipc/contract/publishing.ts` (`publish_*`, `version_yank`, event
+  `publish-progress`) and `src/mocks/publishing.ts`; admin role required, checked in Rust.
 - Inherited from phase-1 Agent 2 and live on `main` (PR links in `agent-2.md` → Done), now owned by INS:
   - `vgames-pack` and `vgames-transfer` (install, signed-manifest update planner and commit, verify, repair, move,
     uninstall preview, upload/publish engine).
