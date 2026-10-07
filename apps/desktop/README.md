@@ -101,6 +101,24 @@ The queue (`downloads_list`, Downloads page) runs one to three installs at a tim
   connection; a second mismatch fails the install with "A file on the server is damaged"
   (`damaged_file`) and sends an **integrity report** (below).
 
+## Publishing (admins)
+
+Admins and owners of the active server see **Publish** in the sidebar (`src/routes/publish/`, commands
+`publish_*` and `version_yank` in `src-tauri/src/publishing/`). Every command checks the role again.
+
+- **Before anything is sent:** the folder is scanned and every entry that can't be packed is listed
+  (symbolic links, names Windows refuses, case collisions, …); the key file is decrypted in Rust and
+  checked against the server's trust bundle (known, not revoked, held by this account, valid now).
+- **Upload:** packs upload in parallel and resume where they stopped. The key is dropped once the
+  manifest is signed; the server then checks every chunk and the version waits, verified, until
+  **Release**. **Withdraw** (yank) needs a reason.
+- **Stop, restart, resume:** a job lives in `<app data>/publishing/<job id>/` (`job.json`, never a key,
+  plus the upload resume record). After a restart it shows as stopped; resuming asks for the key
+  again only if the manifest is not signed yet.
+- **Tests:** `src/publishing/tests.rs` (no upload), `tests/publish_e2e.rs` against the real API
+  (`VGAMES_PUBLISH_E2E_GIB`, 2 on PRs and 5 nightly), `src/routes/publish/PublishPage.test.tsx` and
+  `e2e/publish.spec.ts` (mock fixtures in `src/mocks/publishing.ts`).
+
 ## Logs and crash reports
 
 | OS | Directory |

@@ -69,6 +69,12 @@ export const routes: RouteObject[] = [
             }),
           },
           {
+            path: "publish",
+            lazy: async () => ({
+              Component: (await import("../routes/publish/PublishPage")).PublishPage,
+            }),
+          },
+          {
             path: "settings/*",
             lazy: async () => ({
               Component: (await import("../routes/settings/SettingsPage")).SettingsPage,

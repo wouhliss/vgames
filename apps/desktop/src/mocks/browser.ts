@@ -5,6 +5,7 @@
 import { emit } from "@tauri-apps/api/event";
 import {
   installMockBackend,
+  MOCK_ACCOUNT,
   MOCK_LIBRARY,
   MOCK_SERVER,
   type MockBackend,
@@ -64,6 +65,14 @@ const PRESETS: Record<string, () => Partial<MockState>> = {
   fresh: () => ({}),
   /** Signed in, with a library holding a few dozen packages (one drive offline). */
   ready: () => withInstalls(40, true),
+  /** `ready`, signed in as an admin (publishing). */
+  admin: () => {
+    const ready = withInstalls(40, true);
+    return {
+      ...ready,
+      servers: [{ ...MOCK_SERVER, account: { ...MOCK_ACCOUNT, role: "admin" } }],
+    };
+  },
   /** Signed in with an empty library. */
   empty: () => ({ servers: [MOCK_SERVER], libraries: [MOCK_LIBRARY], packages: makeCatalog(120) }),
   /** 5,000 installed packages (performance). */
