@@ -185,19 +185,32 @@ impl<B: crate::downloads::backend::Backend> DownloadCheckpoint for crate::downlo
     }
 }
 
+/// Releases the queue on errors, shutdown and cancellation of the install future.
+struct Checkpoint<'a, D: DownloadCheckpoint>(&'a D);
+
+impl<D: DownloadCheckpoint> Drop for Checkpoint<'_, D> {
+    fn drop(&mut self) {
+        self.0.release_checkpoint();
+    }
+}
+
 /// Before installing an update: every download pauses at its next checkpoint
 /// (written chunks journaled), then no game and no download may be active.
-/// `false` on shutdown.
-async fn quiesce(
-    downloads: &impl DownloadCheckpoint,
+/// Returns no checkpoint on shutdown.
+async fn quiesce<'a, D: DownloadCheckpoint>(
+    downloads: &'a D,
     updater: &Updater,
     shutdown: &CancellationToken,
-) -> bool {
+) -> Option<Checkpoint<'a, D>> {
+    let checkpoint = Checkpoint(downloads);
     tokio::select! {
         () = downloads.pause_all_at_checkpoint() => {}
-        () = shutdown.cancelled() => return false,
+        () = shutdown.cancelled() => return None,
     }
-    updater.wait_until_idle(shutdown).await
+    updater
+        .wait_until_idle(shutdown)
+        .await
+        .then_some(checkpoint)
 }
 
 /// Registers the updater state and starts its background tasks. Call from `setup`
@@ -434,12 +447,10 @@ pub async fn updater_install(
     let _busy = updater.busy.lock().await;
     // Downloads pause at their next checkpoint; the UI shows `blocked` meanwhile.
     let downloads = Arc::clone(&state.downloads);
-    if !quiesce(downloads.as_ref(), &updater, &shutdown).await {
-        downloads.release_checkpoint();
+    let Some(_checkpoint) = quiesce(downloads.as_ref(), &updater, &shutdown).await else {
         return Err(error(ErrorCode::Conflict, "The launcher is closing."));
-    }
+    };
     let Some(update) = updater.with(|i| i.pending.take()) else {
-        downloads.release_checkpoint();
         return Err(error(ErrorCode::NotFound, "No update is available."));
     };
     let version = update.version.clone();
@@ -490,8 +501,6 @@ pub async fn updater_install(
             app.restart();
         }
         Err(e) => {
-            // No restart: the paused downloads continue.
-            downloads.release_checkpoint();
             let integrity = e.as_ref().is_some_and(UpdateError::is_integrity);
             if let Some(e) = &e {
                 tracing::error!(error = %DisplayChain(e), integrity, "update install failed");

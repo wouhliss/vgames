@@ -511,6 +511,83 @@ async fn install_waits_for_downloads_to_pause_at_a_checkpoint() {
         pauses: true,
         paused: AtomicBool::new(false),
     };
-    assert!(quiesce(&pauses, &updater, &shutdown).await);
+    assert!(quiesce(&pauses, &updater, &shutdown).await.is_some());
     assert!(pauses.paused.load(Ordering::SeqCst));
+}
+
+#[tokio::test]
+async fn checkpoint_releases_on_shutdown_and_aborted_install() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct Queue(AtomicUsize);
+    impl super::DownloadCheckpoint for Queue {
+        async fn pause_all_at_checkpoint(&self) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            std::future::pending::<()>().await;
+        }
+        fn release_checkpoint(&self) {
+            self.0.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+    let queue = std::sync::Arc::new(Queue(AtomicUsize::new(0)));
+    let updater = super::Updater::new();
+    let shutdown = tokio_util::sync::CancellationToken::new();
+    let cancelled = shutdown.clone();
+    let worker_queue = queue.clone();
+    let worker = tokio::spawn(async move {
+        assert!(
+            super::quiesce(worker_queue.as_ref(), &updater, &cancelled)
+                .await
+                .is_none()
+        );
+    });
+    while queue.0.load(Ordering::SeqCst) == 0 {
+        tokio::task::yield_now().await;
+    }
+    shutdown.cancel();
+    worker.await.unwrap();
+    assert_eq!(queue.0.load(Ordering::SeqCst), 0);
+
+    let worker_queue = queue.clone();
+    let worker = tokio::spawn(async move {
+        let updater = super::Updater::new();
+        let shutdown = tokio_util::sync::CancellationToken::new();
+        let _checkpoint = super::quiesce(worker_queue.as_ref(), &updater, &shutdown).await;
+    });
+    while queue.0.load(Ordering::SeqCst) == 0 {
+        tokio::task::yield_now().await;
+    }
+    worker.abort();
+    assert!(worker.await.unwrap_err().is_cancelled());
+    assert_eq!(queue.0.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn checkpoint_releases_after_an_install_error_or_missing_update() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    struct Queue(AtomicBool);
+    impl super::DownloadCheckpoint for Queue {
+        async fn pause_all_at_checkpoint(&self) {
+            self.0.store(true, Ordering::SeqCst);
+        }
+        fn release_checkpoint(&self) {
+            self.0.store(false, Ordering::SeqCst);
+        }
+    }
+    async fn attempt(queue: &Queue, pending: bool) -> Result<(), &'static str> {
+        let updater = super::Updater::new();
+        let shutdown = tokio_util::sync::CancellationToken::new();
+        let _checkpoint = super::quiesce(queue, &updater, &shutdown).await.unwrap();
+        assert!(queue.0.load(Ordering::SeqCst));
+        if !pending {
+            return Err("no update");
+        }
+        Err("verification failed")
+    }
+    let queue = Queue(AtomicBool::new(false));
+    for pending in [false, true] {
+        assert!(attempt(&queue, pending).await.is_err());
+        assert!(!queue.0.load(Ordering::SeqCst));
+    }
 }

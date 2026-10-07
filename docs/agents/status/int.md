@@ -42,3 +42,9 @@
 
 - INT-02 parser contract: #128 passed every hosted check and all three OS legs, but main advanced before merge. #134 repeated validation on the catalog/queue/prefix base. The replacement audit tests the public parser with fixed documented limits in `xtask/tests/package_format.rs`; production core code is unchanged. Close both superseded PRs after this replacement merges.
 - Current base `929db25` adds INS’s install worker. Full Rust, desktop, changelog/security and secret checks pass after rebase. #135 was not merged because main advanced; `int/p2-package-format-worker` is the fresh replacement. Earlier contract PRs close only after the replacement merges.
+
+
+## Updater checkpoint security review (INS-03 / #138)
+- Adopted #138 on current main, retaining its signed-artifact verification, game-running checks and serialized install lock. Downloads stop at journaled checkpoints before installation; release signing configuration is unchanged.
+- Replaced manual release calls with a scoped checkpoint guard: shutdown, missing updates, failed verification/install and cancellation of the install future all release the queue. Tests cover checkpoint ordering, shutdown, aborted futures and failed/missing-update exits. Successful installation keeps the guard through restart.
+- Supersede #138 only after the reviewed replacement passes every hosted check and all three desktop OS legs and merges.
