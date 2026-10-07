@@ -8,7 +8,6 @@
 // through. A job survives a launcher restart: `publish_jobs` lists it again and `publish_resume`
 // continues it (it asks for the key again while the manifest is not signed yet).
 import type { Platform } from "../../bindings";
-import type { AppError } from "./core";
 import { call, makeEvents, type Result } from "./runtime";
 
 // ------------------------------------------------------------------------------------------------
@@ -33,14 +32,6 @@ export type PackageCreate = {
   /** Derived from the title by the server when null. */
   slug: string | null;
 };
-
-export type PackageCreateError =
-  | { kind: "forbidden" }
-  /** Another package has this slug. */
-  | { kind: "slug_taken" }
-  /** The server refused a field (`title` or `slug`), with its message (plain text). */
-  | { kind: "invalid"; field: "title" | "slug"; message: string }
-  | AppError;
 
 export type VersionState =
   | "uploading"
@@ -68,13 +59,6 @@ export type PublishVersion = {
   published_at: string | null;
   yanked_at: string | null;
 };
-
-export type VersionActionError =
-  | { kind: "forbidden" }
-  | { kind: "not_found" }
-  /** The version is not in a state that allows this (e.g. publishing a version that is not `ready`). */
-  | { kind: "conflict"; state: VersionState }
-  | AppError;
 
 // ------------------------------------------------------------------------------------------------
 // The folder to publish
@@ -114,12 +98,6 @@ export type PublishPlan = {
   invalid_paths: InvalidPath[];
   invalid_count: number;
 };
-
-export type PublishPlanError =
-  | { kind: "not_found" }
-  | { kind: "empty" }
-  | { kind: "io"; detail: string }
-  | AppError;
 
 // ------------------------------------------------------------------------------------------------
 // Publishing jobs
@@ -166,10 +144,11 @@ export type PackProgress = {
   state: "waiting" | "uploading" | "done";
 };
 
-export type PublishJobError =
+/** Why a publisher key can't sign here. */
+export type KeyError =
   /** The passphrase does not decrypt the key file. */
   | { kind: "wrong_passphrase" }
-  /** Not a publisher key file, or a damaged one. */
+  /** Not a publisher key file, a damaged one, or it can't be read. */
   | { kind: "invalid_key_file" }
   /**
    * The server's trust bundle doesn't let this key sign now: `unknown` (not in it), `revoked`,
@@ -179,15 +158,20 @@ export type PublishJobError =
   | {
       kind: "untrusted_key";
       reason: "unknown" | "revoked" | "other_holder" | "not_valid_now" | "no_bundle";
-    }
+    };
+
+/** Why a job stopped in `failed`. */
+export type PublishJobError =
   /** The server could not verify the upload; `reason` is the server's text, if any. */
   | { kind: "verification_failed"; reason: string | null }
   /** The folder changed since the upload started; publish it as a new version. */
   | { kind: "source_changed" }
   /** Network or server trouble; `retryable` = resuming may work. */
   | { kind: "remote"; retryable: boolean }
-  | { kind: "forbidden" }
-  | { kind: "io"; detail: string };
+  /** The version ended on the server (aborted, yanked or failed by someone else). */
+  | { kind: "version_gone"; state: VersionState }
+  | { kind: "io"; detail: string }
+  | { kind: "internal"; detail: string };
 
 export type PublishJob = {
   id: string;
@@ -211,24 +195,39 @@ export type PublishJob = {
   resume_needs_key: boolean;
 };
 
-export type PublishStartError =
-  | PublishJobError
-  | { kind: "invalid_label" }
-  /** `publish_plan` lists invalid paths; nothing was uploaded. */
-  | { kind: "invalid_paths"; count: number }
-  /** The launch executable is not a file in the folder. */
-  | { kind: "invalid_launch" }
+/** Every publishing command fails with one of these (a job's own failure is `PublishJob.error`). */
+export type PublishCommandError =
+  /** The signed-in account is not an admin or owner of this server. */
+  | { kind: "forbidden" }
+  | { kind: "unauthenticated" }
   | { kind: "not_found" }
-  | AppError;
+  | { kind: "network"; detail: string }
+  /** Any other refusal from the server (plain text). */
+  | { kind: "server"; code: string; message: string }
+  /** `publish_package_create`: another package has this slug. */
+  | { kind: "slug_taken" }
+  /** The server refused a field (`title` or `slug`), with its message (plain text). */
+  | { kind: "invalid_field"; field: "title" | "slug"; message: string }
+  /** `publish_release` / `version_yank`: the version is not in a state that allows it. */
+  | { kind: "version_conflict"; state: VersionState }
+  /** `publish_cancel` / `publish_resume` / `publish_dismiss`: not possible in this phase. */
+  | { kind: "job_conflict"; phase: PublishPhase }
+  /** `publish_plan`: the folder has no files. */
+  | { kind: "empty_folder" }
+  /** `publish_start`: the version label is empty or over 64 characters. */
+  | { kind: "invalid_label" }
+  /** `publish_start`: `publish_plan` lists invalid paths; nothing was uploaded. */
+  | { kind: "invalid_paths"; count: number }
+  /** `publish_start`: the launch executable is not a file in the folder. */
+  | { kind: "invalid_launch" }
+  /** `publish_resume`: the key is needed again (`resume_needs_key`) and was not given. */
+  | { kind: "key_required" }
+  /** `publish_start` / `publish_resume` checked the key first. */
+  | { kind: "key"; error: KeyError }
+  | { kind: "io"; detail: string }
+  | { kind: "internal"; detail: string };
 
 export type PublishResume = { key_path: string; passphrase: string };
-
-export type PublishControlError =
-  | { kind: "not_found" }
-  /** Not possible in this phase (e.g. resuming a published job). */
-  | { kind: "conflict"; phase: PublishPhase }
-  | PublishJobError
-  | AppError;
 
 /** A job's state changed (phase, bytes, a pack or verification). Throttled to 4 per second per job. */
 export type PublishProgressEvent = PublishJob;
@@ -241,72 +240,72 @@ export const publishingCommands = {
     serverId: string,
     query: string | null,
     cursor: string | null,
-  ): Promise<Result<PublishPackagePage, AppError>> {
+  ): Promise<Result<PublishPackagePage, PublishCommandError>> {
     return call("publish_packages", { serverId, query, cursor });
   },
   async publishPackageCreate(
     serverId: string,
     create: PackageCreate,
-  ): Promise<Result<PublishPackage, PackageCreateError>> {
+  ): Promise<Result<PublishPackage, PublishCommandError>> {
     return call("publish_package_create", { serverId, create });
   },
   /** Every version of a package, newest first. */
   async publishVersions(
     serverId: string,
     packageId: string,
-  ): Promise<Result<PublishVersion[], AppError>> {
+  ): Promise<Result<PublishVersion[], PublishCommandError>> {
     return call("publish_versions", { serverId, packageId });
   },
   /** Native folder picker; null when cancelled. */
-  async publishPickFolder(): Promise<Result<string | null, AppError>> {
+  async publishPickFolder(): Promise<Result<string | null, PublishCommandError>> {
     return call("publish_pick_folder");
   },
   /** Native file picker for a publisher key file; null when cancelled. */
-  async publishPickKey(): Promise<Result<string | null, AppError>> {
+  async publishPickKey(): Promise<Result<string | null, PublishCommandError>> {
     return call("publish_pick_key");
   },
   /** Scans the folder (no upload). */
-  async publishPlan(folder: string): Promise<Result<PublishPlan, PublishPlanError>> {
+  async publishPlan(folder: string): Promise<Result<PublishPlan, PublishCommandError>> {
     return call("publish_plan", { folder });
   },
   /** Checks the key, creates the version and starts uploading. Progress arrives as `publish-progress`. */
   async publishStart(
     serverId: string,
     start: PublishStart,
-  ): Promise<Result<PublishJob, PublishStartError>> {
+  ): Promise<Result<PublishJob, PublishCommandError>> {
     return call("publish_start", { serverId, start });
   },
   /** Jobs not yet published or dismissed, including ones from before a restart. */
-  async publishJobs(): Promise<Result<PublishJob[], AppError>> {
+  async publishJobs(): Promise<Result<PublishJob[], PublishCommandError>> {
     return call("publish_jobs");
   },
   /** Stops uploading; the job keeps what is uploaded and can be resumed. */
-  async publishCancel(jobId: string): Promise<Result<PublishJob, PublishControlError>> {
+  async publishCancel(jobId: string): Promise<Result<PublishJob, PublishCommandError>> {
     return call("publish_cancel", { jobId });
   },
   /** `key` is required when `resume_needs_key`, ignored otherwise. */
   async publishResume(
     jobId: string,
     key: PublishResume | null,
-  ): Promise<Result<PublishJob, PublishControlError>> {
+  ): Promise<Result<PublishJob, PublishCommandError>> {
     return call("publish_resume", { jobId, key });
   },
   /** Forgets a finished, failed or cancelled job (aborting its version on the server if unpublished). */
-  async publishDismiss(jobId: string): Promise<Result<null, PublishControlError>> {
+  async publishDismiss(jobId: string): Promise<Result<null, PublishCommandError>> {
     return call("publish_dismiss", { jobId });
   },
   /** Makes a `ready` version the current release of its platform. */
   async publishRelease(
     serverId: string,
     versionId: string,
-  ): Promise<Result<PublishVersion, VersionActionError>> {
+  ): Promise<Result<PublishVersion, PublishCommandError>> {
     return call("publish_release", { serverId, versionId });
   },
   /** Withdraws a published version; players keep installed copies but can't install it again. */
   async versionYank(
     serverId: string,
     versionId: string,
-  ): Promise<Result<PublishVersion, VersionActionError>> {
+  ): Promise<Result<PublishVersion, PublishCommandError>> {
     return call("version_yank", { serverId, versionId });
   },
 };

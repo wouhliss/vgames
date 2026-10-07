@@ -47,11 +47,14 @@ describe("publishing mock", () => {
     installMockBackend({ servers: [ADMIN_SERVER] });
     expect(await commands.publishStart(ADMIN_SERVER.id, start({ passphrase: "wrong" }))).toEqual({
       status: "error",
-      error: { kind: "wrong_passphrase" },
+      error: { kind: "key", error: { kind: "wrong_passphrase" } },
     });
     expect(
       await commands.publishStart(ADMIN_SERVER.id, start({ key_path: PUBLISH_KEYS.untrusted })),
-    ).toEqual({ status: "error", error: { kind: "untrusted_key", reason: "unknown" } });
+    ).toEqual({
+      status: "error",
+      error: { kind: "key", error: { kind: "untrusted_key", reason: "unknown" } },
+    });
     expect(
       await commands.publishStart(ADMIN_SERVER.id, start({ folder: PUBLISH_FOLDERS.invalid })),
     ).toEqual({ status: "error", error: { kind: "invalid_paths", count: 3 } });
@@ -79,7 +82,7 @@ describe("publishing mock", () => {
     backend.state.publishHold = false;
     expect(await commands.publishResume(started.data.id, null)).toEqual({
       status: "error",
-      error: { kind: "wrong_passphrase" },
+      error: { kind: "key_required" },
     });
     const resumed = await commands.publishResume(started.data.id, {
       key_path: PUBLISH_KEYS.ok,
