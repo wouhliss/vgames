@@ -25,14 +25,19 @@ Install & Library (phase 2, `docs/agents/phase-2/ins-install-library.md`).
   without leftovers never follows a link; a moved install still verifies; every `InstallActionError`), detection
   against wiremock; no pending entry left in `contract/library.ts` (file deleted) nor `librariesChanged` in `core.ts`.
 
+- INS-08 — `tests/install_e2e.rs` ([#146](https://github.com/wouhliss/vgames/pull/146)): the real API in process,
+  publish → `install_start` → SIGKILL at 40 % after a journal flush → resume → byte-identical tree → data never above
+  the final size → a flipped pack byte refused as `damaged_file` before its chunk is written → dummy game launched →
+  uninstall. Small scale in the required `desktop` job (`scripts/ci/desktop-db-tests.sh`); 8 GiB nightly: first run
+  green, [E2E run 37604975806](https://github.com/wouhliss/vgames/actions/runs/37604975806) (job `install`, 7 min).
+
 ## In progress
 - Split agreed 2026-10-06 between the two INS sessions (the user started two): session_016VNaVFJqCdjyJ8qqaTzFtN takes
   INS-02, INS-03, INS-04 and INS-08 (the install chain); session_01AChegfo4ZUhpjL2LgRbUk3 (this PR's author) takes
   INS-05, INS-06 and INS-07; INS-09 and INS-10 go to whoever finishes first. Each keeps the other's lines here.
 - INS-05 — Accounts, API client and cross-server isolation (next, session_01AChegfo4ZUhpjL2LgRbUk3).
-- INS-08 (session_016VNaVF…) — `tests/install_e2e.rs` (this PR): small scale in the required `desktop` job (INT's
-  `scripts/ci/desktop-db-tests.sh` picks it up), 8 GiB nightly (`e2e.yml` job `install`); the first nightly run link
-  goes under Done once it has run.
+- INS-09 (session_016VNaVF…, claimed 2026-10-07 under the split: INS-09/10 go to whoever finishes first) — the
+  real-application harness `apps/desktop/e2e-real/` (this PR).
 
 - INS-10 (session_016VNaVF…, partial) — `apps/desktop/README.md` sections Installs, Downloads and, under Logs,
   where install and download logs go and how to read an integrity report; the G1 re-review request for INT-11 in

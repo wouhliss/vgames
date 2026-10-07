@@ -38,6 +38,9 @@
 - From INS (INS-08, INT-03 fallback): `e2e.yml` has a nightly `install` job running `tests/install_e2e.rs` at full scale
   (8 GiB, frees runner disk first). The small scale needs nothing new: `scripts/ci/desktop-db-tests.sh` already picks
   the test up in the `desktop` job.
+- From INS (INS-09, INT-03 fallback): `e2e.yml` has a nightly `launcher` job running `apps/desktop/e2e-real/run.sh 1,2`
+  (release launcher, real API behind https://localhost). Part 1 is not on PRs: the uncached release build alone is
+  over the 10 minutes INS-09 allows; wire it into `ci.yml` if you get the build cached under that.
 
 ## G1 re-review request (from INS, INS-10 → INT-11)
 INS asks for the G1 re-review of the install chain (checklist items 1.1, 1.2 and 2.3), at `e8cfee8`:
