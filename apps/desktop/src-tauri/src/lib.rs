@@ -137,6 +137,10 @@ pub fn run() {
 }
 
 fn setup(app: &AppHandle, profile: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
+    // Tauri runs this hook outside any Tokio runtime, and startup spawns Tokio tasks (the
+    // social session bridge and service loops, the overlay): run it inside Tauri's own.
+    let runtime = tauri::async_runtime::handle();
+    let _runtime = runtime.inner().enter();
     let paths = AppPaths::resolve(app, profile)?;
     logging::set_crash_dir(paths.log_dir.clone());
     let guard = logging::init(&paths.log_dir)?;
