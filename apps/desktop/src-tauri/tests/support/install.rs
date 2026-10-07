@@ -305,12 +305,15 @@ impl Api {
 
     /// The published manifest, as stored.
     pub fn manifest(&self, published: &Published) -> vgames_core::manifest::Manifest {
+        vgames_core::manifest::parse_and_validate(&self.manifest_bytes(published)).unwrap()
+    }
+
+    pub fn manifest_bytes(&self, published: &Published) -> Vec<u8> {
         let key = format!(
             "v1/{}/{}/manifest.json",
             published.package_id, published.version_id
         );
-        let bytes = std::fs::read(self.object(&key)).unwrap();
-        vgames_core::manifest::parse_and_validate(&bytes).unwrap()
+        std::fs::read(self.object(&key)).unwrap()
     }
 
     /// Flips one byte of a stored pack.

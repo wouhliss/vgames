@@ -33,6 +33,7 @@ use serde::{Deserialize, Serialize};
 use support::{Api, Desktop, PackageSpec};
 use uuid::Uuid;
 use vgames_desktop_lib::events::{AppEvent, InstallOutcome, InstallPhase, PackageRef};
+use vgames_transfer::download::journal::{Journal, JournalKey};
 
 const CHILD_ENV: &str = "VGAMES_E2E_CHILD";
 /// The first run is killed once this share of the download is on disk.
@@ -108,9 +109,19 @@ async fn install_e2e() {
         token: api.token.clone(),
         package,
         library_id,
-        limit_kib: u32::try_from((total / FIRST_RUN_SECONDS / 1024).max(64)).unwrap_or(u32::MAX),
+        // Keep the full-scale producer below the journal flush throughput.
+        limit_kib: u32::try_from((total / FIRST_RUN_SECONDS / 1024).clamp(64, 64 * 1024)).unwrap(),
     };
-    let killed_at = run_and_kill_child(&config, total, &library_dir);
+    let manifest_bytes = api.manifest_bytes(&game);
+    let manifest = vgames_core::manifest::parse_and_validate(&manifest_bytes).unwrap();
+    let chunk_sizes: Vec<_> = manifest.chunks.iter().map(|chunk| chunk.size).collect();
+    let journal_key = JournalKey {
+        version_id: game.version_id,
+        manifest_blake3: *blake3::hash(&manifest_bytes).as_bytes(),
+        chunk_count: u32::try_from(chunk_sizes.len()).unwrap(),
+    };
+    let (killed_at, resumed_from, durable_chunks) =
+        run_and_kill_child(&config, total, &library_dir, journal_key, &chunk_sizes);
     eprintln!("first run killed at {killed_at} of {total} bytes");
 
     // Second run: a fresh launcher on the same profile resumes the queued job.
@@ -121,7 +132,7 @@ async fn install_e2e() {
     let mut first_progress = None;
     let outcome = loop {
         match tokio::time::timeout(Duration::from_secs(600), events.recv()).await {
-            // The first download progress after a restart counts what survived the kill.
+            // Progress can coalesce the checkpoint with newly downloaded chunks.
             Ok(Ok(AppEvent::InstallProgress(p)))
                 if p.package == package && p.phase == InstallPhase::Downloading =>
             {
@@ -137,11 +148,17 @@ async fn install_e2e() {
     assert!(matches!(outcome, InstallOutcome::Installed), "{outcome:?}");
     // The kill followed a journal flush past `KILL_AT`: what it recorded is kept, and only
     // chunks in flight at the kill are fetched again.
-    let resumed_from = first_progress.unwrap_or(0);
+    assert!(first_progress.is_some_and(|bytes| bytes >= resumed_from));
     eprintln!("second run resumed at {resumed_from} of {total} bytes");
     assert!(
         resumed_from as f64 >= total as f64 * KILL_AT * 0.75 && resumed_from <= killed_at,
         "the second run did not resume ({resumed_from} of {total} bytes, killed at {killed_at})"
+    );
+
+    assert_eq!(
+        desktop.state.downloads.chunks_verified(),
+        u64::try_from(chunk_sizes.len()).unwrap() - u64::from(durable_chunks),
+        "the restart fetched chunks already recorded in the durable checkpoint"
     );
 
     // Byte-identical tree.
@@ -256,11 +273,18 @@ async fn install_e2e_child() {
     }
 }
 
-/// Runs the child until it reports `KILL_AT` of the download and a journal flush has followed,
-/// then SIGKILLs it. Returns the bytes it had reported. (The journal is persisted every 2 s
+/// Runs the child until its reported progress and durable journal both reach `KILL_AT`,
+/// then SIGKILLs it. Returns the observed bytes, durable bytes and durable chunk count.
+/// (The journal is persisted every 2 s
 /// after fsyncing the files written since the last one; a kill before the first flush keeps
 /// nothing, which would prove nothing.)
-fn run_and_kill_child(config: &ChildConfig, total: u64, library: &Path) -> u64 {
+fn run_and_kill_child(
+    config: &ChildConfig,
+    total: u64,
+    library: &Path,
+    key: JournalKey,
+    chunk_sizes: &[u64],
+) -> (u64, u64, u32) {
     let mut child = Command::new(std::env::current_exe().unwrap())
         .args([
             "install_e2e_child",
@@ -287,15 +311,12 @@ fn run_and_kill_child(config: &ChildConfig, total: u64, library: &Path) -> u64 {
         }
     });
     let mut reached = 0;
-    let mut crossed: Option<std::time::SystemTime> = None;
+    let mut journal_path = None;
     loop {
         match rx.recv_timeout(Duration::from_millis(50)) {
             Ok(line) => {
                 if let Some(rest) = line.strip_prefix("E2E_PROGRESS ") {
                     reached = rest.split(' ').next().unwrap().parse().unwrap();
-                    if crossed.is_none() && reached as f64 >= total as f64 * KILL_AT {
-                        crossed = Some(std::time::SystemTime::now());
-                    }
                 } else if line.starts_with("E2E_DONE") {
                     panic!(
                         "the first run finished before it was killed ({line}); lower its bandwidth"
@@ -307,26 +328,70 @@ fn run_and_kill_child(config: &ChildConfig, total: u64, library: &Path) -> u64 {
                 panic!("the first run exited on its own: {:?}", child.wait());
             }
         }
-        if let Some(at) = crossed
-            && journal_flushed_after(library, at)
-        {
-            child.kill().unwrap();
-            break;
+        if reached as f64 >= total as f64 * KILL_AT {
+            if journal_path.is_none() {
+                journal_path = walk(library)
+                    .into_iter()
+                    .find(|p| p.file_name().is_some_and(|n| n == "journal.bin"));
+            }
+            if let Some(path) = journal_path.as_ref()
+                && journalled_bytes(path, key, chunk_sizes) as f64 >= total as f64 * KILL_AT
+            {
+                child.kill().unwrap();
+                break;
+            }
         }
     }
     let status = child.wait().unwrap();
     assert!(!status.success(), "the first run was not killed: {status}");
-    reached
+    // Reap the child and drain its pipe before taking the exact restart checkpoint.
+    for line in rx {
+        if let Some(rest) = line.strip_prefix("E2E_PROGRESS ") {
+            reached = reached.max(rest.split(' ').next().unwrap().parse().unwrap());
+        }
+    }
+    let path = journal_path.unwrap();
+    let durable = journalled_bytes(&path, key, chunk_sizes);
+    let chunks = Journal::load_or_new(&path, key).done().count();
+    (reached.max(durable), durable, chunks)
 }
 
-/// Whether an install journal under `library` was persisted after `at`.
-fn journal_flushed_after(library: &Path, at: std::time::SystemTime) -> bool {
-    walk(library).iter().any(|p| {
-        p.file_name().is_some_and(|n| n == "journal.bin")
-            && std::fs::metadata(p)
-                .and_then(|m| m.modified())
-                .is_ok_and(|m| m > at)
-    })
+/// A late mtime can belong to an earlier snapshot waiting for slow fsyncs.
+/// Only the authenticated journal bitset proves which bytes are durable.
+fn journalled_bytes(path: &Path, key: JournalKey, chunk_sizes: &[u64]) -> u64 {
+    let journal = Journal::load_or_new(path, key);
+    chunk_sizes
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| journal.done().get(u32::try_from(*index).unwrap()))
+        .map(|(_, size)| size)
+        .sum()
+}
+
+#[test]
+fn a_late_journal_write_does_not_make_earlier_chunks_durable() {
+    let work = tempfile::tempdir().unwrap();
+    let path = work.path().join("journal.bin");
+    let key = JournalKey {
+        version_id: Uuid::nil(),
+        manifest_blake3: [7; 32],
+        chunk_count: 2,
+    };
+    let crossed = std::time::SystemTime::now();
+    let mut journal = Journal::load_or_new(&path, key);
+    journal.mark(0);
+    journal.persist().unwrap();
+    std::fs::File::options()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_times(std::fs::FileTimes::new().set_modified(crossed + Duration::from_secs(1)))
+        .unwrap();
+    assert!(std::fs::metadata(&path).unwrap().modified().unwrap() > crossed);
+    assert_eq!(journalled_bytes(&path, key, &[10, 990]), 10);
+    journal.mark(1);
+    journal.persist().unwrap();
+    assert_eq!(journalled_bytes(&path, key, &[10, 990]), 1000);
 }
 
 /// Publishes a small package, flips one byte inside one of its chunks in storage, and checks
