@@ -49,6 +49,9 @@ exceptions = [
   # Build-time only (cfg-expr ← system-deps ← GTK/WebKit build scripts); the LLVM
   # exception only removes Apache-2.0 obligations.
   { crate = "target-lexicon", allow = ["Apache-2.0 WITH LLVM-exception"] },
+  # Windows-only dependency of cap-primitives (handle-relative file access for install writes,
+  # INS-07); same LLVM exception, which only removes Apache-2.0 obligations.
+  { crate = "winx", allow = ["Apache-2.0 WITH LLVM-exception"] },
   # Mozilla's CA certificate data (permissive data license, no copyleft).
   { crate = "webpki-roots", allow = ["CDLA-Permissive-2.0"] },
   { crate = "webpki-root-certs", allow = ["CDLA-Permissive-2.0"] },
