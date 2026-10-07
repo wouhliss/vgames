@@ -171,3 +171,5 @@ INS asks for the G1 re-review of the install chain (checklist items 1.1, 1.2 and
 
 
 - INT-05 combined history/robustness validation on the install-test base: all 325 admin units and type checking pass; all 34 mock browser cases pass (2.2m), and all 22 real-API browser cases pass (1.1m). The twelve pre-existing mock-only real skips are unchanged; every new history and robustness scenario ran. Real fixture keys, processes and database were removed. This is manual evidence, not two scheduled nights.
+
+- After session cache isolation, all 326 combined admin units and type checking pass. The draft sign-out/re-sign-in browser scenario passes in mock mode (3.4s) and against the real API (1.8s); the real fixture was removed. The earlier complete 34 mock / 22 real browser run remains valid for unchanged cases; every hosted suite is required again on the published branches.
