@@ -40,6 +40,7 @@ export function leaveForSignIn(
 ): void {
   if (onLoginPage) return;
   stashDrafts();
-  queryClient.removeQueries({ queryKey: meKey });
+  queryClient.clear();
+  setCsrfFallback(null);
   navigate(`/login?return_to=${encodeURIComponent(returnTo)}`);
 }
