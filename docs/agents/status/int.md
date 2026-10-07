@@ -77,3 +77,5 @@
 - After the INT-03 rebase, the server branch passes the whole launcher plus all four DB scenarios (3m12s), changelog/security (2s), secrets and workflow lint (1s each). No backend source changed during this rebase. Compat history UI also passes all eleven units and all three browser cases in mock and real-API mode; its temporary real fixture was removed.
 
 - INT-04 replacement after INS-08 #146: whole launcher suite, both install test functions and four chat/chaos scenarios pass; desktop gate 3m11s, changelog/security and secrets 2s each, workflow lint clean. Install scenario completes in 19.26s at PR scale. Admin draft foundation combined with the history UI passes all 150 unit tests and type checking.
+
+- INT-04 utoipa 6 / axum 0.3 / swagger-ui 10 combined upgrade passes Rust/strict drift (3m53s), SQLx (13s), whole launcher and all install/chat/chaos scenarios (3m27s), changelog/security, supply-chain and secrets on the INS-08 base. The drift allowlist is empty. Main `e4f0732` CI and its manually dispatched E2E (including 8 GiB install) are green; manual matrix on `37aa9b6` is green. These are distinct from scheduled-night acceptance.
