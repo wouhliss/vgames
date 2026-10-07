@@ -3,6 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { delay, HttpResponse, http } from "msw";
 import { describe, expect, it, vi } from "vitest";
+import { setUnauthorizedHandler } from "../../api/http";
 import { createQueryClient } from "../../api/query";
 import type { SignedCompatProfile } from "../../api/schemas";
 import { problem } from "../../mocks/handlers";
@@ -29,7 +30,8 @@ function item(revision: number): SignedCompatProfile {
 }
 function show() {
   const signedOut = vi.fn();
-  const client = createQueryClient({ onUnauthenticated: signedOut, onNetworkError: () => {} });
+  setUnauthorizedHandler(signedOut);
+  const client = createQueryClient({ onNetworkError: () => {} });
   render(
     <QueryClientProvider client={client}>
       <CompatHistory packageId="test-package" target="linux" />
