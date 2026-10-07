@@ -1,0 +1,13 @@
+#!/bin/sh
+# Stands in for the system browser of one launcher instance (INS-09): put first on the
+# instance's PATH, it completes the fake Discord sign-in for the URL the launcher opens and
+# leaves the resulting vgames:// link in $HOME/signin-link, which the suite pastes into
+# "Sign-in code". Any other URL is only recorded.
+set -eu
+echo "$1" >> "$HOME/opened-urls"
+case "$1" in
+  https://*state=*)
+    "$VGAMES_E2E_REPO/scripts/e2e/fake-discord-browser.sh" "$1" > "$HOME/signin-link.tmp"
+    mv "$HOME/signin-link.tmp" "$HOME/signin-link"
+    ;;
+esac
