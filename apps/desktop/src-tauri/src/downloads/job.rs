@@ -267,6 +267,12 @@ impl<B: Backend> Downloads<B> {
         loop {
             let trust = match self.backend().trust(expected.server_id, refreshed).await {
                 Ok(Some(trust)) => trust,
+                // No bundle yet: the server may have published its first one since it was
+                // added. Fetch it once before refusing.
+                Ok(None) if !refreshed => {
+                    refreshed = true;
+                    continue;
+                }
                 Ok(None) => return Err(End::Failed(DownloadError::UntrustedKey)),
                 Err(error) => {
                     return Err(End::Failed(DownloadError::Server {

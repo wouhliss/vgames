@@ -1,0 +1,14 @@
+{
+  "name": "@vgames/desktop-e2e-real",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Drives the release launcher against the real API (INS-09). See README.md.",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "e2e": "./run.sh"
+  },
+  "devDependencies": {
+    "@types/node": "^22"
+  }
+}

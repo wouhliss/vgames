@@ -25,6 +25,20 @@ Install & Library (phase 2, `docs/agents/phase-2/ins-install-library.md`).
   without leftovers never follows a link; a moved install still verifies; every `InstallActionError`), detection
   against wiremock; no pending entry left in `contract/library.ts` (file deleted) nor `librariesChanged` in `core.ts`.
 
+- INS-08 — `tests/install_e2e.rs` ([#146](https://github.com/wouhliss/vgames/pull/146)): the real API in process,
+  publish → `install_start` → SIGKILL at 40 % after a journal flush → resume → byte-identical tree → data never above
+  the final size → a flipped pack byte refused as `damaged_file` before its chunk is written → dummy game launched →
+  uninstall. Small scale in the required `desktop` job (`scripts/ci/desktop-db-tests.sh`); 8 GiB nightly: first run
+  green, [E2E run 37604975806](https://github.com/wouhliss/vgames/actions/runs/37604975806) (job `install`, 7 min).
+- INS-09 — real-application E2E (#153, #150): `apps/desktop/e2e-real/` drives the **release** launcher through
+  tauri-driver and WebKitWebDriver under Xvfb against the real API (Postgres, fs storage, fake Discord) behind TLS
+  on `https://localhost`, each instance isolated by `HOME`, XDG dirs and its own D-Bus session. Part 1 (M1: add
+  server, fingerprint, sign in, library folder) and part 2 (M2: publish with the CLI, browse, install, progress,
+  play, stop, verify, uninstall). Nightly in `e2e.yml` (job `launcher`); first CI run green,
+  [E2E run 37616978222](https://github.com/wouhliss/vgames/actions/runs/37616978222) on the merged head (parts 1 and 2 in 28 s after a
+  7 min release build). Bugs it found, fixed with tests: startup panic outside Tokio (#150), a first trust bundle
+  never fetched before refusing an install, Browse not refreshing after a publish (#153).
+
 ## In progress
 - Split agreed 2026-10-06 between the two INS sessions (the user started two): session_016VNaVFJqCdjyJ8qqaTzFtN takes
   INS-02, INS-03, INS-04 and INS-08 (the install chain); session_01AChegfo4ZUhpjL2LgRbUk3 takes

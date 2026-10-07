@@ -1,5 +1,6 @@
 packages:
   - apps/desktop
+  - apps/desktop/e2e-real
   - apps/admin-web
   - packages/*
   - scripts/release-notes

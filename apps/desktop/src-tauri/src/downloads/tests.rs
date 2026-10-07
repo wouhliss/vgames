@@ -66,6 +66,8 @@ impl PackUrlSource for RigPacks {
 struct TestBackend {
     served: Mutex<HashMap<Uuid, Arc<Served>>>,
     trust: Mutex<Arc<TrustState>>,
+    /// The launcher has no trust bundle yet; a refresh fetches it.
+    no_bundle_until_refresh: std::sync::atomic::AtomicBool,
     http: reqwest::Client,
 }
 
@@ -110,8 +112,14 @@ impl Backend for TestBackend {
     async fn trust(
         &self,
         _server_id: Uuid,
-        _refresh: bool,
+        refresh: bool,
     ) -> Result<Option<Arc<TrustState>>, crate::catalog::CatalogError> {
+        use std::sync::atomic::Ordering;
+        if refresh {
+            self.no_bundle_until_refresh.store(false, Ordering::SeqCst);
+        } else if self.no_bundle_until_refresh.load(Ordering::SeqCst) {
+            return Ok(None);
+        }
         Ok(Some(Arc::clone(&self.trust.lock().unwrap())))
     }
 
@@ -170,6 +178,7 @@ impl Harness {
         let backend = Arc::new(TestBackend {
             served: Mutex::new(HashMap::new()),
             trust: Mutex::new(Arc::new(vgames_transfer::testkit::trust_state())),
+            no_bundle_until_refresh: Default::default(),
             http: vgames_transfer::http::transfer_client(&ClientOptions {
                 use_system_proxy: false,
                 ..ClientOptions::default()
@@ -187,6 +196,7 @@ impl Harness {
                 Arc::new(TestBackend {
                     served: Mutex::new(HashMap::new()),
                     trust: Mutex::new(Arc::new(vgames_transfer::testkit::trust_state())),
+                    no_bundle_until_refresh: Default::default(),
                     http: reqwest::Client::new(),
                 }),
                 options(),
@@ -616,6 +626,22 @@ async fn a_flipped_byte_fails_with_a_report_and_is_not_retried() {
         queue.history[0].outcome,
         InstallOutcome::Failed { .. }
     ));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_bundle_published_after_the_server_was_added_is_fetched() {
+    // The player added the server before its owner published a first trust bundle.
+    let mut h = Harness::new().await;
+    h.backend
+        .no_bundle_until_refresh
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    let served = h.serve(package(5, MIB, Uuid::now_v7())).await;
+    let package = h.queue(&served).await;
+    assert!(matches!(
+        h.finished(package).await,
+        InstallOutcome::Installed
+    ));
+    assert_installed(&h, &served);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

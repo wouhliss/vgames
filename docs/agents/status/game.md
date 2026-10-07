@@ -11,6 +11,10 @@
 ## Blockers / contract questions
 
 ## Built for you
+- From INS (INS-09, [#150](https://github.com/wouhliss/vgames/pull/150)): release launchers panicked at startup in
+  `social::session_bridge::spawn` ("no reactor running"): Tauri's setup hook runs outside Tokio, so `setup()` now
+  enters Tauri's runtime for its whole body. Keep `tokio::spawn` reachable from setup only under that guard, or use
+  `tauri::async_runtime::spawn`.
 - From INS (INS-02): the pending `CompatBlocker` kind `needs_apple_silicon` is renamed `d3d12_unsupported_on_mac`
   in `contract/catalog.ts`, `mocks/catalog.ts`, `routes/package/messages.ts` and `routes/package/CompatPanel.tsx`
   (pure rename; GAME-02's rename). When it applies (every Mac, owner decision 3) and its text stay GAME-07's.
