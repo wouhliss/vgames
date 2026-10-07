@@ -21,4 +21,9 @@ async function start(): Promise<void> {
   );
 }
 
+// INT-10 negative proof: deliberately unnamed visible button, never merge.
+const proofButton = document.createElement("button");
+proofButton.type = "button";
+proofButton.style.cssText = "position:fixed;right:0;bottom:0;width:30px;height:30px";
+document.body.append(proofButton);
 void start();
