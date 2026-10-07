@@ -54,6 +54,8 @@ pub struct AppState {
     pub installs: Arc<crate::installs::Installs>,
     /// Wakes update detection (window focus, catalog refresh).
     pub update_triggers: Arc<crate::installs::updates::UpdateTriggers>,
+    /// Admin publishing jobs (INS-06).
+    pub publisher: Arc<crate::publishing::Publisher<Servers>>,
 }
 
 impl AppState {
@@ -104,7 +106,14 @@ impl AppState {
                 ));
             }));
         }
+        let publisher = Arc::new(crate::publishing::Publisher::open(
+            Arc::clone(&servers),
+            paths.data_dir.join("publishing"),
+            bus.clone(),
+            vgames_transfer::upload::publish::PublishOptions::default(),
+        ));
         Ok(Self {
+            publisher,
             paths,
             catalog,
             downloads,

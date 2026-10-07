@@ -44,6 +44,10 @@
   (release launcher, real API behind https://localhost). Part 1 is not on PRs: the uncached release build alone is
   over the 10 minutes INS-09 allows; wire it into `ci.yml` if you get the build cached under that.
 
+- From INS (INS-06, INT-03 fallback): `tests/publish_e2e.rs` (launcher publishing through the real API in process)
+  runs on PRs at 2 GiB through `scripts/ci/desktop-db-tests.sh` (already listed there), and nightly at 5 GiB as a
+  second step of the `install` job in `e2e.yml` (`VGAMES_PUBLISH_E2E_GIB=5`).
+
 - From INS (INS-05): `docs/security/test-matrix.md`, row "Compromised server → read tokens for other servers", now
   names `servers/tests.rs::a_request_to_one_server_never_carries_another_servers_token` (two servers signed in; each
   receives only its own tokens after a refresh, a switch with reconnect, and a restart), and "Gaps being closed" is

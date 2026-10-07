@@ -2,7 +2,6 @@
 import { catalogCommands } from "./catalog";
 import { compatCommands } from "./compat";
 import { coreCommands, coreEvents } from "./core";
-import { publishingCommands, publishingEvents } from "./publishing";
 import { settingsCommands } from "./settings";
 
 export const pendingCommands = {
@@ -10,16 +9,13 @@ export const pendingCommands = {
   ...catalogCommands,
   ...settingsCommands,
   ...compatCommands,
-  ...publishingCommands,
 };
 
 export const pendingEvents = {
   ...coreEvents,
-  ...publishingEvents,
 };
 
 export type * from "./catalog";
 export type * from "./compat";
 export type * from "./core";
-export type * from "./publishing";
 export type * from "./settings";

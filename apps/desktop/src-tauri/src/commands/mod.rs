@@ -13,6 +13,7 @@ mod games;
 mod installs;
 mod libraries;
 pub mod names;
+mod publishing;
 mod servers;
 pub mod shortcuts;
 
@@ -126,7 +127,20 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             collections::collection_remove_package,
             collections::favorite_set,
             account::account_sessions,
-            account::account_session_revoke
+            account::account_session_revoke,
+            publishing::publish_packages,
+            publishing::publish_package_create,
+            publishing::publish_versions,
+            publishing::publish_pick_folder,
+            publishing::publish_pick_key,
+            publishing::publish_plan,
+            publishing::publish_start,
+            publishing::publish_jobs,
+            publishing::publish_cancel,
+            publishing::publish_resume,
+            publishing::publish_dismiss,
+            publishing::publish_release,
+            publishing::version_yank
         ])
         .events(tauri_specta::collect_events![
             GameStarted,
@@ -158,7 +172,8 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             crate::downloads::DownloadsChanged,
             crate::events::InstallsChanged,
             crate::events::CollectionsChanged,
-            crate::events::LibrariesChanged
+            crate::events::LibrariesChanged,
+            crate::publishing::PublishProgress
         ])
         .error_handling(tauri_specta::ErrorHandlingMode::Result)
         // Byte counts and ids that are u64 in Rust stay below 2^53.

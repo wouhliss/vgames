@@ -1,5 +1,7 @@
 //! The real API in process, publishing through `vgames_transfer::upload::publish`, and a
-//! launcher profile on disk (INS-08). Used by `tests/install_e2e.rs`.
+//! launcher profile on disk (INS-08). Used by `tests/install_e2e.rs` and `tests/publish_e2e.rs`,
+//! each of which uses only part of it.
+#![allow(dead_code)]
 
 use std::collections::HashMap;
 use std::io::{Seek, SeekFrom, Write};
@@ -44,6 +46,7 @@ pub struct Api {
     pub server_id: Uuid,
     /// An owner's access token; the owner also holds the publisher key.
     pub token: String,
+    pub owner_id: Uuid,
     pool: PgPool,
     admin: PgPool,
     db_name: String,
@@ -61,6 +64,13 @@ pub struct Published {
 
 impl Api {
     pub async fn start() -> Self {
+        let api = Self::start_paused().await;
+        api.start_workers();
+        api
+    }
+
+    /// Without the job workers: uploaded versions wait in `verifying` until [`Self::start_workers`].
+    pub async fn start_paused() -> Self {
         let _ = tracing_subscriber::fmt()
             .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
             .with_test_writer()
@@ -112,14 +122,13 @@ impl Api {
         let config = vgames_api::Config::from_lookup(|k| env.get(k).cloned()).unwrap();
         let state = vgames_api::AppState::new(config, pool.clone()).unwrap();
         tokio::spawn(vgames_api::server::serve_on(listener, state.clone()));
-        // The server-side `version.verify` job runs on these workers.
-        tokio::spawn(vgames_api::jobs::run_workers(state.clone()));
 
         let (owner_id, token) = seed_owner(&pool).await;
         let api = Self {
             url: origin,
             server_id: SERVER_ID.parse().unwrap(),
             token,
+            owner_id,
             pool,
             admin,
             db_name,
@@ -129,6 +138,11 @@ impl Api {
         };
         api.upload_trust_bundle(owner_id).await;
         api
+    }
+
+    /// The server-side jobs, `version.verify` among them.
+    pub fn start_workers(&self) {
+        tokio::spawn(vgames_api::jobs::run_workers(self.state.clone()));
     }
 
     async fn upload_trust_bundle(&self, owner_id: Uuid) {
@@ -478,6 +492,19 @@ impl PackageSpec {
         let large_total = ((8.0 * 1024.0 * MIB as f64 * scale) as u64).max(24 * MIB);
         Self {
             small_files,
+            large_files: vec![
+                large_total / 2,
+                large_total / 3,
+                large_total - large_total / 2 - large_total / 3,
+            ],
+        }
+    }
+
+    /// About `bytes` in all: 2,000 small files, the rest in three large ones.
+    pub fn sized(bytes: u64) -> Self {
+        let large_total = bytes.saturating_sub(2_000 * 1_000).max(24 * MIB);
+        Self {
+            small_files: 2_000,
             large_files: vec![
                 large_total / 2,
                 large_total / 3,

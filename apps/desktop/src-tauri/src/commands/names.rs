@@ -102,6 +102,19 @@ pub const MAIN_WINDOW_COMMANDS: &[&str] = &[
     "install_open_folder",
     "account_sessions",
     "account_session_revoke",
+    "publish_packages",
+    "publish_package_create",
+    "publish_versions",
+    "publish_pick_folder",
+    "publish_pick_key",
+    "publish_plan",
+    "publish_start",
+    "publish_jobs",
+    "publish_cancel",
+    "publish_resume",
+    "publish_dismiss",
+    "publish_release",
+    "version_yank",
 ];
 
 /// Commands the in-game overlay window may call. Only `overlay_*` commands

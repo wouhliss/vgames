@@ -495,6 +495,13 @@ export function publishingHandlers(
     },
     version_yank: (args) => {
       requireAdmin(args.serverId);
+      const reason = typeof args.reason === "string" ? args.reason.trim() : "";
+      if (reason.length < 3 || reason.length > 500)
+        fail({
+          kind: "invalid_field",
+          field: "reason",
+          message: "Give a reason of 3 to 500 characters.",
+        } satisfies PublishCommandError);
       const v = versionById(args.versionId);
       if (v.state !== "published")
         fail({ kind: "version_conflict", state: v.state } satisfies PublishCommandError);

@@ -196,6 +196,34 @@ export const commands = {
 	 *  locally, as signing out does.
 	 */
 	accountSessionRevoke: (serverId: string, sessionId: string) => typedError<null, AppError>(__TAURI_INVOKE("account_session_revoke", { serverId, sessionId })),
+	/**  Packages of the server, any status, matching `query` (title or slug). */
+	publishPackages: (serverId: string, query: string | null, cursor: string | null) => typedError<PublishPackagePage, PublishCommandError>(__TAURI_INVOKE("publish_packages", { serverId, query, cursor })),
+	publishPackageCreate: (serverId: string, create: PackageCreate) => typedError<PublishPackage, PublishCommandError>(__TAURI_INVOKE("publish_package_create", { serverId, create })),
+	/**  Every version of a package, newest first. */
+	publishVersions: (serverId: string, packageId: string) => typedError<PublishVersion[], PublishCommandError>(__TAURI_INVOKE("publish_versions", { serverId, packageId })),
+	/**  Native folder picker; null when cancelled. */
+	publishPickFolder: () => typedError<string | null, PublishCommandError>(__TAURI_INVOKE("publish_pick_folder")),
+	/**  Native file picker for a publisher key file; null when cancelled. */
+	publishPickKey: () => typedError<string | null, PublishCommandError>(__TAURI_INVOKE("publish_pick_key")),
+	/**  Scans a folder (no upload): files, packs, runnable files and entries that block publishing. */
+	publishPlan: (folder: string) => typedError<PublishPlan, PublishCommandError>(__TAURI_INVOKE("publish_plan", { folder })),
+	/**  Checks the key, creates the version and starts uploading (`publish-progress` follows). */
+	publishStart: (serverId: string, start: PublishStart) => typedError<PublishJob, PublishCommandError>(__TAURI_INVOKE("publish_start", { serverId, start })),
+	/**  Jobs not yet dismissed, including ones from before a restart. */
+	publishJobs: () => typedError<PublishJob[], PublishCommandError>(__TAURI_INVOKE("publish_jobs")),
+	/**  Stops uploading; what is uploaded is kept and the job can be resumed. */
+	publishCancel: (jobId: string) => typedError<PublishJob, PublishCommandError>(__TAURI_INVOKE("publish_cancel", { jobId })),
+	/**  `key` is required while `resume_needs_key`, ignored otherwise. */
+	publishResume: (jobId: string, key: {
+	key_path: string,
+	passphrase: string,
+} | null) => typedError<PublishJob, PublishCommandError>(__TAURI_INVOKE("publish_resume", { jobId, key })),
+	/**  Forgets a job that is not running (aborting its unpublished version on the server). */
+	publishDismiss: (jobId: string) => typedError<null, PublishCommandError>(__TAURI_INVOKE("publish_dismiss", { jobId })),
+	/**  Makes a `ready` version the current release of its platform. */
+	publishRelease: (serverId: string, versionId: string) => typedError<PublishVersion, PublishCommandError>(__TAURI_INVOKE("publish_release", { serverId, versionId })),
+	/**  Withdraws a published version (`reason`: 3–500 characters, kept by the server). */
+	versionYank: (serverId: string, versionId: string, reason: string) => typedError<PublishVersion, PublishCommandError>(__TAURI_INVOKE("version_yank", { serverId, versionId, reason })),
 };
 
 /** Events */
@@ -223,6 +251,7 @@ export const events = {
 	overlayPackageDisabled: makeEvent<OverlayPackageDisabled>("overlay-package-disabled"),
 	overlayView: makeEvent<OverlayViewChanged>("overlay-view"),
 	presenceChanged: makeEvent<PresenceChanged>("presence-changed"),
+	publishProgress: makeEvent<PublishProgress>("publish-progress"),
 	serverAddRequested: makeEvent<ServerAddRequested>("server-add-requested"),
 	serverSwitched: makeEvent<ServerSwitched>("server-switched"),
 	serversChanged: makeEvent<ServersChanged>("servers-changed"),
@@ -739,6 +768,16 @@ export type InstalledPackage = {
  */
 export type InstallsChanged = Record<string, never>;
 
+export type InvalidPath = {
+	path: string,
+	reason: InvalidPathReason,
+	/**  The other path of a case collision. */
+	other: string | null,
+};
+
+/**  Why an entry can't be packed (02-package-format §2, `vgames-core` path rules). */
+export type InvalidPathReason = "symlink" | "special_file" | "not_utf8" | "not_nfc" | "bad_structure" | "too_long" | "forbidden_character" | "trailing_dot_or_space" | "reserved_name" | "reserved_folder" | "unsafe_compatibility_form" | "case_collision" | "file_is_folder" | "duplicate";
+
 export type Invite = {
 	id: string,
 	direction: InviteDirection,
@@ -785,6 +824,9 @@ export type InvitePackage = {
 export type InviteReceived = Invite;
 
 export type InviteState = "pending" | "accepted" | "installing" | "ready" | "joined" | "declined" | "cancelled" | "expired" | "failed";
+
+/**  Why a publisher key can't sign here. */
+export type KeyError = { kind: "wrong_passphrase" } | { kind: "invalid_key_file" } | { kind: "untrusted_key"; reason: UntrustedReason };
 
 /**  Why a launch did not start (the UI's `LaunchError`). */
 export type LaunchError = { kind: "not_installed" } | { kind: "incomplete" } | { kind: "busy"; state: BusyState } | { kind: "library_offline"; library_path: string } | { kind: "already_running" } | { kind: "target_not_found" } | 
@@ -919,6 +961,21 @@ export type OverlayView = {
 /**  `overlay-view`: the overlay window's view model changed. */
 export type OverlayViewChanged = OverlayView;
 
+export type PackProgress = {
+	index: number,
+	bytes_confirmed: number,
+	bytes_total: number,
+	state: PackState,
+};
+
+export type PackState = "waiting" | "uploading" | "done";
+
+export type PackageCreate = {
+	title: string,
+	/**  Derived from the title by the server when null. */
+	slug: string | null,
+};
+
 export type PackageDetails = {
 	package_id: string,
 	slug: string,
@@ -956,6 +1013,8 @@ export type PackageRef = {
 	package_id: string,
 };
 
+export type PackageStatus = "draft" | "published" | "hidden" | "archived";
+
 /**  Why a job waits (02 §7.10). Every reason except `user` clears by itself. */
 export type PauseReason = 
 /**  The player paused it. */
@@ -986,6 +1045,117 @@ export type PresenceChanged = {
 export type PresenceStatus = "online" | "away" | "in_game" | "offline";
 
 export type ProtonDbTier = "platinum" | "gold" | "silver" | "bronze" | "borked" | "pending";
+
+/**  Every publishing command fails with one of these. */
+export type PublishCommandError = { kind: "forbidden" } | { kind: "unauthenticated" } | { kind: "not_found" } | { kind: "network"; detail: string } | { kind: "server"; code: string; message: string } | { kind: "slug_taken" } | { kind: "invalid_field"; field: string; message: string } | { kind: "version_conflict"; state: VersionState } | { kind: "job_conflict"; phase: PublishPhase } | { kind: "empty_folder" } | { kind: "invalid_label" } | { kind: "invalid_paths"; count: number } | { kind: "invalid_launch" } | { kind: "key_required" } | { kind: "key"; error: KeyError } | { kind: "io"; detail: string } | { kind: "internal"; detail: string };
+
+export type PublishJob = {
+	id: string,
+	server_id: string,
+	package_id: string,
+	package_title: string,
+	platform: Platform,
+	version_label: string,
+	version_id: string | null,
+	phase: PublishPhase,
+	bytes_confirmed: number,
+	bytes_total: number,
+	bytes_per_second: number | null,
+	packs: PackProgress[],
+	/**  0–1 while `verifying`. */
+	verification: number | null,
+	error: PublishJobError | null,
+	/**  True while resuming needs the key again (the manifest is not signed yet). */
+	resume_needs_key: boolean,
+};
+
+/**  Why a job stopped in `failed`. */
+export type PublishJobError = 
+/**  The server could not verify the upload; `reason` is the server's text, if any. */
+{ kind: "verification_failed"; reason: string | null } | 
+/**  The folder changed since the upload started. */
+{ kind: "source_changed" } | 
+/**  Network or server trouble; `retryable` = resuming may work. */
+{ kind: "remote"; retryable: boolean } | 
+/**  The version ended on the server (aborted, yanked or failed by someone else). */
+{ kind: "version_gone"; state: VersionState } | { kind: "io"; detail: string } | { kind: "internal"; detail: string };
+
+/**  What the game runs when a player presses Play. */
+export type PublishLaunch = {
+	/**  Relative path inside the folder, `/`-separated. */
+	executable: string,
+	args: string[],
+	/**  Relative to the folder; null = the executable's folder. */
+	working_dir: string | null,
+};
+
+/**  A package as the admin API returns it (any status). Text is plain text from the server. */
+export type PublishPackage = {
+	id: string,
+	slug: string,
+	title: string,
+	status: PackageStatus,
+	/**  Platforms with a current release (from the package's `releases`). */
+	released_platforms: Platform[],
+};
+
+export type PublishPackagePage = {
+	items: PublishPackage[],
+	next_cursor: string | null,
+};
+
+export type PublishPhase = "preparing" | "uploading" | "signing" | "uploading_manifest" | "finalizing" | "verifying" | 
+/**  Verified; waits for `publish_release`. */
+"ready" | "publishing" | "published" | "failed" | "cancelled";
+
+export type PublishPlan = {
+	folder: string,
+	file_count: number,
+	total_bytes: number,
+	pack_count: number,
+	/**  Files that look runnable, for the launch picker. */
+	executables: string[],
+	/**  Non-empty = publishing is blocked. At most [`super::plan::MAX_LISTED`]; `invalid_count` is the total. */
+	invalid_paths: InvalidPath[],
+	invalid_count: number,
+};
+
+/**  A job's state changed. At most 4 per second per job, plus every phase change. */
+export type PublishProgress = PublishJob;
+
+export type PublishResume = {
+	key_path: string,
+	passphrase: string,
+};
+
+export type PublishStart = {
+	package_id: string,
+	platform: Platform,
+	version_label: string,
+	folder: string,
+	launch: PublishLaunch | null,
+	key_path: string,
+	passphrase: string,
+};
+
+export type PublishVersion = {
+	id: string,
+	package_id: string,
+	platform: Platform,
+	sequence: number,
+	version_label: string,
+	state: VersionState,
+	is_current_release: boolean,
+	/**  Set when `state` is `failed` (plain text from the server). */
+	failure_reason: string | null,
+	total_size: number | null,
+	/**  0–1 while `verifying`. */
+	verify_progress: number | null,
+	/**  RFC 3339. */
+	created_at: string,
+	published_at: string | null,
+	yanked_at: string | null,
+};
 
 export type RegistrationMode = "open" | "allowlist" | "closed";
 
@@ -1149,6 +1319,8 @@ export type UninstallPlan = {
 	has_prefix: boolean,
 };
 
+export type UntrustedReason = "unknown" | "revoked" | "other_holder" | "not_valid_now" | "no_bundle";
+
 /**
  *  Result of a check the user asked for (onboarding's "launcher too old" prompt,
  *  Settings). The banner follows [`UpdaterStatus`] events as usual.
@@ -1174,6 +1346,8 @@ export type UserSummary = {
 	display_name: string | null,
 	avatar_url: string | null,
 };
+
+export type VersionState = "uploading" | "verifying" | "ready" | "published" | "failed" | "yanked" | "aborted";
 
 /**  What the "What's new" dialog shows. */
 export type WhatsNew = {

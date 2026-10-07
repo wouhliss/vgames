@@ -25,6 +25,7 @@ pub mod libraries;
 pub mod logging;
 pub mod overlay;
 pub mod paths;
+pub mod publishing;
 pub mod secrets;
 pub mod servers;
 pub mod shortcuts;

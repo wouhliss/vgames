@@ -8,7 +8,8 @@
 #   60-second storage links: once expired, the fs storage backend refuses them (A5-T11).
 # - admin-web: the admin Playwright suite against the API serving the built admin web
 #   (ADMIN_E2E_BASE_URL), instead of the mocks used on PRs.
-# - install: INS-08 (M2) at full scale, tests/install_e2e.rs in vgames-desktop.
+# - install: INS-08 (M2) at full scale, tests/install_e2e.rs in vgames-desktop; then INS-06,
+#   launcher publishing of a 5 GiB tree (tests/publish_e2e.rs; 2 GiB on PRs).
 # - launcher: INS-09 (M1, M2), the release launcher against the real API (apps/desktop/e2e-real).
 #
 # No secrets: the fake Discord login is a debug-build feature bound to localhost, and the
@@ -219,6 +220,11 @@ jobs:
           VGAMES_TEST_DATABASE_URL: postgres://vgames:vgames-e2e-only@localhost:5432/postgres
           VGAMES_E2E_SCALE: "1.0"
         run: cargo test -p vgames-desktop --locked --test install_e2e -- --ignored --exact install_e2e --nocapture
+      - name: Publish from the launcher at 5 GiB (INS-06)
+        env:
+          VGAMES_TEST_DATABASE_URL: postgres://vgames:vgames-e2e-only@localhost:5432/postgres
+          VGAMES_PUBLISH_E2E_GIB: "5"
+        run: cargo test -p vgames-desktop --locked --test publish_e2e -- --ignored --exact publish_e2e --nocapture
 
   launcher:
     # INS-09 (M1, M2): the release launcher driven through tauri-driver and WebKitWebDriver
