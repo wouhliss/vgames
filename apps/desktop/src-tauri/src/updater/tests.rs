@@ -487,7 +487,7 @@ async fn install_waits_for_downloads_to_pause_at_a_checkpoint() {
         fn release_checkpoint(&self) {}
     }
 
-    let updater = Updater::new();
+    let updater = Updater::new(semver::Version::new(0, 1, 0));
     updater.with(|i| {
         i.activity
             .install_progress((uuid::Uuid::nil(), uuid::Uuid::nil()), false)
@@ -530,7 +530,7 @@ async fn checkpoint_releases_on_shutdown_and_aborted_install() {
         }
     }
     let queue = std::sync::Arc::new(Queue(AtomicUsize::new(0)));
-    let updater = super::Updater::new();
+    let updater = super::Updater::new(semver::Version::new(0, 1, 0));
     let shutdown = tokio_util::sync::CancellationToken::new();
     let cancelled = shutdown.clone();
     let worker_queue = queue.clone();
@@ -550,7 +550,7 @@ async fn checkpoint_releases_on_shutdown_and_aborted_install() {
 
     let worker_queue = queue.clone();
     let worker = tokio::spawn(async move {
-        let updater = super::Updater::new();
+        let updater = super::Updater::new(semver::Version::new(0, 1, 0));
         let shutdown = tokio_util::sync::CancellationToken::new();
         let _checkpoint = super::quiesce(worker_queue.as_ref(), &updater, &shutdown).await;
     });
@@ -576,7 +576,7 @@ async fn checkpoint_releases_after_an_install_error_or_missing_update() {
         }
     }
     async fn attempt(queue: &Queue, pending: bool) -> Result<(), &'static str> {
-        let updater = super::Updater::new();
+        let updater = super::Updater::new(semver::Version::new(0, 1, 0));
         let shutdown = tokio_util::sync::CancellationToken::new();
         let _checkpoint = super::quiesce(queue, &updater, &shutdown).await.unwrap();
         assert!(queue.0.load(Ordering::SeqCst));
