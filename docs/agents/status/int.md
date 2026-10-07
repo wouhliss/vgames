@@ -64,3 +64,8 @@
 ## Server hardening validation prepared (INT-04)
 - `auth::tests::token_debug_redacts_credentials` passes; deliberately printing the synthetic code makes it fail with "credential leaked". Serialization still carries the real field values.
 - Four `realtime::tests` decoder tests pass: arbitrary bytes, mutated valid frames, oversized valid frames and exact-limit/version boundaries. Removing the size bound fails `oversized_valid_realtime_frames_are_rejected` at `extra = 1`; no drift allowlist/check is relaxed.
+
+
+## Server follow-up validation (INT-04)
+- Final F3/F5 source `fb89f04` passed 50 consecutive parallel realtime/presence groups: 500 passes, eight test threads, 790.599 seconds on an isolated PostgreSQL 18.6 instance. Every readiness deadline remains ten seconds. Dedicated database and copied executable were removed after the run; evidence is recorded in the integrator recovery results.
+- Manual auth Debug implementations redact authorization codes, verifiers and both token types. Realtime decoding rejects frames above 64 KiB and unsupported version envelopes without panicking; mutation checks proved both fixes necessary.
