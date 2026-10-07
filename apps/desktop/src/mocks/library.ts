@@ -429,21 +429,21 @@ export function libraryHandlers(
     },
     collection_add_package: (args) => {
       const collection = collectionOrFail(args.collectionId);
-      const pkg = find(args.package);
+      const pkg = find(args.pkg);
       if (!pkg.collection_ids.includes(collection.id))
         update(pkg.package, { collection_ids: [...pkg.collection_ids, collection.id] });
       return null;
     },
     collection_remove_package: (args) => {
       const collection = collectionOrFail(args.collectionId);
-      const pkg = find(args.package);
+      const pkg = find(args.pkg);
       update(pkg.package, {
         collection_ids: pkg.collection_ids.filter((id) => id !== collection.id),
       });
       return null;
     },
     favorite_set: (args) => {
-      const pkg = find(args.package);
+      const pkg = find(args.pkg);
       update(pkg.package, { favorite: Boolean(args.favorite) });
       return null;
     },
@@ -478,8 +478,8 @@ export function libraryHandlers(
     },
 
     install_update: (args) => {
-      forced("install_update", args.package);
-      const pkg = find(args.package);
+      forced("install_update", args.pkg);
+      const pkg = find(args.pkg);
       requireIdle(pkg);
       update(pkg.package, { state: "updating" });
       later(state.actionDelayMs * 3, () => {
@@ -495,23 +495,23 @@ export function libraryHandlers(
       return null;
     },
     install_verify: (args) => {
-      forced("install_verify", args.package);
-      const pkg = find(args.package);
+      forced("install_verify", args.pkg);
+      const pkg = find(args.pkg);
       requireIdle(pkg);
       update(pkg.package, { state: "repairing" });
       later(state.actionDelayMs, () => update(pkg.package, { state: "installed" }));
       return null;
     },
     install_resume: (args) => {
-      forced("install_resume", args.package);
-      const pkg = find(args.package);
+      forced("install_resume", args.pkg);
+      const pkg = find(args.pkg);
       requireIdle(pkg);
       update(pkg.package, { state: "installing" });
       return null;
     },
     install_move: (args) => {
-      forced("install_move", args.package);
-      const pkg = find(args.package);
+      forced("install_move", args.pkg);
+      const pkg = find(args.pkg);
       requireIdle(pkg);
       if (args.libraryId === pkg.library_id)
         fail({ kind: "same_library" } satisfies InstallActionError);
@@ -536,14 +536,14 @@ export function libraryHandlers(
       return null;
     },
     install_uninstall_plan: (args) => {
-      forced("install_uninstall_plan", args.package);
-      const pkg = find(args.package);
+      forced("install_uninstall_plan", args.pkg);
+      const pkg = find(args.pkg);
       requireIdle(pkg);
       return makeUninstallPlan(pkg);
     },
     install_uninstall: (args) => {
-      forced("install_uninstall", args.package);
-      const pkg = find(args.package);
+      forced("install_uninstall", args.pkg);
+      const pkg = find(args.pkg);
       requireIdle(pkg);
       update(pkg.package, { state: "uninstalling" });
       later(state.actionDelayMs, () => {
@@ -553,7 +553,7 @@ export function libraryHandlers(
       return null;
     },
     install_open_folder: (args) => {
-      find(args.package);
+      find(args.pkg);
       return null;
     },
     shortcut_create: (args) => {

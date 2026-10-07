@@ -6,7 +6,11 @@
 
 pub(crate) mod account;
 mod app;
+mod catalog;
+mod collections;
+mod downloads;
 mod games;
+mod installs;
 mod libraries;
 pub mod names;
 mod servers;
@@ -48,6 +52,29 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             libraries::library_add,
             libraries::library_set_default,
             libraries::library_remove,
+            catalog::catalog_list,
+            catalog::catalog_genres,
+            catalog::package_details,
+            catalog::install_plan,
+            catalog::install_start,
+            installs::installs_list,
+            installs::install_update,
+            installs::install_verify,
+            installs::install_resume,
+            installs::install_move,
+            installs::install_uninstall_plan,
+            installs::install_uninstall,
+            installs::install_open_folder,
+            downloads::downloads_list,
+            downloads::download_pause,
+            downloads::download_resume,
+            downloads::download_retry,
+            downloads::download_remove,
+            downloads::download_cancel,
+            downloads::downloads_reorder,
+            downloads::downloads_history_clear,
+            downloads::download_settings_get,
+            downloads::download_settings_set,
             shortcuts::shortcut_create,
             games::game_launch,
             games::game_stop,
@@ -90,6 +117,14 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             crate::overlay::commands::package_overlay_set,
             crate::overlay::commands::overlay_view,
             crate::overlay::commands::overlay_action,
+            collections::collections_list,
+            collections::collection_create,
+            collections::collection_rename,
+            collections::collection_delete,
+            collections::collections_reorder,
+            collections::collection_add_package,
+            collections::collection_remove_package,
+            collections::favorite_set,
             account::account_sessions,
             account::account_session_revoke
         ])
@@ -119,7 +154,11 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             crate::social::commands::InviteChanged,
             crate::social::commands::InviteInstallRequested,
             crate::overlay::commands::OverlayViewChanged,
-            crate::overlay::commands::OverlayPackageDisabled
+            crate::overlay::commands::OverlayPackageDisabled,
+            crate::downloads::DownloadsChanged,
+            crate::events::InstallsChanged,
+            crate::events::CollectionsChanged,
+            crate::events::LibrariesChanged
         ])
         .error_handling(tauri_specta::ErrorHandlingMode::Result)
         // Byte counts and ids that are u64 in Rust stay below 2^53.

@@ -1,5 +1,5 @@
 // Commands and events the UI needs that are NOT in the generated `src/bindings.ts` yet: app,
-// servers, accounts and libraries (Agent 2, A2-T01/T07/T08).
+// servers and accounts (Agent 2, A2-T01/T07).
 //
 // Same shape as tauri-specta output (`Result`, snake_case payload fields, camelCase argument keys), so
 // the UI can be built and tested today against mockIPC. This is the request list for Agent 2 and
@@ -13,8 +13,8 @@
 // - Event names are the kebab-case type name (`UiNav` → "ui-nav").
 import type { AppError, ControllerKind } from "../../bindings";
 
-// Now generated; re-exported so contract files can keep importing it from here.
-export type { AppError } from "../../bindings";
+// Now generated (Platform: INS-02); re-exported so contract files can keep importing them from here.
+export type { AppError, Platform } from "../../bindings";
 
 import { call, get, makeEvents, type Result } from "./runtime";
 
@@ -25,15 +25,6 @@ export type { Result } from "./runtime";
 
 export type Os = "windows" | "linux" | "macos";
 export type Arch = "x86_64" | "aarch64";
-/** A package build's target (OpenAPI `Platform`). */
-export type Platform =
-  | "windows-x86_64"
-  | "windows-aarch64"
-  | "linux-x86_64"
-  | "linux-aarch64"
-  | "macos-aarch64"
-  | "macos-x86_64";
-
 export type Theme = "system" | "dark" | "light" | "high_contrast";
 
 export type AppearanceSettings = {
@@ -67,8 +58,6 @@ export type UiNav = { action: NavAction; controller: ControllerKind; repeat: boo
 /** The controller family that last produced input, for button glyphs. `null` when none is connected. */
 export type ActiveControllerChanged = { controller: ControllerKind | null };
 
-export type LibrariesChanged = Record<string, never>;
-
 // ------------------------------------------------------------------------------------------------
 // Commands
 
@@ -95,9 +84,7 @@ export const coreCommands = {
 export const coreEvents = makeEvents<{
   uiNav: UiNav;
   activeControllerChanged: ActiveControllerChanged;
-  librariesChanged: LibrariesChanged;
 }>({
   uiNav: "ui-nav",
   activeControllerChanged: "active-controller-changed",
-  librariesChanged: "libraries-changed",
 });

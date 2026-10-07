@@ -178,6 +178,20 @@ pub struct ControllerEvent {
     pub change: ControllerChange,
 }
 
+/// Installed packages changed (state, favorites, collections, versions); re-read
+/// `installs_list` (INS-04).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Type, tauri_specta::Event)]
+pub struct InstallsChanged {}
+
+/// Libraries were added, removed or a new default chosen; re-read
+/// `libraries_list` (INS-04).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Type, tauri_specta::Event)]
+pub struct LibrariesChanged {}
+
+/// Collections changed; re-read `collections_list` (INS-04).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Type, tauri_specta::Event)]
+pub struct CollectionsChanged {}
+
 /// Everything published on the internal bus.
 #[derive(Debug, Clone)]
 pub enum AppEvent {
@@ -197,6 +211,11 @@ pub enum AppEvent {
     DeepLinkReceived {
         url: String,
     },
+    /// The install queue or its history changed (INS-03).
+    DownloadsChanged(crate::downloads::DownloadsChanged),
+    InstallsChanged(InstallsChanged),
+    CollectionsChanged(CollectionsChanged),
+    LibrariesChanged(LibrariesChanged),
 }
 
 /// Cloneable handle to the internal broadcast bus.
@@ -250,6 +269,10 @@ pub fn spawn_ui_bridge<R: Runtime>(app: AppHandle<R>, bus: &EventBus, shutdown: 
                 Ok(AppEvent::ServerAddRequested(e)) => e.emit(&app),
                 Ok(AppEvent::AuthFinished(e)) => e.emit(&app),
                 Ok(AppEvent::DeepLinkReceived { .. }) => Ok(()),
+                Ok(AppEvent::DownloadsChanged(e)) => e.emit(&app),
+                Ok(AppEvent::InstallsChanged(e)) => e.emit(&app),
+                Ok(AppEvent::CollectionsChanged(e)) => e.emit(&app),
+                Ok(AppEvent::LibrariesChanged(e)) => e.emit(&app),
                 Err(broadcast::error::RecvError::Lagged(skipped)) => {
                     tracing::warn!(skipped, "UI event bridge lagged");
                     Ok(())

@@ -7,7 +7,10 @@
 use std::{sync::Arc, time::Duration};
 
 use serde::{Deserialize, Serialize};
-use sqlx::{PgConnection, PgPool, postgres::PgListener};
+use sqlx::{
+    PgConnection, PgPool,
+    postgres::{PgListener, PgPoolOptions},
+};
 use time::OffsetDateTime;
 use uuid::Uuid;
 use vgames_proto::realtime::Envelope;
@@ -146,7 +149,11 @@ pub async fn listen(state: AppState) {
     let mut backoff = Duration::from_millis(250);
     let mut listened = false;
     while !state.shutdown.is_cancelled() {
-        match listen_once(&state, &mut listened).await {
+        let result = tokio::select! {
+            _ = state.shutdown.cancelled() => return,
+            result = listen_once(&state, &mut listened) => result,
+        };
+        match result {
             Ok(()) => return,
             Err(e) => {
                 tracing::warn!(error = %e, ?backoff, "realtime listener failed; reconnecting");
@@ -161,7 +168,16 @@ pub async fn listen(state: AppState) {
 }
 
 async fn listen_once(state: &AppState, listened: &mut bool) -> Result<(), sqlx::Error> {
-    let mut listener = PgListener::connect_with(&state.db).await?;
+    // LISTEN holds its connection until shutdown. Borrowing from the request pool
+    // can starve requests (and SQLx tests sharing a parent connection budget).
+    // Keep exactly one independent connection, with bounded startup and cancellation.
+    let listener_pool = PgPoolOptions::new()
+        .max_connections(1)
+        .acquire_timeout(Duration::from_secs(5))
+        .max_lifetime(None)
+        .idle_timeout(None)
+        .connect_lazy_with((*state.db.connect_options()).clone());
+    let mut listener = PgListener::connect_with(&listener_pool).await?;
     listener.listen(CHANNEL).await?;
     if *listened {
         tracing::warn!("realtime listener back; asking clients to resync");

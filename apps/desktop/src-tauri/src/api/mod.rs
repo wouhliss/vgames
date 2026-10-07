@@ -399,6 +399,29 @@ impl ApiClient {
         }
     }
 
+    /// An authenticated `GET` answered by a redirect (`/v1/assets/{id}`):
+    /// returns the target without following it, so the bearer token never
+    /// leaves this server.
+    pub async fn authed_location(&self, path: &str) -> Result<Url, ApiError> {
+        let response = self.authed_response::<()>(Method::GET, path, None).await?;
+        if !response.status().is_redirection() {
+            return Err(if response.status().is_success() {
+                ApiError::InvalidResponse("expected a redirect".into())
+            } else {
+                problem_from(response).await
+            });
+        }
+        let location = response
+            .headers()
+            .get(reqwest::header::LOCATION)
+            .and_then(|v| v.to_str().ok())
+            .ok_or_else(|| ApiError::InvalidResponse("redirect without a location".into()))?;
+        response
+            .url()
+            .join(location)
+            .map_err(|_| ApiError::InvalidResponse("invalid redirect location".into()))
+    }
+
     async fn authed_response<B: Serialize + ?Sized>(
         &self,
         method: Method,

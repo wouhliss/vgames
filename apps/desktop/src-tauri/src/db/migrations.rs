@@ -41,6 +41,10 @@ pub const MIGRATIONS: &[Migration] = &[
         name: "0004_social_invites",
         sql: include_str!("../social/migrations/0004_social_invites.sql"),
     },
+    Migration {
+        name: "0005_install_queue_history",
+        sql: include_str!("migrations/0005_install_queue_history.sql"),
+    },
 ];
 
 fn checksum(sql: &str) -> String {
@@ -149,6 +153,7 @@ mod tests {
             "collection_items",
             "settings",
             "download_jobs",
+            "download_history",
             "save_sync_state",
             "controller_profiles",
             "shortcuts",

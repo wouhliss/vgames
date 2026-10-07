@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Local CI: the jobs of .github/workflows/ci.yml, run on your machine. Owner: Agent 5.
+# Local CI: the jobs of .github/workflows/ci.yml, run on your machine. Owner: INT.
 #
-# GitHub Actions is manual-only since the Actions minutes ran out (2026-09-25), so this script is the
-# merge gate: every PR must pass it on its final commit before it is merged (AGENTS.md §7). It checks
+# Run this merge gate before pushing, then require every hosted check on the current base
+# before merging (phase-2 README §3). It checks
 # what is COMMITTED (commit first), writes target/ci-local/summary.md to paste into the PR, and exits
 # non-zero if any job failed. A job never skips itself: a missing tool or service fails it with the
 # command that installs it. Logs: target/ci-local/<job>.log.
@@ -18,12 +18,12 @@
 #   desktop-e2e,   (pnpm --filter @vgames/desktop exec playwright install chromium), or an existing
 #   admin-e2e
 #                  Chromium via PLAYWRIGHT_CHROMIUM_EXECUTABLE=/path/to/chrome.
-#   desktop        WebKitGTK 4.1 development libraries (Linux; see AGENTS.md §4).
+#   desktop        WebKitGTK 4.1 development libraries, Xvfb and Postgres 18 (Linux).
 #   supply-chain   cargo-deny, cargo-audit, network access.
 #   secrets,       gitleaks 8.30.1 and actionlint 1.7.12: downloaded and checksum-verified into
 #   workflows      ~/.cache/vgames-ci on Linux x64; elsewhere use the same versions on PATH.
 # Not covered: Windows and macOS builds (desktop-matrix.yml). Run `cargo test -p vgames-desktop
-# -p vgames-transfer` on those systems, or start that workflow by hand when minutes are available.
+# -p vgames-transfer` on those systems, or dispatch that workflow on GitHub-hosted runners.
 set -uo pipefail
 
 JOBS=(rust sqlx changelog wasm typescript desktop-e2e admin-e2e desktop supply-chain secrets workflows)
@@ -116,6 +116,7 @@ pinned_tool() { # name version sha256 url-template(with {v}) -> prints the binar
 
 job_rust() {
   ensure_postgres
+  cargo xtask toolchain check
   cargo fmt --all -- --check
   cargo clippy --all-targets --locked -- -D warnings
   cargo test --locked
@@ -194,7 +195,11 @@ job_desktop() {
   pnpm_install
   pnpm --filter @vgames/desktop build
   cargo clippy -p vgames-desktop --all-targets --locked -- -D warnings
-  cargo test -p vgames-desktop --lib --locked updater::
+  need xvfb-run "apt-get install xvfb"
+  ensure_postgres
+  export VGAMES_TEST_DATABASE_URL="${VGAMES_TEST_DATABASE_URL:-$DATABASE_URL}"
+  xvfb-run -a cargo test -p vgames-desktop --locked
+  scripts/ci/desktop-db-tests.sh
 }
 
 job_supply-chain() {

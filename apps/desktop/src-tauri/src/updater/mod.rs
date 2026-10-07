@@ -167,6 +167,52 @@ impl Updater {
     }
 }
 
+/// The download queue as the updater sees it (INS-03).
+pub trait DownloadCheckpoint {
+    /// Resolves once every running install paused at a checkpoint; nothing
+    /// new starts until [`Self::release_checkpoint`].
+    fn pause_all_at_checkpoint(&self) -> impl std::future::Future<Output = ()> + Send;
+    fn release_checkpoint(&self);
+}
+
+impl<B: crate::downloads::backend::Backend> DownloadCheckpoint for crate::downloads::Downloads<B> {
+    async fn pause_all_at_checkpoint(&self) {
+        crate::downloads::Downloads::pause_all_at_checkpoint(self).await;
+    }
+
+    fn release_checkpoint(&self) {
+        crate::downloads::Downloads::release_checkpoint(self);
+    }
+}
+
+/// Releases the queue on errors, shutdown and cancellation of the install future.
+struct Checkpoint<'a, D: DownloadCheckpoint>(&'a D);
+
+impl<D: DownloadCheckpoint> Drop for Checkpoint<'_, D> {
+    fn drop(&mut self) {
+        self.0.release_checkpoint();
+    }
+}
+
+/// Before installing an update: every download pauses at its next checkpoint
+/// (written chunks journaled), then no game and no download may be active.
+/// Returns no checkpoint on shutdown.
+async fn quiesce<'a, D: DownloadCheckpoint>(
+    downloads: &'a D,
+    updater: &Updater,
+    shutdown: &CancellationToken,
+) -> Option<Checkpoint<'a, D>> {
+    let checkpoint = Checkpoint(downloads);
+    tokio::select! {
+        () = downloads.pause_all_at_checkpoint() => {}
+        () = shutdown.cancelled() => return None,
+    }
+    updater
+        .wait_until_idle(shutdown)
+        .await
+        .then_some(checkpoint)
+}
+
 /// Registers the updater state and starts its background tasks. Call from `setup`
 /// after the plugin is registered and `AppState` is managed.
 pub fn init(app: &AppHandle, state: &AppState) {
@@ -400,9 +446,10 @@ pub async fn updater_install(
     }
     let _busy = updater.busy.lock().await;
     // Downloads pause at their next checkpoint; the UI shows `blocked` meanwhile.
-    if !updater.wait_until_idle(&shutdown).await {
+    let downloads = Arc::clone(&state.downloads);
+    let Some(_checkpoint) = quiesce(downloads.as_ref(), &updater, &shutdown).await else {
         return Err(error(ErrorCode::Conflict, "The launcher is closing."));
-    }
+    };
     let Some(update) = updater.with(|i| i.pending.take()) else {
         return Err(error(ErrorCode::NotFound, "No update is available."));
     };

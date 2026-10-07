@@ -6,13 +6,25 @@ use std::sync::Arc;
 
 use tokio_util::sync::CancellationToken;
 
+use crate::catalog::Catalog;
+use crate::catalog::covers::Covers;
 use crate::db::Db;
+use crate::downloads::Downloads;
+use crate::downloads::backend::ServerBackend;
 use crate::events::EventBus;
 use crate::images::{ImageCache, ImageCacheError};
 use crate::launch::GameSessions;
 use crate::launch::orchestrate::Launcher;
 use crate::paths::AppPaths;
 use crate::servers::Servers;
+
+#[derive(Debug, thiserror::Error)]
+pub enum StateError {
+    #[error(transparent)]
+    Images(#[from] ImageCacheError),
+    #[error("cannot build the HTTP client")]
+    Http(#[from] reqwest::Error),
+}
 
 pub struct AppState {
     pub paths: AppPaths,
@@ -34,6 +46,14 @@ pub struct AppState {
     pub ui_ready: CancellationToken,
     /// Servers, trust and sign-in sessions (the only API client).
     pub servers: Arc<Servers>,
+    /// The active server's catalog, release selection and covers (INS-02).
+    pub catalog: Arc<Catalog<Servers>>,
+    /// The install queue and its worker (INS-03).
+    pub downloads: Arc<Downloads<ServerBackend>>,
+    /// Installed packages: updates found, launch targets, cloud-save state (INS-04).
+    pub installs: Arc<crate::installs::Installs>,
+    /// Wakes update detection (window focus, catalog refresh).
+    pub update_triggers: Arc<crate::installs::updates::UpdateTriggers>,
 }
 
 impl AppState {
@@ -42,7 +62,7 @@ impl AppState {
         db: Db,
         bus: EventBus,
         servers: Arc<Servers>,
-    ) -> Result<Self, ImageCacheError> {
+    ) -> Result<Self, StateError> {
         let images = Arc::new(ImageCache::open(paths.cache_dir.join("images"))?);
         let games = GameSessions::new(db.clone(), bus.clone());
         let launcher = Arc::new(Launcher::new(
@@ -50,15 +70,53 @@ impl AppState {
             Arc::clone(&servers),
             games.clone(),
         ));
+        let covers = Arc::new(Covers::new(Arc::clone(&images), crate::api::http_client()?));
+        let catalog = Arc::new(Catalog::new(
+            Arc::clone(&servers),
+            db.clone(),
+            covers,
+            crate::catalog::release::host_platform(),
+        ));
+        let shutdown = CancellationToken::new();
+        let downloads = Downloads::new(
+            db.clone(),
+            bus.clone(),
+            Arc::new(ServerBackend::new(
+                Arc::clone(&catalog),
+                Arc::clone(&servers),
+            )?),
+            vgames_transfer::download::DownloadOptions::default(),
+            shutdown.child_token(),
+        );
+        let installs: Arc<crate::installs::Installs> = Arc::default();
+        {
+            // After an update or repair: fresh pre-launch checks and launch
+            // targets, and no stale "update available".
+            let prelaunch = Arc::clone(launcher.prelaunch());
+            let installs = Arc::clone(&installs);
+            let bus = bus.clone();
+            downloads.set_files_changed(Arc::new(move |package, root| {
+                prelaunch.forget(root);
+                installs.forget(package);
+                installs.set_update(package, None);
+                bus.publish(crate::events::AppEvent::InstallsChanged(
+                    crate::events::InstallsChanged {},
+                ));
+            }));
+        }
         Ok(Self {
             paths,
+            catalog,
+            downloads,
+            installs,
+            update_triggers: Arc::default(),
             games,
             launcher,
             db,
             images,
             bus,
             servers,
-            shutdown: CancellationToken::new(),
+            shutdown,
             ui_ready: CancellationToken::new(),
         })
     }

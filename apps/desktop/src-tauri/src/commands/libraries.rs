@@ -216,6 +216,9 @@ fn parse_action_id(id: &str) -> Result<Uuid, LibraryActionError> {
 #[tauri::command]
 #[specta::specta]
 pub async fn libraries_list(state: State<'_, AppState>) -> CommandResult<Vec<LibraryInfo>> {
+    // A library that reappeared resumes its paused downloads (INS-03).
+    let downloads = std::sync::Arc::clone(&state.downloads);
+    tauri::async_runtime::spawn(async move { downloads.recheck().await });
     let libraries = store::list(&state.db).await.map_err(map_error)?;
     let counts: HashMap<Uuid, u64> = store::install_counts(&state.db).await.map_err(map_error)?;
     tokio::task::spawn_blocking(move || {
@@ -270,7 +273,14 @@ pub async fn library_add(
             LibraryPresence::Offline
         }
     };
+    libraries_changed(&state);
     Ok(library_info(library, presence, 0))
+}
+
+fn libraries_changed(state: &AppState) {
+    state.bus.publish(crate::events::AppEvent::LibrariesChanged(
+        crate::events::LibrariesChanged {},
+    ));
 }
 
 #[tauri::command]
@@ -282,7 +292,9 @@ pub async fn library_set_default(
     let id = parse_action_id(&library_id)?;
     store::set_default(&state.db, id)
         .await
-        .map_err(map_action_error)
+        .map_err(map_action_error)?;
+    libraries_changed(&state);
+    Ok(())
 }
 
 #[tauri::command]
@@ -311,5 +323,6 @@ pub async fn library_remove(
         }
         Err(error) => return Err(LibraryRemovalError::from(map_action_error(error))),
     }
+    libraries_changed(&state);
     Ok(())
 }

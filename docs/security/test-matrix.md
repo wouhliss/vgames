@@ -2,7 +2,7 @@
 
 Every security invariant and every threat in [01-security](../architecture/01-security.md) (top of the file, and
 §1), plus each attack A5-T11 names, mapped to the automated tests that would fail if it stopped holding.
-Owner: Agent 5. When you change one of these behaviours, keep its row pointing at a test that still fails
+Owner: INT. When you change one of these behaviours, keep its row pointing at a test that still fails
 without it.
 
 **Where each test runs.** Everything below runs at least nightly.
@@ -72,6 +72,8 @@ Test names are `file::function` (Rust) or `file › test title` (Playwright, Vit
 
 | Attack | Tests | Runs |
 |---|---|---|
+| Authentication credentials leaked by diagnostics (F3) | `crates/vgames-proto/src/auth.rs::tests::token_debug_redacts_credentials` | CI, Desktop |
+| Malformed or oversized realtime envelopes crash the server (server F5) | `apps/api/src/realtime/mod.rs::tests::arbitrary_realtime_bytes_never_panic`, `::mutated_realtime_frames_never_panic`, `::oversized_valid_realtime_frames_are_rejected`, `::realtime_decoder_enforces_version_and_exact_limit` | CI |
 | Tampered pack byte (install fails before writing that chunk) | 1a | CI, Desktop |
 | Swapped manifest (signature failure) | 1b | CI, Desktop |
 | Revoked key (launch blocked until re-sign) | "Stolen publisher key" above | CI, Desktop, E2E |

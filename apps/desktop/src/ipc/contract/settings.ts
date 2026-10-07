@@ -1,21 +1,10 @@
-// Settings that are not covered by another domain: download limits, the overlay's per-package switches,
-// privacy and overlay preferences (Agent 4's `SocialSettings`, 05-social-notes §5) and third-party
-// licenses (Agents 2 and 4). Account sessions and token storage are generated (INS-05).
+// Settings that are not covered by another domain: the overlay's per-package switches, privacy and
+// overlay preferences (Agent 4's `SocialSettings`, 05-social-notes §5) and third-party licenses
+// (Agents 2 and 4). Account sessions and token storage are generated (INS-05).
 // Requested shapes; see core.ts for the conventions.
 import type { PackageOverlay, PackageRef, SocialError } from "../../bindings";
 import type { AppError } from "./core";
-import { call, get, type Result } from "./runtime";
-
-export type DownloadSettings = {
-  /** Kibibytes per second; null = unlimited (02-package-format §7.12). */
-  bandwidth_limit_kib: number | null;
-  /** How many installs run at the same time, 1–3. */
-  concurrent_installs: number;
-};
-
-export type SettingsError =
-  | { kind: "invalid"; field: string; detail: string }
-  | { kind: "io"; detail: string };
+import { call, type Result } from "./runtime";
 
 // `social_settings_get|set` and `SocialSettings` (05-social-notes §5) are generated now; the typed
 // hotkey errors below are still requested as `SocialError` variants (A4-T10 registers the hotkey).
@@ -30,15 +19,6 @@ export type HotkeyError =
 export type SocialSettingsError = SocialError | HotkeyError;
 
 export const settingsCommands = {
-  async downloadSettingsGet(): Promise<DownloadSettings> {
-    return get("download_settings_get");
-  },
-  async downloadSettingsSet(
-    settings: DownloadSettings,
-  ): Promise<Result<DownloadSettings, SettingsError>> {
-    return call("download_settings_set", { settings });
-  },
-
   async overlayPackages(): Promise<Result<PackageOverlay[], AppError>> {
     // Generated as `packageOverlaysList` (main-window commands never start with `overlay_`).
     return call("package_overlays_list");

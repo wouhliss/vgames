@@ -1,7 +1,23 @@
 # CI and branch protection
 
-Owner: Agent 5. Workflow: [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml). Humans configure
+Owner: INT. Workflow: [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml). Humans configure
 the GitHub settings below; agents cannot.
+
+## Toolchain policy (INT-01)
+
+The workspace `rust-version` equals the exact stable version in `rust-toolchain.toml` (currently
+`1.99.0`). `cargo xtask toolchain check` runs before the required Rust checks, locally and in CI,
+and rejects mismatches or non-stable pins. Raising the pin requires raising the workspace minimum
+in the same PR; no older MSRV is claimed.
+
+[`toolchain-watch.yml`](../../.github/workflows/toolchain-watch.yml) checks stable weekly and on demand.
+When stable is newer it runs fmt, workspace and desktop clippy with warnings denied, and both test
+suites against Postgres under Xvfb. It maintains one issue containing the run and required version
+diff; it never opens a PR or changes the pin, and closes the issue when the pin catches up.
+
+Dependabot major updates to TypeScript and Node types are manual: `packages/api-client` deliberately
+uses TypeScript 5, and `scripts/release-notes` has a Node 22 engine. The root npm entry covers the
+whole workspace, so the ignore rules apply across it.
 
 ## What runs on every PR and push to `main`
 
@@ -14,11 +30,19 @@ the GitHub settings below; agents cannot.
 | `TypeScript (Biome, typecheck, Vitest, OpenAPI lint)` | `pnpm install --frozen-lockfile`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `redocly lint` of `openapi/openapi.yaml` |
 | `Launcher UI end-to-end (mock mode)` | Playwright suite of `apps/desktop` against the mock backend (Chromium) |
 | `Admin UI end-to-end (mock mode)` | Playwright suite of `apps/admin-web` against the mock build (Chromium), including the admin-versus-owner authorization matrix; the nightly `e2e.yml` runs the same specs against the real API |
-| `Desktop build check (Linux, WebKitGTK)` | Builds the launcher UI, then `cargo clippy -p vgames-desktop -D warnings` with the Tauri system libraries |
+| `Desktop build check (Linux, WebKitGTK)` | Builds the launcher UI, runs clippy with warnings denied, the whole launcher suite under Xvfb, then the named database scenarios against Postgres 18 (soak excluded) |
+| `Desktop matrix gate` | Always reports; passes for docs-only scope skips and a successful three-OS matrix, fails for a failed/cancelled matrix or failed scope detection |
 | `Supply chain (cargo-deny, cargo-audit, pnpm audit)` | [`deny.toml`](../../deny.toml): RustSec advisories, license allowlist (no GPL/AGPL), crates.io only, duplicate versions reported; `cargo audit`; `pnpm audit --prod` |
 | `Secret scan (gitleaks)` | Full history with [`.gitleaks.toml`](../../.gitleaks.toml): default rules plus `vga_`/`vgr_`/`vgs_` tokens, `vgames.key/1` key files, `.vgkey` files, minisign secret keys |
 | `Workflows (actionlint)` | Every workflow in `.github/workflows/` passes actionlint (expression and permission checks, shellcheck of `run:` scripts); the release workflows are otherwise only exercised at release time |
 | `Dependency review` | PRs only: new dependencies with moderate+ advisories or GPL/AGPL licenses. Needs GitHub Advanced Security on a private repository (see below) |
+
+The launcher database step has one home in `scripts/ci/desktop-db-tests.sh`: `social_chat` and
+`social_chaos`, plus `install_e2e` (INS-08), `publish_e2e` (INS-06) and `saves_e2e` (PLAY-06) when their
+files exist. Normal tests always run in the whole suite; only the named scenarios receive `--ignored`.
+Never include the whole crate's ignored tests: `social_soak` runs in the soak workflow. Scope detection
+uses `git diff --name-only` against the PR base, and the matrix gate also fails if detection cannot run.
+INS-09's real-application harness is pending; wire its nightly and PR part 1 when it lands.
 
 The OpenAPI drift check runs inside `cargo test` (`apps/api/tests/openapi_contract.rs`).
 
@@ -26,7 +50,7 @@ The OpenAPI drift check runs inside `cargo test` (`apps/api/tests/openapi_contra
 nightly.
 
 Other workflows: [`desktop-matrix.yml`](../../.github/workflows/desktop-matrix.yml) (Windows, Linux, macOS
-builds and Rust tests of the launcher crates on PRs touching them, and nightly; not required) and
+builds and Rust tests of the launcher crates on PRs touching them, and nightly; its always-running gate is required) and
 [`release-desktop.yml`](../../.github/workflows/release-desktop.yml) (see [release.md](release.md)).
 
 Workflow rules (08-release §1): every action is pinned by commit SHA, `permissions: {}` at the top and
@@ -50,6 +74,8 @@ Settings → Rules → Rulesets → new branch ruleset targeting `main`:
    - `Launcher UI end-to-end (mock mode)`
    - `Admin UI end-to-end (mock mode)` (added 2026-09-30)
    - `Desktop build check (Linux, WebKitGTK)`
+   - `Desktop matrix gate`
+   - `Workflows (actionlint)`
    - `Supply chain (cargo-deny, cargo-audit, pnpm audit)`
    - `Secret scan (gitleaks)`
    - `Dependency review` (only after enabling it, see below; a skipped job never satisfies a required check)
@@ -78,7 +104,7 @@ Tags: protect `desktop-v*`, `api-v*` and `runtimes-*` with a tag ruleset so only
 tree against its merge base with `origin/main` and writes `target/ci-local/summary.md`. `--list` names the jobs, and
 `scripts/ci/local.sh rust changelog` runs a subset. A missing tool fails its job with the install command. Postgres 18
 comes from `DATABASE_URL`, or from `docker compose up -d postgres`. Keep its jobs in step with `ci.yml` (both owned by
-Agent 5).
+INT).
 
 ## Public repository (since 2026-09-26, humans)
 

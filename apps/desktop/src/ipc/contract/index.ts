@@ -2,28 +2,20 @@
 import { catalogCommands } from "./catalog";
 import { compatCommands } from "./compat";
 import { coreCommands, coreEvents } from "./core";
-import { downloadCommands, downloadEvents } from "./downloads";
-import { libraryCommands, libraryEvents } from "./library";
 import { settingsCommands } from "./settings";
 
 export const pendingCommands = {
   ...coreCommands,
-  ...libraryCommands,
   ...catalogCommands,
-  ...downloadCommands,
   ...settingsCommands,
   ...compatCommands,
 };
 
 export const pendingEvents = {
   ...coreEvents,
-  ...libraryEvents,
-  ...downloadEvents,
 };
 
 export type * from "./catalog";
 export type * from "./compat";
 export type * from "./core";
-export type * from "./downloads";
-export type * from "./library";
 export type * from "./settings";

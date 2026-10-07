@@ -11,12 +11,15 @@
 pub mod api;
 pub mod catalog;
 pub mod commands;
+pub mod compat;
 pub mod controllers;
 pub mod db;
 pub mod deeplink;
+pub mod downloads;
 pub mod error;
 pub mod events;
 pub mod images;
+pub mod installs;
 pub mod launch;
 pub mod libraries;
 pub mod logging;
@@ -93,9 +96,27 @@ pub fn run() {
                 ));
                 return;
             };
-            let cache = state.images.clone();
-            tauri::async_runtime::spawn_blocking(move || {
-                responder.respond(images::protocol_response(&cache, &request));
+            let key = match images::request_key(&request) {
+                Ok(key) => key,
+                Err(response) => return responder.respond(*response),
+            };
+            // Cache hits are served from disk; misses the catalog registered
+            // are fetched once through the server's API (INS-02).
+            let catalog = Arc::clone(&state.catalog);
+            tauri::async_runtime::spawn(async move {
+                let response = match catalog
+                    .covers()
+                    .load(catalog.connections().as_ref(), key)
+                    .await
+                {
+                    Ok(Some(image)) => images::image_response(image),
+                    Ok(None) => images::empty_response(tauri::http::StatusCode::NOT_FOUND),
+                    Err(error) => {
+                        tracing::debug!(error = %error::DisplayChain(&error), "cover unavailable");
+                        images::empty_response(tauri::http::StatusCode::NOT_FOUND)
+                    }
+                };
+                responder.respond(response);
             });
         })
         .invoke_handler(specta.invoke_handler())
@@ -116,6 +137,10 @@ pub fn run() {
 }
 
 fn setup(app: &AppHandle, profile: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
+    // Tauri runs this hook outside any Tokio runtime, and startup spawns Tokio tasks (the
+    // social session bridge and service loops, the overlay): run it inside Tauri's own.
+    let runtime = tauri::async_runtime::handle();
+    let _runtime = runtime.inner().enter();
     let paths = AppPaths::resolve(app, profile)?;
     logging::set_crash_dir(paths.log_dir.clone());
     let guard = logging::init(&paths.log_dir)?;
@@ -150,6 +175,9 @@ fn setup(app: &AppHandle, profile: Option<String>) -> Result<(), Box<dyn std::er
         state.shutdown.child_token(),
     );
     spawn_connect_active(Arc::clone(&servers));
+    state
+        .catalog
+        .spawn_invalidation(&state.bus, state.shutdown.child_token());
     launch::session::spawn_reattach(state.db.clone(), state.games.clone());
 
     // Deep links: from the first launch's arguments, and later from the OS
@@ -170,6 +198,7 @@ fn setup(app: &AppHandle, profile: Option<String>) -> Result<(), Box<dyn std::er
         Err(error) => tracing::warn!(%error, "cannot read the launch deep link"),
     }
 
+    downloads::init(app, &state);
     updater::init(app, &state);
     social::commands::init(app, &state)?;
     app.manage(state);

@@ -203,3 +203,122 @@ async fn profiles_are_verified_versioned_and_listed(pool: PgPool) {
             .unwrap();
     assert_eq!(audit, 3);
 }
+
+#[sqlx::test(migrations = "./migrations")]
+async fn admin_history_pages_signed_revisions_of_unpublished_packages(pool: PgPool) {
+    let w = world(&pool).await;
+    for revision in 1..=3 {
+        assert_eq!(
+            put(
+                &w,
+                "linux",
+                &signed(&key(2), &document(w.package, "linux", revision))
+            )
+            .await
+            .0,
+            StatusCode::CREATED
+        );
+    }
+    let uri = format!("/v1/admin/packages/{}/compat/linux", w.package);
+    let resp = send(
+        &w.app,
+        bearer_request("GET", &format!("{uri}?limit=2"), &w.owner),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let first = body_json(resp).await;
+    let items = first["items"].as_array().unwrap();
+    assert_eq!(
+        items
+            .iter()
+            .map(|i| i["revision"].as_i64().unwrap())
+            .collect::<Vec<_>>(),
+        [3, 2]
+    );
+    for item in items {
+        assert!(item["created_at"].as_str().is_some());
+        let bytes = STANDARD.decode(item["document"].as_str().unwrap()).unwrap();
+        let envelope = Envelope::parse(&serde_json::to_vec(&item["signature"]).unwrap()).unwrap();
+        envelope
+            .verify(&key(2).public_key(), Context::Compat, &bytes)
+            .unwrap();
+        assert_eq!(
+            item["signature"]["key_id"],
+            key(2).public_key().key_id().to_string()
+        );
+    }
+    let cursor = first["next_cursor"].as_str().unwrap();
+    let resp = send(
+        &w.app,
+        bearer_request("GET", &format!("{uri}?limit=2&cursor={cursor}"), &w.owner),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let last = body_json(resp).await;
+    assert_eq!(last["items"].as_array().unwrap().len(), 1);
+    assert_eq!(last["items"][0]["revision"], 1);
+    assert!(last.get("next_cursor").is_none());
+
+    let macos = format!("/v1/admin/packages/{}/compat/macos", w.package);
+    let empty = body_json(send(&w.app, bearer_request("GET", &macos, &w.owner)).await).await;
+    assert_eq!(empty["items"], json!([]));
+    for bad in [
+        format!("{uri}?cursor={cursor}A"),
+        format!("{macos}?cursor={cursor}"),
+    ] {
+        let resp = send(&w.app, bearer_request("GET", &bad, &w.owner)).await;
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(body_json(resp).await["code"], "invalid_cursor");
+    }
+    let created = send(
+        &w.app,
+        json_req(
+            "POST",
+            "/v1/admin/packages",
+            &w.owner,
+            &json!({ "title": "Cursor scope", "fetch_metadata": false }),
+        ),
+    )
+    .await;
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let other = body_json(created).await;
+    let other_uri = format!(
+        "/v1/admin/packages/{}/compat/linux?cursor={cursor}",
+        other["id"].as_str().unwrap()
+    );
+    assert_eq!(
+        send(&w.app, bearer_request("GET", &other_uri, &w.owner))
+            .await
+            .status(),
+        StatusCode::BAD_REQUEST
+    );
+    let (_, _, player) = seed_session(&pool, "user").await;
+    assert_eq!(
+        send(&w.app, bearer_request("GET", &uri, &player))
+            .await
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        send(&w.app, get_req(&uri)).await.status(),
+        StatusCode::UNAUTHORIZED
+    );
+    for (path, status) in [
+        (format!("{uri}?limit=201"), StatusCode::BAD_REQUEST),
+        (
+            format!("/v1/admin/packages/{}/compat/windows", w.package),
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            format!("/v1/admin/packages/{}/compat/linux", Uuid::now_v7()),
+            StatusCode::NOT_FOUND,
+        ),
+    ] {
+        assert_eq!(
+            send(&w.app, bearer_request("GET", &path, &w.owner))
+                .await
+                .status(),
+            status
+        );
+    }
+}

@@ -51,6 +51,57 @@ export const commands = {
 	libraryAdd: (path: string, makeDefault: boolean) => typedError<LibraryInfo, LibraryActionError>(__TAURI_INVOKE("library_add", { path, makeDefault })),
 	librarySetDefault: (libraryId: string) => typedError<null, LibraryActionError>(__TAURI_INVOKE("library_set_default", { libraryId })),
 	libraryRemove: (libraryId: string) => typedError<null, LibraryRemovalError>(__TAURI_INVOKE("library_remove", { libraryId })),
+	catalogList: (query: CatalogQuery) => typedError<CatalogPage, CatalogError>(__TAURI_INVOKE("catalog_list", { query })),
+	/**  Genres in the catalog with package counts (for the filter). */
+	catalogGenres: () => typedError<GenreCount[], CatalogError>(__TAURI_INVOKE("catalog_genres")),
+	packageDetails: (packageId: string) => typedError<PackageDetails, CatalogError>(__TAURI_INVOKE("package_details", { packageId })),
+	/**  Sizes for the install dialog. Nothing is downloaded yet. */
+	installPlan: (packageId: string) => typedError<InstallPlan, InstallPlanError>(__TAURI_INVOKE("install_plan", { packageId })),
+	/**
+	 *  Queues the install into `library_id`; progress follows through
+	 *  `install-progress`, the end through `install-finished`.
+	 */
+	installStart: (packageId: string, libraryId: string) => typedError<null, InstallStartError>(__TAURI_INVOKE("install_start", { packageId, libraryId })),
+	/**  Installed (and incomplete) packages of the active server. */
+	installsList: () => typedError<InstalledPackage[], AppError>(__TAURI_INVOKE("installs_list")),
+	/**  Queues the available update; it shows up in Downloads. */
+	installUpdate: (pkg: PackageRef) => typedError<null, InstallActionError>(__TAURI_INVOKE("install_update", { pkg })),
+	/**
+	 *  Re-hashes every file and repairs mismatches (02 §9). An install whose
+	 *  signing key was rotated adopts the server's new signature (F1).
+	 */
+	installVerify: (pkg: PackageRef) => typedError<null, InstallActionError>(__TAURI_INVOKE("install_verify", { pkg })),
+	/**  Queues an incomplete install again from its journal. */
+	installResume: (pkg: PackageRef) => typedError<null, InstallActionError>(__TAURI_INVOKE("install_resume", { pkg })),
+	/**  Moves the install into another library (rename, or a verified copy). */
+	installMove: (pkg: PackageRef, libraryId: string) => typedError<null, InstallActionError>(__TAURI_INVOKE("install_move", { pkg, libraryId })),
+	/**  What uninstalling removes and what the player decides about. */
+	installUninstallPlan: (pkg: PackageRef) => typedError<UninstallPlan, InstallActionError>(__TAURI_INVOKE("install_uninstall_plan", { pkg })),
+	/**
+	 *  Removes the install. Leftovers (files the package did not ship) and the
+	 *  Proton/Wine prefix are removed only when asked. Links are never followed.
+	 */
+	installUninstall: (pkg: PackageRef, removeLeftovers: boolean, removePrefix: boolean) => typedError<null, InstallActionError>(__TAURI_INVOKE("install_uninstall", { pkg, removeLeftovers, removePrefix })),
+	/**  Opens the install directory in the system file manager. */
+	installOpenFolder: (pkg: PackageRef) => typedError<null, AppError>(__TAURI_INVOKE("install_open_folder", { pkg })),
+	downloadsList: () => typedError<DownloadQueue, AppError>(__TAURI_INVOKE("downloads_list")),
+	downloadPause: (pkg: PackageRef) => typedError<null, DownloadActionError>(__TAURI_INVOKE("download_pause", { pkg })),
+	/**  Resumes a paused job (it runs when its turn comes). */
+	downloadResume: (pkg: PackageRef) => typedError<null, DownloadActionError>(__TAURI_INVOKE("download_resume", { pkg })),
+	/**  Queues a failed job again, from its journal. */
+	downloadRetry: (pkg: PackageRef) => typedError<null, DownloadActionError>(__TAURI_INVOKE("download_retry", { pkg })),
+	/**  Removes a failed job from the queue (its partial files are kept). */
+	downloadRemove: (pkg: PackageRef) => typedError<null, DownloadActionError>(__TAURI_INVOKE("download_remove", { pkg })),
+	/**
+	 *  Stops the job. `keep_partial`: keep the downloaded files so the install
+	 *  can be resumed later; otherwise delete them.
+	 */
+	downloadCancel: (pkg: PackageRef, keepPartial: boolean) => typedError<null, DownloadActionError>(__TAURI_INVOKE("download_cancel", { pkg, keepPartial })),
+	/**  The new order of the waiting jobs; running jobs keep running. */
+	downloadsReorder: (packages: PackageRef[]) => typedError<null, DownloadActionError>(__TAURI_INVOKE("downloads_reorder", { packages })),
+	downloadsHistoryClear: () => typedError<null, AppError>(__TAURI_INVOKE("downloads_history_clear")),
+	downloadSettingsGet: () => __TAURI_INVOKE<DownloadSettings>("download_settings_get"),
+	downloadSettingsSet: (settings: DownloadSettings) => typedError<DownloadSettings, SettingsError>(__TAURI_INVOKE("download_settings_set", { settings })),
 	/**
 	 *  Creates a desktop shortcut that opens `vgames://launch/<package id>`.
 	 *  Returns the shortcut's path.
@@ -129,6 +180,15 @@ export const commands = {
 	overlayView: () => __TAURI_INVOKE<OverlayView>("overlay_view"),
 	/**  An action from the overlay window (accept/decline, quick reply, open launcher, close). */
 	overlayAction: (action: OverlayAction) => __TAURI_INVOKE<void>("overlay_action", { action }),
+	collectionsList: () => typedError<Collection[], AppError>(__TAURI_INVOKE("collections_list")),
+	collectionCreate: (name: string) => typedError<Collection, CollectionError>(__TAURI_INVOKE("collection_create", { name })),
+	collectionRename: (collectionId: string, name: string) => typedError<Collection, CollectionError>(__TAURI_INVOKE("collection_rename", { collectionId, name })),
+	collectionDelete: (collectionId: string) => typedError<null, CollectionError>(__TAURI_INVOKE("collection_delete", { collectionId })),
+	/**  The full new order; ids not listed keep their relative order after the listed ones. */
+	collectionsReorder: (collectionIds: string[]) => typedError<null, CollectionError>(__TAURI_INVOKE("collections_reorder", { collectionIds })),
+	collectionAddPackage: (collectionId: string, pkg: PackageRef) => typedError<null, CollectionError>(__TAURI_INVOKE("collection_add_package", { collectionId, pkg })),
+	collectionRemovePackage: (collectionId: string, pkg: PackageRef) => typedError<null, CollectionError>(__TAURI_INVOKE("collection_remove_package", { collectionId, pkg })),
+	favoriteSet: (pkg: PackageRef, favorite: boolean) => typedError<null, AppError>(__TAURI_INVOKE("favorite_set", { pkg, favorite })),
 	/**  Sessions of the signed-in account on `server_id`, this launcher's own marked `current`. */
 	accountSessions: (serverId: string) => typedError<AccountSession[], AppError>(__TAURI_INVOKE("account_sessions", { serverId })),
 	/**
@@ -141,19 +201,23 @@ export const commands = {
 /** Events */
 export const events = {
 	authFinished: makeEvent<AuthFinished>("auth-finished"),
+	collectionsChanged: makeEvent<CollectionsChanged>("collections-changed"),
 	connectivityChanged: makeEvent<ConnectivityChanged>("connectivity-changed"),
 	controllerEvent: makeEvent<ControllerEvent>("controller-event"),
 	conversationsChanged: makeEvent<ConversationsChanged>("conversations-changed"),
 	deviceNotice: makeEvent<DeviceNoticeEvent>("device-notice"),
+	downloadsChanged: makeEvent<DownloadsChanged>("downloads-changed"),
 	friendRequestReceived: makeEvent<FriendRequestReceived>("friend-request-received"),
 	friendsChanged: makeEvent<FriendsChanged>("friends-changed"),
 	gameStarted: makeEvent<GameStarted>("game-started"),
 	gameStopped: makeEvent<GameStopped>("game-stopped"),
 	installFinished: makeEvent<InstallFinished>("install-finished"),
 	installProgress: makeEvent<InstallProgress>("install-progress"),
+	installsChanged: makeEvent<InstallsChanged>("installs-changed"),
 	inviteChanged: makeEvent<InviteChanged>("invite-changed"),
 	inviteInstallRequested: makeEvent<InviteInstallRequested>("invite-install-requested"),
 	inviteReceived: makeEvent<InviteReceived>("invite-received"),
+	librariesChanged: makeEvent<LibrariesChanged>("libraries-changed"),
 	messageReceived: makeEvent<MessageReceived>("message-received"),
 	messageStatusChanged: makeEvent<MessageStatusChanged>("message-status-changed"),
 	overlayPackageDisabled: makeEvent<OverlayPackageDisabled>("overlay-package-disabled"),
@@ -234,6 +298,18 @@ export type AuthFlow = {
 /**  How a sign-in ended (the `AuthFinished` event). */
 export type AuthOutcome = { kind: "signed_in"; account: Account } | { kind: "failed"; error: AuthError };
 
+/**  How the package would run on this machine, or why it can't (09 §1). */
+export type Availability = "native" | "rosetta" | "proton" | "wine" | "unavailable";
+
+export type AvailableUpdate = {
+	version_label: string,
+	sequence: number,
+	/**  Bytes to download (changed files only). */
+	download_bytes: number,
+	/**  The installed version was withdrawn: offered even with a lower sequence. */
+	installed_yanked: boolean,
+};
+
 /**  Why an update check or install must wait. */
 export type Blocked = "game_running" | "downloads_active";
 
@@ -245,6 +321,39 @@ export type BlockedUser = {
 
 /**  An install that is busy with something else. */
 export type BusyState = "installing" | "updating" | "repairing" | "moving" | "uninstalling";
+
+export type CatalogError = 
+/**  The package doesn't exist anymore, or isn't published. */
+{ kind: "not_found" } | { kind: "offline" } | { kind: "unauthenticated" } | { kind: "server"; code: string; message: string };
+
+export type CatalogItem = {
+	package_id: string,
+	slug: string,
+	title: string,
+	summary: string | null,
+	genres: string[],
+	/**  `vgimg:` URL served by the Rust core. */
+	cover_url: string | null,
+	platforms: Platform[],
+	availability: Availability,
+	updated_at: string,
+};
+
+export type CatalogPage = {
+	items: CatalogItem[],
+	next_cursor: string | null,
+};
+
+export type CatalogQuery = {
+	/**  Title search, 0–100 characters (`q`). */
+	query: string,
+	genre: string | null,
+	sort: CatalogSort,
+	/**  From the previous page; null for the first. */
+	cursor: string | null,
+};
+
+export type CatalogSort = "title" | "recent";
 
 export type ChangeEntry = {
 	type: ChangeType,
@@ -261,11 +370,57 @@ export type ChosenLibraryFolder = {
 	total_bytes: number,
 };
 
+/**
+ *  Cloud save state of an install (06). `unsupported`: no saves declared,
+ *  or no cloud-save client (PLAY-06 plugs one in).
+ */
+export type CloudSaveState = "unsupported" | "synced" | "syncing" | "pending" | "conflict";
+
+export type Collection = {
+	id: string,
+	/**  1–100 characters. */
+	name: string,
+	position: number,
+};
+
+export type CollectionError = { kind: "invalid_name" } | { kind: "name_taken" } | { kind: "not_found" } | 
+/**  The launcher could not save the change (details in the log). */
+{ kind: "io"; detail: string };
+
+/**  Collections changed; re-read `collections_list` (INS-04). */
+export type CollectionsChanged = Record<string, never>;
+
 /**  Error payload of every command. */
 export type CommandError = {
 	code: ErrorCode,
 	message: string,
 };
+
+/**  Something that stops (or will stop) a compat launch on this machine (09 §3). */
+export type CompatBlocker = 
+/**  A DirectX 12 title on a Mac: D3DMetal is deferred, so no Mac runs DX12 yet. */
+{ kind: "d3d12_unsupported_on_mac" } | 
+/**  Rosetta 2 isn't installed; `rosetta_install` installs it after the user confirms. */
+{ kind: "needs_rosetta" } | 
+/**  x86_64-only path that Apple's Rosetta policy may end. Not blocking. */
+{ kind: "rosetta_sunset"; last_macos: string };
+
+export type CompatInfo = { kind: "native" } | 
+/**  An Intel macOS build on Apple silicon, through Rosetta 2. */
+{ kind: "rosetta"; blockers: CompatBlocker[] } | { kind: "compat"; layer: CompatRunner; 
+/**  From the signed compat profile; `untested` without one. */
+status: CompatStatus; 
+/**  Plain text from the signed profile. */
+notes: string | null; 
+/**  Community rating, informational only (never used to decide anything). */
+protondb_tier: ProtonDbTier | null; blockers: CompatBlocker[] } | { kind: "unavailable" };
+
+/**  How the package runs on this machine (09 §1). */
+export type CompatLayer = "native" | "proton" | "wine";
+
+export type CompatRunner = "proton" | "wine";
+
+export type CompatStatus = "verified" | "playable" | "unsupported" | "untested";
 
 /**  Whether the launcher could reach a server on its last attempt. */
 export type ConnectivityChanged = {
@@ -330,6 +485,79 @@ export type DeviceNoticeEvent = {
 };
 
 export type DevicePlatform = "windows" | "linux" | "macos";
+
+export type DownloadActionError = { kind: "not_found" } | { kind: "insufficient_space"; required_bytes: number; available_bytes: number } | { kind: "library_offline"; library_path: string } | { kind: "offline" } | { kind: "io"; detail: string };
+
+/**  Why a job stopped for good (until the player retries or removes it). */
+export type DownloadError = 
+/**
+ *  A chunk failed its hash twice (02 §7.10). `reported`: the launcher sent
+ *  an integrity report, so the server's admins know.
+ */
+{ kind: "damaged_file"; reported: boolean } | 
+/**  The manifest's signature doesn't verify (01 §3.4). Nothing was written. */
+{ kind: "signature_invalid" } | 
+/**  The manifest was signed with a revoked or unknown publisher key. */
+{ kind: "untrusted_key" } | 
+/**  The server's trust bundle expired: new downloads wait until it is renewed. */
+{ kind: "trust_expired" } | 
+/**  The version was withdrawn or deleted on the server. */
+{ kind: "version_unavailable" } | 
+/**  Any other I/O error, with the OS message and the path (the journal is kept). */
+{ kind: "io"; path: string; detail: string } | { kind: "server"; code: string; message: string } | 
+/**
+ *  A compatibility check of the launch target refused the package
+ *  (GAME-06, through the priority-files hook). Partial files are removed.
+ */
+{ kind: "blocked"; blocker: CompatBlocker };
+
+export type DownloadHistoryEntry = {
+	id: string,
+	package: PackageRef,
+	title: string,
+	kind: DownloadKind,
+	version_label: string,
+	bytes_total: number,
+	finished_at: string,
+	outcome: InstallOutcome,
+};
+
+export type DownloadJob = {
+	package: PackageRef,
+	title: string,
+	/**  `vgimg:` URL of the cached cover. */
+	cover_url: string | null,
+	kind: DownloadKind,
+	/**  The version being installed (for a repair: the installed one). */
+	version_label: string,
+	library_id: string,
+	/**  Last known progress; running jobs report live progress through `install-progress`. */
+	bytes_done: number,
+	bytes_total: number,
+	state: DownloadState,
+	queued_at: string,
+};
+
+export type DownloadKind = "install" | "update" | "repair";
+
+export type DownloadQueue = {
+	/**  In queue order: running jobs first, then the rest in the order they will run. */
+	jobs: DownloadJob[],
+	/**  Newest first, at most 100 entries. */
+	history: DownloadHistoryEntry[],
+};
+
+export type DownloadSettings = {
+	/**  Kibibytes per second; null = unlimited (02 §7.12). */
+	bandwidth_limit_kib: number | null,
+	/**  How many installs run at the same time, 1–3. */
+	concurrent_installs: number,
+};
+
+export type DownloadState = { kind: "active" } | { kind: "queued" } | { kind: "paused"; reason: PauseReason } | { kind: "failed"; error: DownloadError };
+
+/**  The queue or the history changed (jobs added, reordered, paused, finished, removed). */
+export type DownloadsChanged = Record<string, never>;
 
 /**  Stable, closed set of error codes for the UI. */
 export type ErrorCode = 
@@ -405,6 +633,25 @@ export type GameStopped = {
 	exit: GameExit,
 };
 
+export type GenreCount = {
+	genre: string,
+	count: number,
+};
+
+/**  The release this machine would install (native first, then a compatibility layer). */
+export type HostRelease = {
+	platform: Platform,
+	version_id: string,
+	version_label: string,
+	sequence: number,
+	/**  Bytes of the whole release (the installed size). */
+	total_size: number,
+	published_at: string,
+	via: Availability,
+};
+
+export type InstallActionError = { kind: "not_found" } | { kind: "busy"; state: InstallState } | { kind: "running" } | { kind: "library_offline"; library_path: string } | { kind: "offline" } | { kind: "insufficient_space"; required_bytes: number; available_bytes: number } | { kind: "same_library" } | { kind: "io"; detail: string };
+
 /**  An install, update or repair finished (successfully or not). */
 export type InstallFinished = {
 	package: PackageRef,
@@ -416,6 +663,19 @@ export type InstallOutcome = { kind: "installed" } | { kind: "cancelled"; kept_p
 
 /**  Phase of an install, update or repair (02-package-format §7). */
 export type InstallPhase = "queued" | "verifying_manifest" | "allocating" | "downloading" | "finalizing" | "verifying" | "paused";
+
+export type InstallPlan = {
+	package_id: string,
+	release: HostRelease,
+	/**  Bytes to download. */
+	download_bytes: number,
+	/**  Free space needed on the chosen library: total size + 64 MiB (02 §7). */
+	required_bytes: number,
+};
+
+export type InstallPlanError = { kind: "not_found" } | 
+/**  No build for this machine and no compatibility path. */
+{ kind: "no_release" } | { kind: "already_installed" } | { kind: "offline" } | { kind: "blocked"; blocker: CompatBlocker } | { kind: "server"; code: string; message: string };
 
 /**  Progress of the active install. Emitted at most 4 times per second. */
 export type InstallProgress = {
@@ -429,6 +689,55 @@ export type InstallProgress = {
 	eta_seconds: number | null,
 	connections: number,
 };
+
+export type InstallStartError = { kind: "not_found" } | 
+/**  No build for this machine and no compatibility path. */
+{ kind: "no_release" } | { kind: "already_installed" } | { kind: "offline" } | { kind: "blocked"; blocker: CompatBlocker } | { kind: "server"; code: string; message: string } | { kind: "insufficient_space"; required_bytes: number; available_bytes: number } | { kind: "library_offline"; library_path: string } | 
+/**
+ *  The server's trust bundle expired: installed games still launch, new
+ *  installs wait (01-security §3.2).
+ */
+{ kind: "trust_expired" } | { kind: "io"; detail: string };
+
+/**
+ *  Where an install is. `incomplete`: not installed and no download job
+ *  exists (02 §10: resume or remove). `installing` covers queued and active
+ *  downloads.
+ */
+export type InstallState = "installed" | "incomplete" | "installing" | "updating" | "repairing" | "moving" | "uninstalling";
+
+export type InstalledPackage = {
+	package: PackageRef,
+	slug: string,
+	title: string,
+	/**  `vgimg:` URL of the cached cover, served by the Rust core. */
+	cover_url: string | null,
+	library_id: string,
+	/**  Absolute install directory, for display only. */
+	install_path: string,
+	platform: Platform,
+	version_label: string,
+	sequence: number,
+	size_bytes: number,
+	installed_at: string | null,
+	last_played_at: string | null,
+	playtime_seconds: number,
+	state: InstallState,
+	update: AvailableUpdate | null,
+	favorite: boolean,
+	collection_ids: string[],
+	running: boolean,
+	/**  Empty for incomplete installs (the manifest is not verified yet). */
+	targets: LaunchTarget[],
+	compat: CompatLayer,
+	cloud_saves: CloudSaveState,
+};
+
+/**
+ *  Installed packages changed (state, favorites, collections, versions); re-read
+ *  `installs_list` (INS-04).
+ */
+export type InstallsChanged = Record<string, never>;
 
 export type Invite = {
 	id: string,
@@ -485,6 +794,24 @@ export type LaunchError = { kind: "not_installed" } | { kind: "incomplete" } | {
 { kind: "key_revoked" } | { kind: "compat_unavailable"; detail: string } | { kind: "rate_limited" } | 
 /**  A cloud save conflict must be resolved first (A2-T11 sends the conflict). */
 { kind: "save_conflict"; conflict_id: string } | { kind: "io"; detail: string };
+
+export type LaunchTarget = {
+	id: string,
+	label: string,
+	/**  The manifest's `launch.default`. */
+	is_default: boolean,
+};
+
+export type Leftover = {
+	path: string,
+	size_bytes: number,
+};
+
+/**
+ *  Libraries were added, removed or a new default chosen; re-read
+ *  `libraries_list` (INS-04).
+ */
+export type LibrariesChanged = Record<string, never>;
 
 /**  Errors expected by the launcher's library screens. */
 export type LibraryActionError = { kind: "not_writable" } | { kind: "system_directory" } | { kind: "nested_in_library"; library_path: string } | { kind: "contains_library"; library_path: string } | { kind: "already_added" } | { kind: "not_found" } | { kind: "io"; detail: string };
@@ -592,6 +919,28 @@ export type OverlayView = {
 /**  `overlay-view`: the overlay window's view model changed. */
 export type OverlayViewChanged = OverlayView;
 
+export type PackageDetails = {
+	package_id: string,
+	slug: string,
+	title: string,
+	summary: string | null,
+	/**  CommonMark from the server's admins; render only through SafeMarkdown. */
+	description: string | null,
+	developer: string | null,
+	publisher: string | null,
+	/**  YYYY-MM-DD */
+	release_date: string | null,
+	genres: string[],
+	platforms: Platform[],
+	cover_url: string | null,
+	hero_url: string | null,
+	logo_url: string | null,
+	screenshots: Screenshot[],
+	/**  Null when no release can run here (see `compat.kind === "unavailable"`). */
+	release: HostRelease | null,
+	compat: CompatInfo,
+};
+
 /**  The per-package "In-game overlay" switch and its safety valve (Settings → Overlay). */
 export type PackageOverlay = {
 	package: PackageRef,
@@ -606,6 +955,20 @@ export type PackageRef = {
 	server_id: string,
 	package_id: string,
 };
+
+/**  Why a job waits (02 §7.10). Every reason except `user` clears by itself. */
+export type PauseReason = 
+/**  The player paused it. */
+{ kind: "user" } | 
+/**  The disk filled up; the job continues once enough space is free. */
+{ kind: "disk_full"; library_path: string; required_bytes: number; available_bytes: number } | 
+/**  The library's drive was disconnected; the job continues when it is back. */
+{ kind: "library_offline"; library_path: string } | 
+/**  The server can't be reached; the job continues when it is back. */
+{ kind: "offline" };
+
+/**  A package build's target (OpenAPI `Platform`). */
+export type Platform = "windows-x86_64" | "windows-aarch64" | "linux-x86_64" | "linux-aarch64" | "macos-aarch64" | "macos-x86_64";
 
 export type Presence = {
 	status: PresenceStatus,
@@ -622,6 +985,8 @@ export type PresenceChanged = {
 
 export type PresenceStatus = "online" | "away" | "in_game" | "offline";
 
+export type ProtonDbTier = "platinum" | "gold" | "silver" | "bronze" | "borked" | "pending";
+
 export type RegistrationMode = "open" | "allowlist" | "closed";
 
 export type ReleaseNotes = {
@@ -631,6 +996,12 @@ export type ReleaseNotes = {
 };
 
 export type Role = "user" | "admin" | "owner";
+
+export type Screenshot = {
+	url: string,
+	width: number,
+	height: number,
+};
 
 /**
  *  A `vgames://server/add` link was opened; the UI starts onboarding with
@@ -705,6 +1076,9 @@ export type ServersChanged = Record<string, never>;
 /**  Which kind of client holds a session. */
 export type SessionClient = "desktop" | "web";
 
+/**  A setting that could not be saved. */
+export type SettingsError = { kind: "invalid"; field: string; detail: string } | { kind: "io"; detail: string };
+
 export type SocialConnection = {
 	server_id: string | null,
 	state: SocialConnectionState,
@@ -759,6 +1133,20 @@ export type TrustProblemKind = "fingerprint_mismatch";
 export type Typing = {
 	conversation_id: string,
 	user_id: string,
+};
+
+/**  What uninstalling removes, and what the player decides about (02 §9). */
+export type UninstallPlan = {
+	size_bytes: number,
+	/**
+	 *  Files the manifest does not list (mods, configs, local saves): at most
+	 *  50, relative paths.
+	 */
+	leftovers: Leftover[],
+	leftover_count: number,
+	leftover_bytes: number,
+	/**  A Proton/Wine prefix exists; it may hold local saves (09 §2). */
+	has_prefix: boolean,
 };
 
 /**

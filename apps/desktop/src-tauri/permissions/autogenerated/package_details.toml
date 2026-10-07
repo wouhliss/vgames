@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-package-details"
+description = "Enables the package_details command without any pre-configured scope."
+commands.allow = ["package_details"]
+
+[[permission]]
+identifier = "deny-package-details"
+description = "Denies the package_details command without any pre-configured scope."
+commands.deny = ["package_details"]

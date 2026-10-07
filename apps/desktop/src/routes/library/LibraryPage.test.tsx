@@ -241,7 +241,7 @@ describe("library", () => {
     );
     expect(alert).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Verify files" }));
-    expect(backend.callsTo("install_verify")[0]?.args).toEqual({ package: CRIMSON.package });
+    expect(backend.callsTo("install_verify")[0]?.args).toEqual({ pkg: CRIMSON.package });
   });
 
   it("every launch error has its own message", async () => {
@@ -277,7 +277,7 @@ describe("library", () => {
     expect(within(menu).queryByRole("menuitem", { name: "Verify files" })).not.toBeInTheDocument();
     await user.keyboard("{Escape}");
     await user.click(screen.getByRole("button", { name: "Resume installing Silent Station" }));
-    expect(backend.callsTo("install_resume")[0]?.args).toEqual({ package: SILENT.package });
+    expect(backend.callsTo("install_resume")[0]?.args).toEqual({ pkg: SILENT.package });
     expect(await screen.findByText("Silent Station will continue downloading")).toBeVisible();
     expect(
       await within(tile("Silent Station")).findByRole("button", { name: "View download" }),
@@ -290,7 +290,7 @@ describe("library", () => {
     const menu = await openMenu(user, "Crimson Canyon");
     await user.click(within(menu).getByRole("menuitem", { name: "Add to favorites" }));
     expect(backend.callsTo("favorite_set")[0]?.args).toEqual({
-      package: CRIMSON.package,
+      pkg: CRIMSON.package,
       favorite: true,
     });
     await waitFor(() =>
@@ -311,7 +311,7 @@ describe("library", () => {
     expect(within(dialog).getByRole("checkbox", { name: "Backlog" })).toHaveFocus();
     expect(backend.callsTo("collection_add_package")[0]?.args).toEqual({
       collectionId: BACKLOG,
-      package: CRIMSON.package,
+      pkg: CRIMSON.package,
     });
     await waitFor(() =>
       expect(within(dialog).getByRole("checkbox", { name: "Backlog" })).toBeChecked(),
@@ -406,7 +406,7 @@ describe("library", () => {
     await waitFor(() =>
       expect(backend.callsTo("collection_add_package")[0]?.args).toEqual({
         collectionId: FINISHED,
-        package: CRIMSON.package,
+        pkg: CRIMSON.package,
       }),
     );
     expect(await screen.findByText("Added Crimson Canyon to Finished")).toBeVisible();
@@ -451,7 +451,7 @@ describe("library", () => {
     );
     await user.click(within(dialog).getByRole("button", { name: "Uninstall" }));
     expect(backend.callsTo("install_uninstall")[0]?.args).toEqual({
-      package: CRIMSON.package,
+      pkg: CRIMSON.package,
       removeLeftovers: true,
       removePrefix: false,
     });
@@ -472,7 +472,7 @@ describe("library", () => {
     await user.click(prefix);
     await user.click(within(dialog).getByRole("button", { name: "Uninstall" }));
     expect(backend.callsTo("install_uninstall")[0]?.args).toEqual({
-      package: SILENT.package,
+      pkg: SILENT.package,
       removeLeftovers: false,
       removePrefix: true,
     });
@@ -494,7 +494,7 @@ describe("library", () => {
     );
     await user.click(within(dialog).getByRole("button", { name: "Move" }));
     expect(backend.callsTo("install_move")[0]?.args).toEqual({
-      package: CRIMSON.package,
+      pkg: CRIMSON.package,
       libraryId: SSD.id,
     });
   });
@@ -530,7 +530,7 @@ describe("library", () => {
     });
     expect(backend.callsTo("install_update")).toHaveLength(0);
     await user.click(within(dialog).getByRole("button", { name: "Install 1.9.0" }));
-    expect(backend.callsTo("install_update")[0]?.args).toEqual({ package: FROZEN.package });
+    expect(backend.callsTo("install_update")[0]?.args).toEqual({ pkg: FROZEN.package });
     expect(await screen.findByText("The update for Frozen Forge is queued")).toBeVisible();
   });
 

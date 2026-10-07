@@ -240,7 +240,7 @@ async fn run_socket(state: AppState, socket: WebSocket, peer: Peer) {
 
 /// Handles one client frame; returns an optional reply.
 async fn handle_text(state: &AppState, ctx: &InboundContext, raw: &str) -> Option<Message> {
-    let env: Envelope = match serde_json::from_str(raw) {
+    let env = match decode_frame(raw.as_bytes()) {
         Ok(e) => e,
         Err(_) => {
             return error_reply(
@@ -280,4 +280,79 @@ fn error_reply_owned(code: String, message: String) -> Option<Message> {
     .ok()
     .as_ref()
     .and_then(text)
+}
+
+#[derive(Debug, thiserror::Error)]
+enum FrameError {
+    #[error("realtime frame exceeds the size limit")]
+    TooLarge,
+    #[error("invalid realtime envelope")]
+    Malformed,
+    #[error("unsupported realtime protocol version")]
+    UnsupportedVersion,
+}
+
+/// The byte boundary is shared by the socket handler and adversarial-input tests.
+fn decode_frame(raw: &[u8]) -> Result<Envelope, FrameError> {
+    if raw.len() > MAX_FRAME {
+        return Err(FrameError::TooLarge);
+    }
+    let frame: Envelope = serde_json::from_slice(raw).map_err(|_| FrameError::Malformed)?;
+    if frame.v != 1 {
+        return Err(FrameError::UnsupportedVersion);
+    }
+    Ok(frame)
+}
+
+#[cfg(test)]
+#[allow(clippy::indexing_slicing)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    const VALID: &[u8] = br#"{"v":1,"type":"ping","data":null}"#;
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(128))]
+
+        #[test]
+        fn arbitrary_realtime_bytes_never_panic(raw in prop::collection::vec(any::<u8>(), 0..MAX_FRAME * 2)) {
+            let decoded = decode_frame(&raw);
+            if let Ok(frame) = decoded {
+                prop_assert_eq!(frame.v, 1);
+                prop_assert!(raw.len() <= MAX_FRAME);
+            }
+        }
+
+        #[test]
+        fn mutated_realtime_frames_never_panic(
+            mutations in prop::collection::vec((0usize..VALID.len(), any::<u8>()), 0..8),
+            keep in 0usize..=VALID.len(),
+        ) {
+            let mut raw = VALID.to_vec();
+            for (at, byte) in mutations {
+                raw[at] = byte;
+            }
+            raw.truncate(keep);
+            let _ = decode_frame(&raw);
+        }
+
+        #[test]
+        fn oversized_valid_realtime_frames_are_rejected(extra in 1usize..4096) {
+            let mut raw = VALID.to_vec();
+            raw.resize(MAX_FRAME + extra, b' ');
+            prop_assert!(decode_frame(&raw).is_err());
+        }
+    }
+
+    #[test]
+    fn realtime_decoder_enforces_version_and_exact_limit() {
+        assert!(decode_frame(VALID).is_ok());
+        assert!(decode_frame(br#"{"v":2,"type":"ping"}"#).is_err());
+        let mut maximum = VALID.to_vec();
+        maximum.resize(MAX_FRAME, b' ');
+        assert!(decode_frame(&maximum).is_ok());
+        maximum.push(b' ');
+        assert!(decode_frame(&maximum).is_err());
+    }
 }

@@ -155,26 +155,26 @@ export function downloadHandlers(
   return {
     downloads_list: () => ({ jobs: state.downloads, history: state.downloadHistory }),
     download_pause: (args) => {
-      const job = find(args.package);
+      const job = find(args.pkg);
       if (job.state.kind === "active" || job.state.kind === "queued")
         set(job.package, { state: { kind: "paused", reason: { kind: "user" } } });
       changed();
       return null;
     },
     download_resume: (args) => {
-      const job = find(args.package);
+      const job = find(args.pkg);
       if (job.state.kind === "paused") set(job.package, { state: { kind: "queued" } });
       changed();
       return null;
     },
     download_retry: (args) => {
-      const job = find(args.package);
+      const job = find(args.pkg);
       if (job.state.kind === "failed") set(job.package, { state: { kind: "queued" } });
       changed();
       return null;
     },
     download_cancel: (args) => {
-      const job = find(args.package);
+      const job = find(args.pkg);
       const keep = Boolean(args.keepPartial);
       state.downloads = state.downloads.filter((j) => j !== job);
       finish(state, job, { kind: "cancelled", kept_partial: keep });
@@ -198,7 +198,7 @@ export function downloadHandlers(
       return null;
     },
     download_remove: (args) => {
-      const job = find(args.package);
+      const job = find(args.pkg);
       state.downloads = state.downloads.filter((j) => j !== job);
       changed();
       return null;

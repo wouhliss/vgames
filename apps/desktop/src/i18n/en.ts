@@ -285,6 +285,7 @@ export const en = {
         invalidName: "Enter a name with 1 to 100 characters.",
         nameTaken: "You already have a collection with this name.",
         notFound: "This collection no longer exists.",
+        io: "The collection couldn't be saved ({detail}).",
         generic: "Couldn't save the collection. Try again.",
       },
     },
@@ -775,6 +776,7 @@ export const en = {
       io: "{path}: {detail}",
       serverTitle: "The server had a problem",
       server: "It answered with an error ({code}). Try again later.",
+      blockedTitle: "This game can't run on this computer",
     },
     cancelDialog: {
       install: "Cancel installing {title}?",

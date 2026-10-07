@@ -1,0 +1,103 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT target, revision, status, document, signature, publisher_key_id, created_at\n           FROM package_compat_profiles\n           WHERE package_id = $1 AND target = $2 AND ($3::bigint IS NULL OR revision < $3)\n           ORDER BY revision DESC LIMIT $4",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "target",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "package_compat_profiles",
+            "name": "target"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "revision",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "package_compat_profiles",
+            "name": "revision"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "package_compat_profiles",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "document",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "package_compat_profiles",
+            "name": "document"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "signature",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "package_compat_profiles",
+            "name": "signature"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "publisher_key_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "package_compat_profiles",
+            "name": "publisher_key_id"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "package_compat_profiles",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "c6169533c21167c73d227844f82208aa236000bbc04e0f3b9b49a8116844cf79"
+}
