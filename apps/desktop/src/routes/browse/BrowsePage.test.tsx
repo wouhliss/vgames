@@ -165,6 +165,17 @@ describe("browse", () => {
     expect(screen.queryByRole("button", { name: "Clear filters" })).not.toBeInTheDocument();
   });
 
+  it("shows packages published since the last visit when the player comes back", async () => {
+    const { backend, router } = setup({ packages: [] });
+    expect(
+      await screen.findByRole("heading", { name: "This server has no packages yet" }),
+    ).toBeVisible();
+    backend.state.packages.push(HARBOR);
+    await act(() => router.navigate("/library"));
+    await act(() => router.navigate("/browse"));
+    expect(await screen.findByRole("link", { name: "Hollow Harbor" })).toBeVisible();
+  });
+
   it("shows an error with a retry when the catalog cannot be loaded", async () => {
     let failing = true;
     const { user, backend } = setup({}, (backend) => {

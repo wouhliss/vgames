@@ -29,9 +29,12 @@ export function BrowsePage() {
   );
   const debounced = useDebouncedValue(query.trim(), 300);
   const installs = useInstalls();
+  // Read again each time the page opens: packages published meanwhile show up (the Rust
+  // catalog refreshes a first page on every request).
   const genres = useQuery({
     queryKey: queryKeys.genres,
     queryFn: async () => unwrap(await commands.catalogGenres()),
+    refetchOnMount: "always",
   });
   const filters = { query: debounced, genre: genre === ALL ? null : genre, sort };
   const catalog = useInfiniteQuery({
@@ -40,6 +43,7 @@ export function BrowsePage() {
       unwrap(await commands.catalogList({ ...filters, cursor: pageParam })),
     initialPageParam: null as string | null,
     getNextPageParam: (last) => last.next_cursor,
+    refetchOnMount: "always",
   });
 
   const items = useMemo(() => catalog.data?.pages.flatMap((p) => p.items) ?? [], [catalog.data]);
