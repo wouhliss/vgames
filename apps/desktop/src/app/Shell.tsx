@@ -8,16 +8,18 @@ import { t } from "../i18n";
 import { events } from "../ipc";
 import { useTauriEvent } from "../ipc/events";
 import { InviteHost } from "../routes/friends/invites";
+import { canPublish } from "../routes/publish/model";
 import { useActiveServer, useOnboardingNeed, useServers } from "./queries";
 import styles from "./Shell.module.css";
 import { AccountMenu, DownloadIndicator, ServerSwitcher } from "./TopBar";
 import { UpdateBanner } from "./update/UpdateBanner";
 
-const NAV: { to: string; icon: IconName; label: () => string }[] = [
+const NAV: { to: string; icon: IconName; label: () => string; admin?: true }[] = [
   { to: "/library", icon: "library", label: () => t("nav.library") },
   { to: "/browse", icon: "browse", label: () => t("nav.browse") },
   { to: "/friends", icon: "friends", label: () => t("nav.friends") },
   { to: "/downloads", icon: "download", label: () => t("nav.downloads") },
+  { to: "/publish", icon: "cloud", label: () => t("nav.publish"), admin: true },
   { to: "/settings", icon: "settings", label: () => t("nav.settings") },
 ];
 
@@ -84,7 +86,7 @@ export function Shell() {
           {t("common.appName")}
         </div>
         <ul className={styles.navList}>
-          {NAV.map((item) => (
+          {NAV.filter((item) => !item.admin || canPublish(server.account?.role)).map((item) => (
             <li key={item.to}>
               <NavLink to={item.to} className={styles.navLink ?? ""}>
                 <Icon name={item.icon} />
