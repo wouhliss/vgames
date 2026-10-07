@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-publish-start"
+description = "Enables the publish_start command without any pre-configured scope."
+commands.allow = ["publish_start"]
+
+[[permission]]
+identifier = "deny-publish-start"
+description = "Denies the publish_start command without any pre-configured scope."
+commands.deny = ["publish_start"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-publish-jobs"
+description = "Enables the publish_jobs command without any pre-configured scope."
+commands.allow = ["publish_jobs"]
+
+[[permission]]
+identifier = "deny-publish-jobs"
+description = "Denies the publish_jobs command without any pre-configured scope."
+commands.deny = ["publish_jobs"]

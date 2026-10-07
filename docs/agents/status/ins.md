@@ -48,14 +48,21 @@ Install & Library (phase 2, `docs/agents/phase-2/ins-install-library.md`).
   session_016VNaVF… took over INS-05–07 on 2026-10-07 and brought #119 up to date with `main`); the cross-server
   token test `servers/tests.rs::a_request_to_one_server_never_carries_another_servers_token` in the follow-up PR
   (test-matrix row filled; noted in `int.md`).
+- INS-06 — Launcher admin publishing (session_016VNaVF…): command contract and mock ([#158](https://github.com/wouhliss/vgames/pull/158)); `vgames-transfer`
+  `PublishOptions::release` and per-pack bytes ([#159](https://github.com/wouhliss/vgames/pull/159)); the Rust commands, `publishing/` and
+  `tests/publish_e2e.rs` (this PR). Next: the publish screen (`src/routes/publish/`).
 - INS-10 (session_016VNaVF…, partial) — `apps/desktop/README.md` sections Installs, Downloads and, under Logs,
   where install and download logs go and how to read an integrity report; the G1 re-review request for INT-11 in
   `int.md`. No INS-02/03/04 pending entry is left (`downloads.ts` and `library.ts` deleted, `catalog.ts` holds only
   GAME's `rosetta_install`). The status file is made final once INS-05–07 land.
 
 ## Interfaces delivered (other agents may now rely on these)
-- INS-06 (contract only, Rust next): `src/ipc/contract/publishing.ts` (`publish_*`, `version_yank`, event
-  `publish-progress`) and `src/mocks/publishing.ts`; admin role required, checked in Rust.
+- INS-06: generated commands `publish_packages`, `publish_package_create`, `publish_versions`, `publish_pick_folder`,
+  `publish_pick_key`, `publish_plan`, `publish_start`, `publish_jobs`, `publish_cancel`, `publish_resume`,
+  `publish_dismiss`, `publish_release`, `version_yank` and event `publish-progress` (admins and owners only, checked
+  in Rust); `src/mocks/publishing.ts` with fixture triggers for the four failure cases.
+- `vgames_transfer::upload::publish::PublishOptions::release` (false stops at `ready`, `PublishPhase::Ready`) and
+  `UploadProgress::packs` (INS-06), for the CLI too.
 - Inherited from phase-1 Agent 2 and live on `main` (PR links in `agent-2.md` → Done), now owned by INS:
   - `vgames-pack` and `vgames-transfer` (install, signed-manifest update planner and commit, verify, repair, move,
     uninstall preview, upload/publish engine).

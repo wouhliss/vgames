@@ -216,6 +216,8 @@ pub enum AppEvent {
     InstallsChanged(InstallsChanged),
     CollectionsChanged(CollectionsChanged),
     LibrariesChanged(LibrariesChanged),
+    /// A publishing job moved (INS-06).
+    PublishProgress(crate::publishing::PublishProgress),
 }
 
 /// Cloneable handle to the internal broadcast bus.
@@ -273,6 +275,7 @@ pub fn spawn_ui_bridge<R: Runtime>(app: AppHandle<R>, bus: &EventBus, shutdown: 
                 Ok(AppEvent::InstallsChanged(e)) => e.emit(&app),
                 Ok(AppEvent::CollectionsChanged(e)) => e.emit(&app),
                 Ok(AppEvent::LibrariesChanged(e)) => e.emit(&app),
+                Ok(AppEvent::PublishProgress(e)) => e.emit(&app),
                 Err(broadcast::error::RecvError::Lagged(skipped)) => {
                     tracing::warn!(skipped, "UI event bridge lagged");
                     Ok(())

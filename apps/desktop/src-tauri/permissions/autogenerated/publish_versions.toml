@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-publish-versions"
+description = "Enables the publish_versions command without any pre-configured scope."
+commands.allow = ["publish_versions"]
+
+[[permission]]
+identifier = "deny-publish-versions"
+description = "Denies the publish_versions command without any pre-configured scope."
+commands.deny = ["publish_versions"]

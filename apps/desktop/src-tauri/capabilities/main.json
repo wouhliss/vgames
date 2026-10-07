@@ -95,6 +95,19 @@
     "allow-install-uninstall",
     "allow-install-open-folder",
     "allow-account-sessions",
-    "allow-account-session-revoke"
+    "allow-account-session-revoke",
+    "allow-publish-packages",
+    "allow-publish-package-create",
+    "allow-publish-versions",
+    "allow-publish-pick-folder",
+    "allow-publish-pick-key",
+    "allow-publish-plan",
+    "allow-publish-start",
+    "allow-publish-jobs",
+    "allow-publish-cancel",
+    "allow-publish-resume",
+    "allow-publish-dismiss",
+    "allow-publish-release",
+    "allow-version-yank"
   ]
 }

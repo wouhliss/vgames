@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-version-yank"
+description = "Enables the version_yank command without any pre-configured scope."
+commands.allow = ["version_yank"]
+
+[[permission]]
+identifier = "deny-version-yank"
+description = "Denies the version_yank command without any pre-configured scope."
+commands.deny = ["version_yank"]
