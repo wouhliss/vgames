@@ -353,6 +353,7 @@ fn run_and_kill_child(
     let path = journal_path.unwrap();
     let durable = journalled_bytes(&path, key, chunk_sizes);
     let chunks = Journal::load_or_new(&path, key).done().count();
+    assert!(durable < total, "the kill must leave chunks to resume");
     (reached.max(durable), durable, chunks)
 }
 
