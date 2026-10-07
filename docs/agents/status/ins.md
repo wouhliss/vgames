@@ -48,13 +48,22 @@ Install & Library (phase 2, `docs/agents/phase-2/ins-install-library.md`).
   session_016VNaVF… took over INS-05–07 on 2026-10-07 and brought #119 up to date with `main`); the cross-server
   token test `servers/tests.rs::a_request_to_one_server_never_carries_another_servers_token` in the follow-up PR
   (test-matrix row filled; noted in `int.md`).
-- INS-06 — Launcher admin publishing (session_016VNaVF…): contract and mock
+- INS-06 — Launcher admin publishing (session_016VNaVF…), done: contract and mock
   ([#158](https://github.com/wouhliss/vgames/pull/158)); Rust commands, `vgames-transfer`
   `PublishOptions::release` and per-pack bytes, `tests/publish_e2e.rs`
-  ([#160](https://github.com/wouhliss/vgames/pull/160), which carries the closed #159); the publish screen
-  (`src/routes/publish/`, this PR). Evidence: `publish_e2e` (wrong passphrase, untrusted key, cancel → restart →
-  resume, failed verification, release, yank), `PublishPage.test.tsx` (the four cases, route absent for
-  players), `e2e/publish.spec.ts` (axe).
+  ([#160](https://github.com/wouhliss/vgames/pull/160), which carried the closed #159); the publish screen
+  ([#162](https://github.com/wouhliss/vgames/pull/162)). Evidence: `publish_e2e` (wrong passphrase, untrusted key,
+  cancel → restart → resume, failed verification, release, yank), `PublishPage.test.tsx` (the four cases, route
+  absent for players), `e2e/publish.spec.ts` (axe).
+- INS-07 (session_016VNaVF…) — flaky download test (Q13): already fixed at its root cause by `7e111a0`
+  (2026-09-26). The old test queued all three protocol faults on one rig, so the single-chunk retry on a fresh
+  connection that the first fault triggers (`Scheduler::mismatch`) could receive the second fault; two mismatches on
+  one chunk is an integrity failure by design (02 §7.10). Both failure reports (Agents 4 and 5, 2026-09-25) predate
+  the fix; the old shape fails 4/40 locally, the current test passed 600/600 under CPU contention (debug and
+  release, pinned and unpinned). Acceptance loop: `.github/workflows/transfer-loop.yml` (200 consecutive
+  iterations, debug and release, `ubuntu-24.04`): 200/200 in each,
+  [run 37646614344](https://github.com/wouhliss/vgames/actions/runs/37646614344). Next: the symlink race and the
+  release-build budgets.
 - INS-10 (session_016VNaVF…, partial) — `apps/desktop/README.md` sections Installs, Downloads and, under Logs,
   where install and download logs go and how to read an integrity report; the G1 re-review request for INT-11 in
   `int.md`. No INS-02/03/04 pending entry is left (`downloads.ts` and `library.ts` deleted, `catalog.ts` holds only
