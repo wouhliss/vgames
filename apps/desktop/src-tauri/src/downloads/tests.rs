@@ -1297,9 +1297,10 @@ async fn checkpoint_waits_for_an_in_flight_database_claim() {
     // Always release the DB thread before asserting, including on regression.
     release_tx.send(()).unwrap();
     blocked.await.unwrap();
-    claiming.await.unwrap();
     assert!(!premature, "a pending claim must not be reported as idle");
-    tokio::time::timeout(WAIT, &mut pause).await.unwrap();
+    let (claimed, paused) = tokio::join!(claiming, tokio::time::timeout(WAIT, &mut pause));
+    claimed.unwrap();
+    paused.unwrap();
     assert_eq!(h.job_state(package).await, Some(DownloadState::Queued));
     assert!(h.downloads.lock().running.is_empty());
     h.downloads.release_checkpoint();
