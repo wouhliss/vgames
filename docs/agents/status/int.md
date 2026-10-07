@@ -39,6 +39,22 @@
   (8 GiB, frees runner disk first). The small scale needs nothing new: `scripts/ci/desktop-db-tests.sh` already picks
   the test up in the `desktop` job.
 
+## G1 re-review request (from INS, INS-10 → INT-11)
+INS asks for the G1 re-review of the install chain (checklist items 1.1, 1.2 and 2.3), at `e8cfee8`:
+- **Install:** the worker verifies the release with [`install::fetch_release`](https://github.com/wouhliss/vgames/blob/e8cfee8a18e2726ed9539dac4cfee9f62915585f/apps/desktop/src-tauri/src/downloads/job.rs#L282)
+  (refreshing the trust bundle once on an unknown key) before [`install::install`](https://github.com/wouhliss/vgames/blob/e8cfee8a18e2726ed9539dac4cfee9f62915585f/apps/desktop/src-tauri/src/downloads/job.rs#L181)
+  writes anything ([#133](https://github.com/wouhliss/vgames/pull/133)); refused keys write nothing (`an_untrusted_signing_key_writes_nothing`).
+- **Resume:** startup requeue and the journal ([#133](https://github.com/wouhliss/vgames/pull/133); `a_restart_mid_install_resumes_from_the_journal`,
+  and the real SIGKILL in `tests/install_e2e.rs`, [#146](https://github.com/wouhliss/vgames/pull/146)).
+- **Update:** interrupted commits recovered with [`commit::recover_pending`](https://github.com/wouhliss/vgames/blob/e8cfee8a18e2726ed9539dac4cfee9f62915585f/apps/desktop/src-tauri/src/downloads/maintain.rs#L106), the
+  installed release re-verified with [`load_local_release`](https://github.com/wouhliss/vgames/blob/e8cfee8a18e2726ed9539dac4cfee9f62915585f/apps/desktop/src-tauri/src/downloads/maintain.rs#L147), then
+  [`update_safe`](https://github.com/wouhliss/vgames/blob/e8cfee8a18e2726ed9539dac4cfee9f62915585f/apps/desktop/src-tauri/src/downloads/maintain.rs#L230) ([#140](https://github.com/wouhliss/vgames/pull/140)).
+- **Repair:** [`verify_install`](https://github.com/wouhliss/vgames/blob/e8cfee8a18e2726ed9539dac4cfee9f62915585f/apps/desktop/src-tauri/src/downloads/maintain.rs#L352) then [`repair_safe`](https://github.com/wouhliss/vgames/blob/e8cfee8a18e2726ed9539dac4cfee9f62915585f/apps/desktop/src-tauri/src/downloads/maintain.rs#L383).
+- **F1:** [`adopt_resigned`](https://github.com/wouhliss/vgames/blob/e8cfee8a18e2726ed9539dac4cfee9f62915585f/apps/desktop/src-tauri/src/downloads/maintain.rs#L401), test `verify_adopts_a_resigned_manifest_without_downloading`
+  (revoked key → launch refused → verify adopts the re-signed envelope, no pack byte fetched).
+- In flight: [#153](https://github.com/wouhliss/vgames/pull/153) makes the worker fetch a first trust bundle before refusing (`Ok(None)` → one refresh),
+  same rule as the unknown-key refresh.
+
 ## Security review (INT-01 dependency adoption)
 - vodozemac 0.11.1 changes HPKE check-code derivation; vgames uses Olm/Megolm, not that HPKE interface. Crypto tests remain required. Reviewed upstream 0.11.0…0.11.1 source diff.
 - tauri-plugin-updater 2.13.1 preserves signed-version and artifact verification, removes process-wide Linux certificate environment mutation, and otherwise changes documentation, dependencies and equivalent let-chain syntax. `requireSignedVersion` and `createUpdaterArtifacts` remain true. Reviewed upstream 2.12.0…2.13.1 production source diff.

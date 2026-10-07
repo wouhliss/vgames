@@ -34,6 +34,12 @@ Install & Library (phase 2, `docs/agents/phase-2/ins-install-library.md`).
   `scripts/ci/desktop-db-tests.sh` picks it up), 8 GiB nightly (`e2e.yml` job `install`); the first nightly run link
   goes under Done once it has run.
 
+- INS-10 (session_016VNaVF…, partial) — `apps/desktop/README.md` sections Installs, Downloads and, under Logs,
+  where install and download logs go and how to read an integrity report; the G1 re-review request for INT-11 in
+  `int.md` (this PR). No INS-02/03/04 pending entry is left (`downloads.ts` and `library.ts` deleted, `catalog.ts`
+  holds only GAME's `rosetta_install`); the account entries in `settings.ts` are INS-05's. The status file is made
+  final once INS-05–07 land.
+
 ## Interfaces delivered (other agents may now rely on these)
 - Inherited from phase-1 Agent 2 and live on `main` (PR links in `agent-2.md` → Done), now owned by INS:
   - `vgames-pack` and `vgames-transfer` (install, signed-manifest update planner and commit, verify, repair, move,

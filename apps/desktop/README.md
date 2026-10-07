@@ -49,6 +49,58 @@ Adding a command: implement it with `#[tauri::command] #[specta::specta]`, add i
 in `src-tauri/src/commands/mod.rs` and to `names.rs`, and grant `allow-<name-with-dashes>` in the capability
 of the window that needs it.
 
+## Installs
+
+An install lives in a library folder as `<library>/<slug>/` (the package's slug, made safe for the
+file system, with a suffix when that folder is taken). Next to the game's files,
+`.vgames/` holds what the launcher needs to trust and repair it later:
+
+| File | What it is |
+|---|---|
+| `install.json` | The install record (`vgames.install/1`): server, package, version, platform, state |
+| `manifest.json`, `manifest.sig` | The signed manifest the files were checked against, and its signature |
+| `journal.bin` | During an install or update only: which chunks are already on disk (02-package-format §7.9) |
+
+- **States** (`installs_list`): `installed`, `installing`, `updating`, `repairing`, `moving`,
+  `uninstalling` and `incomplete` (an install with no queued job, to resume or remove). Only `installed` can be
+  launched; every launch first re-checks the signature under the server's current trust bundle.
+- **Update** (`install_update`) fetches only the chunks that changed and swaps them in with a
+  journaled commit, so an interruption at any point resumes or rolls back on the next start. A
+  release older than the installed one is refused unless the installed version was withdrawn.
+- **Verify files** (`install_verify`) hashes every file against the stored manifest and re-fetches
+  the chunks of damaged ones. If the server rotated or revoked its publisher key, it adopts the
+  server's current signature when it names the same version and covers the same manifest bytes
+  (security review F1); nothing is downloaded for that.
+- **Move** (`install_move`) renames within one drive, or copies every file, verifies the copy and
+  only then deletes the source.
+- **Uninstall** (`install_uninstall`) removes the files the manifest lists. Files the package did
+  not ship (mods, configs, local saves) and the Proton/Wine prefix
+  (`<data dir>/prefixes/<server>/<package>`) are only removed when the player ticks them. Links
+  are never followed.
+
+## Downloads
+
+The queue (`downloads_list`, Downloads page) runs one to three installs at a time
+(`download_settings_set`), in queue order, with an optional bandwidth limit applied live.
+
+- **Order:** the launch target's files first (02 §7.6), then the rest.
+- **Pause, cancel, reorder** act at the next chunk boundary. Cancelling keeps or deletes what was
+  downloaded, as the player chooses.
+- **Crash or power loss:** written chunks are fsynced and recorded in `journal.bin` every
+  2 seconds; the next start re-queues the job and fetches only the chunks the journal does not
+  have. Data on disk never exceeds the final size; only the journal comes on top.
+- **Paused by the launcher** (with the reason shown): the library folder is gone (a drive
+  unplugged) or the disk is full. Focusing the window re-checks.
+- **Launcher updates** wait until every download has paused at a checkpoint, then restart; the
+  queue resumes from the journals.
+- **Refused before anything is written:** a manifest whose signature does not verify under the
+  server's trust bundle (`untrusted_key`, `signature_invalid`, `revoked_key`, …). The launcher
+  fetches the bundle once more before refusing, so a server that set up signing after it was
+  added still works.
+- **Damaged on the server:** a chunk whose hash does not match is fetched again on a fresh
+  connection; a second mismatch fails the install with "A file on the server is damaged"
+  (`damaged_file`) and sends an **integrity report** (below).
+
 ## Logs and crash reports
 
 | OS | Directory |
@@ -60,6 +112,19 @@ of the window that needs it.
 `vgames.log` rotates at 10 MB and keeps 7 files. Tokens, bearer credentials, URL query strings
 and secret-looking `key=value` pairs are redacted. A panic writes `crash-<time>-<pid>.txt`
 next to the logs. Nothing is uploaded. Profiles use `app.vgames.launcher.profile-<name>`.
+
+**Installs and downloads in the log.** The queue logs under `vgames_desktop_lib::downloads` and the
+transfer engine under `vgames_transfer`: pauses with their reason, failures with their code
+(`damaged_file`, `untrusted_key`, `insufficient_space`, …), repairs ("repairing damaged files" with
+a count) and F1 signature adoption ("adopted the re-signed manifest signature"). Package and
+version ids are logged; signed URLs and tokens never are.
+
+**Reading an integrity report.** When a chunk fails its hash twice, the launcher posts
+`POST /v1/versions/{version_id}/integrity-reports` with the pack index, the chunk index and a short
+detail; it carries no file content. The server records it per player; when three different players
+report the same pack within 24 hours it re-verifies that pack (`pack.reverify` job) and tells the
+admins the outcome. So one report usually means a bad connection or a local problem, while
+reports from several players mean the stored pack is damaged and must be re-uploaded.
 
 ## Performance scripts
 
