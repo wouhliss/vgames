@@ -2,29 +2,25 @@
 // plans, and publishing jobs that upload pack by pack, sign, verify and stop at `ready`.
 //
 // Fixture triggers, so screens and Playwright reach every outcome without a server:
-// - passphrase "wrong" → `wrong_passphrase`;
-// - a key file whose name contains "untrusted" → `untrusted_key` (`unknown`), "revoked" → `revoked`;
+// - passphrase "wrong" → `key` / `wrong_passphrase`;
+// - a key file whose name contains "untrusted" → `key` / `untrusted_key` (`unknown`), "revoked" → `revoked`;
 // - a folder whose name contains "fails-verification" → the job ends `failed` / `verification_failed`;
 // - `publishHold` stops every new job halfway through uploading, for cancel-then-resume.
 // Unit tests (`publishTickMs` 0) run a job to `ready` or `failed` inside `publish_start`; the
 // browser moves it one step per tick and emits `publish-progress` like the core.
 import type {
+  KeyError,
   PackageCreate,
-  PackageCreateError,
   PackProgress,
   Platform,
-  PublishControlError,
+  PublishCommandError,
   PublishJob,
-  PublishJobError,
   PublishPackage,
   PublishPlan,
-  PublishPlanError,
   PublishResume,
   PublishStart,
-  PublishStartError,
   PublishVersion,
   Role,
-  VersionActionError,
 } from "../ipc";
 import { events } from "../ipc";
 import { fail, type Handler, mockId } from "./runtime";
@@ -160,7 +156,7 @@ export function defaultPublishingState(): PublishingState {
 /** The steps a job goes through after uploading, in order. */
 const AFTER_UPLOAD = ["signing", "uploading_manifest", "finalizing", "verifying"] as const;
 
-function keyError(keyPath: string, passphrase: string): PublishJobError | null {
+function keyError(keyPath: string, passphrase: string): KeyError | null {
   const name = keyPath.split(/[\\/]/).pop() ?? "";
   if (!name.endsWith(".vgkey")) return { kind: "invalid_key_file" };
   if (passphrase === "wrong") return { kind: "wrong_passphrase" };
@@ -215,7 +211,7 @@ export function publishingHandlers(
 
   function jobById(id: unknown): PublishJob {
     const job = state.publishJobs.find((j) => j.id === id);
-    if (!job) fail({ kind: "not_found" } satisfies PublishControlError);
+    if (!job) fail({ kind: "not_found" } satisfies PublishCommandError);
     return job;
   }
 
@@ -224,7 +220,7 @@ export function publishingHandlers(
       const v = list.find((x) => x.id === id);
       if (v) return v;
     }
-    fail({ kind: "not_found" } satisfies VersionActionError);
+    fail({ kind: "not_found" } satisfies PublishCommandError);
   }
 
   function replaceVersion(next: PublishVersion) {
@@ -344,10 +340,10 @@ export function publishingHandlers(
       const title = create.title.trim();
       if (!title || title.length > 200)
         fail({
-          kind: "invalid",
+          kind: "invalid_field",
           field: "title",
           message: "Enter a title of 1 to 200 characters.",
-        } satisfies PackageCreateError);
+        } satisfies PublishCommandError);
       const slug =
         create.slug ??
         title
@@ -357,12 +353,12 @@ export function publishingHandlers(
           .slice(0, 64);
       if (!/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/.test(slug))
         fail({
-          kind: "invalid",
+          kind: "invalid_field",
           field: "slug",
           message: "Use lowercase letters, digits and dashes.",
-        } satisfies PackageCreateError);
+        } satisfies PublishCommandError);
       if (state.publishPackages.some((p) => p.slug === slug))
-        fail({ kind: "slug_taken" } satisfies PackageCreateError);
+        fail({ kind: "slug_taken" } satisfies PublishCommandError);
       const pkg: PublishPackage = {
         id: mockId("0199d000", state.publishPackages.length + 1),
         slug,
@@ -384,24 +380,25 @@ export function publishingHandlers(
     publish_pick_key: () => state.publishKeyPick,
     publish_plan: (args) => {
       const found = state.publishFolders[args.folder as string];
-      if (!found) fail({ kind: "not_found" } satisfies PublishPlanError);
+      if (!found) fail({ kind: "not_found" } satisfies PublishCommandError);
       return found;
     },
     publish_start: (args) => {
       requireAdmin(args.serverId);
       const start = args.start as PublishStart;
       const pkg = state.publishPackages.find((p) => p.id === start.package_id);
-      if (!pkg) fail({ kind: "not_found" } satisfies PublishStartError);
+      if (!pkg) fail({ kind: "not_found" } satisfies PublishCommandError);
       const label = start.version_label.trim();
-      if (!label || label.length > 64) fail({ kind: "invalid_label" } satisfies PublishStartError);
+      if (!label || label.length > 64)
+        fail({ kind: "invalid_label" } satisfies PublishCommandError);
       const folder = state.publishFolders[start.folder];
-      if (!folder) fail({ kind: "not_found" } satisfies PublishStartError);
+      if (!folder) fail({ kind: "not_found" } satisfies PublishCommandError);
       if (folder.invalid_count > 0)
-        fail({ kind: "invalid_paths", count: folder.invalid_count } satisfies PublishStartError);
+        fail({ kind: "invalid_paths", count: folder.invalid_count } satisfies PublishCommandError);
       if (start.launch && !folder.executables.includes(start.launch.executable))
-        fail({ kind: "invalid_launch" } satisfies PublishStartError);
+        fail({ kind: "invalid_launch" } satisfies PublishCommandError);
       const keyFailure = keyError(start.key_path, start.passphrase);
-      if (keyFailure) fail(keyFailure satisfies PublishStartError);
+      if (keyFailure) fail({ kind: "key", error: keyFailure } satisfies PublishCommandError);
 
       const list = state.publishVersions[pkg.id] ?? [];
       const sequence = Math.max(0, ...list.map((v) => v.sequence)) + 1;
@@ -439,19 +436,20 @@ export function publishingHandlers(
     publish_jobs: () => state.publishJobs,
     publish_cancel: (args) => {
       const job = jobById(args.jobId);
-      if (!running(job)) fail({ kind: "conflict", phase: job.phase } satisfies PublishControlError);
+      if (!running(job))
+        fail({ kind: "job_conflict", phase: job.phase } satisfies PublishCommandError);
       stop(job.id);
       return save({ ...job, phase: "cancelled", bytes_per_second: 0 });
     },
     publish_resume: (args) => {
       const job = jobById(args.jobId);
       if (job.phase !== "cancelled" && !(job.phase === "failed" && job.error?.kind === "remote"))
-        fail({ kind: "conflict", phase: job.phase } satisfies PublishControlError);
+        fail({ kind: "job_conflict", phase: job.phase } satisfies PublishCommandError);
       const key = args.key as PublishResume | null;
       if (job.resume_needs_key) {
-        if (!key) fail({ kind: "wrong_passphrase" } satisfies PublishControlError);
+        if (!key) fail({ kind: "key_required" } satisfies PublishCommandError);
         const keyFailure = keyError(key.key_path, key.passphrase);
-        if (keyFailure) fail(keyFailure satisfies PublishControlError);
+        if (keyFailure) fail({ kind: "key", error: keyFailure } satisfies PublishCommandError);
       }
       const phase = job.bytes_confirmed >= job.bytes_total ? "signing" : "uploading";
       save({ ...job, phase, error: null });
@@ -459,7 +457,8 @@ export function publishingHandlers(
     },
     publish_dismiss: (args) => {
       const job = jobById(args.jobId);
-      if (running(job)) fail({ kind: "conflict", phase: job.phase } satisfies PublishControlError);
+      if (running(job))
+        fail({ kind: "job_conflict", phase: job.phase } satisfies PublishCommandError);
       stop(job.id);
       if (job.version_id && job.phase !== "published") {
         const v = versionById(job.version_id);
@@ -473,7 +472,7 @@ export function publishingHandlers(
       requireAdmin(args.serverId);
       const v = versionById(args.versionId);
       if (v.state !== "ready")
-        fail({ kind: "conflict", state: v.state } satisfies VersionActionError);
+        fail({ kind: "version_conflict", state: v.state } satisfies PublishCommandError);
       const list = state.publishVersions[v.package_id] ?? [];
       state.publishVersions[v.package_id] = list.map((x) =>
         x.platform === v.platform ? { ...x, is_current_release: false } : x,
@@ -498,7 +497,7 @@ export function publishingHandlers(
       requireAdmin(args.serverId);
       const v = versionById(args.versionId);
       if (v.state !== "published")
-        fail({ kind: "conflict", state: v.state } satisfies VersionActionError);
+        fail({ kind: "version_conflict", state: v.state } satisfies PublishCommandError);
       const yanked: PublishVersion = {
         ...v,
         state: "yanked",
