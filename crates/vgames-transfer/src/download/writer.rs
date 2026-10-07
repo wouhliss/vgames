@@ -6,7 +6,7 @@
 
 use std::collections::{BTreeSet, HashMap};
 use std::fs::File;
-use std::path::{Path, PathBuf};
+
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -18,7 +18,7 @@ use super::pool::PooledBuf;
 use super::scheduler::{Scheduler, Stop};
 use super::table::{ChunkInfo, ChunkTable};
 use super::{DownloadError, PauseReason};
-use crate::fsutil;
+use crate::fsutil::{self, Target};
 use crate::sys;
 
 /// A chunk's stored bytes, complete, on their way to verification.
@@ -48,8 +48,9 @@ pub struct Durable {
     pub files: BTreeSet<u32>,
 }
 
-/// Where each manifest file's bytes go (`None`: not needed by this download).
-pub type Targets = Vec<Option<PathBuf>>;
+/// Where each manifest file's bytes go (`None`: not needed by this download). Opened through the
+/// install root's handle, never by path (INS-07).
+pub type Targets = Vec<Option<Target>>;
 
 pub struct WriterShared {
     pub table: Arc<ChunkTable>,
@@ -151,22 +152,22 @@ fn process(
             )));
         };
         at += len;
-        let Some(Some(path)) = shared.targets.get(extent.file as usize) else {
+        let Some(Some(target)) = shared.targets.get(extent.file as usize) else {
             continue;
         };
         let result = handles
-            .get(extent.file, path)
+            .get(extent.file, target)
             .and_then(|file| fsutil::write_all_at(file, part, extent.file_offset));
         if let Err(error) = result {
             handles.forget(extent.file);
             if sys::is_disk_full(&error) {
-                tracing::warn!(path = %path.display(), "disk full; pausing the download");
+                tracing::warn!(path = %target.display_path().display(), "disk full; pausing the download");
                 // The chunk is not marked done: it is fetched again on resume.
                 shared.scheduler.stop(Stop::Paused(PauseReason::DiskFull));
             } else {
                 shared.scheduler.stop(Stop::Failed(DownloadError::Io {
                     op: "write",
-                    path: path.clone(),
+                    path: target.display_path(),
                     source: error,
                 }));
             }
@@ -243,7 +244,7 @@ impl HandleCache {
         }
     }
 
-    fn get(&mut self, file: u32, path: &Path) -> std::io::Result<&File> {
+    fn get(&mut self, file: u32, target: &Target) -> std::io::Result<&File> {
         self.tick += 1;
         let tick = self.tick;
         if !self.open.contains_key(&file) {
@@ -256,7 +257,7 @@ impl HandleCache {
             {
                 self.open.remove(&oldest);
             }
-            let handle = fsutil::open_for_write(path)?;
+            let handle = target.open_write()?;
             self.open.insert(file, (handle, tick));
         }
         match self.open.get_mut(&file) {
@@ -280,11 +281,11 @@ mod tests {
     #[test]
     fn handle_cache_evicts_the_least_recently_used() {
         let dir = tempfile::tempdir().unwrap();
-        let paths: Vec<PathBuf> = (0..4)
+        let root = Arc::new(crate::fsutil::SafeRoot::open(dir.path()).unwrap());
+        let paths: Vec<Target> = (0..4)
             .map(|i| {
-                let p = dir.path().join(format!("f{i}"));
-                std::fs::write(&p, b"").unwrap();
-                p
+                std::fs::write(dir.path().join(format!("f{i}")), b"").unwrap();
+                Target::new(Arc::clone(&root), format!("f{i}"))
             })
             .collect();
         let mut cache = HandleCache::new(2);

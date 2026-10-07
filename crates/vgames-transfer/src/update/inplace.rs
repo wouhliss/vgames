@@ -1,9 +1,9 @@
 //! Explicit low-space update mode. Changed files are written at their final
 //! paths, so the install stays marked `updating` until commit.
 
-use std::fs::{self, OpenOptions};
+use std::fs;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use super::plan::UpdatePlan;
@@ -13,7 +13,7 @@ use crate::download::table::ChunkTable;
 use crate::download::{
     self, DownloadControl, DownloadOptions, DownloadSpec, PackUrlSource, Phase, RunOutcome,
 };
-use crate::fsutil::{self, SafePathError, SafeRoot};
+use crate::fsutil::{self, Access, SafePathError, SafeRoot, Target};
 use crate::install::{
     InstallError, InstallOutcome, InstallReport, InstallState, MANIFEST_FILE, META_DIR, Release,
     SPACE_MARGIN, read_record, write_record,
@@ -96,7 +96,7 @@ pub async fn update_in_place<A: PackUrlSource>(
 
 struct Prepared {
     table: Arc<ChunkTable>,
-    targets: Arc<Vec<Option<PathBuf>>>,
+    targets: Arc<Vec<Option<Target>>>,
     journal: Journal,
     wanted: Bitset,
 }
@@ -136,7 +136,7 @@ fn prepare(
             "installed release changed before update".into(),
         ));
     }
-    let safe = SafeRoot::open(root)?;
+    let safe = Arc::new(SafeRoot::open(root)?);
     let old_path = safe
         .existing_file(&format!("{META_DIR}/{MANIFEST_FILE}"))?
         .ok_or_else(|| InstallError::Conflict("missing installed manifest".into()))?;
@@ -259,24 +259,12 @@ fn prepare(
             .files
             .get(index as usize)
             .ok_or_else(|| InstallError::Conflict("invalid build file index".into()))?;
-        let path = safe.file_target(&file.path)?;
+        // Deleted and created through the root's handle, never by path (INS-07).
+        let path = safe.path_of(&file.path);
         if !done_files.get(index as usize).copied().unwrap_or(false) {
-            match fs::remove_file(&path) {
-                Ok(()) => {}
-                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-                Err(error) => return Err(InstallError::io("delete", &path, error)),
-            }
+            safe.remove_file(&file.path)?;
         }
-        let mut options = OpenOptions::new();
-        options.write(true).create(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.custom_flags(libc::O_NOFOLLOW);
-        }
-        let handle = options
-            .open(&path)
-            .map_err(|error| InstallError::io("create", &path, error))?;
+        let handle = safe.open_file(&file.path, Access::CreateWrite)?;
         if let Err(error) = sys::preallocate(&handle, file.size) {
             if sys::is_disk_full(&error) {
                 return Err(InstallError::NotEnoughSpace {
@@ -287,7 +275,7 @@ fn prepare(
             return Err(InstallError::io("allocate", &path, error));
         }
         if let Some(slot) = targets.get_mut(index as usize) {
-            *slot = Some(path);
+            *slot = Some(Target::new(Arc::clone(&safe), file.path.clone()));
         }
     }
     journal

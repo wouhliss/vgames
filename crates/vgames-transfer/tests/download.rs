@@ -573,6 +573,7 @@ async fn a_full_disk_pauses_the_download() {
     use vgames_transfer::download::journal::{Journal, JournalKey};
     use vgames_transfer::download::table::ChunkTable;
     use vgames_transfer::download::{DownloadSpec, PauseReason, RunOutcome, run};
+    use vgames_transfer::fsutil::Target;
 
     let files = vec![FileSpec::random("a.bin", 6 * MIB, 1)];
     let setup = Setup::new(TestPackage::build(&files, &[], Compression::None)).await;
@@ -590,7 +591,7 @@ async fn a_full_disk_pauses_the_download() {
         ),
         table: Arc::new(table),
         // /dev/full answers every write with ENOSPC.
-        targets: Arc::new(vec![Some("/dev/full".into())]),
+        targets: Arc::new(vec![Some(Target::device_for_tests("/dev/full"))]),
         wanted: None,
     };
     let control = DownloadControl::new(None);

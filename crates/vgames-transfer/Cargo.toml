@@ -31,6 +31,8 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+cap-std.workspace = true
+cap-fs-ext.workspace = true
 tempfile = { workspace = true, optional = true }
 
 [target.'cfg(unix)'.dependencies]

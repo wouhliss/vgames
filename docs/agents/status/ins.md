@@ -62,8 +62,12 @@ Install & Library (phase 2, `docs/agents/phase-2/ins-install-library.md`).
   the fix; the old shape fails 4/40 locally, the current test passed 600/600 under CPU contention (debug and
   release, pinned and unpinned). Acceptance loop: `.github/workflows/transfer-loop.yml` (200 consecutive
   iterations, debug and release, `ubuntu-24.04`): 200/200 in each,
-  [run 37646614344](https://github.com/wouhliss/vgames/actions/runs/37646614344). Next: the symlink race and the
-  release-build budgets.
+  [run 37646614344](https://github.com/wouhliss/vgames/actions/runs/37646614344) ([#161](https://github.com/wouhliss/vgames/pull/161)).
+- INS-07 — local race (Q12), part 1: `SafeRoot` holds the install folder as a directory handle (`cap-std`) and
+  resolves every component relative to it without following links or junctions; install writes, flushes,
+  finalization and update staging open files only through it (`fsutil::Target`). Tests swap a checked folder for a
+  symlink (a junction on Windows) and prove no open, create, write or delete reaches outside. Part 2: update
+  commit/verify, move and uninstall. Then the release-build budgets.
 - INS-10 (session_016VNaVF…, partial) — `apps/desktop/README.md` sections Installs, Downloads and, under Logs,
   where install and download logs go and how to read an integrity report; the G1 re-review request for INT-11 in
   `int.md`. No INS-02/03/04 pending entry is left (`downloads.ts` and `library.ts` deleted, `catalog.ts` holds only
