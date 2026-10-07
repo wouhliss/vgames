@@ -46,7 +46,8 @@ Install & Library (phase 2, `docs/agents/phase-2/ins-install-library.md`).
 - INS-05 — Accounts, API client and cross-server isolation: account commands, problem bodies and the auth hook in
   #119 (written by session_01AChegfo4ZUhpjL2LgRbUk3; that session ended on its usage limit on 2026-10-06, so
   session_016VNaVF… took over INS-05–07 on 2026-10-07 and brought #119 up to date with `main`); the cross-server
-  token test next.
+  token test `servers/tests.rs::a_request_to_one_server_never_carries_another_servers_token` in the follow-up PR
+  (test-matrix row filled; noted in `int.md`).
 - INS-10 (session_016VNaVF…, partial) — `apps/desktop/README.md` sections Installs, Downloads and, under Logs,
   where install and download logs go and how to read an integrity report; the G1 re-review request for INT-11 in
   `int.md`. No INS-02/03/04 pending entry is left (`downloads.ts` and `library.ts` deleted, `catalog.ts` holds only

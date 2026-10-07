@@ -44,6 +44,11 @@
   (release launcher, real API behind https://localhost). Part 1 is not on PRs: the uncached release build alone is
   over the 10 minutes INS-09 allows; wire it into `ci.yml` if you get the build cached under that.
 
+- From INS (INS-05): `docs/security/test-matrix.md`, row "Compromised server → read tokens for other servers", now
+  names `servers/tests.rs::a_request_to_one_server_never_carries_another_servers_token` (two servers signed in; each
+  receives only its own tokens after a refresh, a switch with reconnect, and a restart), and "Gaps being closed" is
+  empty. Security docs are yours: edit freely.
+
 ## G1 re-review request (from INS, INS-10 → INT-11)
 INS asks for the G1 re-review of the install chain (checklist items 1.1, 1.2 and 2.3), at `e8cfee8`:
 - **Install:** the worker verifies the release with [`install::fetch_release`](https://github.com/wouhliss/vgames/blob/e8cfee8a18e2726ed9539dac4cfee9f62915585f/apps/desktop/src-tauri/src/downloads/job.rs#L282)
