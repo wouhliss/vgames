@@ -1250,3 +1250,57 @@ async fn detection_offers_a_newer_release() {
     assert_eq!((update.version_label.as_str(), update.sequence), ("2.0", 2));
     assert!(!update.installed_yanked);
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn checkpoint_waits_for_an_in_flight_database_claim() {
+    let mut h = Harness::new().await;
+    h.stop.cancel();
+    h.downloads = Downloads::new(
+        h.db.clone(),
+        EventBus::new(),
+        h.backend.clone(),
+        options(),
+        CancellationToken::new(),
+    );
+    let served = h.serve(package(15, 48 * MIB, Uuid::now_v7())).await;
+    served.rig.set_piece_delay(Duration::from_millis(250));
+    let package = h.queue(&served).await;
+    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
+    let db = h.db.clone();
+    let blocked = tokio::spawn(async move {
+        db.call(move |_| {
+            started_tx.send(()).unwrap();
+            release_rx.recv().unwrap();
+            Ok(())
+        })
+        .await
+        .unwrap();
+    });
+    started_rx.await.unwrap();
+    let downloads = h.downloads.clone();
+    let claiming = tokio::spawn(async move {
+        downloads.fill().await;
+    });
+    tokio::time::timeout(WAIT, async {
+        while h.downloads.claim_gate.try_lock().is_ok() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    let pause = h.downloads.pause_all_at_checkpoint();
+    tokio::pin!(pause);
+    let premature = tokio::time::timeout(Duration::from_millis(100), &mut pause)
+        .await
+        .is_ok();
+    // Always release the DB thread before asserting, including on regression.
+    release_tx.send(()).unwrap();
+    blocked.await.unwrap();
+    claiming.await.unwrap();
+    assert!(!premature, "a pending claim must not be reported as idle");
+    tokio::time::timeout(WAIT, &mut pause).await.unwrap();
+    assert_eq!(h.job_state(package).await, Some(DownloadState::Queued));
+    assert!(h.downloads.lock().running.is_empty());
+    h.downloads.release_checkpoint();
+}

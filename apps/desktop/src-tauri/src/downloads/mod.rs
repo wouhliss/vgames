@@ -100,6 +100,8 @@ pub struct Downloads<B: Backend> {
     hook: RwLock<Arc<dyn PriorityHook>>,
     files_changed: RwLock<Option<FilesChanged>>,
     state: Mutex<State>,
+    /// Serializes claims with entering an updater checkpoint.
+    claim_gate: tokio::sync::Mutex<()>,
     wake: Notify,
     active: watch::Sender<usize>,
     stop: CancellationToken,
@@ -157,6 +159,7 @@ impl<B: Backend> Downloads<B> {
                     concurrent_installs: 1,
                 },
             }),
+            claim_gate: tokio::sync::Mutex::new(()),
             wake: Notify::new(),
             active: watch::Sender::new(0),
             stop,
@@ -286,6 +289,7 @@ impl<B: Backend> Downloads<B> {
     /// Starts jobs until the concurrency setting is reached.
     async fn fill(self: &Arc<Self>) {
         loop {
+            let _claim = self.claim_gate.lock().await;
             let (held, max) = {
                 let state = self.lock();
                 (state.held, state.settings.concurrent_installs as usize)
@@ -722,11 +726,13 @@ impl<B: Backend> Downloads<B> {
     /// to the queue and resume from their journal after the restart, or after
     /// [`Self::release_checkpoint`] when the update did not happen.
     pub async fn pause_all_at_checkpoint(&self) {
+        let claim = self.claim_gate.lock().await;
         let packages: Vec<PackageRef> = {
             let mut state = self.lock();
             state.held = true;
             state.running.keys().copied().collect()
         };
+        drop(claim);
         for package in packages {
             self.request_stop(package, Stop::Checkpoint).await;
         }

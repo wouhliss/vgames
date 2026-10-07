@@ -55,3 +55,5 @@ Install & Library (phase 2, `docs/agents/phase-2/ins-install-library.md`).
   (A2-T04 follow-up) → INS-07; `CollectionError` has no generic failure variant → INS-04.
 - This session pushes through `claude/intelligent-meitner-9hvimv` (the only branch it may push) instead of
   `ins/p2-<topic>`, one PR at a time.
+
+- From INT (review of #138): updater checkpoint acquisition now serializes with an in-flight SQLite claim, so it cannot report idle before that claim is registered. Added `checkpoint_waits_for_an_in_flight_database_claim`; the scoped updater guard releases the queue even when the install future is cancelled. Keep these changes when continuing INS-08.

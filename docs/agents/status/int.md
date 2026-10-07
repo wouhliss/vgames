@@ -52,3 +52,5 @@
 - Adopted #138 on current main, retaining its signed-artifact verification, game-running checks and serialized install lock. Downloads stop at journaled checkpoints before installation; release signing configuration is unchanged.
 - Replaced manual release calls with a scoped checkpoint guard: shutdown, missing updates, failed verification/install and cancellation of the install future all release the queue. Tests cover checkpoint ordering, shutdown, aborted futures and failed/missing-update exits. Successful installation keeps the guard through restart.
 - Supersede #138 only after the reviewed replacement passes every hosted check and all three desktop OS legs and merges.
+
+- Queue review also found an in-flight SQLite claim could become active after the queue reported idle. Serialized the claim-and-register operation with entering the checkpoint; a real blocked-database regression proves checkpoint completion waits for that claim and leaves no active job. This is the smallest required change to INS's queue wiring for the updater boundary.
