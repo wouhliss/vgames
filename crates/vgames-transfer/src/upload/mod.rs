@@ -103,6 +103,8 @@ pub struct UploadProgress {
     pub bytes_total: u64,
     pub bytes_per_second: f64,
     pub active_packs: usize,
+    /// Confirmed bytes of each pack, by pack index (empty until the upload starts).
+    pub packs: Vec<u64>,
 }
 
 #[derive(Clone)]
@@ -125,6 +127,7 @@ impl UploadControl {
             bytes_total: 0,
             bytes_per_second: 0.0,
             active_packs: 0,
+            packs: Vec::new(),
         });
         Self {
             cancel: CancellationToken::new(),
@@ -150,6 +153,13 @@ struct Shared {
 impl Shared {
     fn confirmed(&self) -> u64 {
         self.offsets.iter().map(|v| v.load(Ordering::Relaxed)).sum()
+    }
+
+    fn pack_offsets(&self) -> Vec<u64> {
+        self.offsets
+            .iter()
+            .map(|v| v.load(Ordering::Relaxed))
+            .collect()
     }
 
     async fn checkpoint(&self, pack: u32, session: &str, offset: u64) -> Result<(), UploadError> {
@@ -251,6 +261,7 @@ pub async fn run<A: UploadApi>(
                 control.progress.send_replace(UploadProgress {
                     phase: UploadPhase::Uploading, bytes_confirmed: bytes, bytes_total: total,
                     bytes_per_second: rate, active_packs: workers.len(),
+                    packs: shared.pack_offsets(),
                 });
             }
         }
@@ -281,6 +292,7 @@ pub async fn run<A: UploadApi>(
         bytes_total: total,
         bytes_per_second: rate,
         active_packs: 0,
+        packs: shared.pack_offsets(),
     });
     result
 }
@@ -660,17 +672,29 @@ mod tests {
         control.cancel.cancel();
         assert!(matches!(first.await.unwrap(), Err(UploadError::Cancelled)));
         assert_eq!(api.starts.load(Ordering::SeqCst), 1);
+        // Per-pack bytes add up to the total confirmed, for the launcher's pack list.
+        let stopped = progress.borrow().clone();
+        assert_eq!(
+            stopped.packs.len(),
+            source(&files).packing.pack_count() as usize
+        );
+        assert_eq!(stopped.packs.iter().sum::<u64>(), stopped.bytes_confirmed);
+        assert!(stopped.bytes_confirmed >= PIECE_SIZE as u64);
         allow_finish.store(true, Ordering::SeqCst);
+        let resumed = UploadControl::new();
         run(
             source(&files),
             version,
             api.clone(),
             record.clone(),
             &options,
-            &UploadControl::new(),
+            &resumed,
         )
         .await
         .unwrap();
+        let done = resumed.progress().borrow().clone();
+        assert_eq!(done.phase, UploadPhase::Complete);
+        assert_eq!(done.packs.iter().sum::<u64>(), done.bytes_total);
         assert_eq!(api.starts.load(Ordering::SeqCst), 1);
         let requests = server.received_requests().await.unwrap();
         assert!(requests.iter().any(|request| {

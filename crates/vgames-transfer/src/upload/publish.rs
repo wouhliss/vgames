@@ -78,6 +78,9 @@ pub struct PublishOptions {
     pub upload: UploadOptions,
     pub verification_timeout: Duration,
     pub poll_interval: Duration,
+    /// Make the verified version the current release. When false, [`run`] stops at `ready`
+    /// ([`PublishPhase::Ready`]) and returns that version; publish it later with the API.
+    pub release: bool,
 }
 
 impl Default for PublishOptions {
@@ -86,6 +89,7 @@ impl Default for PublishOptions {
             upload: UploadOptions::default(),
             verification_timeout: Duration::from_secs(3600),
             poll_interval: Duration::from_secs(1),
+            release: true,
         }
     }
 }
@@ -98,6 +102,8 @@ pub enum PublishPhase {
     UploadingManifest,
     Finalizing,
     Verifying,
+    /// Verified and not released (`PublishOptions::release` is false).
+    Ready,
     Publishing,
     Published,
     Failed,
@@ -451,6 +457,10 @@ async fn run_inner<A: PublishApi>(
             .await
             .map_err(|_| PublishError::Timeout("verification"))??;
     }
+    if version.state == VersionState::Ready && !options.release {
+        control.phase(PublishPhase::Ready, Some(1.0));
+        return Ok(version);
+    }
     if version.state == VersionState::Ready {
         control.phase(PublishPhase::Publishing, None);
         version = call(api.publish(version.id), "publication", timeout, cancel).await?;
@@ -751,6 +761,32 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(*api.calls.lock().unwrap(), ["get", "get", "publish"]);
+    }
+
+    #[tokio::test]
+    async fn without_release_it_stops_at_ready_and_never_publishes() {
+        let root = tempfile::tempdir().unwrap();
+        let api = MockApi::new(
+            String::new(),
+            &[VersionState::Verifying, VersionState::Ready],
+        );
+        let control = PublishControl::new(UploadControl::default());
+        let progress = control.progress();
+        let options = PublishOptions {
+            release: false,
+            ..options()
+        };
+        let version = run(
+            request(root.path(), VersionState::Uploading),
+            api.clone(),
+            &options,
+            &control,
+        )
+        .await
+        .unwrap();
+        assert_eq!(version.state, VersionState::Ready);
+        assert_eq!(progress.borrow().phase, PublishPhase::Ready);
+        assert_eq!(*api.calls.lock().unwrap(), ["get", "get"]);
     }
 
     #[tokio::test]
