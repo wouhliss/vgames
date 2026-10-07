@@ -97,7 +97,7 @@ coverage test reads the production router, so a new screen needs a scan case.
 | How a game runs, compatibility licenses and third-party licenses | Open, read/scroll, change allowed options and close. | `settings.spec.ts` game options keyboard scan; `settings.spec.ts` keyboard/controller scans of runtime and third-party licenses |
 | What's new | Open the update banner, scroll notes, choose Later or Install and restart. | `update.spec.ts` keyboard/controller and long-changelog scans |
 
-`routes.spec.ts` scans every production screen. `memory.spec.ts` measures navigation after warmup;
+`routes.spec.ts` enters and scans every production screen using both keyboard activation and typed controller actions. `memory.spec.ts` measures navigation after warmup;
 `library.perf.spec.ts` measures 5,000 items independently. Initial production scripts and modulepreloads
 must total at most 250,000 gzipped bytes, checked by `scripts/ci/bundle-size.mjs` in CI and local checks.
 Real-application navigation awaits INS-09's harness; the same scan helper is available to it.

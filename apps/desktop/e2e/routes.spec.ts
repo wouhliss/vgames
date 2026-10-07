@@ -1,7 +1,7 @@
 // INT-10: adding a production route requires an explicit accessible screen case.
 import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
-import { axeScan, open } from "./helpers";
+import { axeScan, emit, open } from "./helpers";
 
 const cases = [
   { route: "onboarding", preset: "fresh", heading: "Welcome to vgames" },
@@ -29,26 +29,35 @@ test("every production screen has an accessibility case", () => {
   );
 });
 
-for (const item of cases) {
-  test(`screen ${item.route} passes the shared axe scan`, async ({ page }) => {
-    await open(page, item.preset);
-    if (item.route === "package/:packageId") {
-      await page
-        .getByRole("navigation", { name: "Main" })
-        .getByRole("link", { name: "Browse" })
-        .click();
-      await expect(page.getByRole("heading", { level: 1, name: "Browse" })).toBeVisible();
-      await page.getByTestId("catalog-grid").getByRole("link").first().click();
-      await expect(page).toHaveURL(/\/package\//);
-    } else if (item.preset !== "fresh") {
-      await page
-        .getByRole("navigation", { name: "Main" })
-        .getByRole("link", { name: item.heading })
-        .click();
-    }
-    if (item.heading)
-      await expect(page.getByRole("heading", { level: 1, name: item.heading })).toBeVisible();
-    await expect(page.getByRole("status").filter({ hasText: "Loading" })).toHaveCount(0);
-    await axeScan(page);
-  });
+for (const mode of ["keyboard", "controller"] as const) {
+  for (const item of cases) {
+    test(`${mode}: screen ${item.route} passes the shared axe scan`, async ({ page }) => {
+      const activate = async () => {
+        if (mode === "keyboard") await page.keyboard.press("Enter");
+        else await emit(page, "ui-nav", { action: "accept", controller: "xinput", repeat: false });
+      };
+      await open(page, item.preset);
+      if (item.route === "package/:packageId") {
+        await page
+          .getByRole("navigation", { name: "Main" })
+          .getByRole("link", { name: "Browse" })
+          .focus();
+        await activate();
+        await expect(page.getByRole("heading", { level: 1, name: "Browse" })).toBeVisible();
+        await page.getByTestId("catalog-grid").getByRole("link").first().focus();
+        await activate();
+        await expect(page).toHaveURL(/\/package\//);
+      } else if (item.preset !== "fresh") {
+        await page
+          .getByRole("navigation", { name: "Main" })
+          .getByRole("link", { name: item.heading })
+          .focus();
+        await activate();
+      }
+      if (item.heading)
+        await expect(page.getByRole("heading", { level: 1, name: item.heading })).toBeVisible();
+      await expect(page.getByRole("status").filter({ hasText: "Loading" })).toHaveCount(0);
+      await axeScan(page);
+    });
+  }
 }
