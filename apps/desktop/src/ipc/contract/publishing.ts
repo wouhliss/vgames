@@ -79,17 +79,29 @@ export type VersionActionError =
 // ------------------------------------------------------------------------------------------------
 // The folder to publish
 
-/** Why a file can't be packed (02-package-format §2); any such file blocks publishing. */
+/** Why an entry can't be packed (02-package-format §2, `vgames-core` path rules); any one blocks publishing. */
 export type InvalidPathReason =
-  | "not_utf8"
-  | "too_long"
-  | "reserved_name"
-  | "case_collision"
   | "symlink"
   | "special_file"
-  | "unreadable";
+  | "not_utf8"
+  | "not_nfc"
+  /** Empty, absolute, `\\`, or an empty, `.` or `..` component. */
+  | "bad_structure"
+  | "too_long"
+  /** A control character or one of `< > : " | ? *`. */
+  | "forbidden_character"
+  | "trailing_dot_or_space"
+  /** A name Windows reserves (`CON`, `NUL`, `COM1`, …). */
+  | "reserved_name"
+  /** Inside the `.vgames` folder the launcher keeps for itself. */
+  | "reserved_folder"
+  | "unsafe_compatibility_form"
+  /** Differs from another path only by letter case (`other` names it). */
+  | "case_collision"
+  | "file_is_folder"
+  | "duplicate";
 
-export type InvalidPath = { path: string; reason: InvalidPathReason };
+export type InvalidPath = { path: string; reason: InvalidPathReason; other: string | null };
 
 export type PublishPlan = {
   folder: string;
