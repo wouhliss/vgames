@@ -53,6 +53,12 @@ export interface MockDb {
   };
   /** Published compat profiles per package id (all revisions). */
   compat: Record<string, Schemas["SignedCompatProfile"][]>;
+  /** Browser history tests inject pages and failures through the mock server. */
+  compatHistoryFixture?: {
+    pages: Record<string, Schemas["CompatProfilePage"]>;
+    cursors: (string | null)[];
+    forbidden?: boolean;
+  };
   allowlist: Schemas["AllowlistEntry"][];
   settings: Schemas["ServerSettings"];
   settingsEtag: number;
