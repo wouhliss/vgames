@@ -138,9 +138,9 @@ export function defaultPublishingState(): PublishingState {
       [PUBLISH_FOLDERS.ok]: plan(PUBLISH_FOLDERS.ok, 3.4 * 1024 * MIB),
       [PUBLISH_FOLDERS.invalid]: plan(PUBLISH_FOLDERS.invalid, 900 * MIB, {
         invalid_paths: [
-          { path: "data/CON.pak", reason: "reserved_name" },
-          { path: "data/Save.dat", reason: "case_collision" },
-          { path: "shortcut.lnk-target", reason: "symlink" },
+          { path: "data/CON.pak", reason: "reserved_name", other: null },
+          { path: "data/Save.dat", reason: "case_collision", other: "data/save.dat" },
+          { path: "shortcut.lnk-target", reason: "symlink", other: null },
         ],
         invalid_count: 3,
       }),
