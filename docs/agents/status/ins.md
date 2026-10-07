@@ -3,6 +3,7 @@
 Install & Library (phase 2, `docs/agents/phase-2/ins-install-library.md`).
 
 ## Done
+- INS-03 updater checkpoint: INT reviewed and adopted [#138](https://github.com/wouhliss/vgames/pull/138) in [#144](https://github.com/wouhliss/vgames/pull/144), merged at `6069524` with cancellation cleanup and in-flight claim coverage; all CI and three OS builds green.
 - INS-01 — Library screens on the generated library commands, pending UI entries and types deleted
   ([#113](https://github.com/wouhliss/vgames/pull/113), merged); release selection from PR #85 as
   `catalog/release.rs` (this PR; #85 closed as superseded). Evidence: a table test of every host against every set of
@@ -22,8 +23,6 @@ Install & Library (phase 2, `docs/agents/phase-2/ins-install-library.md`).
   INS-02, INS-03, INS-04 and INS-08 (the install chain); session_01AChegfo4ZUhpjL2LgRbUk3 (this PR's author) takes
   INS-05, INS-06 and INS-07; INS-09 and INS-10 go to whoever finishes first. Each keeps the other's lines here.
 - INS-05 — Accounts, API client and cross-server isolation (next, session_01AChegfo4ZUhpjL2LgRbUk3).
-- Ready for INT: [#138](https://github.com/wouhliss/vgames/pull/138) — `updater_install` pauses every download at a checkpoint first (INS-03;
-  security path `updater/**`, not self-merged).
 - INS-04 (session_016VNaVF…) — collections and favorites done ([#123](https://github.com/wouhliss/vgames/pull/123)); `installs_list` (this PR), then
   updates/repairs/resume with the F1 re-signed-envelope adoption, then move/uninstall/open-folder, update detection
   and `libraries-changed`.
