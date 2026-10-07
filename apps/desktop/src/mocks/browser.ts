@@ -37,6 +37,7 @@ function withInstalls(count: number, downloads = false): Partial<MockState> {
       blocked: null,
     },
     updateInstallMs: 4000,
+    publishTickMs: 400,
     socialDelayMs: 400,
     // Bea is installing a game Sam invited her to.
     invites: [
