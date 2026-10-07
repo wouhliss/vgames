@@ -55,7 +55,7 @@ Test names are `file::function` (Rust) or `file › test title` (Playwright, Vit
 | → impersonate a pinned server | 2a; `apps/desktop/src-tauri/src/servers/tests.rs::a_link_fingerprint_must_match_the_server` | Desktop |
 | **Compromised server** → get a launcher to run unsigned or tampered code | Invariants 1 and 2 | |
 | → read messages | 3a, 3b | |
-| → read tokens for other servers | Tokens are stored per server: 4c. **Missing:** a launcher test that a request to one server never carries another server's token (asked of Agent 2 in `docs/agents/status/agent-5.md`) | Desktop |
+| → read tokens for other servers | Tokens are stored per server: 4c; a request to one server never carries another server's token, after a refresh, a switch and a restart: `apps/desktop/src-tauri/src/servers/tests.rs::a_request_to_one_server_never_carries_another_servers_token` | Desktop |
 | **Malicious admin UI content** → execute script | 4a; raw HTML is a lint error: `biome.json` `noDangerouslySetInnerHtml`; `apps/desktop/src/components/SafeMarkdown.test.tsx › never interprets raw HTML`, `› does not make unsafe URLs clickable and never loads images`, `› validates schemes` | CI gates, CI TS |
 | → reach tokens | 4b, 4c | |
 | **Malicious website** (`vgames://` links) → launch anything not installed and verified | `apps/desktop/src-tauri/src/deeplink.rs::launch_links_take_only_a_canonical_package_id`, `::anything_outside_the_grammar_is_ignored`, `::parsing_never_panics` (property); launches go through `launch/orchestrate/tests.rs::install_state_and_placement_are_checked_first`, `::a_revoked_key_or_missing_trust_blocks_the_launch`, `::a_verified_install_launches_and_repeats_are_rate_limited` | Desktop |
@@ -89,5 +89,5 @@ Test names are `file::function` (Rust) or `file › test title` (Playwright, Vit
 
 ## Gaps being closed
 
-- A launcher request to one server never carrying another server's token (row "Compromised server → read tokens for
-  other servers"): asked of Agent 2.
+None open.
+

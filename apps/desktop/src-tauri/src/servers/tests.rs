@@ -101,23 +101,7 @@ impl Harness {
     }
 
     async fn serve_identity(&self, root: &SecretKey) {
-        let key = root.public_key();
-        Mock::given(method("GET"))
-            .and(path("/.well-known/vgames.json"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "format": "vgames.server/1",
-                "server_id": SERVER_ID,
-                "name": "Friends",
-                "motd": "Welcome",
-                "api_versions": ["v1"],
-                "root_public_key": key.to_base64(),
-                "root_key_fingerprint": key.fingerprint().to_string(),
-                "registration_mode": "allowlist",
-                "features": ["social"],
-                "min_launcher_version": "0.1.0"
-            })))
-            .mount(&self.mock)
-            .await;
+        serve_identity_at(&self.mock, root, SERVER_ID).await;
     }
 
     async fn serve_bundle(&self, body: Value) {
@@ -142,15 +126,40 @@ impl Harness {
     }
 }
 
+/// Serves `/.well-known/vgames.json` for the server `id` with `root` on `mock`.
+async fn serve_identity_at(mock: &MockServer, root: &SecretKey, id: &str) {
+    let key = root.public_key();
+    Mock::given(method("GET"))
+        .and(path("/.well-known/vgames.json"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "format": "vgames.server/1",
+            "server_id": id,
+            "name": "Friends",
+            "motd": "Welcome",
+            "api_versions": ["v1"],
+            "root_public_key": key.to_base64(),
+            "root_key_fingerprint": key.fingerprint().to_string(),
+            "registration_mode": "allowlist",
+            "features": ["social"],
+            "min_launcher_version": "0.1.0"
+        })))
+        .mount(mock)
+        .await;
+}
+
 /// A signed `vgames.trust/1` bundle as served by `GET /v1/trust/bundle`.
 fn bundle(signer: &SecretKey, version: u64, next_root: Option<&SecretKey>) -> Value {
+    bundle_for(signer, version, next_root, SERVER_ID)
+}
+
+fn bundle_for(signer: &SecretKey, version: u64, next_root: Option<&SecretKey>, id: &str) -> Value {
     let next_root = next_root.map(|k| {
         let key = k.public_key();
         json!({ "public_key": key.to_base64(), "key_id": key.key_id().to_hex() })
     });
     let bytes = serde_json::to_vec(&json!({
         "format": "vgames.trust/1",
-        "server_id": SERVER_ID,
+        "server_id": id,
         "version": version,
         "issued_at": "2026-09-24T10:00:00Z",
         "expires_at": null,
@@ -411,55 +420,75 @@ async fn an_announced_next_root_completes_a_rotation() {
 
 /// Signs in through the deep-link path with tokens `vga_1` / `vgr_1`.
 async fn sign_in(h: &mut Harness) -> Account {
+    sign_in_at(
+        &h.servers,
+        &mut h.events,
+        &h.browser,
+        &h.mock,
+        server_id(),
+        ("vga_1", "vgr_1"),
+    )
+    .await
+}
+
+/// Signs in to the server `id` served by `mock`, which answers with `tokens` (access, refresh).
+async fn sign_in_at(
+    servers: &Servers,
+    events: &mut broadcast::Receiver<AppEvent>,
+    browser: &RecordingBrowser,
+    mock: &MockServer,
+    id: Uuid,
+    (access, refresh): (&str, &str),
+) -> Account {
     Mock::given(method("POST"))
         .and(path("/v1/auth/discord/start"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "authorize_url": "https://discord.example/oauth2/authorize?state=s",
             "expires_at": "2099-01-01T00:00:00Z"
         })))
-        .mount(&h.mock)
+        .mount(mock)
         .await;
     Mock::given(method("POST"))
         .and(path("/v1/auth/token"))
         .and(body_partial_json(
             json!({"grant_type": "authorization_code", "code": "login-code"}),
         ))
-        .respond_with(ResponseTemplate::new(200).set_body_json(token_response("vga_1", "vgr_1")))
-        .mount(&h.mock)
+        .respond_with(ResponseTemplate::new(200).set_body_json(token_response(access, refresh)))
+        .mount(mock)
         .await;
 
-    let flow = h.servers.auth_start(server_id()).await.unwrap();
+    let flow = servers.auth_start(id).await.unwrap();
     assert!(flow.browser_opened);
     assert_eq!(
-        h.browser.opened.lock().unwrap()[0].as_str(),
+        browser.opened.lock().unwrap().last().unwrap().as_str(),
         "https://discord.example/oauth2/authorize?state=s"
     );
-    let start = body_json(&requests_to(&h.mock, "/v1/auth/discord/start").await[0]);
+    let start = body_json(&requests_to(mock, "/v1/auth/discord/start").await[0]);
     assert_eq!(start["client"], "desktop");
     assert_eq!(start["device_name"], "test-pc");
     let client_state = start["client_state"].as_str().unwrap().to_owned();
 
     // A callback for an unknown flow does nothing.
-    h.servers.auth_callback("login-code", "someone-else").await;
-    assert!(requests_to(&h.mock, "/v1/auth/token").await.is_empty());
+    servers.auth_callback("login-code", "someone-else").await;
+    assert!(requests_to(mock, "/v1/auth/token").await.is_empty());
 
-    h.servers.auth_callback("login-code", &client_state).await;
-    let exchange = body_json(&requests_to(&h.mock, "/v1/auth/token").await[0]);
+    servers.auth_callback("login-code", &client_state).await;
+    let exchange = body_json(&requests_to(mock, "/v1/auth/token").await[0]);
     let verifier = exchange["code_verifier"].as_str().unwrap();
     assert_eq!(pkce_challenge(verifier), start["code_challenge"]);
-    let account = h
-        .events()
-        .into_iter()
-        .find_map(|e| match e {
-            AppEvent::AuthFinished(AuthFinished {
-                flow_id,
-                outcome: AuthOutcome::SignedIn { account },
-            }) if flow_id == flow.flow_id => Some(account),
-            _ => None,
-        })
-        .expect("signed in");
-    h.mock.reset().await;
-    account
+    let mut account = None;
+    while let Ok(event) = events.try_recv() {
+        if let AppEvent::AuthFinished(AuthFinished {
+            flow_id,
+            outcome: AuthOutcome::SignedIn { account: signed_in },
+        }) = event
+            && flow_id == flow.flow_id
+        {
+            account = Some(signed_in);
+        }
+    }
+    mock.reset().await;
+    account.expect("signed in")
 }
 
 #[tokio::test]
@@ -975,4 +1004,175 @@ async fn revoking_an_unknown_session_is_not_found_and_keeps_the_account() {
         AppError::NotFound
     );
     assert_eq!(h.vault.len(), 1);
+}
+
+// ------------------------------------------------------------------------------------------------
+// INS-05: tokens never cross servers (docs/security/test-matrix.md, "Compromised server → read
+// tokens for other servers").
+
+const OTHER_ID: &str = "01920000-0000-7000-8000-000000000002";
+
+/// Answers `GET /v1/me` with 401 once for `stale`, then 200 for `fresh`, and rotates the
+/// refresh token `refresh` to (`fresh`, `next_refresh`).
+async fn serve_me_with_one_refresh(
+    mock: &MockServer,
+    (stale, fresh): (&str, &str),
+    (refresh, next_refresh): (&str, &str),
+) {
+    Mock::given(method("GET"))
+        .and(path("/v1/me"))
+        .and(header("authorization", format!("Bearer {stale}").as_str()))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"ok": stale})))
+        .mount(mock)
+        .await;
+    // Higher priority than the 200 above: the stale token is refused once.
+    Mock::given(method("GET"))
+        .and(path("/v1/me"))
+        .and(header("authorization", format!("Bearer {stale}").as_str()))
+        .respond_with(ResponseTemplate::new(401).set_body_json(json!({"code": "session_expired"})))
+        .up_to_n_times(1)
+        .with_priority(1)
+        .mount(mock)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/auth/token"))
+        .and(body_partial_json(
+            json!({"grant_type": "refresh_token", "refresh_token": refresh}),
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(token_response(fresh, next_refresh)))
+        .expect(1)
+        .mount(mock)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/me"))
+        .and(header("authorization", format!("Bearer {fresh}").as_str()))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"ok": fresh})))
+        .mount(mock)
+        .await;
+}
+
+/// Every token-looking string in what `mock` received: bearer headers and token fields of
+/// JSON bodies.
+async fn tokens_received(mock: &MockServer) -> Vec<String> {
+    let mut tokens = Vec::new();
+    for request in mock.received_requests().await.unwrap() {
+        for (name, value) in &request.headers {
+            if name.as_str().eq_ignore_ascii_case("authorization") {
+                tokens.push(value.to_str().unwrap().to_owned());
+            }
+        }
+        if let Ok(body) = serde_json::from_slice::<Value>(&request.body) {
+            for field in ["refresh_token", "access_token", "token"] {
+                if let Some(token) = body[field].as_str() {
+                    tokens.push(token.to_owned());
+                }
+            }
+        }
+    }
+    tokens
+}
+
+#[tokio::test]
+async fn a_request_to_one_server_never_carries_another_servers_token() {
+    // Two servers, both signed in, with their own tokens.
+    let mut h = Harness::new().await;
+    h.add(&key(1)).await;
+    sign_in(&mut h).await;
+    let other = MockServer::start().await;
+    let other_id = Uuid::parse_str(OTHER_ID).unwrap();
+    serve_identity_at(&other, &key(2), OTHER_ID).await;
+    Mock::given(method("GET"))
+        .and(path("/v1/trust/bundle"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(bundle_for(
+            &key(2),
+            1,
+            None,
+            OTHER_ID,
+        )))
+        .mount(&other)
+        .await;
+    let preview = h.servers.preview(&other.uri(), None).await.unwrap();
+    h.servers.confirm(preview.preview_id).await.unwrap();
+    sign_in_at(
+        &h.servers,
+        &mut h.events,
+        &h.browser,
+        &other,
+        other_id,
+        ("vgb_1", "vgrb_1"),
+    )
+    .await;
+    assert_eq!(h.vault.len(), 2);
+
+    // Each server refuses its first access token once, so each refreshes; the switches
+    // (and the reconnect a switch triggers) happen in between.
+    h.serve_identity(&key(1)).await;
+    h.serve_bundle(bundle(&key(1), 1, None)).await;
+    serve_me_with_one_refresh(&h.mock, ("vga_1", "vga_2"), ("vgr_1", "vgr_2")).await;
+    serve_identity_at(&other, &key(2), OTHER_ID).await;
+    Mock::given(method("GET"))
+        .and(path("/v1/trust/bundle"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(bundle_for(
+            &key(2),
+            1,
+            None,
+            OTHER_ID,
+        )))
+        .mount(&other)
+        .await;
+    serve_me_with_one_refresh(&other, ("vgb_1", "vgb_2"), ("vgrb_1", "vgrb_2")).await;
+
+    let me = |id| {
+        let servers = &h.servers;
+        async move {
+            let api = servers.api(id).await.unwrap();
+            api.authed::<(), Value>(Method::GET, "v1/me", None)
+                .await
+                .unwrap()
+        }
+    };
+    assert_eq!(me(server_id()).await, json!({"ok": "vga_2"}));
+    h.servers.switch(other_id).await.unwrap();
+    h.servers.connect(other_id).await.unwrap();
+    assert_eq!(me(other_id).await, json!({"ok": "vgb_2"}));
+    assert_eq!(me(server_id()).await, json!({"ok": "vga_2"}));
+    h.servers.switch(server_id()).await.unwrap();
+    h.servers.connect(server_id()).await.unwrap();
+    assert_eq!(me(server_id()).await, json!({"ok": "vga_2"}));
+    assert_eq!(me(other_id).await, json!({"ok": "vgb_2"}));
+
+    // After a restart the sessions come back from the vault, each under its own server.
+    let mut h = h.restart();
+    h.events();
+    let me = |id| {
+        let servers = &h.servers;
+        async move {
+            let api = servers.api(id).await.unwrap();
+            api.authed::<(), Value>(Method::GET, "v1/me", None)
+                .await
+                .unwrap()
+        }
+    };
+    assert_eq!(me(other_id).await, json!({"ok": "vgb_2"}));
+    assert_eq!(me(server_id()).await, json!({"ok": "vga_2"}));
+
+    let ours = tokens_received(&h.mock).await;
+    let theirs = tokens_received(&other).await;
+    assert!(
+        ours.iter().any(|t| t.contains("vgr_1")) && theirs.iter().any(|t| t.contains("vgrb_1"))
+    );
+    for token in &ours {
+        assert!(
+            token.contains("vga_") || token.contains("vgr_"),
+            "{token} reached the first server"
+        );
+    }
+    for token in &theirs {
+        assert!(
+            token.contains("vgb_") || token.contains("vgrb_"),
+            "{token} reached the second server"
+        );
+    }
+    h.mock.verify().await;
+    other.verify().await;
 }
