@@ -1,0 +1,54 @@
+# INS-07 (Q13): the once-intermittent download test, 200 consecutive iterations in debug and in
+# release on ubuntu-24.04 (run link recorded in docs/agents/status/ins.md). Runs when the transfer
+# engine changes, and on demand. Owner: INS.
+
+name: Transfer loop
+
+on:
+  pull_request:
+    paths:
+      - "crates/vgames-transfer/**"
+      - "scripts/ci/transfer-loop.sh"
+      - ".github/workflows/transfer-loop.yml"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: transfer-loop-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  loop:
+    name: Download retry test x200 (${{ matrix.profile }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [debug, release]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install toolchain (rust-toolchain.toml)
+        run: rustup toolchain install && rustup show active-toolchain
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: transfer-loop-${{ matrix.profile }}
+          save-if: false
+      - name: 200 consecutive iterations
+        env:
+          PROFILE: ${{ matrix.profile }}
+        run: |
+          if [ "$PROFILE" = release ]; then
+            scripts/ci/transfer-loop.sh 200 --release
+          else
+            scripts/ci/transfer-loop.sh 200
+          fi
