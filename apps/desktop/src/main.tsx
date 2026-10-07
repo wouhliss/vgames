@@ -1,3 +1,4 @@
+import "./budget-proof";
 // Desktop UI entry. Owner: Agent 3. The UI only talks to the Rust core through the typed IPC layer
 // in src/ipc (generated tauri-specta bindings, produced by Agent 2).
 import "./styles/global.css";
