@@ -187,3 +187,5 @@ INS asks for the G1 re-review of the install chain (checklist items 1.1, 1.2 and
 ## Security review (INT-06 updater packaged version)
 - Status and What's new now use Tauri's packaged version, matching the updater plugin. A lower config version previously checked for the new artifact but filtered its notes against Cargo's unchanged version. No transport, signature, key, capability or install guard changes; `requireSignedVersion` and artifact verification remain mandatory. The regression uses package version 0.0.1 against workspace version 0.1.0.
 
+
+- INT-06 packaged-version preparation retains the merged checkpoint guard and in-flight queue serialization. All 24 updater tests pass, including cancellation/shutdown/missing-update exits and the lower packaged-version regression; full local and hosted validation follow on the eventual current base.
