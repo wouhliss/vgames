@@ -3,11 +3,14 @@
 //! launcher re-checks every target path, defense in depth against links
 //! planted in the install directory).
 
-use std::collections::HashSet;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::Arc;
+
+use cap_fs_ext::{DirExt, FollowSymlinks, OpenOptionsFollowExt};
+use cap_std::ambient_authority;
+use cap_std::fs::Dir;
 
 /// Why a target path was refused.
 #[derive(Debug, thiserror::Error)]
@@ -164,26 +167,51 @@ pub fn read_exact_at(file: &File, buf: &mut [u8], offset: u64) -> io::Result<()>
     }
 }
 
-/// An install directory. Manifest paths (already validated by
-/// `vgames_core::paths`) are joined component by component under a canonical
-/// root; every directory on the way is created or checked without following
-/// links, and existing targets must be regular files.
+/// An install directory, held open as a directory handle. Manifest paths (already validated by
+/// `vgames_core::paths`) are resolved component by component *relative to that handle*, opening
+/// each directory without following links (`openat` + `O_NOFOLLOW` on Unix, handle-relative
+/// opens that refuse reparse points on Windows, through `cap-std`). A directory swapped for a
+/// link or junction after a check therefore cannot redirect a write outside the install: the
+/// next open through the handle refuses it (INS-07, Q12).
+///
+/// Use [`Self::open_file`] (or a [`Target`]) for every read and write of install content. The
+/// path-returning methods ([`Self::file_target`], [`Self::existing_file`], [`Self::ensure_dir`])
+/// check the same way but hand back a path, which the caller must not reopen for writing.
 #[derive(Debug)]
 pub struct SafeRoot {
     root: PathBuf,
-    /// Directories already checked or created (relative, `/`-separated).
-    known_dirs: Mutex<HashSet<String>>,
+    dir: Dir,
+}
+
+/// How [`SafeRoot::open_file`] opens a file. Never follows a final link either.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Access {
+    /// An existing file, read only.
+    Read,
+    /// An existing file, for positional writes.
+    Write,
+    /// Created (with missing parent folders) if absent, never truncated.
+    CreateWrite,
+}
+
+fn classify(dir: &Dir, name: &str, path: &Path, error: io::Error) -> SafePathError {
+    match dir.symlink_metadata(name) {
+        Ok(meta) if meta.file_type().is_symlink() => SafePathError::Link(path.to_owned()),
+        // A junction or other reparse point reads as neither a plain folder nor a file.
+        Ok(meta) if !meta.is_dir() && !meta.is_file() => SafePathError::Link(path.to_owned()),
+        _ => SafePathError::io(path, error),
+    }
 }
 
 impl SafeRoot {
-    /// Creates `root` (and missing parents) and canonicalizes it. On Windows the
-    /// canonical form is an extended-length `\\?\` path.
+    /// Creates `root` (and missing parents) and opens it. On Windows the canonical form is an
+    /// extended-length `\\?\` path.
     pub fn create(root: &Path) -> Result<Self, SafePathError> {
         fs::create_dir_all(root).map_err(|e| SafePathError::io(root, e))?;
         Self::open(root)
     }
 
-    /// Opens an existing root.
+    /// Opens an existing root (refusing a link or a non-folder).
     pub fn open(root: &Path) -> Result<Self, SafePathError> {
         let meta = fs::symlink_metadata(root).map_err(|e| SafePathError::io(root, e))?;
         if meta.file_type().is_symlink() {
@@ -193,17 +221,22 @@ impl SafeRoot {
             return Err(SafePathError::NotADirectory(root.to_owned()));
         }
         let root = fs::canonicalize(root).map_err(|e| SafePathError::io(root, e))?;
-        Ok(Self {
-            root,
-            known_dirs: Mutex::new(HashSet::new()),
-        })
+        let dir = match (root.parent(), root.file_name()) {
+            // Open the root itself through its parent without following a link, so the handle
+            // is the folder that was checked.
+            (Some(parent), Some(name)) => Dir::open_ambient_dir(parent, ambient_authority())
+                .and_then(|parent| parent.open_dir_nofollow(name)),
+            _ => Dir::open_ambient_dir(&root, ambient_authority()),
+        }
+        .map_err(|e| SafePathError::io(&root, e))?;
+        Ok(Self { root, dir })
     }
 
     pub fn root(&self) -> &Path {
         &self.root
     }
 
-    /// Absolute path of a manifest path (no filesystem access).
+    /// Absolute path of a manifest path (no filesystem access; for messages and logs).
     pub fn path_of(&self, rel: &str) -> PathBuf {
         let mut path = self.root.clone();
         for part in rel.split('/') {
@@ -212,118 +245,190 @@ impl SafeRoot {
         path
     }
 
-    /// Creates the directory `rel` and its parents, refusing links and
-    /// non-directories on the way. Returns its absolute path.
-    pub fn ensure_dir(&self, rel: &str) -> Result<PathBuf, SafePathError> {
+    /// The folder `rel` (`""` = the root) as a handle, each component opened without following
+    /// links. Missing folders are created when `create`, else `None`.
+    fn walk(&self, rel: &str, create: bool) -> Result<Option<Dir>, SafePathError> {
+        let mut dir = self
+            .dir
+            .try_clone()
+            .map_err(|e| SafePathError::io(&self.root, e))?;
+        if rel.is_empty() {
+            return Ok(Some(dir));
+        }
         let mut path = self.root.clone();
-        let mut prefix = String::new();
         for part in rel.split('/') {
             path.push(part);
-            if !prefix.is_empty() {
-                prefix.push('/');
-            }
-            prefix.push_str(part);
-            if self.is_known(&prefix) {
-                continue;
-            }
-            match fs::symlink_metadata(&path) {
-                Ok(meta) if meta.file_type().is_symlink() => {
-                    return Err(SafePathError::Link(path));
-                }
-                Ok(meta) if meta.is_dir() => {}
-                Ok(_) => return Err(SafePathError::NotADirectory(path)),
+            let next = match dir.open_dir_nofollow(part) {
+                Ok(next) => next,
                 Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                    match fs::create_dir(&path) {
+                    if !create {
+                        return Ok(None);
+                    }
+                    match dir.create_dir(part) {
                         Ok(()) => {}
-                        // Created concurrently: re-check what it is.
-                        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
-                            let meta = fs::symlink_metadata(&path)
-                                .map_err(|e| SafePathError::io(&path, e))?;
-                            if !meta.is_dir() || meta.file_type().is_symlink() {
-                                return Err(SafePathError::NotADirectory(path));
-                            }
-                        }
+                        // Created concurrently: opening it below re-checks what it is.
+                        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
                         Err(e) => return Err(SafePathError::io(&path, e)),
                     }
+                    dir.open_dir_nofollow(part)
+                        .map_err(|e| classify(&dir, part, &path, e))?
                 }
-                Err(e) => return Err(SafePathError::io(&path, e)),
-            }
-            self.remember(prefix.clone());
+                Err(e) => {
+                    return Err(match dir.symlink_metadata(part) {
+                        Ok(meta) if meta.is_file() => SafePathError::NotADirectory(path),
+                        _ => classify(&dir, part, &path, e),
+                    });
+                }
+            };
+            dir = next;
         }
-        Ok(path)
+        Ok(Some(dir))
     }
 
-    /// Prepares the target of file `rel`: parent directories exist (checked as
-    /// in [`Self::ensure_dir`]) and the file itself, if present, is a regular
-    /// file. The canonical parent must still be inside the root.
-    pub fn file_target(&self, rel: &str) -> Result<PathBuf, SafePathError> {
-        let (parent, name) = match rel.rsplit_once('/') {
-            Some((parent, name)) => (Some(parent), name),
-            None => (None, rel),
-        };
-        let dir = match parent {
-            Some(parent) => self.ensure_dir(parent)?,
-            None => self.root.clone(),
-        };
-        let path = dir.join(name);
-        match fs::symlink_metadata(&path) {
+    /// Opens file `rel` relative to the root handle: every folder on the way is opened without
+    /// following links, and so is the file itself, which must be a regular file. With
+    /// [`Access::CreateWrite`] missing folders and the file are created; otherwise a missing
+    /// component is `NotFound`.
+    pub fn open_file(&self, rel: &str, access: Access) -> Result<File, SafePathError> {
+        let (parent, name) = rel.rsplit_once('/').unwrap_or(("", rel));
+        let path = self.path_of(rel);
+        let create = access == Access::CreateWrite;
+        let dir = self
+            .walk(parent, create)?
+            .ok_or_else(|| SafePathError::io(&path, io::Error::from(io::ErrorKind::NotFound)))?;
+        // Not a FIFO or device: opening one could block or reach outside the file system.
+        match dir.symlink_metadata(name) {
             Ok(meta) if meta.file_type().is_symlink() => return Err(SafePathError::Link(path)),
             Ok(meta) if !meta.is_file() => return Err(SafePathError::NotAFile(path)),
             Ok(_) => {}
-            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+            Err(e) if e.kind() == io::ErrorKind::NotFound && create => {}
             Err(e) => return Err(SafePathError::io(&path, e)),
         }
-        if parent.is_some() {
-            let canonical = fs::canonicalize(&dir).map_err(|e| SafePathError::io(&dir, e))?;
-            if !canonical.starts_with(&self.root) {
-                return Err(SafePathError::Escapes(path));
-            }
+        let mut options = cap_std::fs::OpenOptions::new();
+        match access {
+            Access::Read => options.read(true),
+            Access::Write => options.write(true),
+            Access::CreateWrite => options.write(true).create(true).truncate(false),
+        };
+        options.follow(FollowSymlinks::No);
+        let file = dir
+            .open_with(name, &options)
+            .map_err(|e| classify(&dir, name, &path, e))?;
+        let meta = file.metadata().map_err(|e| SafePathError::io(&path, e))?;
+        if !meta.is_file() {
+            return Err(SafePathError::NotAFile(path));
         }
-        Ok(path)
+        Ok(file.into_std())
     }
 
-    /// Finds an existing regular manifest file without creating missing
-    /// directories. A missing component means the file needs repair.
+    /// Deletes file `rel` if present (a link there is removed itself, never followed). Folders
+    /// on the way are opened as in [`Self::open_file`]. Returns whether something was deleted.
+    pub fn remove_file(&self, rel: &str) -> Result<bool, SafePathError> {
+        let (parent, name) = rel.rsplit_once('/').unwrap_or(("", rel));
+        let path = self.path_of(rel);
+        let Some(dir) = self.walk(parent, false)? else {
+            return Ok(false);
+        };
+        match dir.remove_file_or_symlink(name) {
+            Ok(()) => Ok(true),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(false),
+            Err(e) => Err(SafePathError::io(&path, e)),
+        }
+    }
+
+    /// Creates the directory `rel` and its parents, refusing links and non-directories on the
+    /// way. Returns its absolute path.
+    pub fn ensure_dir(&self, rel: &str) -> Result<PathBuf, SafePathError> {
+        self.walk(rel, true)?;
+        Ok(self.path_of(rel))
+    }
+
+    /// Prepares the target of file `rel`: parent directories exist (created as in
+    /// [`Self::ensure_dir`]) and the file itself, if present, is a regular file. Prefer
+    /// [`Self::open_file`]: a path checked here can be swapped before it is reopened.
+    pub fn file_target(&self, rel: &str) -> Result<PathBuf, SafePathError> {
+        let (parent, name) = rel.rsplit_once('/').unwrap_or(("", rel));
+        let path = self.path_of(rel);
+        let dir = self
+            .walk(parent, true)?
+            .ok_or_else(|| SafePathError::io(&path, io::Error::from(io::ErrorKind::NotFound)))?;
+        match dir.symlink_metadata(name) {
+            Ok(meta) if meta.file_type().is_symlink() => Err(SafePathError::Link(path)),
+            Ok(meta) if !meta.is_file() => Err(SafePathError::NotAFile(path)),
+            Ok(_) => Ok(path),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(path),
+            Err(e) => Err(SafePathError::io(&path, e)),
+        }
+    }
+
+    /// Finds an existing regular manifest file without creating missing directories. A missing
+    /// component means the file needs repair. Prefer [`Self::open_file`] with [`Access::Read`].
     pub fn existing_file(&self, rel: &str) -> Result<Option<PathBuf>, SafePathError> {
-        let mut path = self.root.clone();
-        let mut parts = rel.split('/').peekable();
-        while let Some(part) = parts.next() {
-            path.push(part);
-            let meta = match fs::symlink_metadata(&path) {
-                Ok(meta) => meta,
-                Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
-                Err(error) => return Err(SafePathError::io(&path, error)),
-            };
-            if meta.file_type().is_symlink() {
-                return Err(SafePathError::Link(path));
-            }
-            if parts.peek().is_some() {
-                if !meta.is_dir() {
-                    return Err(SafePathError::NotADirectory(path));
-                }
-                let canonical =
-                    fs::canonicalize(&path).map_err(|error| SafePathError::io(&path, error))?;
-                if !canonical.starts_with(&self.root) {
-                    return Err(SafePathError::Escapes(path));
-                }
-            } else if !meta.is_file() {
-                return Err(SafePathError::NotAFile(path));
-            }
+        let (parent, name) = rel.rsplit_once('/').unwrap_or(("", rel));
+        let path = self.path_of(rel);
+        let Some(dir) = self.walk(parent, false)? else {
+            return Ok(None);
+        };
+        match dir.symlink_metadata(name) {
+            Ok(meta) if meta.file_type().is_symlink() => Err(SafePathError::Link(path)),
+            Ok(meta) if !meta.is_file() => Err(SafePathError::NotAFile(path)),
+            Ok(_) => Ok(Some(path)),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(SafePathError::io(&path, e)),
         }
-        Ok(Some(path))
+    }
+}
+
+/// Where one manifest file's bytes go: a file under a [`SafeRoot`], opened through the root's
+/// handle every time (never by path).
+#[derive(Debug, Clone)]
+pub struct Target {
+    root: Option<Arc<SafeRoot>>,
+    rel: String,
+}
+
+impl Target {
+    pub fn new(root: Arc<SafeRoot>, rel: impl Into<String>) -> Self {
+        Self {
+            root: Some(root),
+            rel: rel.into(),
+        }
     }
 
-    fn is_known(&self, rel: &str) -> bool {
-        self.known_dirs
-            .lock()
-            .map(|set| set.contains(rel))
-            .unwrap_or(false)
+    /// A device such as `/dev/full`, opened by path: fault injection in tests only.
+    #[cfg(feature = "testkit")]
+    pub fn device_for_tests(path: impl Into<String>) -> Self {
+        Self {
+            root: None,
+            rel: path.into(),
+        }
     }
 
-    fn remember(&self, rel: String) {
-        if let Ok(mut set) = self.known_dirs.lock() {
-            set.insert(rel);
+    /// The file, for positional writes.
+    pub fn open_write(&self) -> io::Result<File> {
+        match &self.root {
+            Some(root) => root.open_file(&self.rel, Access::Write).map_err(into_io),
+            None => open_for_write(Path::new(&self.rel)),
         }
+    }
+
+    /// For messages and logs only.
+    pub fn display_path(&self) -> PathBuf {
+        match &self.root {
+            Some(root) => root.path_of(&self.rel),
+            None => PathBuf::from(&self.rel),
+        }
+    }
+
+    pub fn rel(&self) -> &str {
+        &self.rel
+    }
+}
+
+fn into_io(error: SafePathError) -> io::Error {
+    match error {
+        SafePathError::Io { source, .. } => source,
+        other => io::Error::new(io::ErrorKind::PermissionDenied, other.to_string()),
     }
 }
 
@@ -419,6 +524,131 @@ mod tests {
         // Opening a symlinked file for writing fails too.
         fs::write(outside.join("x"), b"").unwrap();
         assert!(open_for_write(&root_path.join("Data/x")).is_err());
+    }
+
+    /// Points `link` at the folder `target`: a symbolic link on Unix, a junction on Windows (no
+    /// privilege needed, and the reparse point an attacker would plant).
+    fn link_dir(target: &Path, link: &Path) {
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(target, link).unwrap();
+        #[cfg(windows)]
+        {
+            let status = std::process::Command::new("cmd")
+                .arg("/C")
+                .arg("mklink")
+                .arg("/J")
+                .arg(link)
+                .arg(target)
+                .status()
+                .unwrap();
+            assert!(status.success(), "mklink /J failed");
+        }
+    }
+
+    /// INS-07 (Q12): a folder checked (and even opened for a file) is swapped for a link to a
+    /// folder outside the install; no later open, create, write or delete reaches outside.
+    #[test]
+    fn a_folder_swapped_for_a_link_after_the_check_never_lets_a_write_out() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = dir.path().join("outside");
+        fs::create_dir_all(outside.join("b")).unwrap();
+        fs::write(outside.join("b/f.bin"), b"outside").unwrap();
+        let root_path = dir.path().join("game");
+        fs::create_dir(&root_path).unwrap();
+        let root = Arc::new(SafeRoot::open(&root_path).unwrap());
+
+        // Checked and prepared the normal way: folders created, the file allocated.
+        root.open_file("a/b/f.bin", Access::CreateWrite).unwrap();
+        assert!(root.file_target("a/b/g.bin").is_ok());
+        let target = Target::new(Arc::clone(&root), "a/b/f.bin");
+
+        // Between the checks and the writes: `a` becomes a link to `outside`.
+        fs::rename(root_path.join("a"), root_path.join("a-moved")).unwrap();
+        link_dir(&outside, &root_path.join("a"));
+
+        assert!(target.open_write().is_err(), "a write through the link");
+        for access in [Access::Read, Access::Write, Access::CreateWrite] {
+            assert!(
+                matches!(
+                    root.open_file("a/b/f.bin", access),
+                    Err(SafePathError::Link(_))
+                ),
+                "{access:?}"
+            );
+        }
+        assert!(matches!(
+            root.open_file("a/b/new.bin", Access::CreateWrite),
+            Err(SafePathError::Link(_))
+        ));
+        assert!(matches!(
+            root.ensure_dir("a/b/c"),
+            Err(SafePathError::Link(_))
+        ));
+        assert!(matches!(
+            root.file_target("a/b/g.bin"),
+            Err(SafePathError::Link(_))
+        ));
+        assert!(matches!(
+            root.remove_file("a/b/f.bin"),
+            Err(SafePathError::Link(_))
+        ));
+        assert!(matches!(
+            root.existing_file("a/b/f.bin"),
+            Err(SafePathError::Link(_))
+        ));
+
+        // Nothing outside changed or appeared.
+        assert_eq!(fs::read(outside.join("b/f.bin")).unwrap(), b"outside");
+        let mut names: Vec<_> = fs::read_dir(outside.join("b"))
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        names.sort();
+        assert_eq!(names, ["f.bin"]);
+        assert!(!outside.join("b/c").exists());
+    }
+
+    /// The same swap one level down, after the parent folder was already walked: each open
+    /// re-resolves from the root handle, so the deeper link is refused too.
+    #[test]
+    fn a_deeper_folder_swapped_for_a_link_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = dir.path().join("outside");
+        fs::create_dir(&outside).unwrap();
+        let root_path = dir.path().join("game");
+        fs::create_dir(&root_path).unwrap();
+        let root = SafeRoot::open(&root_path).unwrap();
+        root.open_file("a/b/f.bin", Access::CreateWrite).unwrap();
+        fs::rename(root_path.join("a/b"), root_path.join("a/b-moved")).unwrap();
+        link_dir(&outside, &root_path.join("a/b"));
+        assert!(matches!(
+            root.open_file("a/b/f.bin", Access::CreateWrite),
+            Err(SafePathError::Link(_))
+        ));
+        assert_eq!(fs::read_dir(&outside).unwrap().count(), 0);
+    }
+
+    /// A handle opened before the swap keeps writing to the file it opened (inside the install),
+    /// never to whatever the path names now.
+    #[test]
+    fn an_open_handle_keeps_writing_inside_the_install() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = dir.path().join("outside");
+        fs::create_dir_all(outside.join("b")).unwrap();
+        fs::write(outside.join("b/f.bin"), b"outside").unwrap();
+        let root_path = dir.path().join("game");
+        fs::create_dir(&root_path).unwrap();
+        let root = SafeRoot::open(&root_path).unwrap();
+        let handle = root.open_file("a/b/f.bin", Access::CreateWrite).unwrap();
+        fs::rename(root_path.join("a"), root_path.join("a-moved")).unwrap();
+        link_dir(&outside, &root_path.join("a"));
+        write_all_at(&handle, b"inside", 0).unwrap();
+        handle.sync_all().unwrap();
+        assert_eq!(
+            fs::read(root_path.join("a-moved/b/f.bin")).unwrap(),
+            b"inside"
+        );
+        assert_eq!(fs::read(outside.join("b/f.bin")).unwrap(), b"outside");
     }
 
     #[test]

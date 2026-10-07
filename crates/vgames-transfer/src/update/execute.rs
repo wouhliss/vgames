@@ -1,9 +1,9 @@
 //! Safe-mode update transfer: reuse verified old chunks, fetch only remaining
 //! changed-file chunks into staging, then commit the staged release.
 
-use std::fs::{self, OpenOptions};
+use std::fs;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use super::commit;
@@ -13,7 +13,7 @@ use crate::download::table::ChunkTable;
 use crate::download::{
     self, DownloadControl, DownloadOptions, DownloadSpec, PackUrlSource, Phase, RunOutcome,
 };
-use crate::fsutil::{self, SafeRoot};
+use crate::fsutil::{self, Access, SafeRoot, Target};
 use crate::install::{
     self, InstallError, InstallOutcome, InstallReport, InstallState, META_DIR, Release,
     SPACE_MARGIN, read_record,
@@ -136,7 +136,7 @@ async fn run_safe<A: PackUrlSource>(
 
 struct Prepared {
     table: Arc<ChunkTable>,
-    targets: Arc<Vec<Option<PathBuf>>>,
+    targets: Arc<Vec<Option<Target>>>,
     journal: Journal,
     wanted: Bitset,
 }
@@ -180,8 +180,8 @@ fn prepare(
             limit,
         });
     }
-    let stage_dir = safe.ensure_dir(STAGING)?;
-    let stage = SafeRoot::open(&stage_dir)?;
+    safe.ensure_dir(STAGING)?;
+    let stage = Arc::new(SafeRoot::open(&safe.path_of(STAGING))?);
     let mut targets = vec![None; new.manifest().files.len()];
     let mut additional = 0u64;
     let mut reset_journal = false;
@@ -194,8 +194,11 @@ fn prepare(
             .files
             .get(index as usize)
             .ok_or_else(|| InstallError::Conflict("invalid build file index".into()))?;
-        let path = stage.file_target(&file.path)?;
-        let previous = fs::symlink_metadata(&path).ok().map(|meta| meta.len());
+        let previous = stage
+            .open_file(&file.path, Access::Read)
+            .ok()
+            .and_then(|handle| handle.metadata().ok())
+            .map(|meta| meta.len());
         if previous != Some(file.size) {
             reset_journal = true;
         }
@@ -203,7 +206,7 @@ fn prepare(
             .checked_add(file.size.saturating_sub(previous.unwrap_or(0)))
             .ok_or_else(|| InstallError::Internal("update size overflow".into()))?;
         if let Some(slot) = targets.get_mut(index as usize) {
-            *slot = Some(path);
+            *slot = Some(Target::new(Arc::clone(&stage), file.path.clone()));
         }
     }
     let available = sys::available_space(safe.root())
@@ -233,16 +236,8 @@ fn prepare(
             .files
             .get(index)
             .ok_or_else(|| InstallError::Internal("staging target lost".into()))?;
-        let mut options = OpenOptions::new();
-        options.write(true).create(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.custom_flags(libc::O_NOFOLLOW);
-        }
-        let handle = options
-            .open(target)
-            .map_err(|error| InstallError::io("create", target, error))?;
+        // Created through the staging root's handle, never by path (INS-07).
+        let handle = stage.open_file(target.rel(), Access::CreateWrite)?;
         if let Err(error) = sys::preallocate(&handle, file.size) {
             if sys::is_disk_full(&error) {
                 return Err(InstallError::NotEnoughSpace {
@@ -250,7 +245,7 @@ fn prepare(
                     available: sys::available_space(safe.root()).unwrap_or(0),
                 });
             }
-            return Err(InstallError::io("allocate", target, error));
+            return Err(InstallError::io("allocate", &target.display_path(), error));
         }
     }
     let table = Arc::new(ChunkTable::new(new.manifest())?);
@@ -279,10 +274,14 @@ fn prepare(
     }
     touched.sort();
     touched.dedup();
-    for path in touched {
-        fsutil::open_for_write(&path)
+    for index in touched {
+        let Some(Some(target)) = targets.get(index as usize) else {
+            continue;
+        };
+        target
+            .open_write()
             .and_then(|handle| handle.sync_all())
-            .map_err(|error| InstallError::io("flush", &path, error))?;
+            .map_err(|error| InstallError::io("flush", &target.display_path(), error))?;
     }
     journal
         .persist()
@@ -342,10 +341,10 @@ pub(super) fn read_old_chunk(
 
 fn write_chunk(
     table: &ChunkTable,
-    targets: &[Option<PathBuf>],
+    targets: &[Option<Target>],
     index: u32,
     bytes: &[u8],
-    touched: &mut Vec<PathBuf>,
+    touched: &mut Vec<u32>,
 ) -> Result<(), InstallError> {
     let mut at = 0usize;
     for extent in table.extents(index) {
@@ -357,12 +356,14 @@ fn write_chunk(
         let part = bytes
             .get(at..end)
             .ok_or_else(|| InstallError::Conflict("new chunk layout".into()))?;
-        if let Some(Some(path)) = targets.get(extent.file as usize) {
-            let handle = fsutil::open_for_write(path)
-                .map_err(|error| InstallError::io("open", path, error))?;
+        if let Some(Some(target)) = targets.get(extent.file as usize) {
+            let path = target.display_path();
+            let handle = target
+                .open_write()
+                .map_err(|error| InstallError::io("open", &path, error))?;
             fsutil::write_all_at(&handle, part, extent.file_offset)
-                .map_err(|error| InstallError::io("write", path, error))?;
-            touched.push(path.clone());
+                .map_err(|error| InstallError::io("write", &path, error))?;
+            touched.push(extent.file);
         }
         at = end;
     }

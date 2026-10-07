@@ -147,6 +147,10 @@ directories = "6"
 # process tracking). FFI only, behind `#[allow(unsafe_code)]` + SAFETY comments.
 libc = "0.2"
 windows-sys = "0.61"
+# Directory-handle-relative file access (openat / handle-relative opens): install writes never
+# follow a link swapped in after a check (INS-07, Q12).
+cap-std = "3"
+cap-fs-ext = "3"
 sysinfo = "0.39"
 # Opens sign-in pages and confirmed links in the system browser (no WebView navigation).
 open = "5"

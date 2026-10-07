@@ -14,7 +14,7 @@
 //! (cancelled installs, uninstall) without following links.
 
 use std::collections::{BTreeSet, HashSet};
-use std::fs::{self, OpenOptions};
+use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -36,7 +36,7 @@ use crate::download::{
     self, DownloadControl, DownloadError, DownloadOptions, DownloadSpec, PackUrlSource,
     PauseReason, Phase, RunOutcome, RunStats,
 };
-use crate::fsutil::{self, SafePathError, SafeRoot};
+use crate::fsutil::{self, Access, SafePathError, SafeRoot, Target};
 use crate::sys;
 
 pub const INSTALL_FORMAT: &str = "vgames.install/1";
@@ -359,7 +359,7 @@ pub async fn install<A: PackUrlSource>(
 fn priority_chunks(
     manifest: &Manifest,
     table: &ChunkTable,
-    targets: &[Option<PathBuf>],
+    targets: &[Option<Target>],
     wanted_paths: &[String],
 ) -> Option<(Bitset, Vec<PathBuf>)> {
     if wanted_paths.is_empty() {
@@ -384,17 +384,17 @@ fn priority_chunks(
                 }
             }
         }
-        if let Some(Some(path)) = targets.get(index) {
-            paths.push(path.clone());
+        if let Some(Some(target)) = targets.get(index) {
+            paths.push(target.display_path());
         }
     }
     Some((wanted, paths))
 }
 
 struct Prepared {
-    safe: SafeRoot,
+    safe: Arc<SafeRoot>,
     table: Arc<ChunkTable>,
-    targets: Arc<Vec<Option<PathBuf>>>,
+    targets: Arc<Vec<Option<Target>>>,
     journal: Journal,
 }
 
@@ -488,7 +488,7 @@ fn prepare(
     }
     let space = check_space(root, manifest)?;
 
-    let safe = SafeRoot::create(root)?;
+    let safe = Arc::new(SafeRoot::create(root)?);
     let meta = safe.ensure_dir(META_DIR)?;
     write_if_changed(&meta.join(MANIFEST_FILE), &release.manifest_bytes)?;
     write_if_changed(&meta.join(SIGNATURE_FILE), &release.envelope.to_bytes())?;
@@ -505,9 +505,10 @@ fn prepare(
         if i % 256 == 0 && control.is_cancelled() {
             return Err(InstallError::Cancelled);
         }
-        let path = safe.file_target(&file.path)?;
-        if !journal_invalidated && !fs::symlink_metadata(&path).is_ok_and(|m| m.len() == file.size)
-        {
+        // Created (with its folders) through the root's handle, never by path (INS-07).
+        let path = safe.path_of(&file.path);
+        let handle = safe.open_file(&file.path, Access::CreateWrite)?;
+        if !journal_invalidated && !handle.metadata().is_ok_and(|m| m.len() == file.size) {
             // A journal bit describes bytes in the previous file, not a newly
             // created or resized replacement. Invalidate before allocation,
             // so a crash here cannot leave zeros recorded as completed data.
@@ -520,16 +521,6 @@ fn prepare(
             }
             journal_invalidated = true;
         }
-        let mut options = OpenOptions::new();
-        options.write(true).create(true).truncate(false);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.custom_flags(libc::O_NOFOLLOW);
-        }
-        let handle = options
-            .open(&path)
-            .map_err(|e| InstallError::io("create", &path, e))?;
         if let Err(error) = sys::preallocate(&handle, file.size) {
             if sys::is_disk_full(&error) {
                 return Err(InstallError::NotEnoughSpace {
@@ -539,7 +530,7 @@ fn prepare(
             }
             return Err(InstallError::io("allocate", &path, error));
         }
-        targets.push(Some(path));
+        targets.push(Some(Target::new(Arc::clone(&safe), file.path.clone())));
     }
     let journal = Journal::load_or_new(
         &journal_path,
@@ -567,13 +558,16 @@ fn write_if_changed(path: &Path, bytes: &[u8]) -> Result<(), InstallError> {
 fn finalize(
     safe: &SafeRoot,
     release: &Release,
-    targets: &[Option<PathBuf>],
+    targets: &[Option<Target>],
 ) -> Result<InstallRecord, InstallError> {
     let manifest = release.manifest();
     let mut dirs: BTreeSet<PathBuf> = BTreeSet::new();
     for (file, target) in manifest.files.iter().zip(targets) {
-        let Some(path) = target else { continue };
-        let handle = fsutil::open_for_write(path).map_err(|e| InstallError::io("open", path, e))?;
+        let Some(target) = target else { continue };
+        let path = &target.display_path();
+        let handle = target
+            .open_write()
+            .map_err(|e| InstallError::io("open", path, e))?;
         handle
             .sync_all()
             .map_err(|e| InstallError::io("flush", path, e))?;

@@ -41,7 +41,6 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use vgames_proto::versions::{IntegrityReport, PackUrl};
 
-use crate::fsutil;
 use crate::http::{ClientOptions, transfer_client};
 use aimd::Aimd;
 use fetch::{Timings, UrlCache, WorkerCtx};
@@ -657,14 +656,15 @@ async fn flush_journal(
     let targets = Arc::clone(&shared.targets);
     tokio::task::spawn_blocking(move || {
         for file in &pending.files {
-            let Some(Some(path)) = targets.get(*file as usize) else {
+            let Some(Some(target)) = targets.get(*file as usize) else {
                 continue;
             };
-            fsutil::open_for_write(path)
+            target
+                .open_write()
                 .and_then(|f| f.sync_data())
                 .map_err(|source| DownloadError::Io {
                     op: "flush",
-                    path: path.clone(),
+                    path: target.display_path(),
                     source,
                 })?;
         }
