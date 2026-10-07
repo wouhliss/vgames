@@ -22,11 +22,15 @@ describe("session expiry", () => {
       })
       .catch(() => undefined);
     const navigate = vi.fn();
-    leaveForSignIn(client, navigate, "/admin/packages", false);
-    await pending;
-    expect(requestSignal?.aborted).toBe(true);
-    expect(client.getQueryCache().getAll()).toHaveLength(0);
-    expect(readCsrfToken()).toBeNull();
-    expect(navigate).toHaveBeenCalledWith("/login?return_to=%2Fadmin%2Fpackages");
+    try {
+      leaveForSignIn(client, navigate, "/admin/packages", false);
+      expect(requestSignal?.aborted).toBe(true);
+      expect(client.getQueryCache().getAll()).toHaveLength(0);
+      expect(readCsrfToken()).toBeNull();
+      expect(navigate).toHaveBeenCalledWith("/login?return_to=%2Fadmin%2Fpackages");
+    } finally {
+      client.clear();
+      await pending;
+    }
   });
 });
