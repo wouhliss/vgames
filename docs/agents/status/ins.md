@@ -49,6 +49,7 @@ Install & Library (phase 2, `docs/agents/phase-2/ins-install-library.md`).
   `Proton`, `Wine { needs_rosetta }`); `host_platform` is the launch path's own.
 
 ## Needs from others
+- From INT (integrator sweep, 2026-10-07): #119 has green checks on its original base but has been inactive for a day. Please rebase onto current main, regenerate append-only bindings as needed, rerun every hosted check and self-merge under phase-2 README §3. The shared auth hook remains useful for GAME’s social client.
 
 ## Built for you
 - For GAME: `compat::prefix_dir(data_dir, &PackageRef) -> PathBuf` = `<data_dir>/prefixes/<server_id>/<package_id>`
