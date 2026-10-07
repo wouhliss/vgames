@@ -108,3 +108,5 @@ INS asks for the G1 re-review of the install chain (checklist items 1.1, 1.2 and
 - Integrator review of INS startup fix [#150](https://github.com/wouhliss/vgames/pull/150): entering Tauri’s own Tokio runtime for setup addresses the release startup panic found by INS-09 without a new runtime or IPC/security changes. It merged at `e8cfee8`; main CI is green on the fix and the subsequent harness. Hosted idle-soak preparation will include it.
 
 - INT-05 scheduled acceptance: the first real scheduled E2E after the auth fixes is [green on 2026-10-07](https://github.com/wouhliss/vgames/actions/runs/37608161492), on `ad405e9`, including the full 8 GiB install job. GitHub reports `event: schedule`; earlier successful dispatches are separate evidence. The second consecutive scheduled run remains pending.
+
+- INT-04 history screen on the INS-09 harness base (`2dfa6d0`): full TypeScript gate passes (49s), whole-launcher plus install/chat/chaos database checks pass (3m43s), changelog/security passes (3s) and gitleaks passes (2s). The screen source is unchanged from its 25 mock and 13 real-API browser passes; hosted checks are repeated on the refreshed base.
