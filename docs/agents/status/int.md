@@ -75,3 +75,5 @@
 - INT-04 latest combined validation: F3/F5 Rust gate 3m50s, SQLx 12s, changelog/security and secrets 1s each on the latest library base. The utoipa trio also passes Rust/strict drift (3m48s) and SQLx (14s); the proposed history endpoint passes its paging/auth tests, strict drift and SQLx (3m50s/13s). Source changes are identical after the CI-only rebase.
 
 - After the INT-03 rebase, the server branch passes the whole launcher plus all four DB scenarios (3m12s), changelog/security (2s), secrets and workflow lint (1s each). No backend source changed during this rebase. Compat history UI also passes all eleven units and all three browser cases in mock and real-API mode; its temporary real fixture was removed.
+
+- INT-04 replacement after INS-08 #146: whole launcher suite, both install test functions and four chat/chaos scenarios pass; desktop gate 3m11s, changelog/security and secrets 2s each, workflow lint clean. Install scenario completes in 19.26s at PR scale. Admin draft foundation combined with the history UI passes all 150 unit tests and type checking.
