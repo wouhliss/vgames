@@ -10,6 +10,11 @@ import { Notice } from "../../components/Notice";
 import { useToast } from "../../components/Toast";
 import { formatRelativeTime, t } from "../../i18n";
 import { type AccountSession, commands } from "../../ipc";
+
+/** What to call a session: the device's name, else the client it signed in with. */
+const deviceName = (session: AccountSession) =>
+  session.device_name ?? session.user_agent ?? t("settings.account.unknownDevice");
+
 import { queryKeys, unwrap } from "../../ipc/query";
 import styles from "./Settings.module.css";
 import { Section } from "./SettingsPage";
@@ -28,8 +33,8 @@ export function AccountSection() {
     enabled: signedIn,
   });
   const storage = useQuery({
-    queryKey: ["credential_storage"],
-    queryFn: () => commands.credentialStorage(),
+    queryKey: ["auth_token_storage"],
+    queryFn: () => commands.authTokenStorage(),
   });
 
   if (!server) return null;
@@ -42,7 +47,7 @@ export function AccountSection() {
       await client.invalidateQueries({ queryKey: ["account_sessions", server.id] });
       toast({
         tone: "success",
-        title: t("settings.account.revoked", { device: session.device_name }),
+        title: t("settings.account.revoked", { device: deviceName(session) }),
       });
     } else toast({ tone: "danger", title: t("settings.account.revokeFailed") });
   };
@@ -62,16 +67,12 @@ export function AccountSection() {
           {sessions.data.map((session) => (
             <li key={session.id} className={styles.row}>
               <span className={styles.rowMain}>
-                <span className={styles.rowTitle}>{session.device_name}</span>
+                <span className={styles.rowTitle}>{deviceName(session)}</span>
                 <span className={styles.muted}>
-                  {t(`settings.account.platform.${session.platform}`)} ·{" "}
-                  {session.last_used_at
-                    ? t("settings.account.lastUsed", {
-                        when: formatRelativeTime(session.last_used_at),
-                      })
-                    : t("settings.account.neverUsed", {
-                        when: formatRelativeTime(session.created_at),
-                      })}
+                  {t(`settings.account.client.${session.client}`)} ·{" "}
+                  {t("settings.account.lastUsed", {
+                    when: formatRelativeTime(session.last_used_at),
+                  })}
                 </span>
               </span>
               {session.current ? (
@@ -80,7 +81,7 @@ export function AccountSection() {
                 <Button
                   size="sm"
                   variant="ghost"
-                  aria-label={t("settings.account.revokeTitle", { device: session.device_name })}
+                  aria-label={t("settings.account.revokeTitle", { device: deviceName(session) })}
                   onClick={() => setRevoking(session)}
                 >
                   {t("settings.account.revoke")}
@@ -102,10 +103,10 @@ export function AccountSection() {
 
   return (
     <Section id="account" title={t("settings.section.account")}>
-      {storage.data?.kind === "file_fallback" ? (
+      {storage.data?.fallback_file ? (
         <Notice tone="warning" role="status">
           <strong>{t("settings.account.keychainTitle")}</strong>{" "}
-          {t("settings.account.keychainText", { path: storage.data.path })}
+          {t("settings.account.keychainText")}
         </Notice>
       ) : null}
       {account ? (
@@ -129,7 +130,9 @@ export function AccountSection() {
       <ConfirmDialog
         open={revoking !== null}
         tone="danger"
-        title={t("settings.account.revokeConfirmTitle", { device: revoking?.device_name ?? "" })}
+        title={t("settings.account.revokeConfirmTitle", {
+          device: revoking ? deviceName(revoking) : "",
+        })}
         description={t("settings.account.revokeConfirmText")}
         confirmLabel={t("settings.account.revoke")}
         onCancel={() => setRevoking(null)}

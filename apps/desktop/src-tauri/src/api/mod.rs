@@ -48,6 +48,8 @@ pub enum ApiError {
         status: u16,
         code: String,
         message: String,
+        /// The parsed body, for callers that need more than the code (field errors, `Retry-After`).
+        problem: Box<ProblemBody>,
     },
     /// No session, or the session ended (refresh refused).
     #[error("sign-in required")]
@@ -59,10 +61,47 @@ pub enum ApiError {
     InvalidResponse(String),
 }
 
+/// The parts of an RFC 9457 problem document a caller may act on, bounded and shortened.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ProblemBody {
+    pub title: Option<String>,
+    pub detail: Option<String>,
+    /// `validation_failed` field errors (at most [`MAX_PROBLEM_FIELDS`]).
+    pub errors: Vec<ProblemField>,
+    /// The `Retry-After` header, in seconds, when the server sent one.
+    pub retry_after_seconds: Option<u32>,
+}
+
+/// One invalid field of a `validation_failed` problem.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProblemField {
+    pub field: String,
+    pub message: Option<String>,
+}
+
+/// Field errors kept from one problem document.
+pub const MAX_PROBLEM_FIELDS: usize = 20;
+
 impl ApiError {
     pub fn problem_code(&self) -> Option<&str> {
         match self {
             Self::Problem { code, .. } => Some(code),
+            _ => None,
+        }
+    }
+
+    /// The parsed problem document, for an error response.
+    pub fn problem(&self) -> Option<&ProblemBody> {
+        match self {
+            Self::Problem { problem, .. } => Some(problem),
+            _ => None,
+        }
+    }
+
+    /// The HTTP status of an error response.
+    pub fn status(&self) -> Option<u16> {
+        match self {
+            Self::Problem { status, .. } => Some(*status),
             _ => None,
         }
     }
@@ -131,18 +170,48 @@ pub async fn read_capped(mut response: reqwest::Response, cap: usize) -> Result<
 /// Turns an error response into [`ApiError::Problem`].
 pub async fn problem_from(response: reqwest::Response) -> ApiError {
     let status = response.status();
+    let retry_after = retry_after(&response).and_then(|d| u32::try_from(d.as_secs()).ok());
     let body = read_capped(response, 64 * 1024).await.unwrap_or_default();
-    parse_problem(status, &body)
+    let mut error = parse_problem(status, &body);
+    if let ApiError::Problem { problem, .. } = &mut error {
+        problem.retry_after_seconds = retry_after;
+    }
+    error
 }
 
 fn parse_problem(status: StatusCode, body: &[u8]) -> ApiError {
+    #[derive(serde::Deserialize)]
+    struct Field {
+        field: String,
+        #[serde(default)]
+        message: Option<String>,
+    }
     #[derive(serde::Deserialize)]
     struct Body {
         code: Option<String>,
         title: Option<String>,
         detail: Option<String>,
+        #[serde(default)]
+        errors: Vec<Field>,
     }
     let parsed = serde_json::from_slice::<Body>(body).ok();
+    let problem = Box::new(match &parsed {
+        Some(b) => ProblemBody {
+            title: b.title.as_deref().map(short),
+            detail: b.detail.as_deref().map(short),
+            errors: b
+                .errors
+                .iter()
+                .take(MAX_PROBLEM_FIELDS)
+                .map(|f| ProblemField {
+                    field: short(&f.field),
+                    message: f.message.as_deref().map(short),
+                })
+                .collect(),
+            retry_after_seconds: None,
+        },
+        None => ProblemBody::default(),
+    });
     let code = parsed
         .as_ref()
         .and_then(|b| b.code.clone())
@@ -168,6 +237,7 @@ fn parse_problem(status: StatusCode, body: &[u8]) -> ApiError {
         status: status.as_u16(),
         code,
         message,
+        problem,
     }
 }
 
@@ -358,42 +428,45 @@ impl ApiClient {
         path: &str,
         body: Option<&B>,
     ) -> Result<reqwest::Response, ApiError> {
-        self.session.check_trusted()?;
         let url = self.url(path)?;
-        let grant = self.session.access_token(&self.http).await?;
-        let response = self.send_bearer(&method, &url, body, &grant.token).await?;
-        if response.status() != StatusCode::UNAUTHORIZED {
-            return Ok(response);
-        }
-        // Once: refresh (shared with concurrent callers), then retry.
-        let grant = self.session.refresh(&self.http, grant.generation).await?;
-        let response = self.send_bearer(&method, &url, body, &grant.token).await?;
-        if response.status() == StatusCode::UNAUTHORIZED {
-            let error = problem_from(response).await;
-            tracing::info!(%error, "request still unauthorized after a refresh");
-            return Err(ApiError::Unauthenticated);
-        }
-        Ok(response)
-    }
-
-    async fn send_bearer<B: Serialize + ?Sized>(
-        &self,
-        method: &Method,
-        url: &Url,
-        body: Option<&B>,
-        token: &str,
-    ) -> Result<reqwest::Response, ApiError> {
-        send_with_retries(method, || {
-            let request = self
-                .http
-                .request(method.clone(), url.clone())
-                .bearer_auth(token);
+        self.with_auth(&method, |http, token| {
+            let request = http.request(method.clone(), url.clone()).bearer_auth(token);
             match body {
                 Some(body) => request.json(body),
                 None => request,
             }
         })
         .await
+    }
+
+    /// The "401 → refresh once → retry once" hook for any authenticated request. `build` gets the HTTP
+    /// client and the current access token and returns the request (URL, query, body, bearer header).
+    /// Idempotent methods also get the usual network retries. Returns the final response whatever its
+    /// status, except that a request still refused after one refresh becomes
+    /// [`ApiError::Unauthenticated`]; map other statuses with [`problem_from`].
+    pub async fn with_auth<F>(
+        &self,
+        method: &Method,
+        build: F,
+    ) -> Result<reqwest::Response, ApiError>
+    where
+        F: Fn(&reqwest::Client, &str) -> reqwest::RequestBuilder,
+    {
+        self.session.check_trusted()?;
+        let grant = self.session.access_token(&self.http).await?;
+        let response = send_with_retries(method, || build(&self.http, &grant.token)).await?;
+        if response.status() != StatusCode::UNAUTHORIZED {
+            return Ok(response);
+        }
+        // Once: refresh (shared with concurrent callers), then retry.
+        let grant = self.session.refresh(&self.http, grant.generation).await?;
+        let response = send_with_retries(method, || build(&self.http, &grant.token)).await?;
+        if response.status() == StatusCode::UNAUTHORIZED {
+            let error = problem_from(response).await;
+            tracing::info!(%error, "request still unauthorized after a refresh");
+            return Err(ApiError::Unauthenticated);
+        }
+        Ok(response)
     }
 }
 
@@ -409,9 +482,32 @@ mod tests {
             ApiError::Problem {
                 status: 429,
                 code: "rate_limited".into(),
-                message: "Try again in 5 s".into()
+                message: "Try again in 5 s".into(),
+                problem: Box::new(ProblemBody {
+                    title: Some("Slow down".into()),
+                    detail: Some("Try again in 5 s".into()),
+                    errors: vec![],
+                    retry_after_seconds: None,
+                }),
             }
         );
+    }
+
+    #[test]
+    fn field_errors_are_kept_bounded() {
+        let errors: Vec<_> = (0..50)
+            .map(|i| serde_json::json!({ "field": format!("files[{i}].path"), "message": "bad" }))
+            .collect();
+        let body = serde_json::to_vec(&serde_json::json!({
+            "title": "Invalid", "status": 400, "code": "validation_failed", "errors": errors
+        }))
+        .unwrap();
+        let error = parse_problem(StatusCode::BAD_REQUEST, &body);
+        let problem = error.problem().unwrap();
+        assert_eq!(problem.errors.len(), MAX_PROBLEM_FIELDS);
+        assert_eq!(problem.errors[3].field, "files[3].path");
+        assert_eq!(problem.errors[3].message.as_deref(), Some("bad"));
+        assert_eq!(error.status(), Some(400));
     }
 
     #[test]

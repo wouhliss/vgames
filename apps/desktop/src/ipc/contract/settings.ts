@@ -1,30 +1,10 @@
-// Settings that are not covered by another domain: account sessions and credential storage, the
-// overlay's per-package switches, privacy and overlay preferences
-// (Agent 4's `SocialSettings`, 05-social-notes §5) and third-party licenses (Agents 2 and 4).
+// Settings that are not covered by another domain: the overlay's per-package switches, privacy and
+// overlay preferences (Agent 4's `SocialSettings`, 05-social-notes §5) and third-party licenses
+// (Agents 2 and 4). Account sessions and token storage are generated (INS-05).
 // Requested shapes; see core.ts for the conventions.
 import type { PackageOverlay, PackageRef, SocialError } from "../../bindings";
 import type { AppError } from "./core";
-import { call, get, type Result } from "./runtime";
-
-export type SessionPlatform = "windows" | "linux" | "macos" | "web" | "cli";
-
-/** A signed-in device of this account on this server (`GET /v1/me/sessions`). */
-export type AccountSession = {
-  id: string;
-  /** User agent summary the server stored, e.g. "vgames 0.4 on Windows". */
-  device_name: string;
-  platform: SessionPlatform;
-  created_at: string;
-  last_used_at: string | null;
-  /** This launcher's own session. */
-  current: boolean;
-};
-
-/**
- * Where the launcher keeps refresh tokens (01-security §7). `file_fallback`: no OS keychain was
- * available, so tokens sit in a file readable by this user; the UI warns about it.
- */
-export type CredentialStorage = { kind: "keychain" } | { kind: "file_fallback"; path: string };
+import { call, type Result } from "./runtime";
 
 // `social_settings_get|set` and `SocialSettings` (05-social-notes §5) are generated now; the typed
 // hotkey errors below are still requested as `SocialError` variants (A4-T10 registers the hotkey).
@@ -39,16 +19,6 @@ export type HotkeyError =
 export type SocialSettingsError = SocialError | HotkeyError;
 
 export const settingsCommands = {
-  async accountSessions(serverId: string): Promise<Result<AccountSession[], AppError>> {
-    return call("account_sessions", { serverId });
-  },
-  async accountSessionRevoke(serverId: string, sessionId: string): Promise<Result<null, AppError>> {
-    return call("account_session_revoke", { serverId, sessionId });
-  },
-  async credentialStorage(): Promise<CredentialStorage> {
-    return get("credential_storage");
-  },
-
   async overlayPackages(): Promise<Result<PackageOverlay[], AppError>> {
     // Generated as `packageOverlaysList` (main-window commands never start with `overlay_`).
     return call("package_overlays_list");

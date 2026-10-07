@@ -391,7 +391,14 @@ impl Servers {
         {
             tracing::info!(%server_id, %error, "server-side sign-out failed; forgetting the tokens anyway");
         }
-        session.clear().await;
+        self.forget_account(server_id).await
+    }
+
+    /// Forgets this launcher's session on `server_id` (tokens and account) without telling the
+    /// server, for a session the server already ended.
+    pub async fn forget_account(&self, server_id: Uuid) -> Result<(), AppError> {
+        let client = self.api(server_id).await?;
+        client.session().clear().await;
         self.db
             .call(move |conn| store::delete_account(conn, server_id))
             .await

@@ -1,22 +1,24 @@
-// Settings the Rust core keeps: account sessions, credential storage, download limits, social and
+// Settings the Rust core keeps: account sessions, token storage, download limits, social and
 // overlay preferences, third-party notices. `persistKey` makes the settings survive a "restart" of the
 // mock (a new backend on the same storage), which is how the settings tests check persistence.
 import type {
   AccountSession,
   AppError,
-  CredentialStorage,
   DownloadSettings,
   PackageOverlay,
+  ServerProfile,
   SettingsError,
   SocialSettings,
   SocialSettingsError,
 } from "../ipc";
+import { events } from "../ipc";
 import { fail, type Handler } from "./runtime";
 
 export interface SettingsState {
   /** Sessions per server id. */
   sessions: Record<string, AccountSession[]>;
-  credentialStorage: CredentialStorage;
+  /** `auth_token_storage`: tokens in a private file instead of the OS keychain. */
+  tokenStorageFallback: boolean;
   downloadSettings: DownloadSettings;
   socialSettings: SocialSettings;
   overlayPackages: PackageOverlay[];
@@ -30,7 +32,7 @@ export interface SettingsState {
 export function defaultSettingsState(): SettingsState {
   return {
     sessions: {},
-    credentialStorage: { kind: "keychain" },
+    tokenStorageFallback: false,
     downloadSettings: { bandwidth_limit_kib: null, concurrent_installs: 1 },
     socialSettings: {
       show_current_game: true,
@@ -82,7 +84,7 @@ export function savePersisted(key: string | null, state: Record<string, unknown>
 }
 
 export function settingsHandlers(
-  state: SettingsState & { servers: { id: string }[] },
+  state: SettingsState & { servers: ServerProfile[] },
 ): Record<string, Handler> {
   return {
     account_sessions: (args) => {
@@ -96,16 +98,15 @@ export function settingsHandlers(
       const list = state.sessions[serverId] ?? [];
       const target = list.find((s) => s.id === args.sessionId);
       if (!target) fail({ kind: "not_found" } satisfies AppError);
-      if (target.current)
-        fail({
-          kind: "invalid_input",
-          field: "sessionId",
-          message: "sign out instead",
-        } satisfies AppError);
       state.sessions = { ...state.sessions, [serverId]: list.filter((s) => s !== target) };
+      if (target.current) {
+        // Like the Rust core: this launcher's session ended, so it forgets the account locally.
+        state.servers = state.servers.map((s) => (s.id === serverId ? { ...s, account: null } : s));
+        void events.serversChanged.emit({});
+      }
       return null;
     },
-    credential_storage: () => state.credentialStorage,
+    auth_token_storage: () => ({ fallback_file: state.tokenStorageFallback }),
 
     download_settings_get: () => state.downloadSettings,
     download_settings_set: (args) => {

@@ -53,18 +53,20 @@ const BASE: Partial<MockState> = {
     [MOCK_SERVER.id]: [
       {
         id: "s1",
+        client: "desktop",
         device_name: "vgames 0.4 on Linux",
-        platform: "linux",
+        user_agent: null,
         created_at: "2026-09-01T10:00:00Z",
         last_used_at: "2026-09-26T10:00:00Z",
         current: true,
       },
       {
         id: "s2",
-        device_name: "Firefox on Windows",
-        platform: "web",
+        client: "web",
+        device_name: null,
+        user_agent: "Firefox on Windows",
         created_at: "2026-08-01T10:00:00Z",
-        last_used_at: null,
+        last_used_at: "2026-08-01T10:00:00Z",
         current: false,
       },
     ],
@@ -182,6 +184,9 @@ describe("settings", () => {
       if (!current) throw new Error("row");
       expect(within(current).getByText("This device")).toBeVisible();
       expect(within(current).queryByRole("button")).toBeNull();
+      expect(current).toHaveTextContent("vgames launcher · Last used");
+      const web = screen.getByText("Firefox on Windows", { selector: "span" }).closest("li");
+      expect(web).toHaveTextContent("Web browser · Last used");
       await user.click(screen.getByRole("button", { name: "Sign out Firefox on Windows" }));
       await user.click(
         within(screen.getByRole("alertdialog", { name: "Sign out Firefox on Windows?" })).getByRole(
@@ -194,14 +199,29 @@ describe("settings", () => {
       expect(screen.queryByText("Firefox on Windows", { selector: "span" })).toBeNull();
     });
 
-    it("warns when sign-in tokens are kept in a file", async () => {
+    it("names a session by its client when the server has no device name", async () => {
       start("/settings/account", {
-        credentialStorage: { kind: "file_fallback", path: "/home/sam/.config/vgames/tokens" },
+        sessions: {
+          [MOCK_SERVER.id]: [
+            {
+              id: "s3",
+              client: "web",
+              device_name: null,
+              user_agent: null,
+              created_at: "2026-08-01T10:00:00Z",
+              last_used_at: "2026-08-02T10:00:00Z",
+              current: false,
+            },
+          ],
+        },
       });
+      expect(await screen.findByRole("button", { name: "Sign out Unknown device" })).toBeVisible();
+    });
+
+    it("warns when sign-in tokens are kept in a file", async () => {
+      start("/settings/account", { tokenStorageFallback: true });
       expect(await screen.findByText("Your sign-in is stored in a file")).toBeVisible();
-      expect(
-        screen.getByText(/keeps your sign-in in \/home\/sam\/\.config\/vgames\/tokens/),
-      ).toBeVisible();
+      expect(screen.getByText(/keeps your sign-in in a private file/)).toBeVisible();
     });
 
     it("signs out of the active server", async () => {

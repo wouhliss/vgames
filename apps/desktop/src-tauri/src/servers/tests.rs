@@ -813,3 +813,166 @@ async fn discovery_failures_are_typed() {
         Err(ServerError::Unreachable { .. })
     ));
 }
+
+// ------------------------------------------------------------------------------------------------
+// INS-05: the reusable auth hook and the account commands.
+
+#[tokio::test]
+async fn the_auth_hook_retries_a_custom_request_once_with_the_refreshed_token() {
+    let mut h = Harness::new().await;
+    h.add(&key(1)).await;
+    sign_in(&mut h).await;
+    Mock::given(method("GET"))
+        .and(path("/v1/packages"))
+        .and(header("authorization", "Bearer vga_1"))
+        .respond_with(ResponseTemplate::new(401))
+        .expect(1)
+        .mount(&h.mock)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/auth/token"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(token_response("vga_2", "vgr_2")))
+        .expect(1)
+        .mount(&h.mock)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/packages"))
+        .and(header("authorization", "Bearer vga_2"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "items": [] })))
+        .expect(1)
+        .mount(&h.mock)
+        .await;
+
+    let api = h.servers.api(server_id()).await.unwrap();
+    let url = api.url("v1/packages").unwrap();
+    let response = api
+        .with_auth(&Method::GET, |http, token| {
+            http.get(url.clone())
+                .query(&[("q", "orbit")])
+                .bearer_auth(token)
+        })
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    let requests = requests_to(&h.mock, "/v1/packages").await;
+    assert!(requests.iter().all(|r| r.url.query() == Some("q=orbit")));
+    h.mock.verify().await;
+}
+
+fn session_json(id: &str, kind: &str, current: bool) -> Value {
+    json!({
+        "id": id,
+        "kind": kind,
+        "device_name": if kind == "desktop" { json!("test-pc") } else { Value::Null },
+        "user_agent": "Firefox on Windows",
+        "created_at": "2026-09-24T10:00:00Z",
+        "last_used_at": "2026-09-26T10:00:00Z",
+        "current": current
+    })
+}
+
+const OUR_SESSION: &str = "01920000-0000-7000-8000-0000000005e1";
+const WEB_SESSION: &str = "01920000-0000-7000-8000-0000000005e2";
+
+async fn serve_sessions(h: &Harness) {
+    Mock::given(method("GET"))
+        .and(path("/v1/me/sessions"))
+        .and(header("authorization", "Bearer vga_1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "items": [session_json(OUR_SESSION, "desktop", true), session_json(WEB_SESSION, "web", false)]
+        })))
+        .mount(&h.mock)
+        .await;
+}
+
+#[tokio::test]
+async fn account_sessions_lists_where_the_account_is_signed_in() {
+    let mut h = Harness::new().await;
+    h.add(&key(1)).await;
+    sign_in(&mut h).await;
+    serve_sessions(&h).await;
+    let sessions = crate::commands::account::sessions(&h.servers, server_id())
+        .await
+        .unwrap();
+    assert_eq!(sessions.len(), 2);
+    assert_eq!(sessions[0].id, OUR_SESSION);
+    assert!(sessions[0].current);
+    assert_eq!(sessions[0].device_name.as_deref(), Some("test-pc"));
+    assert_eq!(
+        sessions[1].client,
+        crate::commands::account::SessionClient::Web
+    );
+    assert_eq!(sessions[1].last_used_at, "2026-09-26T10:00:00Z");
+    assert!(!sessions[1].current);
+}
+
+#[tokio::test]
+async fn revoking_another_session_keeps_this_launcher_signed_in() {
+    let mut h = Harness::new().await;
+    h.add(&key(1)).await;
+    sign_in(&mut h).await;
+    serve_sessions(&h).await;
+    Mock::given(method("DELETE"))
+        .and(path(format!("/v1/me/sessions/{WEB_SESSION}")))
+        .and(header("authorization", "Bearer vga_1"))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&h.mock)
+        .await;
+    let web = Uuid::parse_str(WEB_SESSION).unwrap();
+    crate::commands::account::revoke(&h.servers, server_id(), web)
+        .await
+        .unwrap();
+    assert_eq!(h.vault.len(), 1);
+    let profile = h.servers.profile(server_id()).await.unwrap().unwrap();
+    assert!(profile.account.is_some());
+    h.mock.verify().await;
+}
+
+#[tokio::test]
+async fn revoking_this_launchers_session_signs_out_locally_without_logout() {
+    let mut h = Harness::new().await;
+    h.add(&key(1)).await;
+    sign_in(&mut h).await;
+    serve_sessions(&h).await;
+    Mock::given(method("DELETE"))
+        .and(path(format!("/v1/me/sessions/{OUR_SESSION}")))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&h.mock)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/auth/logout"))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(0)
+        .mount(&h.mock)
+        .await;
+    let ours = Uuid::parse_str(OUR_SESSION).unwrap();
+    crate::commands::account::revoke(&h.servers, server_id(), ours)
+        .await
+        .unwrap();
+    assert!(h.vault.is_empty());
+    let profile = h.servers.profile(server_id()).await.unwrap().unwrap();
+    assert!(profile.account.is_none());
+    h.mock.verify().await;
+}
+
+#[tokio::test]
+async fn revoking_an_unknown_session_is_not_found_and_keeps_the_account() {
+    let mut h = Harness::new().await;
+    h.add(&key(1)).await;
+    sign_in(&mut h).await;
+    serve_sessions(&h).await;
+    Mock::given(method("DELETE"))
+        .respond_with(ResponseTemplate::new(404).set_body_json(json!({"code": "not_found"})))
+        .mount(&h.mock)
+        .await;
+    let unknown = Uuid::parse_str("01920000-0000-7000-8000-0000000005ff").unwrap();
+    assert_eq!(
+        crate::commands::account::revoke(&h.servers, server_id(), unknown)
+            .await
+            .unwrap_err(),
+        AppError::NotFound
+    );
+    assert_eq!(h.vault.len(), 1);
+}

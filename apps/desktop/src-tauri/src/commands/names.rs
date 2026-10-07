@@ -100,6 +100,8 @@ pub const MAIN_WINDOW_COMMANDS: &[&str] = &[
     "install_uninstall_plan",
     "install_uninstall",
     "install_open_folder",
+    "account_sessions",
+    "account_session_revoke",
 ];
 
 /// Commands the in-game overlay window may call. Only `overlay_*` commands

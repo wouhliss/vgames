@@ -93,6 +93,8 @@
     "allow-install-move",
     "allow-install-uninstall-plan",
     "allow-install-uninstall",
-    "allow-install-open-folder"
+    "allow-install-open-folder",
+    "allow-account-sessions",
+    "allow-account-session-revoke"
   ]
 }

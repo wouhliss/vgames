@@ -4,6 +4,7 @@
 //! test fails when the committed file is stale (regenerate with
 //! `VGAMES_UPDATE_BINDINGS=1 cargo test -p vgames-desktop bindings`).
 
+pub(crate) mod account;
 mod app;
 mod catalog;
 mod collections;
@@ -123,7 +124,9 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             collections::collections_reorder,
             collections::collection_add_package,
             collections::collection_remove_package,
-            collections::favorite_set
+            collections::favorite_set,
+            account::account_sessions,
+            account::account_session_revoke
         ])
         .events(tauri_specta::collect_events![
             GameStarted,
