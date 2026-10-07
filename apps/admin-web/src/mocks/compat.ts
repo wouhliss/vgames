@@ -46,6 +46,12 @@ export function compatHandlers(db: MockDb) {
         return problem(400, "invalid_path", "Unknown target");
       const q = new URL(request.url).searchParams;
       const after = q.get("cursor");
+      const fixture = db.compatHistoryFixture;
+      if (fixture && params.target === "linux") {
+        fixture.cursors.push(after);
+        if (fixture.forbidden) return problem(403, "forbidden", "Not allowed");
+        return HttpResponse.json(fixture.pages[after ?? "first"] ?? { items: [] });
+      }
       const limit = Number(q.get("limit") ?? 50);
       const rows = (db.compat[id] ?? [])
         .filter((p) => p.target === params.target && (!after || p.revision < Number(after)))
