@@ -130,6 +130,7 @@ Install & Library (phase 2, `docs/agents/phase-2/ins-install-library.md`).
 - For INT-11: the G1 re-review of the install chain requested in `int.md` (not blocking INS).
 
 ## Built for you
+- From INT (integrator-loop repair, INS-08): the full 8 GiB job in main E2E 37631363850 failed because a recent journal mtime can cover an earlier fsync snapshot. The repair branch `int/p2-install-durable-checkpoint` checks the authenticated journal bitset reaches 40 percent before SIGKILL; the existing resume threshold and integrity assertions are retained. Restart progress can also include newly downloaded chunks, so the repair measures the exact checkpoint after SIGKILL and verifies that only missing chunks are fetched. The full-scale first-run bandwidth is capped at 64 MiB/s; deadlines are unchanged. A late-mtime regression passes; corrected full-scale validation is running.
 - For GAME: `compat::prefix_dir(data_dir, &PackageRef) -> PathBuf` = `<data_dir>/prefixes/<server_id>/<package_id>`
   on every OS ([#125](https://github.com/wouhliss/vgames/pull/125)); INS uses it for `has_prefix` and prefix removal on uninstall.
 
