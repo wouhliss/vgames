@@ -8,7 +8,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use cap_fs_ext::{DirExt, FollowSymlinks, OpenOptionsFollowExt};
+use cap_fs_ext::{DirExt, FollowSymlinks, OpenOptionsFollowExt, OpenOptionsMaybeDirExt};
 use cap_std::ambient_authority;
 use cap_std::fs::Dir;
 
@@ -194,7 +194,7 @@ pub enum Access {
     CreateWrite,
 }
 
-fn classify(dir: &Dir, name: &str, path: &Path, error: io::Error) -> SafePathError {
+fn classify(dir: &Dir, name: impl AsRef<Path>, path: &Path, error: io::Error) -> SafePathError {
     match dir.symlink_metadata(name) {
         Ok(meta) if meta.file_type().is_symlink() => SafePathError::Link(path.to_owned()),
         // A junction or other reparse point reads as neither a plain folder nor a file.
@@ -230,6 +230,14 @@ impl SafeRoot {
         }
         .map_err(|e| SafePathError::io(&root, e))?;
         Ok(Self { root, dir })
+    }
+
+    /// Like [`Self::open`], but `root` itself may be reached through a link (a library folder
+    /// linked elsewhere): it is resolved once, and everything below it is opened through the
+    /// handle as usual. For reading an install and its launcher files, not for installing.
+    pub fn open_resolved(root: &Path) -> Result<Self, SafePathError> {
+        let resolved = fs::canonicalize(root).map_err(|e| SafePathError::io(root, e))?;
+        Self::open(&resolved)
     }
 
     pub fn root(&self) -> &Path {
@@ -321,6 +329,161 @@ impl SafeRoot {
         Ok(file.into_std())
     }
 
+    /// Like [`Self::open_file`] with [`Access::Read`] or [`Access::Write`], but a missing folder
+    /// or file is `None` (a folder or file of the wrong kind is still an error).
+    pub fn open_existing(&self, rel: &str, access: Access) -> Result<Option<File>, SafePathError> {
+        let (parent, _) = rel.rsplit_once('/').unwrap_or(("", rel));
+        if self.walk(parent, false)?.is_none() {
+            return Ok(None);
+        }
+        match self.open_file(rel, access) {
+            Ok(file) => Ok(Some(file)),
+            Err(SafePathError::Io { source, .. }) if source.kind() == io::ErrorKind::NotFound => {
+                Ok(None)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    /// Reads file `rel` through the root's handle; `None` if it does not exist. Refuses files
+    /// larger than `max` bytes.
+    pub fn read(&self, rel: &str, max: u64) -> Result<Option<Vec<u8>>, SafePathError> {
+        use std::io::Read as _;
+        let path = self.path_of(rel);
+        let Some(file) = self.open_existing(rel, Access::Read)? else {
+            return Ok(None);
+        };
+        let len = file
+            .metadata()
+            .map_err(|e| SafePathError::io(&path, e))?
+            .len();
+        if len > max {
+            return Err(SafePathError::io(
+                &path,
+                io::Error::new(io::ErrorKind::InvalidData, "file too large"),
+            ));
+        }
+        let mut bytes = Vec::with_capacity(usize::try_from(len).unwrap_or(0));
+        file.take(max.saturating_add(1))
+            .read_to_end(&mut bytes)
+            .map_err(|e| SafePathError::io(&path, e))?;
+        if bytes.len() as u64 > max {
+            return Err(SafePathError::io(
+                &path,
+                io::Error::new(io::ErrorKind::InvalidData, "file too large"),
+            ));
+        }
+        Ok(Some(bytes))
+    }
+
+    /// [`atomic_write`] through the root's handle: a temporary file created next to `rel` (never
+    /// following a link), fsynced, renamed over `rel`, and the folder fsynced. Missing folders
+    /// are created.
+    pub fn atomic_write(&self, rel: &str, bytes: &[u8]) -> Result<(), SafePathError> {
+        let (parent, name) = rel.rsplit_once('/').unwrap_or(("", rel));
+        let path = self.path_of(rel);
+        let dir = self
+            .walk(parent, true)?
+            .ok_or_else(|| SafePathError::io(&path, io::Error::from(io::ErrorKind::NotFound)))?;
+        let mut options = cap_std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        options.follow(FollowSymlinks::No);
+        let (tmp, file) = loop {
+            let tmp = format!("{name}.{}.tmp", uuid::Uuid::now_v7());
+            match dir.open_with(&tmp, &options) {
+                Ok(file) => break (tmp, file),
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(e) => return Err(SafePathError::io(&path, e)),
+            }
+        };
+        let written = (|| {
+            let mut file = file.into_std();
+            file.write_all(bytes)?;
+            file.sync_all()?;
+            drop(file);
+            replace_in(&dir, &tmp, &dir, name)
+        })();
+        if let Err(error) = written {
+            let _ = dir.remove_file(&tmp);
+            return Err(SafePathError::io(&path, error));
+        }
+        sync_handle(&dir).map_err(|e| SafePathError::io(&path, e))
+    }
+
+    /// Moves file `from` over `to` (both under the root, `to`'s folders created), then fsyncs
+    /// both folders. On Windows an existing `to` is deleted first; callers make that gap
+    /// replayable.
+    pub fn replace(&self, from: &str, to: &str) -> Result<(), SafePathError> {
+        let (from_parent, from_name) = from.rsplit_once('/').unwrap_or(("", from));
+        let (to_parent, to_name) = to.rsplit_once('/').unwrap_or(("", to));
+        let from_path = self.path_of(from);
+        let to_path = self.path_of(to);
+        let from_dir = self.walk(from_parent, false)?.ok_or_else(|| {
+            SafePathError::io(&from_path, io::Error::from(io::ErrorKind::NotFound))
+        })?;
+        match from_dir.symlink_metadata(from_name) {
+            Ok(meta) if meta.file_type().is_symlink() => {
+                return Err(SafePathError::Link(from_path));
+            }
+            Ok(meta) if !meta.is_file() => return Err(SafePathError::NotAFile(from_path)),
+            Ok(_) => {}
+            Err(e) => return Err(SafePathError::io(&from_path, e)),
+        }
+        let to_dir = self
+            .walk(to_parent, true)?
+            .ok_or_else(|| SafePathError::io(&to_path, io::Error::from(io::ErrorKind::NotFound)))?;
+        match to_dir.symlink_metadata(to_name) {
+            Ok(meta) if meta.file_type().is_symlink() => return Err(SafePathError::Link(to_path)),
+            Ok(meta) if !meta.is_file() => return Err(SafePathError::NotAFile(to_path)),
+            _ => {}
+        }
+        replace_in(&from_dir, from_name, &to_dir, to_name)
+            .map_err(|e| SafePathError::io(&to_path, e))?;
+        sync_handle(&from_dir).map_err(|e| SafePathError::io(&from_path, e))?;
+        sync_handle(&to_dir).map_err(|e| SafePathError::io(&to_path, e))
+    }
+
+    /// Makes creates, renames and deletes in folder `rel` durable (no-op where the OS cannot).
+    pub fn sync_dir(&self, rel: &str) -> Result<(), SafePathError> {
+        let path = self.path_of(rel);
+        match self.walk(rel, false)? {
+            Some(dir) => sync_handle(&dir).map_err(|e| SafePathError::io(&path, e)),
+            None => Ok(()),
+        }
+    }
+
+    /// Removes folder `rel` if it is empty. `Ok(false)` when it is missing or not empty; a link
+    /// there is refused.
+    pub fn remove_empty_dir(&self, rel: &str) -> Result<bool, SafePathError> {
+        let (parent, name) = rel.rsplit_once('/').unwrap_or(("", rel));
+        let path = self.path_of(rel);
+        let Some(dir) = self.walk(parent, false)? else {
+            return Ok(false);
+        };
+        match dir.symlink_metadata(name) {
+            Ok(meta) if meta.file_type().is_symlink() => return Err(SafePathError::Link(path)),
+            Ok(meta) if !meta.is_dir() => return Ok(false),
+            Ok(_) => {}
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(false),
+            Err(e) => return Err(SafePathError::io(&path, e)),
+        }
+        match dir.remove_dir(name) {
+            Ok(()) => {
+                sync_handle(&dir).map_err(|e| SafePathError::io(&path, e))?;
+                Ok(true)
+            }
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    io::ErrorKind::DirectoryNotEmpty | io::ErrorKind::NotFound
+                ) =>
+            {
+                Ok(false)
+            }
+            Err(e) => Err(SafePathError::io(&path, e)),
+        }
+    }
+
     /// Deletes file `rel` if present (a link there is removed itself, never followed). Folders
     /// on the way are opened as in [`Self::open_file`]. Returns whether something was deleted.
     pub fn remove_file(&self, rel: &str) -> Result<bool, SafePathError> {
@@ -329,11 +492,69 @@ impl SafeRoot {
         let Some(dir) = self.walk(parent, false)? else {
             return Ok(false);
         };
+        if dir
+            .symlink_metadata(name)
+            .is_ok_and(|meta| meta.is_dir() && !meta.file_type().is_symlink())
+        {
+            return Err(SafePathError::NotAFile(path));
+        }
         match dir.remove_file_or_symlink(name) {
             Ok(()) => Ok(true),
             Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(false),
             Err(e) => Err(SafePathError::io(&path, e)),
         }
+    }
+
+    /// Deletes file `rel` only if it is a regular file: a link or anything else there is left in
+    /// place (`Ok(false)`), as is a missing file.
+    pub fn remove_regular_file(&self, rel: &str) -> Result<bool, SafePathError> {
+        let (parent, name) = rel.rsplit_once('/').unwrap_or(("", rel));
+        let path = self.path_of(rel);
+        let Some(dir) = self.walk(parent, false)? else {
+            return Ok(false);
+        };
+        match dir.symlink_metadata(name) {
+            Ok(meta) if meta.is_file() && !meta.file_type().is_symlink() => {}
+            Ok(_) => return Ok(false),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(false),
+            Err(e) => return Err(SafePathError::io(&path, e)),
+        }
+        match dir.remove_file(name) {
+            Ok(()) => Ok(true),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(false),
+            Err(e) => Err(SafePathError::io(&path, e)),
+        }
+    }
+
+    /// Deletes folder `rel` and everything in it without following links (a link inside is
+    /// removed itself). `""` empties the root but keeps it. A missing folder is `Ok(false)`.
+    pub fn remove_tree(&self, rel: &str) -> Result<bool, SafePathError> {
+        let path = self.path_of(rel);
+        if rel.is_empty() {
+            let dir = self
+                .dir
+                .try_clone()
+                .map_err(|e| SafePathError::io(&self.root, e))?;
+            clear_dir(&dir, &path)?;
+            return Ok(true);
+        }
+        let (parent, name) = rel.rsplit_once('/').unwrap_or(("", rel));
+        let Some(parent_dir) = self.walk(parent, false)? else {
+            return Ok(false);
+        };
+        let child = match parent_dir.open_dir_nofollow(name) {
+            Ok(child) => child,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(false),
+            Err(e) => return Err(classify(&parent_dir, name, &path, e)),
+        };
+        clear_dir(&child, &path)?;
+        // Windows refuses to delete a folder that still has an open handle.
+        drop(child);
+        parent_dir
+            .remove_dir(name)
+            .map_err(|e| SafePathError::io(&path, e))?;
+        sync_handle(&parent_dir).map_err(|e| SafePathError::io(&path, e))?;
+        Ok(true)
     }
 
     /// Creates the directory `rel` and its parents, refusing links and non-directories on the
@@ -376,6 +597,61 @@ impl SafeRoot {
             Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
             Err(e) => Err(SafePathError::io(&path, e)),
         }
+    }
+}
+
+/// Deletes everything inside `dir` (whose path is `path`, for messages) without following links.
+fn clear_dir(dir: &Dir, path: &Path) -> Result<(), SafePathError> {
+    let entries = dir.entries().map_err(|e| SafePathError::io(path, e))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| SafePathError::io(path, e))?;
+        let name = entry.file_name();
+        let child_path = path.join(&name);
+        let meta = dir
+            .symlink_metadata(&name)
+            .map_err(|e| SafePathError::io(&child_path, e))?;
+        if meta.is_dir() && !meta.file_type().is_symlink() {
+            let child = dir
+                .open_dir_nofollow(&name)
+                .map_err(|e| classify(dir, &name, &child_path, e))?;
+            clear_dir(&child, &child_path)?;
+            drop(child);
+            dir.remove_dir(&name)
+                .map_err(|e| SafePathError::io(&child_path, e))?;
+        } else {
+            // A link (a junction on Windows) is removed itself, never its target.
+            dir.remove_file_or_symlink(&name)
+                .map_err(|e| SafePathError::io(&child_path, e))?;
+        }
+    }
+    Ok(())
+}
+
+/// Renames `from` in `from_dir` over `to` in `to_dir`. Windows refuses an existing target, so it
+/// is deleted first there.
+fn replace_in(from_dir: &Dir, from: &str, to_dir: &Dir, to: &str) -> io::Result<()> {
+    #[cfg(windows)]
+    match to_dir.remove_file(to) {
+        Ok(()) => {}
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e),
+    }
+    from_dir.rename(from, to_dir, to)
+}
+
+/// fsyncs a folder through its handle (Unix); Windows has no directory fsync.
+fn sync_handle(dir: &Dir) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        // The handle may be `O_PATH` (no fsync): reopen the folder itself, read-only.
+        let mut options = cap_std::fs::OpenOptions::new();
+        options.read(true).maybe_dir(true);
+        dir.open_with(".", &options)?.into_std().sync_all()
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = dir;
+        Ok(())
     }
 }
 

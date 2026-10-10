@@ -22,7 +22,9 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use vgames_core::manifest::MAX_MANIFEST_BYTES;
 use vgames_core::manifest::Manifest;
+use vgames_core::sign::MAX_ENVELOPE_BYTES;
 use vgames_core::trust::TrustState;
 use vgames_core::verify::{
     ExpectedRelease, VerifiedManifest, VerifyError, VerifyMode, verify_manifest,
@@ -36,7 +38,7 @@ use crate::download::{
     self, DownloadControl, DownloadError, DownloadOptions, DownloadSpec, PackUrlSource,
     PauseReason, Phase, RunOutcome, RunStats,
 };
-use crate::fsutil::{self, Access, SafePathError, SafeRoot, Target};
+use crate::fsutil::{Access, SafePathError, SafeRoot, Target};
 use crate::sys;
 
 pub const INSTALL_FORMAT: &str = "vgames.install/1";
@@ -217,13 +219,9 @@ pub fn load_local_release(
     expected: &ExpectedRelease,
     mode: VerifyMode,
 ) -> Result<Release, InstallError> {
-    let meta = root.join(META_DIR);
-    let manifest_path = meta.join(MANIFEST_FILE);
-    let signature_path = meta.join(SIGNATURE_FILE);
-    let bytes =
-        fs::read(&manifest_path).map_err(|e| InstallError::io("read", &manifest_path, e))?;
-    let sig =
-        fs::read(&signature_path).map_err(|e| InstallError::io("read", &signature_path, e))?;
+    let safe = SafeRoot::open_resolved(root).map_err(|e| path_error("read", e))?;
+    let bytes = read_meta(&safe, MANIFEST_FILE, MAX_MANIFEST_BYTES as u64)?;
+    let sig = read_meta(&safe, SIGNATURE_FILE, MAX_ENVELOPE_BYTES as u64)?;
     let envelope = Envelope::parse(&sig)
         .map_err(|e| InstallError::Conflict(format!("the stored signature is unreadable: {e}")))?;
     Ok(verify_release(
@@ -231,31 +229,96 @@ pub fn load_local_release(
     )?)
 }
 
+/// Verifies the stored manifest under a new `envelope` (a re-signed release) and, when it
+/// passes, stores that signature in place of the old one.
+pub fn adopt_signature(
+    root: &Path,
+    trust: &TrustState,
+    envelope: Envelope,
+    expected: &ExpectedRelease,
+) -> Result<Release, InstallError> {
+    let safe = SafeRoot::open_resolved(root).map_err(|e| path_error("read", e))?;
+    let bytes = read_meta(&safe, MANIFEST_FILE, MAX_MANIFEST_BYTES as u64)?;
+    let release = verify_release(trust, envelope, bytes, expected, None, VerifyMode::Launch)?;
+    safe.atomic_write(&meta_rel(SIGNATURE_FILE), &release.envelope.to_bytes())
+        .map_err(|e| path_error("write", e))?;
+    Ok(release)
+}
+
 /// Reads `.vgames/install.json`, if present.
 pub fn read_record(root: &Path) -> Result<Option<InstallRecord>, InstallError> {
+    match SafeRoot::open_resolved(root) {
+        Ok(safe) => read_record_in(&safe),
+        Err(SafePathError::Io { source, .. }) if source.kind() == io::ErrorKind::NotFound => {
+            Ok(None)
+        }
+        Err(e) => Err(path_error("read", e)),
+    }
+}
+
+/// [`read_record`] through an open root.
+pub(crate) fn read_record_in(safe: &SafeRoot) -> Result<Option<InstallRecord>, InstallError> {
     const MAX_RECORD_BYTES: u64 = 64 * 1024;
-    let path = root.join(META_DIR).join(RECORD_FILE);
-    if fs::symlink_metadata(&path).is_ok_and(|m| !m.is_file() || m.len() > MAX_RECORD_BYTES) {
-        return Err(InstallError::Conflict(format!(
-            "{} is not a valid install record",
-            path.display()
-        )));
-    }
-    match fs::read(&path) {
-        Ok(bytes) => serde_json::from_slice(&bytes)
-            .map(Some)
-            .map_err(|e| InstallError::Conflict(format!("{} is unreadable: {e}", path.display()))),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(InstallError::io("read", &path, e)),
-    }
+    let rel = meta_rel(RECORD_FILE);
+    let path = safe.path_of(&rel);
+    let bytes = match safe.read(&rel, MAX_RECORD_BYTES) {
+        Ok(Some(bytes)) => bytes,
+        Ok(None) => return Ok(None),
+        Err(SafePathError::Io { source, .. }) if source.kind() != io::ErrorKind::InvalidData => {
+            return Err(InstallError::io("read", &path, source));
+        }
+        Err(_) => {
+            return Err(InstallError::Conflict(format!(
+                "{} is not a valid install record",
+                path.display()
+            )));
+        }
+    };
+    serde_json::from_slice(&bytes)
+        .map(Some)
+        .map_err(|e| InstallError::Conflict(format!("{} is unreadable: {e}", path.display())))
 }
 
 /// Writes `.vgames/install.json` atomically.
 pub fn write_record(root: &Path, record: &InstallRecord) -> Result<(), InstallError> {
-    let path = root.join(META_DIR).join(RECORD_FILE);
+    let safe = SafeRoot::open(root).map_err(|e| path_error("write", e))?;
+    write_record_in(&safe, record)
+}
+
+/// [`write_record`] through an open root.
+pub(crate) fn write_record_in(safe: &SafeRoot, record: &InstallRecord) -> Result<(), InstallError> {
     let bytes = serde_json::to_vec_pretty(record)
         .map_err(|e| InstallError::Internal(format!("install record: {e}")))?;
-    fsutil::atomic_write(&path, &bytes).map_err(|e| InstallError::io("write", &path, e))
+    safe.atomic_write(&meta_rel(RECORD_FILE), &bytes)
+        .map_err(|e| path_error("write", e))
+}
+
+/// `name` inside the launcher's metadata folder, as a root-relative path.
+pub(crate) fn meta_rel(name: &str) -> String {
+    format!("{META_DIR}/{name}")
+}
+
+/// A refused path stays [`InstallError::UnsafePath`]; an OS error becomes [`InstallError::Io`] so
+/// callers can tell a missing install (`NotFound`) apart.
+pub(crate) fn path_error(op: &'static str, error: SafePathError) -> InstallError {
+    match error {
+        SafePathError::Io { path, source } => InstallError::Io { op, path, source },
+        other => other.into(),
+    }
+}
+
+/// Reads a metadata file that must exist (a missing one is `NotFound`).
+fn read_meta(safe: &SafeRoot, name: &str, max: u64) -> Result<Vec<u8>, InstallError> {
+    let rel = meta_rel(name);
+    safe.read(&rel, max)
+        .map_err(|e| path_error("read", e))?
+        .ok_or_else(|| {
+            InstallError::io(
+                "read",
+                &safe.path_of(&rel),
+                io::Error::from(io::ErrorKind::NotFound),
+            )
+        })
 }
 
 /// How [`install`] ended.
@@ -489,17 +552,27 @@ fn prepare(
     let space = check_space(root, manifest)?;
 
     let safe = Arc::new(SafeRoot::create(root)?);
-    let meta = safe.ensure_dir(META_DIR)?;
-    write_if_changed(&meta.join(MANIFEST_FILE), &release.manifest_bytes)?;
-    write_if_changed(&meta.join(SIGNATURE_FILE), &release.envelope.to_bytes())?;
-    write_record(
-        safe.root(),
+    safe.ensure_dir(META_DIR)?;
+    write_if_changed(
+        &safe,
+        MANIFEST_FILE,
+        &release.manifest_bytes,
+        MAX_MANIFEST_BYTES as u64,
+    )?;
+    write_if_changed(
+        &safe,
+        SIGNATURE_FILE,
+        &release.envelope.to_bytes(),
+        MAX_ENVELOPE_BYTES as u64,
+    )?;
+    write_record_in(
+        &safe,
         &InstallRecord::for_manifest(&release.verified, InstallState::Installing),
     )?;
 
     let table = ChunkTable::new(manifest)?;
     let mut targets = Vec::with_capacity(manifest.files.len());
-    let journal_path = meta.join(JOURNAL_FILE);
+    let journal_rel = meta_rel(JOURNAL_FILE);
     let mut journal_invalidated = false;
     for (i, file) in manifest.files.iter().enumerate() {
         if i % 256 == 0 && control.is_cancelled() {
@@ -512,12 +585,12 @@ fn prepare(
             // A journal bit describes bytes in the previous file, not a newly
             // created or resized replacement. Invalidate before allocation,
             // so a crash here cannot leave zeros recorded as completed data.
-            match fs::remove_file(&journal_path) {
-                Ok(()) => {
-                    fsutil::sync_dir(&meta).map_err(|e| InstallError::io("flush", &meta, e))?
-                }
-                Err(e) if e.kind() == io::ErrorKind::NotFound => {}
-                Err(e) => return Err(InstallError::io("delete", &journal_path, e)),
+            if safe
+                .remove_file(&journal_rel)
+                .map_err(|e| path_error("delete", e))?
+            {
+                safe.sync_dir(META_DIR)
+                    .map_err(|e| path_error("flush", e))?;
             }
             journal_invalidated = true;
         }
@@ -532,8 +605,9 @@ fn prepare(
         }
         targets.push(Some(Target::new(Arc::clone(&safe), file.path.clone())));
     }
-    let journal = Journal::load_or_new(
-        &journal_path,
+    let journal = Journal::in_root(
+        Arc::clone(&safe),
+        &journal_rel,
         JournalKey {
             version_id: manifest.version_id,
             manifest_blake3: *release.verified.digest.as_bytes(),
@@ -548,11 +622,21 @@ fn prepare(
     })
 }
 
-fn write_if_changed(path: &Path, bytes: &[u8]) -> Result<(), InstallError> {
-    if fs::read(path).is_ok_and(|current| current == bytes) {
+fn write_if_changed(
+    safe: &SafeRoot,
+    name: &str,
+    bytes: &[u8],
+    max: u64,
+) -> Result<(), InstallError> {
+    let rel = meta_rel(name);
+    if safe
+        .read(&rel, max)
+        .is_ok_and(|current| current.as_deref() == Some(bytes))
+    {
         return Ok(());
     }
-    fsutil::atomic_write(path, bytes).map_err(|e| InstallError::io("write", path, e))
+    safe.atomic_write(&rel, bytes)
+        .map_err(|e| path_error("write", e))
 }
 
 fn finalize(
@@ -561,7 +645,7 @@ fn finalize(
     targets: &[Option<Target>],
 ) -> Result<InstallRecord, InstallError> {
     let manifest = release.manifest();
-    let mut dirs: BTreeSet<PathBuf> = BTreeSet::new();
+    let mut dirs: BTreeSet<&str> = BTreeSet::new();
     for (file, target) in manifest.files.iter().zip(targets) {
         let Some(target) = target else { continue };
         let path = &target.display_path();
@@ -573,25 +657,20 @@ fn finalize(
             .map_err(|e| InstallError::io("flush", path, e))?;
         set_executable(&handle, file.executable)
             .map_err(|e| InstallError::io("set permissions of", path, e))?;
-        if let Some(parent) = path.parent() {
-            dirs.insert(parent.to_owned());
-        }
+        dirs.insert(file.path.rsplit_once('/').map_or("", |(parent, _)| parent));
     }
     for dir in &manifest.directories {
-        dirs.insert(safe.ensure_dir(dir)?);
+        safe.ensure_dir(dir)?;
+        dirs.insert(dir);
     }
-    for dir in &dirs {
-        fsutil::sync_dir(dir).map_err(|e| InstallError::io("flush", dir, e))?;
+    for dir in dirs {
+        safe.sync_dir(dir).map_err(|e| path_error("flush", e))?;
     }
     let mut record = InstallRecord::for_manifest(&release.verified, InstallState::Installed);
     record.installed_at = Some(now_rfc3339());
-    write_record(safe.root(), &record)?;
-    let journal = safe.root().join(META_DIR).join(JOURNAL_FILE);
-    match fs::remove_file(&journal) {
-        Ok(()) => {}
-        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
-        Err(e) => return Err(InstallError::io("delete", &journal, e)),
-    }
+    write_record_in(safe, &record)?;
+    safe.remove_file(&meta_rel(JOURNAL_FILE))
+        .map_err(|e| path_error("delete", e))?;
     Ok(record)
 }
 
@@ -716,110 +795,61 @@ fn add_parents(path: &Path, root: &Path, known_dirs: &mut HashSet<PathBuf>) {
 /// (saves, mods, configs, links) is left in place and returned, so the caller
 /// can ask the user; `root` itself is removed only when empty.
 pub fn remove_install(root: &Path, manifest: &Manifest) -> Result<Leftovers, InstallError> {
-    let meta = fs::symlink_metadata(root).map_err(|e| InstallError::io("open", root, e))?;
-    if meta.file_type().is_symlink() || !meta.is_dir() {
-        return Err(SafePathError::Link(root.to_owned()).into());
-    }
-    let mut dirs: BTreeSet<PathBuf> = BTreeSet::new();
+    let safe = SafeRoot::open(root).map_err(|e| path_error("open", e))?;
+    let mut dirs: BTreeSet<&str> = BTreeSet::new();
     for file in &manifest.files {
-        let mut path = root.to_owned();
-        let parts: Vec<&str> = file.path.split('/').collect();
-        let mut through_link = false;
-        for (i, part) in parts.iter().enumerate() {
-            path.push(part);
-            if i + 1 < parts.len() {
-                match fs::symlink_metadata(&path) {
-                    Ok(m) if m.is_dir() && !m.file_type().is_symlink() => {
-                        dirs.insert(path.clone());
-                    }
-                    _ => {
-                        through_link = true;
-                        break;
-                    }
-                }
+        // Every folder is opened through the root's handle: a folder swapped for a link is
+        // refused, never followed, and what it holds stays a leftover.
+        match safe.remove_regular_file(&file.path) {
+            Ok(_) => {}
+            Err(SafePathError::Io { path, source }) => {
+                return Err(InstallError::io("delete", &path, source));
             }
+            Err(_) => continue,
         }
-        if through_link {
-            continue;
-        }
-        match fs::symlink_metadata(&path) {
-            Ok(m) if m.is_file() => {
-                fs::remove_file(&path).map_err(|e| InstallError::io("delete", &path, e))?
-            }
-            _ => {}
-        }
+        add_rel_parents(&file.path, &mut dirs);
     }
     for dir in &manifest.directories {
-        let mut path = root.to_owned();
-        let mut plain = Vec::new();
-        for part in dir.split('/') {
-            path.push(part);
-            match fs::symlink_metadata(&path) {
-                Ok(m) if m.is_dir() && !m.file_type().is_symlink() => plain.push(path.clone()),
-                _ => break,
-            }
-        }
-        dirs.extend(plain);
+        dirs.insert(dir);
+        add_rel_parents(dir, &mut dirs);
     }
-    let meta_dir = root.join(META_DIR);
-    if fs::symlink_metadata(&meta_dir).is_ok_and(|m| m.is_dir() && !m.file_type().is_symlink()) {
-        for entry in fs::read_dir(&meta_dir)
-            .map_err(|e| InstallError::io("read", &meta_dir, e))?
-            .flatten()
-        {
-            let path = entry.path();
-            match fs::symlink_metadata(&path) {
-                Ok(m) if m.is_dir() && !m.file_type().is_symlink() => {
-                    remove_tree_no_follow(&path)?;
-                }
-                Ok(_) => {
-                    fs::remove_file(&path).map_err(|e| InstallError::io("delete", &path, e))?
-                }
-                Err(_) => {}
-            }
-        }
-        dirs.insert(meta_dir);
+    match safe.remove_tree(META_DIR) {
+        Ok(_) | Err(SafePathError::Link(_) | SafePathError::NotADirectory(_)) => {}
+        Err(e) => return Err(path_error("delete", e)),
     }
     // Deepest first, so parents empty out.
-    let mut ordered: Vec<PathBuf> = dirs.into_iter().collect();
-    ordered.sort_by_key(|p| std::cmp::Reverse(p.components().count()));
+    let mut ordered: Vec<&str> = dirs.into_iter().collect();
+    ordered.sort_by_key(|d| std::cmp::Reverse(d.split('/').count()));
     for dir in ordered {
-        let _ = fs::remove_dir(&dir);
+        let _ = safe.remove_empty_dir(dir);
     }
-    let _ = fs::remove_dir(root);
+    let root = safe.root().to_owned();
+    // Windows refuses to delete a folder while a handle on it is open.
+    drop(safe);
+    let _ = fs::remove_dir(&root);
     let mut leftovers = Leftovers::default();
     if root.exists() {
-        collect_leftovers(root, &mut leftovers.paths);
+        collect_leftovers(&root, &mut leftovers.paths);
     }
     Ok(leftovers)
 }
 
-/// Deletes a launcher-owned tree (staging) without following links.
-pub fn remove_tree_no_follow(dir: &Path) -> Result<(), InstallError> {
-    for entry in fs::read_dir(dir)
-        .map_err(|e| InstallError::io("read", dir, e))?
-        .flatten()
-    {
-        let path = entry.path();
-        let meta =
-            fs::symlink_metadata(&path).map_err(|e| InstallError::io("inspect", &path, e))?;
-        if meta.is_dir() && !meta.file_type().is_symlink() {
-            remove_tree_no_follow(&path)?;
-        } else {
-            // Removes the link itself, never its target.
-            remove_entry(&path, &meta)?;
-        }
+fn add_rel_parents<'a>(rel: &'a str, dirs: &mut BTreeSet<&'a str>) {
+    let mut current = rel;
+    while let Some((parent, _)) = current.rsplit_once('/') {
+        dirs.insert(parent);
+        current = parent;
     }
-    fs::remove_dir(dir).map_err(|e| InstallError::io("delete", dir, e))
 }
 
-fn remove_entry(path: &Path, meta: &fs::Metadata) -> Result<(), InstallError> {
-    #[cfg(windows)]
-    if meta.file_type().is_symlink() && meta.is_dir() {
-        return fs::remove_dir(path).map_err(|e| InstallError::io("delete", path, e));
-    }
-    let _ = meta;
-    fs::remove_file(path).map_err(|e| InstallError::io("delete", path, e))
+/// Deletes a launcher-owned tree (staging) without following links.
+pub fn remove_tree_no_follow(dir: &Path) -> Result<(), InstallError> {
+    let safe = SafeRoot::open(dir).map_err(|e| path_error("delete", e))?;
+    safe.remove_tree("").map_err(|e| path_error("delete", e))?;
+    // Windows refuses to delete a folder while a handle on it is open.
+    let root = safe.root().to_owned();
+    drop(safe);
+    fs::remove_dir(&root).map_err(|e| InstallError::io("delete", &root, e))
 }
 
 fn collect_leftovers(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -852,10 +882,8 @@ pub fn free_dir_name(library: &Path, slug: &str) -> String {
 
 /// BLAKE3 of the stored manifest bytes, for comparing with `install.json`.
 pub fn manifest_digest(root: &Path) -> Result<Digest, InstallError> {
-    let path = root.join(META_DIR).join(MANIFEST_FILE);
-    fs::read(&path)
-        .map(|b| Digest::of(&b))
-        .map_err(|e| InstallError::io("read", &path, e))
+    let safe = SafeRoot::open_resolved(root).map_err(|e| path_error("read", e))?;
+    read_meta(&safe, MANIFEST_FILE, MAX_MANIFEST_BYTES as u64).map(|b| Digest::of(&b))
 }
 
 #[cfg(test)]
@@ -913,5 +941,75 @@ mod uninstall_preview_tests {
             fs::read(outside.path().join("secret")).unwrap(),
             b"untouched"
         );
+    }
+
+    /// A folder swapped for a link to somewhere else: nothing behind the link is deleted.
+    #[cfg(unix)]
+    #[test]
+    fn uninstall_never_deletes_through_a_folder_swapped_for_a_link() {
+        use std::os::unix::fs::symlink;
+        let file = FileSpec::random("bin/game", 8, 9);
+        let package = TestPackage::build(std::slice::from_ref(&file), &[], Compression::None);
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        write_tree(root.path(), &[file], &[]);
+        write_record(
+            root.path(),
+            &InstallRecord::for_manifest(&package.release().verified, InstallState::Installed),
+        )
+        .unwrap();
+        fs::write(outside.path().join("game"), b"not the launcher's").unwrap();
+        fs::create_dir(outside.path().join(META_DIR)).unwrap();
+        fs::write(outside.path().join(META_DIR).join("keep"), b"kept").unwrap();
+        fs::remove_dir_all(root.path().join("bin")).unwrap();
+        symlink(outside.path(), root.path().join("bin")).unwrap();
+
+        let leftovers = remove_install(root.path(), package.release().manifest()).unwrap();
+        assert_eq!(leftovers.paths, vec![root.path().join("bin")]);
+        assert!(!root.path().join(META_DIR).exists());
+        assert_eq!(
+            fs::read(outside.path().join("game")).unwrap(),
+            b"not the launcher's"
+        );
+        assert_eq!(
+            fs::read(outside.path().join(META_DIR).join("keep")).unwrap(),
+            b"kept"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_launcher_tree_is_deleted_without_following_links_inside() {
+        use std::os::unix::fs::symlink;
+        let tree = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        fs::write(outside.path().join("keep"), b"kept").unwrap();
+        let staging = tree.path().join("staging");
+        fs::create_dir_all(staging.join("a/b")).unwrap();
+        fs::write(staging.join("a/b/file"), b"x").unwrap();
+        symlink(outside.path(), staging.join("a/link")).unwrap();
+        remove_tree_no_follow(&staging).unwrap();
+        assert!(!staging.exists());
+        assert_eq!(fs::read(outside.path().join("keep")).unwrap(), b"kept");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_install_record_that_is_a_link_is_refused() {
+        use std::os::unix::fs::symlink;
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        fs::write(outside.path().join("install.json"), b"{}").unwrap();
+        fs::create_dir(root.path().join(META_DIR)).unwrap();
+        symlink(
+            outside.path().join("install.json"),
+            root.path().join(META_DIR).join(RECORD_FILE),
+        )
+        .unwrap();
+        assert!(matches!(
+            read_record(root.path()),
+            Err(InstallError::Conflict(_))
+        ));
+        assert!(read_record(&root.path().join("missing")).unwrap().is_none());
     }
 }
