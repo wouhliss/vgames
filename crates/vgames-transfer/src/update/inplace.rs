@@ -1,8 +1,6 @@
 //! Explicit low-space update mode. Changed files are written at their final
 //! paths, so the install stays marked `updating` until commit.
 
-use std::fs;
-use std::io;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -13,12 +11,13 @@ use crate::download::table::ChunkTable;
 use crate::download::{
     self, DownloadControl, DownloadOptions, DownloadSpec, PackUrlSource, Phase, RunOutcome,
 };
-use crate::fsutil::{self, Access, SafePathError, SafeRoot, Target};
+use crate::fsutil::{Access, SafePathError, SafeRoot, Target};
 use crate::install::{
     InstallError, InstallOutcome, InstallReport, InstallState, MANIFEST_FILE, META_DIR, Release,
-    SPACE_MARGIN, read_record, write_record,
+    SPACE_MARGIN, read_record, write_record_in,
 };
 use crate::sys;
+use vgames_core::manifest::MAX_MANIFEST_BYTES;
 
 const JOURNAL: &str = ".vgames/inplace-journal.bin";
 const NEXT_MANIFEST: &str = ".vgames/next-manifest.json";
@@ -73,8 +72,7 @@ pub async fn update_in_place<A: PackUrlSource>(
             let root = root.to_owned();
             let record = tokio::task::spawn_blocking(move || {
                 let record = commit::begin_inplace(&root, &old, &new)?;
-                if let Err(error) = fs::remove_file(root.join(JOURNAL))
-                    && error.kind() != io::ErrorKind::NotFound
+                if let Err(error) = SafeRoot::open(&root).and_then(|safe| safe.remove_file(JOURNAL))
                 {
                     tracing::warn!(%error, "cannot remove completed in-place journal");
                 }
@@ -137,19 +135,19 @@ fn prepare(
         ));
     }
     let safe = Arc::new(SafeRoot::open(root)?);
-    let old_path = safe
-        .existing_file(&format!("{META_DIR}/{MANIFEST_FILE}"))?
+    let old_bytes = safe
+        .read(
+            &format!("{META_DIR}/{MANIFEST_FILE}"),
+            MAX_MANIFEST_BYTES as u64,
+        )?
         .ok_or_else(|| InstallError::Conflict("missing installed manifest".into()))?;
-    if fs::read(&old_path).map_err(|error| InstallError::io("read", &old_path, error))?
-        != old.manifest_bytes
-    {
+    if old_bytes != old.manifest_bytes {
         return Err(InstallError::Conflict(
             "installed manifest changed before update".into(),
         ));
     }
     let table = Arc::new(ChunkTable::new(new.manifest())?);
-    let journal_path = safe.path_of(JOURNAL);
-    let mut journal = Journal::load_or_new(&journal_path, key(new, &table));
+    let mut journal = Journal::in_root(Arc::clone(&safe), JOURNAL, key(new, &table));
     let mut wanted = Bitset::new(table.len());
     for needed in &plan.needed_chunks {
         wanted.set(needed.new_chunk);
@@ -178,24 +176,20 @@ fn prepare(
                 limit,
             });
         }
-        let meta = safe.ensure_dir(META_DIR)?;
-        fsutil::atomic_write(&safe.path_of(NEXT_MANIFEST), &new.manifest_bytes)
-            .map_err(|error| InstallError::io("write", &meta, error))?;
-        fsutil::atomic_write(&safe.path_of(NEXT_SIGNATURE), &new.envelope.to_bytes())
-            .map_err(|error| InstallError::io("write", &meta, error))?;
+        safe.atomic_write(NEXT_MANIFEST, &new.manifest_bytes)?;
+        safe.atomic_write(NEXT_SIGNATURE, &new.envelope.to_bytes())?;
         record.state = InstallState::Updating;
-        write_record(safe.root(), &record)?;
+        write_record_in(&safe, &record)?;
     } else {
         let signature = new.envelope.to_bytes();
         for (name, expected) in [
             (NEXT_MANIFEST, new.manifest_bytes.as_slice()),
             (NEXT_SIGNATURE, signature.as_slice()),
         ] {
-            let path = safe
-                .existing_file(name)?
+            let saved = safe
+                .read(name, MAX_MANIFEST_BYTES as u64)?
                 .ok_or_else(|| InstallError::Conflict("saved update release is missing".into()))?;
-            if fs::read(&path).map_err(|error| InstallError::io("read", &path, error))? != expected
-            {
+            if saved != expected {
                 return Err(InstallError::Conflict(
                     "a different update is already in progress".into(),
                 ));
@@ -209,9 +203,8 @@ fn prepare(
             .files
             .get(index as usize)
             .ok_or_else(|| InstallError::Conflict("invalid build file index".into()))?;
-        match safe.existing_file(&file.path) {
-            Ok(Some(path))
-                if fs::symlink_metadata(&path).is_ok_and(|meta| meta.len() == file.size) => {}
+        match safe.open_existing(&file.path, Access::Read) {
+            Ok(Some(handle)) if handle.metadata().is_ok_and(|meta| meta.len() == file.size) => {}
             Ok(None)
             | Ok(Some(_))
             | Err(SafePathError::NotADirectory(_) | SafePathError::NotAFile(_)) => reset = true,
@@ -230,13 +223,10 @@ fn prepare(
         }
     }
     if reset {
-        match fs::remove_file(&journal_path) {
-            Ok(()) => fsutil::sync_dir(&safe.path_of(META_DIR))
-                .map_err(|error| InstallError::io("flush", &journal_path, error))?,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => return Err(InstallError::io("delete", &journal_path, error)),
+        if safe.remove_file(JOURNAL)? {
+            safe.sync_dir(META_DIR)?;
         }
-        journal = Journal::load_or_new(&journal_path, key(new, &table));
+        journal = Journal::in_root(Arc::clone(&safe), JOURNAL, key(new, &table));
     }
     commit::clear_removed(&safe, &plan.remove_files)?;
     let mut done_files = vec![false; new.manifest().files.len()];
@@ -280,7 +270,7 @@ fn prepare(
     }
     journal
         .persist()
-        .map_err(|error| InstallError::io("write", &journal_path, error))?;
+        .map_err(|error| InstallError::io("write", journal.path(), error))?;
     Ok(Prepared {
         table,
         targets: Arc::new(targets),
@@ -296,6 +286,7 @@ mod tests {
     use crate::install::{self, InstallRecord};
     use crate::testkit::package::{FileSpec, Identity, TestPackage, write_tree};
     use crate::testkit::{MockApi, Rig};
+    use std::fs;
     use uuid::Uuid;
     use vgames_pack::Compression;
 

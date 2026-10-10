@@ -12,10 +12,11 @@
 //! is: fsync dirty files → write temp → fsync → rename).
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use uuid::Uuid;
 
-use crate::fsutil;
+use crate::fsutil::{self, SafeRoot};
 
 const MAGIC: &[u8; 8] = b"VGJRNL01";
 const HEADER: usize = 8 + 16 + 32 + 4;
@@ -108,15 +109,42 @@ pub struct JournalKey {
 #[derive(Debug)]
 pub struct Journal {
     path: PathBuf,
+    /// Inside an install: read and written through the root's folder handle (INS-07).
+    root: Option<(Arc<SafeRoot>, String)>,
     key: JournalKey,
     done: Bitset,
 }
+
+/// Largest journal accepted: a bit per chunk of the largest manifest, plus the header.
+const MAX_JOURNAL_BYTES: u64 = 64 * 1024 * 1024;
 
 impl Journal {
     /// Loads the journal at `path`, or starts an empty one when it is missing,
     /// damaged or belongs to another download.
     pub fn load_or_new(path: &Path, key: JournalKey) -> Self {
-        let done = match std::fs::read(path) {
+        Self::load(std::fs::read(path), path.to_owned(), None, key)
+    }
+
+    /// The journal `rel` under an install root, read and persisted through the root's handle.
+    pub fn in_root(root: Arc<SafeRoot>, rel: &str, key: JournalKey) -> Self {
+        let read = root
+            .read(rel, MAX_JOURNAL_BYTES)
+            .map_err(|error| match error {
+                fsutil::SafePathError::Io { source, .. } => source,
+                other => std::io::Error::other(other.to_string()),
+            })
+            .and_then(|bytes| bytes.ok_or_else(|| std::io::ErrorKind::NotFound.into()));
+        let path = root.path_of(rel);
+        Self::load(read, path, Some((root, rel.to_owned())), key)
+    }
+
+    fn load(
+        read: std::io::Result<Vec<u8>>,
+        path: PathBuf,
+        root: Option<(Arc<SafeRoot>, String)>,
+        key: JournalKey,
+    ) -> Self {
+        let done = match read {
             Ok(bytes) => match decode(&bytes, &key) {
                 Some(done) => done,
                 None => {
@@ -131,7 +159,8 @@ impl Journal {
             }
         };
         Self {
-            path: path.to_owned(),
+            path,
+            root,
             key,
             done,
         }
@@ -148,7 +177,14 @@ impl Journal {
     /// Writes the journal atomically. The caller has fsynced every file the
     /// newly marked chunks touched.
     pub fn persist(&self) -> std::io::Result<()> {
-        fsutil::atomic_write(&self.path, &encode(&self.key, &self.done))
+        let bytes = encode(&self.key, &self.done);
+        match &self.root {
+            Some((root, rel)) => root.atomic_write(rel, &bytes).map_err(|error| match error {
+                fsutil::SafePathError::Io { source, .. } => source,
+                other => std::io::Error::other(other.to_string()),
+            }),
+            None => fsutil::atomic_write(&self.path, &bytes),
+        }
     }
 
     pub fn path(&self) -> &Path {

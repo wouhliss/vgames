@@ -13,7 +13,7 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use vgames_core::Digest;
 
-use crate::fsutil::{self, SafePathError, SafeRoot};
+use crate::fsutil::{Access, SafePathError, SafeRoot};
 use crate::install::Release;
 
 const READ_SIZE: usize = 256 * 1024;
@@ -170,13 +170,11 @@ fn verify_file(
     if cancel.is_cancelled() {
         return Err(VerifyError::Cancelled);
     }
-    let Some(path) = safe.existing_file(&expected.path)? else {
+    let path = safe.path_of(&expected.path);
+    // Opened through the root's handle, never by path (INS-07).
+    let Some(mut file) = safe.open_existing(&expected.path, Access::Read)? else {
         return Ok((index, true, 0));
     };
-    let mut file = fsutil::open_for_read(&path).map_err(|source| VerifyError::Io {
-        path: path.clone(),
-        source,
-    })?;
     let before = file.metadata().map_err(|source| VerifyError::Io {
         path: path.clone(),
         source,

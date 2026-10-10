@@ -1,8 +1,6 @@
 //! Safe-mode update transfer: reuse verified old chunks, fetch only remaining
 //! changed-file chunks into staging, then commit the staged release.
 
-use std::fs;
-use std::io;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -108,9 +106,8 @@ async fn run_safe<A: PackUrlSource>(
             let root = root.to_owned();
             let record = tokio::task::spawn_blocking(move || {
                 let record = commit::begin_with_damaged(&root, &old, &new, &damaged_files)?;
-                let journal = root.join(UPDATE_JOURNAL);
-                if let Err(error) = fs::remove_file(&journal)
-                    && error.kind() != io::ErrorKind::NotFound
+                if let Err(error) =
+                    SafeRoot::open(&root).and_then(|safe| safe.remove_file(UPDATE_JOURNAL))
                 {
                     tracing::warn!(%error, "cannot remove completed update journal");
                 }
@@ -165,7 +162,7 @@ fn prepare(
             "installed release changed before update".into(),
         ));
     }
-    let safe = SafeRoot::open(root)?;
+    let safe = Arc::new(SafeRoot::open(root)?);
     if let Some(limit) = sys::max_file_size(safe.root())
         .map_err(|error| InstallError::io("inspect", safe.root(), error))?
         && let Some(file) = plan
@@ -218,14 +215,8 @@ fn prepare(
             available,
         });
     }
-    let journal_path = safe.path_of(UPDATE_JOURNAL);
-    if reset_journal {
-        match fs::remove_file(&journal_path) {
-            Ok(()) => fsutil::sync_dir(&safe.path_of(META_DIR))
-                .map_err(|error| InstallError::io("flush", &journal_path, error))?,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => return Err(InstallError::io("delete", &journal_path, error)),
-        }
+    if reset_journal && safe.remove_file(UPDATE_JOURNAL)? {
+        safe.sync_dir(META_DIR)?;
     }
     for (index, target) in targets.iter().enumerate() {
         let Some(target) = target else {
@@ -250,8 +241,9 @@ fn prepare(
     }
     let table = Arc::new(ChunkTable::new(new.manifest())?);
     let old_table = ChunkTable::new(old.manifest())?;
-    let mut journal = Journal::load_or_new(
-        &journal_path,
+    let mut journal = Journal::in_root(
+        Arc::clone(&safe),
+        UPDATE_JOURNAL,
         JournalKey {
             version_id: new.manifest().version_id,
             manifest_blake3: *new.verified.digest.as_bytes(),
@@ -285,7 +277,7 @@ fn prepare(
     }
     journal
         .persist()
-        .map_err(|error| InstallError::io("write", &journal_path, error))?;
+        .map_err(|error| InstallError::io("write", journal.path(), error))?;
     Ok(Prepared {
         table,
         targets: Arc::new(targets),
@@ -312,13 +304,9 @@ pub(super) fn read_old_chunk(
             .files
             .get(extent.file as usize)
             .ok_or_else(|| InstallError::Conflict("invalid old file index".into()))?;
-        let file = safe.existing_file(&old_file.path)?;
-        let Some(path) = file else {
+        // Opened through the root's handle, never by path (INS-07).
+        let Some(handle) = safe.open_existing(&old_file.path, Access::Read)? else {
             return Ok(None);
-        };
-        let handle = match fsutil::open_for_read(&path) {
-            Ok(handle) => handle,
-            Err(_) => return Ok(None),
         };
         let len = usize::try_from(extent.len)
             .map_err(|_| InstallError::Conflict("local extent too large".into()))?;
@@ -377,6 +365,7 @@ mod tests {
     use crate::install::{self, InstallRecord, InstallState};
     use crate::testkit::package::{FileSpec, Identity, TestPackage, write_tree};
     use crate::testkit::{MockApi, Rig};
+    use std::fs;
     use uuid::Uuid;
     use vgames_pack::Compression;
 

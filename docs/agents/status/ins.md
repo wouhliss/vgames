@@ -66,8 +66,14 @@ Install & Library (phase 2, `docs/agents/phase-2/ins-install-library.md`).
 - INS-07 — local race (Q12), part 1: `SafeRoot` holds the install folder as a directory handle (`cap-std`) and
   resolves every component relative to it without following links or junctions; install writes, flushes,
   finalization and update staging open files only through it (`fsutil::Target`). Tests swap a checked folder for a
-  symlink (a junction on Windows) and prove no open, create, write or delete reaches outside. Part 2: update
-  commit/verify, move and uninstall. Then the release-build budgets.
+  symlink (a junction on Windows) and prove no open, create, write or delete reaches outside
+  ([#163](https://github.com/wouhliss/vgames/pull/163)). Part 2: the update commit (marker, `.vgames` metadata,
+  staged replaces, deletes, empty-folder pruning), the download and update journals, verification and local-chunk
+  reads, install records, uninstall (`remove_install`, launcher trees) and the re-signed signature adoption all go
+  through `SafeRoot` (`read`, `atomic_write`, `replace`, `remove_regular_file`, `remove_tree`, `sync_dir`). Read-only
+  callers may reach an install through a linked root (`open_resolved`); installing and uninstalling refuse one.
+  Left as is: `preview_uninstall`/leftover listing (read-only `symlink_metadata`, never opens), and `move_install`'s
+  copy fallback (its reads use `O_NOFOLLOW` and signed files are re-hashed). Then the release-build budgets.
 - INS-10 (session_016VNaVF…, partial) — `apps/desktop/README.md` sections Installs, Downloads and, under Logs,
   where install and download logs go and how to read an integrity report; the G1 re-review request for INT-11 in
   `int.md`. No INS-02/03/04 pending entry is left (`downloads.ts` and `library.ts` deleted, `catalog.ts` holds only

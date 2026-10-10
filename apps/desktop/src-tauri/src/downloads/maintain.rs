@@ -420,32 +420,8 @@ impl<B: Backend> Downloads<B> {
         let trust = Arc::clone(&installed.trust);
         let expected = installed.expected.clone();
         let adopted = tokio::task::spawn_blocking(move || -> Result<Release, InstallError> {
-            let meta = root.join(install::META_DIR);
-            let bytes = std::fs::read(meta.join(install::MANIFEST_FILE)).map_err(|source| {
-                InstallError::Io {
-                    op: "read",
-                    path: meta.join(install::MANIFEST_FILE),
-                    source,
-                }
-            })?;
             // Same bytes, new signature, current trust.
-            let release = install::verify_release(
-                &trust,
-                envelope,
-                bytes,
-                &expected,
-                None,
-                VerifyMode::Launch,
-            )?;
-            let path = meta.join(install::SIGNATURE_FILE);
-            vgames_transfer::fsutil::atomic_write(&path, &release.envelope.to_bytes()).map_err(
-                |source| InstallError::Io {
-                    op: "write",
-                    path: path.clone(),
-                    source,
-                },
-            )?;
-            Ok(release)
+            install::adopt_signature(&root, &trust, envelope, &expected)
         })
         .await
         .map_err(|e| End::Failed(io_error(&installed.row.root, e)))?;
