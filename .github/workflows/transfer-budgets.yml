@@ -1,0 +1,78 @@
+# INS-07: download budgets (00-overview §7) re-measured on release builds on hosted Linux, Windows
+# and macOS: loopback throughput (tests/bench_loopback.rs), peak memory at 32 connections and disk
+# footprint during a download (tests/resilience.rs). The numbers go to the job summary and are
+# recorded in docs/agents/status/ins.md. Runs when the transfer engine changes, and on demand.
+# Owner: INS.
+
+name: Transfer budgets
+
+on:
+  pull_request:
+    paths:
+      - "crates/vgames-transfer/**"
+      - ".github/workflows/transfer-budgets.yml"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: transfer-budgets-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  budgets:
+    name: Download budgets (${{ matrix.name }}, release)
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: "Linux x64", os: ubuntu-24.04 }
+          - { name: "Windows x64", os: windows-2025 }
+          - { name: "macOS arm64", os: macos-15 }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install toolchain (rust-toolchain.toml)
+        run: rustup toolchain install && rustup show active-toolchain
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: transfer-budgets
+          save-if: false
+      - name: Build the tests (release)
+        run: cargo test --locked --release -p vgames-transfer --test resilience --test bench_loopback --no-run
+      - name: Memory and disk footprint
+        run: |
+          cargo test --locked --release -p vgames-transfer --test resilience -- --nocapture 2>&1 \
+            | tee resilience.log
+      - name: Loopback throughput (2 GiB)
+        env:
+          VGAMES_BENCH_GIB: "2"
+        run: |
+          # A RAM disk where the runner has one, so the disk is not what is measured.
+          if [ -d /dev/shm ]; then export VGAMES_BENCH_DIR=/dev/shm; else export VGAMES_BENCH_DIR="$RUNNER_TEMP"; fi
+          cargo test --locked --release -p vgames-transfer --test bench_loopback -- --ignored --nocapture 2>&1 \
+            | tee bench.log
+      - name: Summary
+        if: always()
+        env:
+          RUNNER_NAME_LABEL: ${{ matrix.name }}
+        run: |
+          {
+            echo "### Download budgets, $RUNNER_NAME_LABEL (release, $(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo "$NUMBER_OF_PROCESSORS") cores)"
+            echo
+            echo '```'
+            cat resilience.log bench.log 2>/dev/null | grep '^budget ' || echo "no measurements"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

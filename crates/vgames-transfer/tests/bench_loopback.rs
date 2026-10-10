@@ -94,7 +94,7 @@ fn loopback_throughput() {
         let download = download_end.duration_since(download_start.unwrap_or(start));
         let rate = |d: Duration| total as f64 / d.as_secs_f64() / 1e9;
         eprintln!(
-            "loopback: {gib} GiB, download phase {:.2} s = {:.2} GB/s; whole install {:.2} s = {:.2} GB/s; \
+            "budget throughput: {gib} GiB loopback, download phase {:.2} s = {:.2} GB/s; whole install {:.2} s = {:.2} GB/s; \
              peak connections {connections}, {} buffers, {} ranges served",
             download.as_secs_f64(),
             rate(download),
