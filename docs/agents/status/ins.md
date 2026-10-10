@@ -38,24 +38,19 @@ Install & Library (phase 2, `docs/agents/phase-2/ins-install-library.md`).
   [E2E run 37616978222](https://github.com/wouhliss/vgames/actions/runs/37616978222) on the merged head (parts 1 and 2 in 28 s after a
   7 min release build). Bugs it found, fixed with tests: startup panic outside Tokio (#150), a first trust bundle
   never fetched before refusing an install, Browse not refreshing after a publish (#153).
-
-## In progress
-- Split agreed 2026-10-06 between the two INS sessions (the user started two): session_016VNaVFJqCdjyJ8qqaTzFtN takes
-  INS-02, INS-03, INS-04 and INS-08 (the install chain); session_01AChegfo4ZUhpjL2LgRbUk3 takes
-  INS-05, INS-06 and INS-07; INS-09 and INS-10 go to whoever finishes first. Each keeps the other's lines here.
-- INS-05 — Accounts, API client and cross-server isolation: account commands, problem bodies and the auth hook in
-  #119 (written by session_01AChegfo4ZUhpjL2LgRbUk3; that session ended on its usage limit on 2026-10-06, so
-  session_016VNaVF… took over INS-05–07 on 2026-10-07 and brought #119 up to date with `main`); the cross-server
-  token test `servers/tests.rs::a_request_to_one_server_never_carries_another_servers_token` in the follow-up PR
-  (test-matrix row filled; noted in `int.md`).
-- INS-06 — Launcher admin publishing (session_016VNaVF…), done: contract and mock
+- INS-05 — Accounts, API client and cross-server isolation: account commands, problem bodies and the auth hook
+  ([#119](https://github.com/wouhliss/vgames/pull/119), written by session_01AChegfo4ZUhpjL2LgRbUk3, brought up to
+  date and merged by session_016VNaVF… after that session ended on its usage limit); the cross-server token test
+  `servers/tests.rs::a_request_to_one_server_never_carries_another_servers_token`
+  ([#157](https://github.com/wouhliss/vgames/pull/157); test-matrix row filled, noted in `int.md`).
+- INS-06 — Launcher admin publishing: contract and mock
   ([#158](https://github.com/wouhliss/vgames/pull/158)); Rust commands, `vgames-transfer`
   `PublishOptions::release` and per-pack bytes, `tests/publish_e2e.rs`
   ([#160](https://github.com/wouhliss/vgames/pull/160), which carried the closed #159); the publish screen
   ([#162](https://github.com/wouhliss/vgames/pull/162)). Evidence: `publish_e2e` (wrong passphrase, untrusted key,
   cancel → restart → resume, failed verification, release, yank), `PublishPage.test.tsx` (the four cases, route
   absent for players), `e2e/publish.spec.ts` (axe).
-- INS-07 (session_016VNaVF…) — flaky download test (Q13): already fixed at its root cause by `7e111a0`
+- INS-07 — flaky download test (Q13): already fixed at its root cause by `7e111a0`
   (2026-09-26). The old test queued all three protocol faults on one rig, so the single-chunk retry on a fresh
   connection that the first fault triggers (`Scheduler::mismatch`) could receive the second fault; two mismatches on
   one chunk is an integrity failure by design (02 §7.10). Both failure reports (Agents 4 and 5, 2026-09-25) predate
@@ -93,10 +88,14 @@ Install & Library (phase 2, `docs/agents/phase-2/ins-install-library.md`).
   plain sequential writes on macOS and Windows (random positional writes into preallocated files, hashed). Memory and disk
   footprint are met on all three; Windows memory has the least margin (12 MiB). Open: no RAM disk on hosted Windows,
   so engine-only throughput there is measured on Linux only.
-- INS-10 (session_016VNaVF…, partial) — `apps/desktop/README.md` sections Installs, Downloads and, under Logs,
+- INS-10 — Handoff: `apps/desktop/README.md` sections Installs, Downloads, Publishing (admins) and, under Logs,
   where install and download logs go and how to read an integrity report; the G1 re-review request for INT-11 in
-  `int.md`. No INS-02/03/04 pending entry is left (`downloads.ts` and `library.ts` deleted, `catalog.ts` holds only
-  GAME's `rosetta_install`). The status file is made final once INS-05–07 land.
+  `int.md`; no INS pending entry left in `src/ipc/contract/` (`downloads.ts`, `library.ts` and `publishing.ts`
+  deleted, `catalog.ts` holds only GAME's `rosetta_install`, `core.ts` and `settings.ts` only other slices'
+  entries); `pnpm typecheck` green on `main`; this file final, with the report below.
+
+## In progress
+- Nothing. INS-01 to INS-10 are done; see the final report at the end.
 
 ## Interfaces delivered (other agents may now rely on these)
 - INS-06: generated commands `publish_packages`, `publish_package_create`, `publish_versions`, `publish_pick_folder`,
@@ -127,7 +126,8 @@ Install & Library (phase 2, `docs/agents/phase-2/ins-install-library.md`).
   launcher's own session forgets it locally (`Servers::forget_account`).
 
 ## Needs from others
-- From INT (integrator sweep, 2026-10-07): #119 has green checks on its original base but has been inactive for a day. Please rebase onto current main, regenerate append-only bindings as needed, rerun every hosted check and self-merge under phase-2 README §3. The shared auth hook remains useful for GAME’s social client.
+- Nothing open. INT's 2026-10-07 sweep request for #119 is done: rebased, rechecked and merged (`72e35dc`).
+- For INT-11: the G1 re-review of the install chain requested in `int.md` (not blocking INS).
 
 ## Built for you
 - For GAME: `compat::prefix_dir(data_dir, &PackageRef) -> PathBuf` = `<data_dir>/prefixes/<server_id>/<package_id>`
@@ -136,11 +136,36 @@ Install & Library (phase 2, `docs/agents/phase-2/ins-install-library.md`).
 ## Blockers / contract questions
 - Closed (Q14): the phase-1 request "queue history needs a new migration" (`agent-2.md` → Agent 1). The launcher's
   SQLite is INS's; INS-03 adds the history migration.
-- Carried from phase 1, open: directory components can be swapped for symlinks between validation and later access
-  (A2-T04 follow-up) → INS-07; `CollectionError` has no generic failure variant → INS-04.
-- This session pushes through `claude/intelligent-meitner-9hvimv` (the only branch it may push) instead of
-  `ins/p2-<topic>`, one PR at a time.
+- Closed (Q12, carried from phase 1): directory components swapped for links between validation and use. Fixed in
+  INS-07 (#163, #165).
+- Closed (carried from phase 1): `CollectionError` has a generic failure variant (`Io`, INS-04).
+- Closed (Q13): the intermittent download test (INS-07, #161).
 - #119 was squash-merged by mistake (§3 says rebase merge): `main` has it as the single commit `72e35dc`, with the
   same content as the PR head. Not rewritten, since `main` is never force-pushed; later INS PRs use rebase merge.
+- From INT (review of #138): updater checkpoint acquisition serializes with an in-flight SQLite claim, so it cannot
+  report idle before that claim is registered (`checkpoint_waits_for_an_in_flight_database_claim`); the scoped
+  updater guard releases the queue even when the install future is cancelled. Kept through INS-08 and later.
 
-- From INT (review of #138): updater checkpoint acquisition now serializes with an in-flight SQLite claim, so it cannot report idle before that claim is registered. Added `checkpoint_waits_for_an_in_flight_database_claim`; the scoped updater guard releases the queue even when the install future is cancelled. Keep these changes when continuing INS-08.
+## Final report
+- **Tasks:** INS-01 to INS-10 done; PR links per task under Done. Two sessions shared the list from 2026-10-06
+  (install chain and INS-05–07); session_016VNaVF… took over INS-05–07 on 2026-10-07 and finished all of it.
+- **Download budgets vs 00-overview §7:** memory (≤ 256 MiB) and extra disk (≤ journal) met on Linux, macOS and
+  Windows on release builds; throughput met on Linux and macOS; Windows is bounded by the hosted runner's disk
+  (table under INS-07). `transfer-budgets.yml` re-measures them on every transfer-engine change.
+- **F1:** a revoked key refuses launch, verify adopts the re-signed envelope with no pack byte fetched
+  (`downloads/tests.rs`, INS-04 #140); `install::adopt_signature` now writes through the folder handle (#165).
+- **G1:** requested from INT (INT-11) in `int.md`, linking the worker's `fetch_release`/`install` calls, update,
+  repair, resume and the F1 verify. The local race (Q12) that the checklist's install-chain items depend on is
+  closed by #163 and #165.
+- **M1 and M2:** `install_e2e` (8 GiB nightly, [run 37604975806](https://github.com/wouhliss/vgames/actions/runs/37604975806))
+  and the real-application harness (release launcher, [run 37616978222](https://github.com/wouhliss/vgames/actions/runs/37616978222));
+  `publish_e2e` at 2 GiB on PRs and 5 GiB nightly.
+- **Built in other slices' areas:** `compat::prefix_dir` for GAME (#125); nightly `install`/`launcher` jobs in
+  `e2e.yml`, the `publish_e2e` step, `transfer-loop.yml` and `transfer-budgets.yml` (INT-03 fallback, noted in
+  `int.md`); the `winx` license exception in `deny.toml` (noted in `int.md`).
+- **Human checklist:** nothing added by INS.
+- **Deferred:** none of the task list. `preview_uninstall`'s listing and `move_install`'s cross-device copy still
+  read by path (read-only, links reported or refused, signed files re-hashed).
+- **Open risks:** Windows peak memory at 32 connections is 244 MiB of 256 on release builds; Windows
+  engine-only throughput is not measured on hosted runners (no RAM disk); `move_install` can only rename a folder
+  with no open handles on Windows, so a game still running blocks a move (the caller stops it first).
