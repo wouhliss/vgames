@@ -85,12 +85,22 @@ fn move_inner(
         return Err(InstallError::Conflict("destination already exists".into()));
     }
     let entries = scan_tree(safe.root())?;
+    let mut expected = HashMap::new();
+    for file in &manifest.files {
+        expected.insert(
+            safe.path_of(&file.path),
+            (file.size, *file.blake3.as_bytes()),
+        );
+    }
+    // Windows refuses to rename or delete a folder while a handle on it is open.
+    let source = safe.root().to_path_buf();
+    drop(safe);
     if !force_copy {
-        match fs::rename(safe.root(), &destination) {
+        match fs::rename(&source, &destination) {
             Ok(()) => {
                 fsutil::sync_dir(library.root())
                     .map_err(|error| InstallError::io("flush", library.root(), error))?;
-                if let Some(parent) = safe.root().parent() {
+                if let Some(parent) = source.parent() {
                     fsutil::sync_dir(parent)
                         .map_err(|error| InstallError::io("flush", parent, error))?;
                 }
@@ -104,13 +114,6 @@ fn move_inner(
             Err(error) => return Err(InstallError::io("move", &destination, error)),
         }
     }
-    let mut expected = HashMap::new();
-    for file in &manifest.files {
-        expected.insert(
-            safe.path_of(&file.path),
-            (file.size, *file.blake3.as_bytes()),
-        );
-    }
     let (staging, mut guard) = temporary_destination(&destination)?;
     let mut report = MoveReport {
         kind: MoveKind::Copied,
@@ -119,7 +122,7 @@ fn move_inner(
     };
     for entry in entries {
         let relative = entry
-            .strip_prefix(safe.root())
+            .strip_prefix(&source)
             .map_err(|_| InstallError::Conflict("source path escaped the install".into()))?;
         let target = staging.join(relative);
         let metadata = fs::symlink_metadata(&entry)
@@ -157,8 +160,8 @@ fn move_inner(
     guard.0 = None;
     fsutil::sync_dir(library.root())
         .map_err(|error| InstallError::io("flush", library.root(), error))?;
-    install::remove_tree_no_follow(safe.root())?;
-    if let Some(parent) = safe.root().parent() {
+    install::remove_tree_no_follow(&source)?;
+    if let Some(parent) = source.parent() {
         fsutil::sync_dir(parent).map_err(|error| InstallError::io("flush", parent, error))?;
     }
     Ok(report)
