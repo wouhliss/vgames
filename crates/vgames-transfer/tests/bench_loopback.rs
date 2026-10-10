@@ -55,6 +55,7 @@ fn loopback_throughput() {
     let target = tempfile::tempdir_in(&base).unwrap();
     let root = target.path().join("game");
     let total = gib * 1024 * MIB;
+    let disk = disk_baseline(target.path(), total);
 
     runtime.block_on(async {
         let rig = Rig::start(package.manifest.clone(), package.packs.clone()).await;
@@ -103,9 +104,34 @@ fn loopback_throughput() {
             report.stats.buffers_allocated,
             rig.ranges().len(),
         );
+        eprintln!(
+            "budget throughput: the same folder takes plain sequential writes at {:.2} GB/s \
+             (the disk's ceiling for this run)",
+            disk
+        );
     });
     for (path, blake3) in expected {
         let bytes = std::fs::read(root.join(&path)).unwrap();
         assert!(vgames_core::Digest::of(&bytes) == blake3, "{path}");
     }
+}
+
+/// Writes `total` bytes sequentially into one file under `dir` (8 MiB writes, then fsync) and
+/// returns GB/s: what the disk alone allows, to tell a disk-bound run from an engine-bound one.
+fn disk_baseline(dir: &std::path::Path, total: u64) -> f64 {
+    use std::io::Write;
+    let path = dir.join("baseline.bin");
+    let buffer = vec![0x5au8; 8 * MIB as usize];
+    let start = Instant::now();
+    let mut file = std::fs::File::create(&path).unwrap();
+    let mut written = 0;
+    while written < total {
+        file.write_all(&buffer).unwrap();
+        written += buffer.len() as u64;
+    }
+    file.sync_all().unwrap();
+    drop(file);
+    let rate = written as f64 / start.elapsed().as_secs_f64() / 1e9;
+    std::fs::remove_file(&path).unwrap();
+    rate
 }
