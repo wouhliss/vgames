@@ -823,13 +823,13 @@ pub fn remove_install(root: &Path, manifest: &Manifest) -> Result<Leftovers, Ins
     for dir in ordered {
         let _ = safe.remove_empty_dir(dir);
     }
-    let root = safe.root().to_owned();
-    // Windows refuses to delete a folder while a handle on it is open.
+    // Windows refuses to delete a folder while a handle on it is open. Leftovers are reported
+    // under the path the caller gave, not its canonical form.
     drop(safe);
-    let _ = fs::remove_dir(&root);
+    let _ = fs::remove_dir(root);
     let mut leftovers = Leftovers::default();
     if root.exists() {
-        collect_leftovers(&root, &mut leftovers.paths);
+        collect_leftovers(root, &mut leftovers.paths);
     }
     Ok(leftovers)
 }
