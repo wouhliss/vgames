@@ -73,7 +73,26 @@ Install & Library (phase 2, `docs/agents/phase-2/ins-install-library.md`).
   through `SafeRoot` (`read`, `atomic_write`, `replace`, `remove_regular_file`, `remove_tree`, `sync_dir`). Read-only
   callers may reach an install through a linked root (`open_resolved`); installing and uninstalling refuse one.
   Left as is: `preview_uninstall`/leftover listing (read-only `symlink_metadata`, never opens), and `move_install`'s
-  copy fallback (its reads use `O_NOFOLLOW` and signed files are re-hashed). Then the release-build budgets.
+  copy fallback (its reads use `O_NOFOLLOW` and signed files are re-hashed)
+  ([#165](https://github.com/wouhliss/vgames/pull/165)).
+- INS-07 — download budgets (00-overview §7) on release builds, hosted runners,
+  [run 38075612484](https://github.com/wouhliss/vgames/actions/runs/38075612484) (`transfer-budgets.yml`,
+  [#164](https://github.com/wouhliss/vgames/pull/164)). 2 GiB loopback install; "disk" is plain sequential writes to
+  the same folder in the same run:
+
+  | | Linux x64 (`/dev/shm`) | macOS arm64 (runner disk) | Windows x64 (runner disk) |
+  |---|---|---|---|
+  | Download phase | 4.72 GB/s | 0.47 GB/s | 0.10 GB/s |
+  | Disk ceiling | 3.65 GB/s | 0.80 GB/s | 0.17 GB/s |
+  | Peak RSS, 32 connections (≤ 256 MiB) | 221 MiB | 225 MiB | 244 MiB |
+  | Disk beyond final size (≤ 12 KiB allowance) | 8 KiB | 4 KiB | 484 B |
+
+  Throughput (≥ 90% of link up to 2.5 Gbit/s ≈ 0.31 GB/s, when disk allows): met on Linux, where the engine
+  outruns the RAM disk, and on macOS (0.47 GB/s). Windows is disk-bound on the hosted runner: its disk alone
+  allows 0.17 GB/s (≈ 1.4 Gbit/s), so the 2.5 Gbit/s line cannot be reached there. The engine reaches 59% of
+  plain sequential writes on macOS and Windows (random positional writes into preallocated files, hashed). Memory and disk
+  footprint are met on all three; Windows memory has the least margin (12 MiB). Open: no RAM disk on hosted Windows,
+  so engine-only throughput there is measured on Linux only.
 - INS-10 (session_016VNaVF…, partial) — `apps/desktop/README.md` sections Installs, Downloads and, under Logs,
   where install and download logs go and how to read an integrity report; the G1 re-review request for INT-11 in
   `int.md`. No INS-02/03/04 pending entry is left (`downloads.ts` and `library.ts` deleted, `catalog.ts` holds only
