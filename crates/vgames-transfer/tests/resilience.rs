@@ -114,6 +114,8 @@ fn child_entry() {
     });
 }
 
+/// This process's peak resident memory, in KiB.
+#[cfg(target_os = "linux")]
 fn peak_rss_kib() -> u64 {
     std::fs::read_to_string("/proc/self/status")
         .ok()
@@ -124,6 +126,42 @@ fn peak_rss_kib() -> u64 {
                 .and_then(|v| v.parse().ok())
         })
         .unwrap_or(0)
+}
+
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
+fn peak_rss_kib() -> u64 {
+    // SAFETY: `getrusage` only writes the zeroed struct it is given.
+    let usage = unsafe {
+        let mut usage: libc::rusage = std::mem::zeroed();
+        if libc::getrusage(libc::RUSAGE_SELF, &mut usage) != 0 {
+            return 0;
+        }
+        usage
+    };
+    // Bytes on macOS.
+    u64::try_from(usage.ru_maxrss).unwrap_or(0) / 1024
+}
+
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn peak_rss_kib() -> u64 {
+    use windows_sys::Win32::System::ProcessStatus::{
+        K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS,
+    };
+    use windows_sys::Win32::System::Threading::GetCurrentProcess;
+    let size = std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
+    // SAFETY: the counters struct is plain data, zeroed, with its size passed in `cb`; the
+    // current-process pseudo handle needs no closing.
+    let counters = unsafe {
+        let mut counters: PROCESS_MEMORY_COUNTERS = std::mem::zeroed();
+        counters.cb = size;
+        if K32GetProcessMemoryInfo(GetCurrentProcess(), &mut counters, size) == 0 {
+            return 0;
+        }
+        counters
+    };
+    counters.PeakWorkingSetSize as u64 / 1024
 }
 
 fn spawn_child(job_dir: &Path) -> std::process::Child {
@@ -273,7 +311,47 @@ fn disk_usage(root: &Path) -> u64 {
     total
 }
 
-#[cfg(unix)]
+/// Bytes allocated by every regular file under `root` (the compressed size on NTFS, which is the
+/// allocated size for an uncompressed file, sparse ranges excluded).
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn disk_usage(root: &Path) -> u64 {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{GetCompressedFileSizeW, INVALID_FILE_SIZE};
+    let mut total = 0;
+    let mut stack = vec![root.to_owned()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let Ok(meta) = entry.path().symlink_metadata() else {
+                continue;
+            };
+            if meta.is_dir() {
+                stack.push(entry.path());
+                continue;
+            }
+            let wide: Vec<u16> = entry
+                .path()
+                .as_os_str()
+                .encode_wide()
+                .chain(Some(0))
+                .collect();
+            let mut high = 0u32;
+            // SAFETY: `wide` is a NUL-terminated path that outlives the call; `high` is a valid
+            // out pointer.
+            let low = unsafe { GetCompressedFileSizeW(wide.as_ptr(), &mut high) };
+            if low == INVALID_FILE_SIZE {
+                // Deleted between the listing and the call (a temporary file), or unreadable.
+                continue;
+            }
+            total += (u64::from(high) << 32) | u64::from(low);
+        }
+    }
+    total
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn disk_usage_never_exceeds_the_final_size_plus_journal() {
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -318,6 +396,11 @@ async fn disk_usage_never_exceeds_the_final_size_plus_journal() {
     let peak = peak.load(Ordering::SeqCst);
     // Journal + its temp file + the install record's temp file: one block each.
     let allowance = 3 * 4096;
+    eprintln!(
+        "budget disk: peak {peak} bytes, final {final_usage} bytes, {} bytes beyond (allowance \
+         {allowance}, {samples} samples)",
+        peak.saturating_sub(final_usage),
+    );
     assert!(
         peak <= final_usage + allowance,
         "peak {peak} > final {final_usage} + {allowance} ({samples} samples)"
@@ -326,7 +409,6 @@ async fn disk_usage_never_exceeds_the_final_size_plus_journal() {
     assert_identical(&package, &root);
 }
 
-#[cfg(target_os = "linux")]
 #[test]
 fn memory_stays_bounded_at_32_connections() {
     use std::time::Instant;
@@ -369,10 +451,17 @@ fn memory_stays_bounded_at_32_connections() {
     let buffers: u64 = parts.next().unwrap().parse().unwrap();
     eprintln!("buffers allocated: {buffers}");
     eprintln!(
-        "32 connections, 512 MiB: peak RSS {} MiB, {:.0} MiB/s (debug build, including process start)",
+        "budget memory: 32 connections, 512 MiB: peak RSS {} MiB (budget 256), {:.0} MiB/s ({} build, \
+         including process start)",
         peak_kib / 1024,
-        512.0 / elapsed.as_secs_f64()
+        512.0 / elapsed.as_secs_f64(),
+        if cfg!(debug_assertions) {
+            "debug"
+        } else {
+            "release"
+        },
     );
+    assert!(peak_kib > 0, "peak RSS was measured");
     assert!(peak_kib <= 256 * 1024, "peak RSS {} MiB", peak_kib / 1024);
     assert_identical(&package, &root);
 }

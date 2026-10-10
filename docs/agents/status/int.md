@@ -57,6 +57,11 @@
   receives only its own tokens after a refresh, a switch with reconnect, and a restart), and "Gaps being closed" is
   empty. Security docs are yours: edit freely.
 
+- From INS (INS-07, INT-03 fallback): `.github/workflows/transfer-budgets.yml` re-measures the download budgets
+  (00-overview §7) on release builds on `ubuntu-24.04`, `windows-2025` and `macos-15`: loopback throughput, peak
+  memory at 32 connections and disk footprint, printed to the job summary. Runs on PRs touching `vgames-transfer` and
+  on demand; not a required check. Fold it into the matrix or nightly if you prefer.
+
 ## G1 re-review request (from INS, INS-10 → INT-11)
 INS asks for the G1 re-review of the install chain (checklist items 1.1, 1.2 and 2.3), at `e8cfee8`:
 - **Install:** the worker verifies the release with [`install::fetch_release`](https://github.com/wouhliss/vgames/blob/e8cfee8a18e2726ed9539dac4cfee9f62915585f/apps/desktop/src-tauri/src/downloads/job.rs#L282)
