@@ -619,8 +619,9 @@ mod tests {
         fs::create_dir(&root_path).unwrap();
         let root = SafeRoot::open(&root_path).unwrap();
         root.open_file("a/b/f.bin", Access::CreateWrite).unwrap();
-        fs::rename(root_path.join("a/b"), root_path.join("a/b-moved")).unwrap();
-        link_dir(&outside, &root_path.join("a/b"));
+        let a = root_path.join("a");
+        fs::rename(a.join("b"), a.join("b-moved")).unwrap();
+        link_dir(&outside, &a.join("b"));
         assert!(matches!(
             root.open_file("a/b/f.bin", Access::CreateWrite),
             Err(SafePathError::Link(_))
@@ -640,12 +641,20 @@ mod tests {
         fs::create_dir(&root_path).unwrap();
         let root = SafeRoot::open(&root_path).unwrap();
         let handle = root.open_file("a/b/f.bin", Access::CreateWrite).unwrap();
-        fs::rename(root_path.join("a"), root_path.join("a-moved")).unwrap();
-        link_dir(&outside, &root_path.join("a"));
+        let moved = fs::rename(root_path.join("a"), root_path.join("a-moved"));
+        // Windows refuses to rename a folder while a file in it is open: the swap cannot happen.
+        #[cfg(windows)]
+        assert!(moved.is_err(), "renamed a folder with an open file");
+        #[cfg(not(windows))]
+        {
+            moved.unwrap();
+            link_dir(&outside, &root_path.join("a"));
+        }
         write_all_at(&handle, b"inside", 0).unwrap();
         handle.sync_all().unwrap();
+        let written = if cfg!(windows) { "a" } else { "a-moved" };
         assert_eq!(
-            fs::read(root_path.join("a-moved/b/f.bin")).unwrap(),
+            fs::read(root_path.join(written).join("b").join("f.bin")).unwrap(),
             b"inside"
         );
         assert_eq!(fs::read(outside.join("b/f.bin")).unwrap(), b"outside");
