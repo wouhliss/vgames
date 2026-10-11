@@ -227,3 +227,5 @@ INS asks for the G1 re-review of the install chain (checklist items 1.1, 1.2 and
 - Private-file regression mutation checks: removing signer-output redirection fails on the synthetic output sentinel; removing the EXIT cleanup fails on the surviving temporary directory. Restoring the unchanged script passes (0.11s). No cryptographic key is used by this regression.
 
 - INT-06: updater fixture [#183](https://github.com/wouhliss/vgames/pull/183) merged at `6584e681351d07c65ece24f0fa9ced85f204f0a3` after all hosted checks and all three desktop systems passed. Local TypeScript (58s), policy (4s), gitleaks and actionlint pass; four HTTP containment tests pass. Bundled signed-update proof remains required in the following pipeline PR.
+
+- INT-06: preceding #183 merged at `6584e681351d07c65ece24f0fa9ced85f204f0a3` after every applicable hosted check; this pipeline portion is based on that exact main commit. Security review and existing validation receipts above remain applicable; fresh local/current-base hosted checks are required before merge. No persistent release key or tag has been generated.
