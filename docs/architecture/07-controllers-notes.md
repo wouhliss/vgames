@@ -50,7 +50,7 @@ The command surface is:
 (`auto | always | never`) and the existing mapping profile: button remaps,
 per-stick radial deadzone/anti-deadzone and axis inversion. Defaults match the
 current `controllers::mapping` and `decision` modules. Reject unknown buttons,
-duplicate source remaps, non-finite values and deadzones outside 0–1; no partial
+duplicate source remaps and deadzone/anti-deadzone percentages outside 0–99; no partial
 write on failure. Saving is transactional and survives launcher restart. The
 launch hook snapshots the profile so editing Settings cannot corrupt an active
 session. A missing profile means the default, never an error.
