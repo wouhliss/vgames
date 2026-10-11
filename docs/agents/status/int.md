@@ -192,3 +192,5 @@ INS asks for the G1 re-review of the install chain (checklist items 1.1, 1.2 and
 - INT-06 packaged-version preparation retains the merged checkpoint guard and in-flight queue serialization. All 24 updater tests pass, including cancellation/shutdown/missing-update exits and the lower packaged-version regression; full local and hosted validation follow on the eventual current base.
 
 - INT-06 refreshed packaged-version preparation on `92439af`: all 24 updater tests pass under Xvfb with the final INS install, publishing and folder-handle changes; formatting is clean. Hosted current-base checks will be required before merging.
+
+- INT-06: preceding #175 merged at `36b0bbce9fdf62096d7e68cba4d8fcfcf45a23a7` after every applicable hosted check; this version portion is based on that exact main commit. Security review and existing validation receipts above remain applicable; fresh local/current-base hosted checks are required before merge. No persistent release key or tag has been generated.
