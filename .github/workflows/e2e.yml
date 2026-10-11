@@ -52,6 +52,8 @@ jobs:
           path: updater-artifacts/
           run-id: 38137510299
           github-token: ${{ github.token }}
+      - name: Existing-process WebDriver attachment regressions
+        run: pnpm --filter @vgames/desktop-e2e-real test
       - name: Fixed-path updater fixture regressions
         run: python3 -m unittest discover -s apps/desktop/e2e-real/fixtures -p test_updater_server.py -v
       - name: Install from 0.0.1 and observe the real restart and player notes

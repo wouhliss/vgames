@@ -37,6 +37,7 @@ cleanup() {
 import shutil, sys
 from pathlib import Path
 work = Path(sys.argv[1])
+(work / 'updater-automation.sh').unlink(missing_ok=True)
 for name in ('a', 'b', 'tls'):
     shutil.rmtree(work / name, ignore_errors=True)
 api = work / 'api'
@@ -56,6 +57,19 @@ trap cleanup EXIT
 "$here/fixtures/tls.sh" up "$work/tls" "$https_port" "$api_port"
 
 mkdir -p "$work/library"
+if [[ ",$parts," == *,3,* ]]; then
+  export E2E_UPDATE_REAL_APP="${E2E_APP:?lower-version updater image}"
+  export E2E_UPDATE_INSPECTOR_RECEIPT="$work/a/inspector-address"
+  automation_app="$work/updater-automation.sh"
+  cat > "$automation_app" <<'WRAPPER'
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+printf '%s\n' "${WEBKIT_INSPECTOR_SERVER:?native WebKit inspector}" > "$E2E_UPDATE_INSPECTOR_RECEIPT"
+exec "$E2E_UPDATE_REAL_APP"
+WRAPPER
+  chmod 700 "$automation_app"
+fi
 setsid "$here/fixtures/instance.sh" "$work/a" "$driver_port" > "$work/instance-a.log" 2>&1 &
 instance_pid=$!
 for _ in $(seq 1 100); do
@@ -65,6 +79,7 @@ done
 
 status=0
 E2E_APP="${E2E_APP:-$target/release/vgames-desktop}" \
+E2E_AUTOMATION_APP="${automation_app:-${E2E_APP:-$target/release/vgames-desktop}}" \
 E2E_DRIVER_PORT="$driver_port" \
 E2E_SERVER="https://localhost:$https_port" \
 E2E_INSTANCE_HOME="$work/a/home" \

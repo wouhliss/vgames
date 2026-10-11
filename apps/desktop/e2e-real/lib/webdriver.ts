@@ -38,6 +38,24 @@ export class Session {
     return new Session(`${base}/session/${value.sessionId}`, value.sessionId);
   }
 
+  /** Attach through native WebKit to a process already restarted by the updater.
+   * No binary capability is supplied: this request must never launch an app. */
+  static async attach(nativePort: number, inspector: string): Promise<Session> {
+    if (
+      !/^127\.0\.0\.1:[1-9][0-9]{0,4}$/.test(inspector) ||
+      Number(inspector.split(":")[1]) > 65535
+    ) {
+      throw new Error("Invalid local updater inspector address");
+    }
+    const base = `http://127.0.0.1:${nativePort}`;
+    const value = (await call(base, "POST", "/session", {
+      capabilities: {
+        alwaysMatch: { "webkitgtk:browserOptions": { targetAddress: inspector } },
+      },
+    })) as { sessionId: string };
+    return new Session(`${base}/session/${value.sessionId}`, value.sessionId);
+  }
+
   private command(method: string, path: string, body?: unknown): Promise<unknown> {
     return call(this.base, method, path, body);
   }
@@ -98,18 +116,6 @@ export class Session {
 
   async refresh(): Promise<void> {
     await this.command("POST", "/refresh", {});
-  }
-
-  /** Switch to a new automation window after the application restarts. */
-  async focusLatestWindow(): Promise<boolean> {
-    const handles = await this.command("GET", "/window/handles");
-    if (!Array.isArray(handles) || !handles.every((handle) => typeof handle === "string")) {
-      throw new Error("WebDriver returned invalid window handles");
-    }
-    const handle: unknown = handles.at(-1);
-    if (typeof handle !== "string") return false;
-    await this.command("POST", "/window", { handle });
-    return true;
   }
 
   /** A PNG, base64. */
