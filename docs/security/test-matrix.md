@@ -108,7 +108,15 @@ None open.
 | Boundary | Regression | Runner |
 |---|---|---|
 | Explicit process inputs, without a shell or inherited environment | `argv_round_trips`, `quotes_empty_spaces_unicode_and_trailing_backslashes`, `environment_is_explicit_and_double_terminated` | Windows |
-| Track children after the leader exits; cancel without killing; guard reused PIDs; stop the whole tree | Portable `launch::process::tests` self-executing fixtures | Linux, Windows |
-| Closing every launcher handle must leave the game alive | `closing_all_launcher_handles_leaves_the_game_running` | Linux, Windows |
+| Track children after the leader exits; cancel without killing; guard reused PIDs; stop the whole tree | Portable `launch::process::tests` self-executing fixtures | Linux, Windows, macOS |
+| Closing every launcher handle must leave the game alive | `closing_all_launcher_handles_leaves_the_game_running` | Linux, Windows, macOS |
 | Hooks observe suspension, then errors/panics/timeouts still resume the game | `pre_resume_observes_suspension_and_a_failed_hook_still_runs_the_game` | Windows |
 | Restart cannot assume an old named job remains recoverable | `reattach_cannot_recover_an_orphan_tree_without_the_original_job_handle` | Windows |
+
+## macOS process lifecycle (PLAY-03)
+
+| Property | Automated evidence | Runner |
+|---|---|---|
+| Recover orphan process groups; descendants leaving the group stay outside its scope | `reattach_finds_the_group_after_the_leader_exited`, `escaped_children_are_not_tracked` | Linux, macOS |
+| Idle tracking blocks indefinitely until process activity or explicit cancellation | `kqueue_wait_has_no_periodic_wakeups`: unchanged wait counter for one second, then cancellation wakes the queue and leaves the game alive | macOS |
+| Verified launch inputs reach the native backend without a shell | Portable `launch::orchestrate::tests` | Linux, Windows, macOS |

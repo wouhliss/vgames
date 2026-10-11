@@ -21,10 +21,13 @@ mod windows_args;
 #[cfg(windows)]
 use windows as sys;
 
-#[cfg(not(any(target_os = "linux", windows)))]
-mod unsupported;
-#[cfg(not(any(target_os = "linux", windows)))]
-use unsupported as sys;
+#[cfg(target_os = "macos")]
+mod macos;
+#[cfg(target_os = "macos")]
+use macos as sys;
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
+compile_error!("Game process tracking requires Linux, Windows or macOS");
 
 /// What the launcher persists to find a game again after a restart. The start
 /// time guards against a reused pid.
@@ -52,8 +55,6 @@ pub enum ProcessError {
     Spawn(#[source] std::io::Error),
     #[error("cannot track the game process")]
     Track(#[source] std::io::Error),
-    #[error("process tracking is not available on this platform yet")]
-    Unsupported,
 }
 
 /// A game process tree: the launched process and everything it starts in its
@@ -171,5 +172,5 @@ impl TreeKiller {
 }
 
 #[cfg(test)]
-#[cfg(any(target_os = "linux", windows))]
+#[cfg(any(target_os = "linux", target_os = "macos", windows))]
 mod tests;

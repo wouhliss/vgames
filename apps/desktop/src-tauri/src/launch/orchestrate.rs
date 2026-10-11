@@ -314,5 +314,5 @@ pub fn runs_natively(build: Platform, host: Platform) -> bool {
 }
 
 #[cfg(test)]
-#[cfg(any(target_os = "linux", windows))]
+#[cfg(any(target_os = "linux", target_os = "macos", windows))]
 mod tests;
