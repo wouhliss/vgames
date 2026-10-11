@@ -1,0 +1,159 @@
+# INT-06: no repository secrets, release environment, caches or GitHub release.
+name: Release dry run
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "41 3 * * 0"
+permissions: {}
+concurrency:
+  group: release-dry-run-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  CARGO_INCREMENTAL: "0"
+  SQLX_OFFLINE: "true"
+jobs:
+  prepare:
+    name: Check committed updater policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: bash scripts/release/check-updater.sh
+  build:
+    name: Dry build ${{ matrix.target }}
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-2025, target: x86_64-pc-windows-msvc, bundles: nsis }
+          - { os: ubuntu-24.04, target: x86_64-unknown-linux-gnu, bundles: "appimage,deb,rpm" }
+          - { os: macos-15, target: aarch64-apple-darwin, bundles: "app,dmg" }
+    env:
+      TARGET: ${{ matrix.target }}
+      BUNDLES: ${{ matrix.bundles }}
+      OVERLAY_DIR: apps/desktop/src-tauri/resources/overlay
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/desktop-release-setup
+      - name: Private-key failure cleanup regression
+        shell: bash
+        run: |
+          export VGAMES_DRY_TEST_SHELL="$BASH"
+          if [ "$RUNNER_OS" = Windows ]; then
+            VGAMES_DRY_TEST_SHELL=$(cygpath -w "$VGAMES_DRY_TEST_SHELL")
+          fi
+          python3 scripts/release/test_dry_build.py
+      - name: Throwaway updater key, unsigned build and installation proof
+        shell: bash
+        run: bash scripts/release/dry-build.sh
+      - name: Remove all private throwaway files
+        if: always()
+        shell: bash
+        run: rm -rf "$RUNNER_TEMP/updater-dry-key"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dry-bundle-${{ matrix.target }}
+          path: out/${{ matrix.target }}/
+          if-no-files-found: error
+          retention-days: 7
+  verify:
+    name: Independently verify downloaded updater artifacts
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: dry-bundle-*
+          path: downloaded/
+      - name: Verify each platform against its throwaway public key
+        run: |
+          for dir in downloaded/dry-bundle-*; do
+            cargo xtask updater verify --latest "$dir/latest.json" --dir "$dir" --pubkey "$(cat "$dir/updater.pub")"
+            if [ -d "$dir/older" ]; then
+              cargo xtask updater verify --latest "$dir/older/latest.json" --dir "$dir/older" --pubkey "$(cat "$dir/updater.pub")"
+            fi
+          done
+  update:
+    name: Real signed updater round trip
+    needs: [build, verify]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:18.6-alpine
+        env:
+          POSTGRES_USER: vgames
+          POSTGRES_PASSWORD: vgames-e2e-only
+          POSTGRES_DB: vgames
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U vgames -d vgames"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - run: pnpm install --frozen-lockfile
+      - name: Real launcher test libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev \
+            libdbus-1-dev libudev-dev pkg-config build-essential \
+            webkit2gtk-driver xvfb dbus stunnel4 jq
+      - name: Fixture toolchain and real API
+        run: |
+          rustup toolchain install
+          cargo install tauri-driver --version 2.1.0 --locked
+          cargo build --locked -p vgames-api -p vgames-cli
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dry-bundle-x86_64-unknown-linux-gnu
+          path: updater-artifacts/
+      - name: Fixed-path updater fixture regressions
+        run: python3 -m unittest discover -s apps/desktop/e2e-real/fixtures -p test_updater_server.py -v
+      - name: Install from 0.0.1 and observe the real restart and player notes
+        env:
+          E2E_DATABASE_URL: postgres://vgames:vgames-e2e-only@localhost:5432/vgames
+          E2E_WORK_DIR: ${{ runner.temp }}/updater-real
+        run: |
+          cargo xtask updater verify --latest updater-artifacts/older/latest.json \
+            --dir updater-artifacts/older --pubkey "$(cat updater-artifacts/updater.pub)"
+          chmod +x updater-artifacts/older/*.AppImage
+          apps/desktop/e2e-real/fixtures/updater.sh updater-artifacts updater-artifacts/older/*.AppImage
+      - name: Upload public updater request receipts and logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: updater-roundtrip-proof
+          path: |
+            updater-artifacts/updater-requests.log
+            ${{ runner.temp }}/updater-real/api/api.log
+            ${{ runner.temp }}/updater-real/instance-a.log
+          if-no-files-found: error
+          retention-days: 7
