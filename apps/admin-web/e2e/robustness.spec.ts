@@ -159,7 +159,18 @@ test("keyboard only: filter a table and open a row", async ({ page }) => {
   await expect(page.getByRole("table")).toBeVisible();
   await tabTo(page, (el) => el.label.startsWith("Search"));
   await page.keyboard.type(title);
+  // The old table can already contain this row while the filter is still loading.
+  // Wait for the filtered response before tabbing through the replacement table.
+  const filtered = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      response.request().method() === "GET" &&
+      url.pathname === "/v1/admin/packages" &&
+      url.searchParams.get("q") === title
+    );
+  });
   await page.keyboard.press("Enter");
+  expect((await filtered).status()).toBe(200);
   await expect(page).toHaveURL(/q=/);
   await expect(page.getByRole("table").getByRole("link", { name: title })).toBeVisible();
   await tabTo(page, (el) => el.tag === "A" && el.label === title);
