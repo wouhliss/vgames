@@ -31,10 +31,8 @@ key.write_text('synthetic-key-file')
 pathlib.Path(str(key) + '.pub').write_text('synthetic-public-key')
 password = key.parent / 'password'
 expected = password.read_text()
-if args[args.index('-p') + 1] != expected:
-    raise RuntimeError('Native signing password argument was converted')
-if os.environ['TAURI_SIGNING_PRIVATE_KEY_PASSWORD'] != expected:
-    raise RuntimeError('Native signing password environment was converted')
+argument_matches = args[args.index('-p') + 1] == expected
+environment_matches = os.environ['TAURI_SIGNING_PRIVATE_KEY_PASSWORD'] == expected
 private_acl = None
 if os.name == 'nt':
     code = """$a = Get-Acl -LiteralPath $env:PROOF_KEY_DIR;
@@ -51,9 +49,12 @@ pathlib.Path(os.environ['PROOF_RECEIPT']).write_text(json.dumps({
     'password_mode': stat.S_IMODE(password.stat().st_mode),
     'password_present': bool(password.read_bytes()),
     'private_acl': private_acl,
+    'password_argument_matches': argument_matches,
+    'password_environment_matches': environment_matches,
 }))
 print(os.environ['PROOF_SENTINEL'])
 print(os.environ['PROOF_SENTINEL'], file=sys.stderr)
+sys.exit(0 if argument_matches and environment_matches else 26)
 ''')
             pnpm.chmod(0o700)
             # Force the real orchestration's password argument to begin with '/'.
@@ -78,11 +79,13 @@ fi
                      "PROOF_REAL_PYTHON": sys.executable},
                 capture_output=True, text=True, timeout=30,
             )
-            self.assertEqual(result.returncode, 27, result.stdout + result.stderr)
             self.assertNotIn(MARKER, result.stdout + result.stderr)
             self.assertFalse((scratch / "updater-dry-key").exists())
             proof = json.loads(receipt.read_text())
             self.assertTrue(proof["password_present"])
+            self.assertTrue(proof["password_argument_matches"], "Native signing password argument was converted")
+            self.assertTrue(proof["password_environment_matches"], "Native signing password environment was converted")
+            self.assertEqual(result.returncode, 27, result.stdout + result.stderr)
             # Windows does not expose POSIX mode bits through pathlib.stat().
             if os.name == "posix":
                 self.assertEqual(proof["directory_mode"], stat.S_IRWXU)
