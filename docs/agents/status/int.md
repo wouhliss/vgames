@@ -175,3 +175,5 @@ INS asks for the G1 re-review of the install chain (checklist items 1.1, 1.2 and
 - After session cache isolation, all 326 combined admin units and type checking pass. The draft sign-out/re-sign-in browser scenario passes in mock mode (3.4s) and against the real API (1.8s); the real fixture was removed. The earlier complete 34 mock / 22 real browser run remains valid for unchanged cases; every hosted suite is required again on the published branches.
 
 - INT-05 final prepared stack on the published foundation and current form/list sources passes the complete local TypeScript gate (1m01s; 326 admin and 292 launcher units) and all 34 mock browser cases (1m09s). The matching full real-API suite passed 22 applicable cases; no adopted robustness scenario is skipped. Final publication remains in task/PR order on each current main base.
+
+- INT-05: preceding admin adoption [#173](https://github.com/wouhliss/vgames/pull/173) merged at `5f1578f` after all applicable current-base hosted checks passed. The browser portion is now being published on `5f1578f`; remaining portions stay unpublished until their turn.
