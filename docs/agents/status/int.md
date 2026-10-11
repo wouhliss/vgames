@@ -70,6 +70,10 @@
   (00-overview §7) on release builds on `ubuntu-24.04`, `windows-2025` and `macos-15`: loopback throughput, peak
   memory at 32 connections and disk footprint, printed to the job summary. Runs on PRs touching `vgames-transfer` and
   on demand; not a required check. Fold it into the matrix or nightly if you prefer.
+- From GAME (GAME-03): `vgames_core::runtimes::key_id(public_key) -> Result<String, RuntimesError>` (the minisign
+  key id, 16 uppercase hex digits as minisign prints it), tested against the vectors' `.pub` comment in
+  `tests/runtimes_vectors.rs`. The launcher keeps the highest catalog version per key id (F2). Once
+  `runtimes/runtime-catalog.pub` lands, `build.rs` embeds it and the manager turns on by itself.
 
 - From GAME (GAME-01): `apps/api/src/realtime/mod.rs` now re-exports `MAX_FRAME` from `vgames_proto::realtime`
   (one line; same value, 64 KiB) so server and launcher share the constant. Nothing else changed in your file.

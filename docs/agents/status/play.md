@@ -37,6 +37,9 @@
 - From INS (INS-04): appended to `events.rs` (append-only, README §5): the bus variants and UI events
   `InstallsChanged` (`installs-changed`) and `CollectionsChanged` (`collections-changed`). INS-03 appends
   `DownloadsChanged` (`downloads-changed`) the same way.
+- From GAME (GAME-03): `build.rs` gains `embed_runtime_catalog_key()`, which copies `runtimes/runtime-catalog.pub`
+  (INT-08) into `OUT_DIR` (an empty file without it) for `compat::catalog`; it watches `runtimes/`. Nothing else
+  in the build changed.
 
 ## PLAY-01 integration API (branch `play/p2-launch-hooks`)
 

@@ -340,6 +340,34 @@ pub fn parse_and_validate(bytes: &[u8]) -> Result<Catalog, RuntimesError> {
     Ok(catalog)
 }
 
+/// The key id of a runtime-catalog `public_key` (the base64 line of the minisign
+/// public key, or the whole `.pub` file), as minisign prints it: 16 uppercase hex
+/// digits. Rollback protection is kept per key id (09-compatibility §5, F2).
+pub fn key_id(public_key: &str) -> Result<String, RuntimesError> {
+    use base64::Engine as _;
+    let key = public_key.trim();
+    let line = if key.contains('\n') {
+        key.lines()
+            .map(str::trim)
+            .find(|l| !l.is_empty() && !l.starts_with("untrusted comment:"))
+            .ok_or(RuntimesError::PublicKeyMalformed)?
+    } else {
+        key
+    };
+    let raw = base64::engine::general_purpose::STANDARD
+        .decode(line)
+        .map_err(|_| RuntimesError::PublicKeyMalformed)?;
+    // "Ed" (2 bytes), key number (8 bytes, little-endian), Ed25519 key (32 bytes).
+    match raw.as_slice() {
+        [b'E', b'd', rest @ ..] if rest.len() == 40 => {
+            let mut num = [0u8; 8];
+            num.copy_from_slice(rest.get(..8).ok_or(RuntimesError::PublicKeyMalformed)?);
+            Ok(format!("{:016X}", u64::from_le_bytes(num)))
+        }
+        _ => Err(RuntimesError::PublicKeyMalformed),
+    }
+}
+
 /// A catalog whose signature, format and version all passed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VerifiedCatalog {

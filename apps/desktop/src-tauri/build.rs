@@ -30,6 +30,8 @@ fn main() {
         .collect();
     let commands: &'static [&'static str] = Box::leak(commands.into_boxed_slice());
 
+    embed_runtime_catalog_key();
+
     let mut attributes = tauri_build::Attributes::new()
         .app_manifest(tauri_build::AppManifest::new().commands(commands));
     if windows_msvc {
@@ -39,6 +41,25 @@ fn main() {
     if let Err(error) = tauri_build::try_build(attributes) {
         // Build scripts report failures by exiting non-zero with a message.
         eprintln!("tauri-build failed: {error:#}");
+        std::process::exit(1);
+    }
+}
+
+/// Copies `runtimes/runtime-catalog.pub` (INT-08) into `OUT_DIR` for
+/// `compat::catalog`, or an empty file when it does not exist yet: the runtime
+/// manager is then off (09-compatibility §5).
+fn embed_runtime_catalog_key() {
+    let runtimes = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../runtimes");
+    // Watching the directory notices the key file appearing.
+    println!("cargo:rerun-if-changed={}", runtimes.display());
+    let key = std::fs::read_to_string(runtimes.join("runtime-catalog.pub")).unwrap_or_default();
+    let Some(out) = std::env::var_os("OUT_DIR") else {
+        eprintln!("OUT_DIR is not set");
+        std::process::exit(1);
+    };
+    let target = std::path::Path::new(&out).join("runtime-catalog.pub");
+    if let Err(error) = std::fs::write(&target, key) {
+        eprintln!("cannot write {}: {error}", target.display());
         std::process::exit(1);
     }
 }

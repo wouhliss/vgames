@@ -1,5 +1,7 @@
-//! Compatibility runtimes (GAME). Built by INS under README §1 ("need it,
-//! build it") with exactly the shared signature; GAME owns and extends it.
+//! Compatibility runtimes (GAME, 09-compatibility). `prefix_dir` was built by
+//! INS under README §1 ("need it, build it") with exactly the shared signature.
+
+pub mod catalog;
 
 use std::path::{Path, PathBuf};
 
