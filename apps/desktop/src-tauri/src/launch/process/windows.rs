@@ -162,7 +162,7 @@ impl Game {
         if handle.is_null() {
             let error = io::Error::last_os_error();
             // A terminated process being deleted can return ACCESS_DENIED, not
-            // INVALID_PARAMETER. Confirm it is absent from the live snapshot;
+            // INVALID_PARAMETER. Confirm it has no live snapshot entry;
             // never hide an access denial for a still-running process.
             let absent = error.raw_os_error() == Some(ERROR_INVALID_PARAMETER as i32)
                 || (error.raw_os_error() == Some(ERROR_ACCESS_DENIED as i32)
@@ -466,7 +466,12 @@ fn process_parents() -> io::Result<std::collections::BTreeMap<u32, u32>> {
     // SAFETY: entry's dwSize and buffer match the W API; snapshot is owned.
     let mut found = unsafe { Process32FirstW(raw(&snapshot), &mut entry) };
     while found != 0 {
-        descendants.insert(entry.th32ProcessID, entry.th32ParentProcessID);
+        // Toolhelp can retain an exited process while another handle pins its
+        // object. Zero execution threads confirms it cannot run game code;
+        // treating mere PID presence as liveness would misclassify that stub.
+        if entry.cntThreads != 0 {
+            descendants.insert(entry.th32ProcessID, entry.th32ParentProcessID);
+        }
         #[allow(unsafe_code)]
         // SAFETY: the same correctly initialized snapshot buffer remains live.
         let next = unsafe { Process32NextW(raw(&snapshot), &mut entry) };
