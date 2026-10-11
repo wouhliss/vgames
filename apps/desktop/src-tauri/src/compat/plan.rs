@@ -408,3 +408,6 @@ async fn winetricks(plan: &ProtonPlan, verbs: &[String]) -> Result<(), LaunchErr
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(all(test, target_os = "linux"))]
+mod proton_e2e;

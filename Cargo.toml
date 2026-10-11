@@ -9,6 +9,7 @@ members = [
   "crates/vgames-transfer",
   "crates/vgames-cli",
   "crates/vgames-overlay",
+  "crates/vgames-testapps",
   "xtask",
 ]
 # The desktop crate needs WebKitGTK (Linux) / WebView2 (Windows) system libraries.
@@ -148,6 +149,8 @@ directories = "6"
 # process tracking). FFI only, behind `#[allow(unsafe_code)]` + SAFETY comments.
 libc = "0.2"
 windows-sys = "0.61"
+# Windows test games (crates/vgames-testapps, GAME-05): Direct3D 11/12 and DXGI COM interfaces.
+windows = "0.62"
 # Directory-handle-relative file access (openat / handle-relative opens): install writes never
 # follow a link swapped in after a check (INS-07, Q12).
 cap-std = "3"

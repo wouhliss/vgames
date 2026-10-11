@@ -10,7 +10,7 @@
 #   os, arch              linux | macos; x86_64 | aarch64 (or arm64)
 #   url                   https://github.com/<owner>/<repo>/releases/download/<tag>/<file>
 #   sha256, size          of the archive, as downloaded (the launcher checks both before extracting)
-#   archive               tar.gz | tar.xz | tar.zst | zip
+#   archive               tar | tar.gz | tar.xz | tar.zst | zip
 #   license               SPDX expression (LicenseRef-… for Apple's D3DMetal license)
 #   min_launcher_version  oldest launcher that can use this entry
 #   rosetta_required      optional, macOS x86_64 only

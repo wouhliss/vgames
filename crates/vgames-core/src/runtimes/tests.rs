@@ -308,3 +308,20 @@ fn the_signature_is_checked_before_the_format() {
         Err(RuntimesError::Json(_))
     ));
 }
+
+#[test]
+fn every_archive_format_parses() {
+    for (text, format) in [
+        ("tar", ArchiveFormat::Tar),
+        ("tar.gz", ArchiveFormat::TarGz),
+        ("tar.xz", ArchiveFormat::TarXz),
+        ("tar.zst", ArchiveFormat::TarZst),
+        ("zip", ArchiveFormat::Zip),
+    ] {
+        assert_eq!(
+            serde_json::from_str::<ArchiveFormat>(&format!("\"{text}\"")).unwrap(),
+            format
+        );
+    }
+    assert!(serde_json::from_str::<ArchiveFormat>("\"tar.bz2\"").is_err());
+}

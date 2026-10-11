@@ -391,7 +391,11 @@ fn every_accepted_format_extracts() {
         e.finish().unwrap()
     };
     let zst = zstd::stream::encode_all(&tar[..], 1).unwrap();
-    for (bytes, format) in [(xz, ArchiveFormat::TarXz), (zst, ArchiveFormat::TarZst)] {
+    for (bytes, format) in [
+        (tar.clone(), ArchiveFormat::Tar),
+        (xz, ArchiveFormat::TarXz),
+        (zst, ArchiveFormat::TarZst),
+    ] {
         let c = case(&bytes, "a");
         extract(&c.archive, format, &c.dest).unwrap();
         assert_eq!(
@@ -405,6 +409,7 @@ fn every_accepted_format_extracts() {
 #[test]
 fn garbage_is_corrupt_not_a_panic() {
     for format in [
+        ArchiveFormat::Tar,
         ArchiveFormat::TarGz,
         ArchiveFormat::TarXz,
         ArchiveFormat::TarZst,

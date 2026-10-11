@@ -92,19 +92,13 @@ impl Probes for System {
     }
 
     fn free_space(&self, path: &Path) -> Option<u64> {
-        let disks = sysinfo::Disks::new_with_refreshed_list();
-        disks
-            .list()
-            .iter()
-            .filter(|d| path.starts_with(d.mount_point()))
-            .max_by_key(|d| d.mount_point().as_os_str().len())
-            .map(sysinfo::Disk::available_space)
+        vgames_transfer::sys::available_space(path).ok()
     }
 }
 
 #[cfg(target_os = "linux")]
+#[allow(unsafe_code)]
 fn vulkan_device_count() -> Option<usize> {
-    #[allow(unsafe_code)]
     // SAFETY: `Entry::load` dlopens the system Vulkan loader; the instance is created
     // with a valid, fully initialized create info, used only on this thread, and
     // destroyed before returning. No pointer outlives this function.
@@ -204,8 +198,15 @@ mod tests {
         assert_eq!(check_proton(&f, p, true), Ok(()));
     }
 
+    /// `VGAMES_EXPECT_VULKAN=1`: the host has a Vulkan driver (compat-e2e.yml, lavapipe).
     #[test]
     fn the_real_probes_read_without_panicking() {
+        if std::env::var_os("VGAMES_EXPECT_VULKAN").is_some() {
+            assert!(
+                System.vulkan_devices().unwrap_or(0) > 0,
+                "no Vulkan device found"
+            );
+        }
         let _ = System.vulkan_devices();
         let _ = System.sysctl(APPARMOR_USERNS_SYSCTL);
         let _ = System.free_space(Path::new("/"));

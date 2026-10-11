@@ -8316,6 +8316,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "vgames-testapps"
+version = "0.1.0"
+dependencies = [
+ "windows 0.62.2",
+]
+
+[[package]]
 name = "vgames-transfer"
 version = "0.1.0"
 dependencies = [
