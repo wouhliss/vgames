@@ -8,7 +8,10 @@ use std::ptr::{null, null_mut};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use windows_sys::Win32::Foundation::{FILETIME, HANDLE, INVALID_HANDLE_VALUE};
+use windows_sys::Win32::Foundation::{
+    ERROR_ACCESS_DENIED, ERROR_INVALID_PARAMETER, ERROR_NO_MORE_FILES, FILETIME, HANDLE,
+    INVALID_HANDLE_VALUE,
+};
 use windows_sys::Win32::System::IO::{
     CreateIoCompletionPort, GetQueuedCompletionStatus, OVERLAPPED, PostQueuedCompletionStatus,
 };
@@ -161,8 +164,15 @@ impl Game {
         };
         if handle.is_null() {
             let error = io::Error::last_os_error();
-            // ERROR_INVALID_PARAMETER means there is no process with this PID.
-            return if error.raw_os_error() == Some(87) {
+            // A terminated process being deleted can return ACCESS_DENIED, not
+            // INVALID_PARAMETER. Confirm it is absent from the live snapshot;
+            // never hide an access denial for a still-running process.
+            let absent = error.raw_os_error() == Some(ERROR_INVALID_PARAMETER as i32)
+                || (error.raw_os_error() == Some(ERROR_ACCESS_DENIED as i32)
+                    && !process_parents()
+                        .map_err(ProcessError::Track)?
+                        .contains_key(&identity.pid));
+            return if absent {
                 Ok(None)
             } else {
                 Err(ProcessError::Track(error))
@@ -438,7 +448,7 @@ fn process_parents() -> io::Result<std::collections::BTreeMap<u32, u32>> {
         found = next;
     }
     let error = io::Error::last_os_error();
-    if error.raw_os_error() != Some(18) {
+    if error.raw_os_error() != Some(ERROR_NO_MORE_FILES as i32) {
         return Err(error);
     }
     Ok(descendants)
@@ -473,7 +483,7 @@ fn adopt_children(job: &OwnedHandle, leader: ProcessIdentity) -> io::Result<()> 
             };
             if handle.is_null() {
                 let error = io::Error::last_os_error();
-                if error.raw_os_error() == Some(87) {
+                if error.raw_os_error() == Some(ERROR_INVALID_PARAMETER as i32) {
                     continue;
                 }
                 return Err(error);
