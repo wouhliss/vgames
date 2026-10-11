@@ -126,6 +126,7 @@ strsim = "0.11"
 # --- HTTP client (desktop, cli, api -> Discord/IGDB/Steam) -----------------
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "http2", "json", "stream", "gzip"] }
 tokio-tungstenite = { version = "0.30", features = ["rustls-tls-native-roots"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 
 # --- desktop ---------------------------------------------------------------
 tauri = { version = "2.11", features = [] }
