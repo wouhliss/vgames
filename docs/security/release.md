@@ -126,20 +126,6 @@ cargo xtask runtimes verify --last-version <published version> runtimes.json
 | [`soak.yml`](../../.github/workflows/soak.yml) | weekly, manual | 24 h launcher leak test on a dedicated self-hosted runner (labels `self-hosted, linux, vgames-soak`); skipped until the repository variable `VGAMES_SOAK_RUNNER=true` |
 | [Dependabot](../../.github/dependabot.yml) | weekly | Grouped updates; cryptography crates in their own PR; nothing is auto-merged |
 
-## Dry run on a fork (A5-T07 acceptance)
-
-1. Fork, then in the fork: create the `release` environment with a reviewer, generate a **test** updater key
-   (step 3 above) and store it there, commit its public key to the fork's `tauri.conf.json`, and set the
-   repository variable `VGAMES_UNSIGNED_DRY_RUN=true` (OS signing is skipped; the canonical repository
-   ignores this variable and always signs).
-2. Push a tag `desktop-v<version>` in the fork and approve the run.
-3. Evidence to record in `docs/agents/status/agent-5.md`: the run link, `cargo xtask updater verify` output
-   on the downloaded draft, an install of each artifact, and a launcher built with the test public key
-   updating from the previous fork release.
-
-Status: the pipeline is in place; the dry run needs a fork with a test key (humans), and the first real
-release needs the secrets above.
-
 ## Automated release dry run
 
 `release-dry-run.yml` runs weekly and on demand on hosted runners, without the protected release
@@ -147,14 +133,16 @@ environment, repository secrets or a GitHub release. Its first step checks the c
 key and requires both `requireSignedVersion` and `createUpdaterArtifacts`; a placeholder key fails.
 The same build steps used by the real release build unsigned Windows, Linux and macOS bundles.
 Throwaway updater private keys stay within their build jobs and are deleted before artifacts upload.
-Each artifact is signed for the workspace version; a second job downloads the bundles and public keys,
-builds `latest.json`, and verifies all signatures and trusted versions independently.
+Each artifact is signed for the workspace version; a second job downloads the bundles, public keys and
+`latest.json`, then verifies all signatures and trusted versions independently.
 
 On Ubuntu 24.04 the dry run installs the deb and runs `--smoke-test` once PLAY-09 provides it;
 until then it checks the installed files. A second AppImage carries version `0.0.1` and the same
 throwaway public key. The update round trip serves the compiled-in GitHub updater/changelog URLs over
 loopback HTTPS with a throwaway trusted CA (no launcher override flag), then uses INS-09's real-app
-harness to install and restart. Until that harness exists the step reports `pending (INS-09)`.
+harness to install and restart. It requires the installed AppImage to match the new artifact byte for byte,
+the relaunched application's displayed version to match, and What's new to contain exactly the generated
+player-facing entries. The smoke-test version assertion is added when PLAY-09 provides that command.
 The hosts entry and throwaway keys are removed even on failure. Workflow artifacts contain bundles,
 public keys, signatures and player changelog data only.
 

@@ -5,8 +5,9 @@ Security invariants (release blockers — every agent must preserve them):
 1. **The launcher never executes, or writes into an install, a byte that was not authenticated.**
    Package bytes chain to the server root key pinned by the user (publisher signatures). Compatibility
    runtimes (Proton, umu, Wine, DXMT, …) are pinned by hash in the runtime catalog signed by the vgames
-   project key (09-compatibility §5). The launcher and its overlay binaries are covered by the updater
-   signature and OS code signing.
+   project key (09-compatibility §5). The launcher and its overlay binaries are covered by the mandatory
+   updater signature. OS code signing is optional when certificates are absent (owner decision 2026-10-05;
+   08-release §1); this never makes updater verification optional.
 2. **A compromised vgames server cannot make launchers run arbitrary code.** Signing
    keys never touch the server; the server only relays signed manifests.
 3. **Message plaintext never leaves the endpoints.** The server stores and relays ciphertext only.
