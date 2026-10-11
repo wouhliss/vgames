@@ -3,4 +3,4 @@ audience: internal
 component: launcher
 type: fixed
 ---
-Wait for 40 percent of install bytes in the durable journal before the nightly SIGKILL, instead of using a later mtime from an earlier fsync snapshot (INT integrator loop, INS-08).
+Measure durable install checkpoints and prove only missing chunks are fetched after SIGKILL. Compare the full-scale installed tree byte for byte with bounded memory (INT integrator loop, INS-08).
