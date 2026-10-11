@@ -3,7 +3,7 @@
 ## Done
 
 ## In progress
-- PLAY-01: implemented ordered hook registry, cancellable compatibility plans, session-owned exit callbacks (including re-attach) and overlay migration. Rust/workspace, SQLx migration/offline checks, WASM, Linux desktop and real PostgreSQL/API tests pass. Admin browser suite passes; all 57 launcher functional browser tests pass, but the existing scroll-performance check exceeds the late-frame budget on this two-CPU sandbox (214 frames, five late, no long tasks). UI units passed isolated full runs (292 launcher, 326 admin); the complete CI invocation had timing failures in unchanged UI tests, so a sequential one-worker run is underway. No assertions or budgets changed. Hosted three-OS validation and merge pending.
+- PLAY-01: implemented ordered hook registry, cancellable compatibility plans, session-owned exit callbacks (including re-attach) and overlay migration. Rust/workspace, SQLx migration/offline checks, WASM, Linux desktop and real PostgreSQL/API tests pass. Admin browser suite passes; all 57 launcher functional browser tests pass, but the existing scroll-performance check exceeds the late-frame budget on this two-CPU sandbox (214 frames, five late, no long tasks). The complete TypeScript gate passes with sequential one-worker suites (292 launcher, 326 admin, six release-note tests), and supply-chain checks pass after configuring the managed CA. No assertions or budgets changed. Hosted three-OS validation and merge pending.
 
 ## Interfaces delivered (other agents may now rely on these)
 - Inherited from Agent 2: verified launch targets and environment preparation (`launch::{target,plan,prelaunch}`), Linux pidfd/process-group tracking, session records and playtime, the typed event bus, SQLite worker/migration/settings APIs, strict deep-link parsing and shortcut files. Phase-1 status stays unchanged.
@@ -12,6 +12,7 @@
 ## Needs from others
 
 ## Blockers / contract questions
+- Publishing is blocked: both `git push` and the connected GitHub app reject writes with HTTP 403 / `Resource not accessible by integration`. Local PLAY-01 commits and the draft PR description are ready; the connection needs repository Contents and Pull requests write access before hosted verification or merge.
 
 ## Built for you
 - INT-01 prepares #103's reduced-motion setting for launcher mock accessibility scans, leaving the perf project unchanged. Updated Vitest imports use explicit `.ts` extensions with the matching no-emit compiler option to satisfy the newer loader. Adopt this note when the dependency triage PR merges.
