@@ -48,7 +48,12 @@ jobs:
       - uses: ./.github/actions/desktop-release-setup
       - name: Private-key failure cleanup regression
         shell: bash
-        run: python3 scripts/release/test_dry_build.py
+        run: |
+          export VGAMES_DRY_TEST_SHELL="$BASH"
+          if [ "$RUNNER_OS" = Windows ]; then
+            VGAMES_DRY_TEST_SHELL=$(cygpath -w "$VGAMES_DRY_TEST_SHELL")
+          fi
+          python3 scripts/release/test_dry_build.py
       - name: Throwaway updater key, unsigned build and installation proof
         shell: bash
         run: bash scripts/release/dry-build.sh

@@ -40,7 +40,7 @@ print(os.environ['PROOF_SENTINEL'], file=sys.stderr)
             pnpm.chmod(0o700)
             receipt = scratch / "receipt.json"
             result = subprocess.run(
-                ["bash", "scripts/release/dry-build.sh"], cwd=ROOT,
+                [os.environ.get("VGAMES_DRY_TEST_SHELL", "bash"), "scripts/release/dry-build.sh"], cwd=ROOT,
                 env={**os.environ, "PATH": str(tools) + os.pathsep + os.environ["PATH"],
                      "RUNNER_TEMP": tmp, "TARGET": "synthetic-target", "BUNDLES": "appimage",
                      "PROOF_RECEIPT": str(receipt), "PROOF_SENTINEL": MARKER},
