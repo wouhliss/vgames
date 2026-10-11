@@ -11,6 +11,10 @@
 
 ## Needs from others
 
+## PLAY-04 prerequisites
+- Controller contract proposed in [#196](https://github.com/wouhliss/vgames/pull/196) for INT review; implementation can proceed against it.
+- `play/p2-sdl-static` builds SDL3 from source and links statically. The native version-call test and full desktop Clippy pass locally; Linux development prerequisites are documented and appended to all desktop build jobs. Native three-OS linkage and hosted checks are required before merge.
+
 ## Blockers / contract questions
 - Repository write access is restored. The initial retry hit GitHub email privacy protection; unpublished PLAY commits were rewritten with the account's GitHub no-reply address and rebased onto current main. Publishing and hosted validation are underway.
 
