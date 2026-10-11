@@ -143,8 +143,8 @@ pub enum Action {
     ClosePanel,
 }
 
-/// Renderer → broker.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// Renderer → broker. `Debug` prints `[redacted]` in place of the token.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ToBroker {
     Hello {
         version: u16,
@@ -153,6 +153,23 @@ pub enum ToBroker {
     },
     Heartbeat,
     Action(Action),
+}
+
+impl std::fmt::Debug for ToBroker {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Hello {
+                version, renderer, ..
+            } => f
+                .debug_struct("Hello")
+                .field("version", version)
+                .field("token", &format_args!("[redacted]"))
+                .field("renderer", renderer)
+                .finish(),
+            Self::Heartbeat => f.write_str("Heartbeat"),
+            Self::Action(action) => f.debug_tuple("Action").field(action).finish(),
+        }
+    }
 }
 
 /// Broker → renderer.
@@ -455,6 +472,25 @@ mod tests {
         assert!(reply(&"é".repeat(limits::REPLY)).is_ok());
         assert!(reply(&"é".repeat(limits::REPLY + 1)).is_err());
         assert_eq!(clip("a\u{7}b", 2), "a ");
+    }
+
+    #[test]
+    fn hello_debug_never_prints_the_token() {
+        let token = [0xa7; TOKEN_LEN];
+        let hello = ToBroker::Hello {
+            version: PROTOCOL_VERSION,
+            token,
+            renderer: RendererKind::Vulkan,
+        };
+        for printed in [format!("{hello:?}"), format!("{hello:#?}")] {
+            assert!(!printed.contains(&token_hex(&token)), "{printed}");
+            assert!(!printed.contains("167"), "decimal bytes leaked: {printed}");
+            assert!(
+                printed.contains("[redacted]") && printed.contains("Vulkan"),
+                "{printed}"
+            );
+        }
+        assert_eq!(format!("{:?}", ToBroker::Heartbeat), "Heartbeat");
     }
 
     #[test]

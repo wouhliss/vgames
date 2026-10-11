@@ -2,7 +2,7 @@
 // query, one save that reports typed errors (the overlay shortcut can be refused by the Rust core).
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
-import { commands, type SocialSettings, type SocialSettingsError } from "../../ipc";
+import { commands, type SocialError, type SocialSettings } from "../../ipc";
 import { unwrap } from "../../ipc/query";
 
 export const SOCIAL_SETTINGS = ["social_settings_get"] as const;
@@ -14,7 +14,7 @@ export function useSocialSettings() {
     queryFn: async () => unwrap(await commands.socialSettingsGet()),
   });
   const save = useCallback(
-    async (next: SocialSettings): Promise<SocialSettingsError | "failed" | null> => {
+    async (next: SocialSettings): Promise<SocialError | "failed" | null> => {
       const result = await commands.socialSettingsSet(next).catch(() => null);
       if (!result) return "failed";
       if (result.status === "error") return result.error;

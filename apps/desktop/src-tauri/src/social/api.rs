@@ -4,6 +4,10 @@
 //! Every call carries the session's bearer token and has a timeout. A `401` reports the
 //! token to the session owner ([`SessionSlot::report_unauthorized`]) and returns
 //! `not_signed_in`; the call is not retried here.
+//!
+//! Redirects are never followed (a bearer token must not reach another host), and every
+//! body is read through [`crate::api::read_capped`]: [`MAX_PROBLEM_BYTES`] for problems,
+//! [`crate::api::MAX_BODY_BYTES`] for results.
 
 use std::time::Duration;
 
@@ -26,12 +30,15 @@ use super::ports::{ServerSession, SessionSlot};
 
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
+/// Largest problem body read from an error response.
+pub const MAX_PROBLEM_BYTES: usize = 64 * 1024;
 
 /// The HTTP client social calls share (connection pooling across calls).
 pub fn http_client() -> Result<reqwest::Client, reqwest::Error> {
     reqwest::Client::builder()
         .connect_timeout(CONNECT_TIMEOUT)
         .timeout(REQUEST_TIMEOUT)
+        .redirect(reqwest::redirect::Policy::none())
         .user_agent(concat!("vgames-launcher/", env!("CARGO_PKG_VERSION")))
         .build()
 }
@@ -148,7 +155,11 @@ impl SocialApi<'_> {
                 .get(reqwest::header::RETRY_AFTER)
                 .and_then(|v| v.to_str().ok())
                 .and_then(|v| v.parse().ok());
-            let problem = resp.json::<Problem>().await.unwrap_or_default();
+            let problem = crate::api::read_capped(resp, MAX_PROBLEM_BYTES)
+                .await
+                .ok()
+                .and_then(|body| serde_json::from_slice::<Problem>(&body).ok())
+                .unwrap_or_default();
             return Err(map_problem(status, retry_after, problem));
         }
     }
@@ -159,11 +170,12 @@ impl SocialApi<'_> {
         path: &str,
         body: Option<&B>,
     ) -> Result<T, SocialError> {
-        self.send(method, path, body)
-            .await?
-            .json::<T>()
+        let resp = self.send(method, path, body).await?;
+        let bytes = crate::api::read_capped(resp, crate::api::MAX_BODY_BYTES)
             .await
-            .map_err(|e| SocialError::internal("reading a server response", &e.without_url()))
+            .map_err(|e| SocialError::internal("reading a server response", &e))?;
+        serde_json::from_slice(&bytes)
+            .map_err(|e| SocialError::internal("reading a server response", &e))
     }
 
     async fn empty<B: Serialize>(
@@ -373,7 +385,129 @@ impl SocialApi<'_> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use wiremock::matchers::{header, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+    use zeroize::Zeroizing;
+
     use super::*;
+
+    const TOKEN: &str = "social-test-token";
+
+    fn session(base: &str) -> ServerSession {
+        ServerSession {
+            server_id: Uuid::now_v7(),
+            user_id: Uuid::now_v7(),
+            base_url: url::Url::parse(base).unwrap(),
+            access_token: Arc::new(Zeroizing::new(TOKEN.to_owned())),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_redirect_is_never_followed_and_the_token_stays_home() {
+        let target = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({"friends": []})),
+            )
+            .mount(&target)
+            .await;
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/friends"))
+            .and(header("authorization", format!("Bearer {TOKEN}").as_str()))
+            .respond_with(
+                ResponseTemplate::new(302)
+                    .insert_header("location", format!("{}/v1/friends", target.uri()).as_str()),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let http = http_client().unwrap();
+        let sessions = SessionSlot::new();
+        let api = SocialApi {
+            http: &http,
+            session: session(&format!("{}/", server.uri())),
+            sessions: &sessions,
+        };
+        let err = api.friends().await.unwrap_err();
+        assert!(
+            matches!(&err, SocialError::Server { code, .. } if code == "302"),
+            "{err:?}"
+        );
+        assert!(
+            target
+                .received_requests()
+                .await
+                .unwrap_or_default()
+                .is_empty(),
+            "the redirect target was contacted"
+        );
+    }
+
+    /// Serves one response whose chunked body never ends before 100 MiB; returns the
+    /// address and a counter of the body bytes the client accepted.
+    async fn endless_body(status: &str) -> (std::net::SocketAddr, Arc<AtomicUsize>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let sent = Arc::new(AtomicUsize::new(0));
+        let counter = sent.clone();
+        let status = status.to_owned();
+        tokio::spawn(async move {
+            let (mut sock, _) = listener.accept().await.unwrap();
+            let mut req = vec![0u8; 8192];
+            let _ = sock.read(&mut req).await;
+            let head = format!(
+                "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ntransfer-encoding: chunked\r\n\r\n"
+            );
+            if sock.write_all(head.as_bytes()).await.is_err() {
+                return;
+            }
+            let chunk = vec![b' '; 1024 * 1024];
+            for _ in 0..100 {
+                let mut frame = format!("{:x}\r\n", chunk.len()).into_bytes();
+                frame.extend_from_slice(&chunk);
+                frame.extend_from_slice(b"\r\n");
+                if sock.write_all(&frame).await.is_err() {
+                    return;
+                }
+                counter.fetch_add(chunk.len(), Ordering::SeqCst);
+            }
+            let _ = sock.write_all(b"0\r\n\r\n").await;
+        });
+        (addr, sent)
+    }
+
+    #[tokio::test]
+    async fn a_100_mib_body_is_refused_at_the_cap() {
+        for status in ["200 OK", "409 Conflict"] {
+            let (addr, sent) = endless_body(status).await;
+            let http = http_client().unwrap();
+            let sessions = SessionSlot::new();
+            let api = SocialApi {
+                http: &http,
+                session: session(&format!("http://{addr}/")),
+                sessions: &sessions,
+            };
+            let err = api.friends().await.unwrap_err();
+            match status {
+                "200 OK" => assert!(matches!(err, SocialError::Internal { .. }), "{err:?}"),
+                _ => assert!(
+                    matches!(&err, SocialError::Conflict { code, .. } if code.is_empty()),
+                    "{err:?}"
+                ),
+            }
+            // The client stopped reading: the server could never push the whole 100 MiB.
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            assert!(
+                sent.load(Ordering::SeqCst) < 100 * 1024 * 1024,
+                "{status}: the whole body was read"
+            );
+        }
+    }
 
     fn problem(code: &str, field: Option<&str>) -> Problem {
         Problem {
