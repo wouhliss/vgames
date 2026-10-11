@@ -22,7 +22,7 @@
 mod support;
 
 use std::collections::BTreeMap;
-use std::io::BufRead;
+use std::io::{BufRead, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -167,11 +167,7 @@ async fn install_e2e() {
         .unwrap()
         .unwrap();
     assert_eq!(row.state, "installed");
-    assert_eq!(
-        read_tree(&row.root),
-        read_tree(&source),
-        "installed tree differs"
-    );
+    assert_trees_equal(&row.root, &source);
 
     let peak = sampler.stop();
     eprintln!(
@@ -488,19 +484,71 @@ async fn flipped_byte_is_refused(
     desktop.state.downloads.remove(package).await.ok();
 }
 
-/// Every regular file under `root` (relative path → bytes), outside the launcher's `.vgames`.
-fn read_tree(root: &Path) -> BTreeMap<String, Vec<u8>> {
-    walk(root)
-        .into_iter()
-        .filter_map(|p| {
-            let rel = p
-                .strip_prefix(root)
-                .unwrap()
-                .to_string_lossy()
-                .replace('\\', "/");
-            (!rel.starts_with(".vgames")).then(|| (rel, std::fs::read(&p).unwrap()))
-        })
-        .collect()
+/// Compare every path and byte without retaining two whole 8 GiB trees in memory.
+fn assert_trees_equal(installed: &Path, source: &Path) {
+    let files = |root: &Path| -> BTreeMap<PathBuf, PathBuf> {
+        walk(root)
+            .into_iter()
+            .filter_map(|path| {
+                let relative = path.strip_prefix(root).unwrap().to_path_buf();
+                (!relative.starts_with(".vgames")).then_some((relative, path))
+            })
+            .collect()
+    };
+    let installed = files(installed);
+    let source = files(source);
+    assert_eq!(
+        installed.keys().collect::<Vec<_>>(),
+        source.keys().collect::<Vec<_>>()
+    );
+    let mut left = [0; 64 * 1024];
+    let mut right = [0; 64 * 1024];
+    for (relative, path) in installed {
+        let mut actual = std::fs::File::open(path).unwrap();
+        let mut expected = std::fs::File::open(source.get(&relative).unwrap()).unwrap();
+        let size = actual.metadata().unwrap().len();
+        assert_eq!(
+            size,
+            expected.metadata().unwrap().len(),
+            "size differs: {relative:?}"
+        );
+        let mut remaining = size;
+        while remaining > 0 {
+            let count = usize::try_from(remaining.min(left.len() as u64)).unwrap();
+            actual.read_exact(&mut left[..count]).unwrap();
+            expected.read_exact(&mut right[..count]).unwrap();
+            assert_eq!(
+                &left[..count],
+                &right[..count],
+                "bytes differ: {relative:?}"
+            );
+            remaining -= count as u64;
+        }
+    }
+}
+
+#[test]
+fn tree_comparison_checks_paths_lengths_and_bytes_after_a_block_boundary() {
+    let work = tempfile::tempdir().unwrap();
+    let installed = work.path().join("installed");
+    let source = work.path().join("source");
+    std::fs::create_dir_all(&installed).unwrap();
+    std::fs::create_dir_all(&source).unwrap();
+    let bytes = vec![3; 128 * 1024 + 1];
+    for root in [&installed, &source] {
+        std::fs::write(root.join("file"), &bytes).unwrap();
+        std::fs::write(root.join("empty"), []).unwrap();
+    }
+    assert_trees_equal(&installed, &source);
+    let mut changed = bytes.clone();
+    changed[64 * 1024 + 7] = 4;
+    std::fs::write(installed.join("file"), &changed).unwrap();
+    assert!(std::panic::catch_unwind(|| assert_trees_equal(&installed, &source)).is_err());
+    std::fs::write(installed.join("file"), &bytes[..bytes.len() - 1]).unwrap();
+    assert!(std::panic::catch_unwind(|| assert_trees_equal(&installed, &source)).is_err());
+    std::fs::write(installed.join("file"), &bytes).unwrap();
+    std::fs::write(installed.join("extra"), []).unwrap();
+    assert!(std::panic::catch_unwind(|| assert_trees_equal(&installed, &source)).is_err());
 }
 
 fn walk(root: &Path) -> Vec<PathBuf> {
