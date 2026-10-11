@@ -10,14 +10,16 @@ work=$(mktemp -d)
 marker="vgames-updater-e2e-$$"
 ca="/usr/local/share/ca-certificates/$marker.crt"
 cleanup() {
+  cleanup_status=$?
   if [[ -f "$work/server.pid" ]]; then sudo kill "$(sudo cat "$work/server.pid")" 2>/dev/null || true; fi
-  sudo sed -i "/# $marker\$/d" /etc/hosts
-  sudo rm -f "$ca"
-  sudo update-ca-certificates >/dev/null 2>&1 || true
+  sudo sed -i "/# $marker\$/d" /etc/hosts || cleanup_status=1
+  sudo rm -f "$ca" || cleanup_status=1
+  sudo update-ca-certificates >/dev/null 2>&1 || cleanup_status=1
   if [[ -f "$work/requests.log" ]]; then
-    sudo install -m 644 "$work/requests.log" "$artifacts/updater-requests.log"
+    sudo install -m 644 "$work/requests.log" "$artifacts/updater-requests.log" || cleanup_status=1
   fi
-  sudo rm -rf "$work"
+  rm -rf "$work" || cleanup_status=1
+  exit "$cleanup_status"
 }
 trap cleanup EXIT
 openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 1 \
