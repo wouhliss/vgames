@@ -10,6 +10,7 @@
 # written to; use a throwaway one), tauri-driver and WebKitWebDriver, stunnel, Xvfb,
 # dbus-run-session, jq, and sudo for trusting the throwaway CA (fixtures/tls.sh).
 set -euo pipefail
+umask 077
 parts=${1:-1}
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../../.." && pwd)
@@ -23,13 +24,31 @@ https_port=${E2E_HTTPS_PORT:-8443}
 driver_port=${E2E_DRIVER_PORT:-4444}
 work=${E2E_WORK_DIR:-$(mktemp -d)}
 mkdir -p "$work"
+chmod 700 "$work"
 instance_pid=""
 
 cleanup() {
-  [[ -n "$instance_pid" ]] && kill "$instance_pid" 2>/dev/null || true
-  pkill -f "WebKitWebDriver --port=$((driver_port + 1))" 2>/dev/null || true
+  [[ -n "$instance_pid" ]] && kill -- "-$instance_pid" 2>/dev/null || true
   "$here/fixtures/api.sh" down "$work/api" || true
   "$here/fixtures/tls.sh" down "$work/tls" || true
+  # Keep only the two redacted logs uploaded by E2E. No TLS key, CLI key, vault,
+  # OAuth link or signed storage URL survives this job's fixture cleanup.
+  python3 - "$work" <<'PY'
+import shutil, sys
+from pathlib import Path
+work = Path(sys.argv[1])
+for name in ('a', 'b', 'tls'):
+    shutil.rmtree(work / name, ignore_errors=True)
+api = work / 'api'
+if api.is_dir():
+    for path in api.iterdir():
+        if path.name == 'api.log':
+            continue
+        if path.is_dir() and not path.is_symlink():
+            shutil.rmtree(path)
+        else:
+            path.unlink(missing_ok=True)
+PY
 }
 trap cleanup EXIT
 
@@ -37,7 +56,7 @@ trap cleanup EXIT
 "$here/fixtures/tls.sh" up "$work/tls" "$https_port" "$api_port"
 
 mkdir -p "$work/library"
-"$here/fixtures/instance.sh" "$work/a" "$driver_port" > "$work/instance-a.log" 2>&1 &
+setsid "$here/fixtures/instance.sh" "$work/a" "$driver_port" > "$work/instance-a.log" 2>&1 &
 instance_pid=$!
 for _ in $(seq 1 100); do
   curl -sf -o /dev/null "http://127.0.0.1:$driver_port/status" && break
@@ -45,7 +64,7 @@ for _ in $(seq 1 100); do
 done
 
 status=0
-E2E_APP="$target/release/vgames-desktop" \
+E2E_APP="${E2E_APP:-$target/release/vgames-desktop}" \
 E2E_DRIVER_PORT="$driver_port" \
 E2E_SERVER="https://localhost:$https_port" \
 E2E_INSTANCE_HOME="$work/a/home" \

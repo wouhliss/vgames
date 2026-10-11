@@ -5,7 +5,8 @@
 // uninstall.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { createReadStream, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { type Locator, Session, WebDriverError } from "../lib/webdriver.ts";
@@ -114,6 +115,8 @@ async function evidence(name: string, run: () => Promise<void>): Promise<void> {
   try {
     await run();
   } catch (error) {
+    // A fresh sign-in code is a credential even when the Discord identity is synthetic.
+    if (name === "part1") throw error;
     try {
       writeFileSync(join(work, `${name}.png`), Buffer.from(await session.screenshot(), "base64"));
       const text = await session.execute("return document.body.innerText;");
@@ -139,13 +142,100 @@ test("part 2: install, play, stop, verify, uninstall (M2)", { skip: !parts.inclu
   evidence("part2", part2),
 );
 
+test(
+  "part 3: signed updater round trip and player-facing notes (M4)",
+  {
+    skip: !parts.includes("3"),
+    timeout: 360_000,
+  },
+  part3,
+);
+
+async function part3() {
+  const artifacts = env("E2E_UPDATE_ARTIFACTS");
+  const latest = JSON.parse(readFileSync(join(artifacts, "latest.json"), "utf8")) as {
+    version: string;
+    platforms: Record<string, { url: string }>;
+  };
+  const changelog = JSON.parse(readFileSync(join(artifacts, "changelog-user.json"), "utf8")) as {
+    releases: { version: string; entries: { text: string }[] }[];
+  };
+  const release = changelog.releases.find((item) => item.version === latest.version);
+  assert.ok(release, "the generated player changelog contains this release");
+  const download = latest.platforms["linux-x86_64"];
+  assert.ok(download, "a real Linux updater artifact is required");
+  const expected = join(
+    artifacts,
+    decodeURIComponent(new URL(download.url).pathname.split("/").at(-1) ?? ""),
+  );
+  const digest = async (file: string) => {
+    const hash = createHash("sha256");
+    for await (const block of createReadStream(file)) hash.update(block);
+    return hash.digest("hex");
+  };
+  const before = await digest(app);
+  const after = await digest(expected);
+  assert.notEqual(before, after, "the lower-version artifact differs from the new build");
+  await click(navLink("Settings"));
+  await click({ xpath: '//a[normalize-space(.)="Updates"]' });
+  await shown({ xpath: '//p[normalize-space(.)="vgames 0.0.1"]' });
+  await click(button("Check for updates"));
+  await click(button(`What's new in ${latest.version}`));
+  await shown(heading(`What's new in vgames ${latest.version}`));
+  await shown({ xpath: `//*[@role="dialog"]//h3[normalize-space(.)="vgames ${latest.version}"]` });
+  const visible = await session.execute(
+    `return Array.from(document.querySelectorAll('section[aria-label="What\\'s new"] li'), e => e.textContent);`,
+  );
+  assert.ok(Array.isArray(visible));
+  assert.deepEqual(
+    [...visible].sort(),
+    release.entries.map((entry) => entry.text).sort(),
+    "What's new contains exactly the generated player-facing entries",
+  );
+  await click(button("Install and restart"));
+  await until(
+    "the signed new AppImage to replace the lower build",
+    async () => {
+      try {
+        return (await digest(app)) === after;
+      } catch (error) {
+        // The plugin briefly renames the previous image before writing its replacement.
+        if (error instanceof Error && "code" in error && error.code === "ENOENT") return false;
+        throw error;
+      }
+    },
+    300_000,
+  );
+  // The same automation connection must observe the actual restart into the new build.
+  await until(
+    "the relaunched application to expose its automation window",
+    async () => {
+      try {
+        if (!(await session.focusLatestWindow())) return false;
+        return await exists(navLink("Settings"));
+      } catch (error) {
+        if (error instanceof WebDriverError) return false;
+        throw error;
+      }
+    },
+    60_000,
+  );
+  await click(navLink("Settings"));
+  await click({ xpath: '//a[normalize-space(.)="Updates"]' });
+  await shown({ xpath: `//p[normalize-space(.)="vgames ${latest.version}"]` });
+}
+
 async function part1() {
   // Add the server: the fingerprint shown is the one the server publishes.
   await type(field("Server address"), server);
   await click(button("Continue"));
   const fingerprint = await shown(css("[data-testid=fingerprint]"));
   const shownPrint = (await session.text(fingerprint)).replace(/[\s-]/g, "");
-  const info = (await (await fetch(`${server}/.well-known/vgames.json`)).json()) as {
+  const info = (await (
+    await fetch(`${server}/.well-known/vgames.json`, {
+      signal: AbortSignal.timeout(30_000),
+    })
+  ).json()) as {
     root_key_fingerprint: string;
   };
   assert.ok(
