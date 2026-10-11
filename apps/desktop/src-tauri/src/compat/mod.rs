@@ -3,6 +3,7 @@
 
 pub mod catalog;
 pub mod extract;
+pub mod profiles;
 pub mod runtimes;
 
 use std::path::{Path, PathBuf};

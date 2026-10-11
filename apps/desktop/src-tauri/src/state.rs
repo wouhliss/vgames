@@ -60,6 +60,8 @@ pub struct AppState {
     pub runtime_catalog: Arc<crate::compat::catalog::RuntimeCatalog>,
     /// Extracted compatibility runtimes and their references (GAME-03).
     pub runtime_store: Arc<crate::compat::runtimes::RuntimeStore>,
+    /// Verified compat profiles per package and target (GAME-04).
+    pub compat_profiles: Arc<crate::compat::profiles::Profiles<Servers>>,
 }
 
 impl AppState {
@@ -132,7 +134,12 @@ impl AppState {
             crate::compat::runtimes::RuntimeStore::http_client()?,
         ));
         installs.on_uninstalled(crate::compat::runtimes::on_uninstall(&runtime_store));
+        let compat_profiles = Arc::new(crate::compat::profiles::Profiles::new(
+            Arc::clone(&servers),
+            db.clone(),
+        ));
         Ok(Self {
+            compat_profiles,
             runtime_store,
             runtime_catalog,
             publisher,

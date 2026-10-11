@@ -49,6 +49,10 @@ pub const MIGRATIONS: &[Migration] = &[
         name: "0006_compat_runtimes",
         sql: include_str!("../compat/migrations/0006_compat_runtimes.sql"),
     },
+    Migration {
+        name: "0007_compat_profiles",
+        sql: include_str!("../compat/migrations/0007_compat_profiles.sql"),
+    },
 ];
 
 fn checksum(sql: &str) -> String {
