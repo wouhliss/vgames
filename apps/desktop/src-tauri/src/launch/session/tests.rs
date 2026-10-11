@@ -245,3 +245,84 @@ async fn stale_or_foreign_records_are_dropped() {
         .unwrap();
     assert_eq!(playtime, 10);
 }
+
+struct ExitNotice(tokio::sync::mpsc::UnboundedSender<(PackageRef, LaunchLayer)>);
+
+impl super::super::hooks::LaunchHooks for ExitNotice {
+    fn before_spawn<'a>(
+        &'a self,
+        _: &'a LaunchContext,
+    ) -> super::super::hooks::HookFuture<
+        'a,
+        Result<super::super::hooks::HookEnv, super::super::hooks::LaunchVeto>,
+    > {
+        Box::pin(async { Ok(super::super::hooks::HookEnv::default()) })
+    }
+    fn after_exit<'a>(
+        &'a self,
+        ctx: &'a LaunchContext,
+        _: &'a GameExit,
+    ) -> super::super::hooks::HookFuture<'a, ()> {
+        Box::pin(async move {
+            let _ = self.0.send((ctx.package, ctx.layer));
+        })
+    }
+    fn aborted(&self, _: &LaunchContext) {}
+}
+
+#[tokio::test]
+async fn exit_hooks_wait_for_children_and_run_once_after_reattach() {
+    use super::super::hooks::HookStage;
+    let mut f = fixture().await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    f.sessions
+        .hooks()
+        .register(HookStage::Saves, Arc::new(ExitNotice(tx.clone())));
+    let mut hooks = f.sessions.hooks().session(f.sessions.context(
+        PACKAGE,
+        f.root(),
+        Platform::LinuxX86_64,
+        LaunchLayer::Native,
+    ));
+    hooks.before_spawn().await.unwrap();
+    f.sessions
+        .start_with_hooks(PACKAGE, f.root(), f.launch("sleep 0.4 &\nexit 4"), hooks)
+        .await
+        .unwrap();
+    assert!(
+        tokio::time::timeout(Duration::from_millis(50), rx.recv())
+            .await
+            .is_err(),
+        "leader exit must not run after_exit while its child lives"
+    );
+    assert_eq!(f.stopped().await.exit.code, Some(4));
+    assert_eq!(rx.recv().await.unwrap(), (PACKAGE, LaunchLayer::Native));
+    assert!(rx.try_recv().is_err());
+
+    f.sessions
+        .start(PACKAGE, f.root(), f.launch("exec sleep 30"))
+        .await
+        .unwrap();
+    f.sessions.detach_all();
+    let detached = tokio::time::timeout(Duration::from_secs(5), async {
+        while f.sessions.is_running(PACKAGE) {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await;
+    assert!(detached.is_ok());
+    assert!(rx.try_recv().is_err(), "detach is not an exit");
+    let next = GameSessions::new(f.db.clone(), EventBus::new());
+    next.hooks()
+        .register(HookStage::Saves, Arc::new(ExitNotice(tx)));
+    assert!(next.reattach(PACKAGE, f.root()).await.unwrap());
+    next.stop(PACKAGE, true).unwrap();
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .unwrap()
+            .unwrap(),
+        (PACKAGE, LaunchLayer::Native)
+    );
+    assert!(rx.try_recv().is_err());
+}

@@ -55,6 +55,20 @@ pub struct RunningGame {
     inner: sys::Game,
 }
 
+/// Borrowed view of a Windows process before its primary thread is resumed.
+/// The Windows backend supplies the handles when suspended spawning lands (PLAY-02).
+#[cfg(windows)]
+pub struct SuspendedProcess {
+    pub(crate) identity: ProcessIdentity,
+}
+
+#[cfg(windows)]
+impl SuspendedProcess {
+    pub fn identity(&self) -> ProcessIdentity {
+        self.identity
+    }
+}
+
 /// Wakes a blocked [`RunningGame::wait`] without touching the game.
 #[derive(Clone)]
 pub struct WaitCanceller {

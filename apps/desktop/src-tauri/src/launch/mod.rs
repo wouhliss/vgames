@@ -10,6 +10,7 @@
 //! [`target::resolve`] picks the launch target; a [`plan::LaunchPlan`]
 //! (`Native`, `Proton` or `Wine`) turns it into a [`plan::PreparedLaunch`].
 
+pub mod hooks;
 pub mod orchestrate;
 pub mod plan;
 pub mod prelaunch;

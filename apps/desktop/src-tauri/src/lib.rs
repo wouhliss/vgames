@@ -182,7 +182,6 @@ fn setup(app: &AppHandle, profile: Option<String>) -> Result<(), Box<dyn std::er
     state
         .catalog
         .spawn_invalidation(&state.bus, state.shutdown.child_token());
-    launch::session::spawn_reattach(state.db.clone(), state.games.clone());
 
     // Deep links: from the first launch's arguments, and later from the OS
     // (macOS open-url) or a second instance (forwarded by single-instance).
@@ -205,6 +204,8 @@ fn setup(app: &AppHandle, profile: Option<String>) -> Result<(), Box<dyn std::er
     downloads::init(app, &state);
     updater::init(app, &state);
     social::commands::init(app, &state)?;
+    // Every launch service must register before re-attached sessions snapshot the hooks.
+    launch::session::spawn_reattach(state.db.clone(), state.games.clone());
     app.manage(state);
     Ok(())
 }

@@ -43,13 +43,34 @@ pub const BROKER_EVENTS: usize = 16;
 pub const FALLBACK_AFTER: std::time::Duration = std::time::Duration::from_secs(20);
 
 impl LaunchHooks for OverlayService {
-    fn prepare(&self, package: PackageRef) -> crate::launch::orchestrate::HookEnv<'_> {
-        // The title is filled in by the Settings list from the library.
-        Box::pin(self.prepare_launch(package, ""))
+    fn before_spawn<'a>(
+        &'a self,
+        ctx: &'a crate::launch::hooks::LaunchContext,
+    ) -> crate::launch::hooks::HookFuture<
+        'a,
+        Result<crate::launch::hooks::HookEnv, crate::launch::hooks::LaunchVeto>,
+    > {
+        Box::pin(async move {
+            Ok(crate::launch::hooks::HookEnv(
+                self.prepare_launch(ctx.package, "").await,
+            ))
+        })
     }
 
-    fn aborted(&self, package: PackageRef) {
-        self.end_session(package);
+    fn after_exit<'a>(
+        &'a self,
+        ctx: &'a crate::launch::hooks::LaunchContext,
+        exit: &'a crate::events::GameExit,
+    ) -> crate::launch::hooks::HookFuture<'a, ()> {
+        Box::pin(async move {
+            if self.end_session(ctx.package) {
+                self.record_exit(ctx.package, exit.clone()).await;
+            }
+        })
+    }
+
+    fn aborted(&self, ctx: &crate::launch::hooks::LaunchContext) {
+        self.end_session(ctx.package);
     }
 }
 
@@ -645,8 +666,16 @@ mod tests {
             server_id: Uuid::from_u128(1),
             package_id: Uuid::from_u128(3),
         };
-        let env = LaunchHooks::prepare(&overlay, game).await;
-        LaunchHooks::aborted(&overlay, game);
+        let ctx = crate::launch::hooks::LaunchContext {
+            package: game,
+            root: std::path::PathBuf::new(),
+            platform: crate::launch::orchestrate::host_platform().unwrap(),
+            layer: crate::launch::hooks::LaunchLayer::Native,
+            prefix_dir: None,
+            cancellation: CancellationToken::new(),
+        };
+        let env = LaunchHooks::before_spawn(&overlay, &ctx).await.unwrap().0;
+        LaunchHooks::aborted(&overlay, &ctx);
         if cfg!(target_os = "macos") {
             return;
         }
