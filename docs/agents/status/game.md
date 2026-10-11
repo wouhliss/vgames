@@ -9,6 +9,7 @@
 ## Needs from others
 
 ## Blockers / contract questions
+- INT review of [#180](https://github.com/wouhliss/vgames/pull/180#issuecomment-6108614961) and [#181](https://github.com/wouhliss/vgames/pull/181#issuecomment-6108614090): preserve the newer cache against an older asynchronous stored snapshot, serialize due-time checks, and refuse composed symbolic links escaping the runtime (including `b -> .`, `a -> b/../outside`). Extraction writes also need directory-handle confinement against component swaps. These findings remain open for INT-11 until regressions and current-base checks pass.
 - INT review of [#177](https://github.com/wouhliss/vgames/pull/177#issuecomment-6108469677): social success bodies cannot use the generic 4 MiB cap. An inbox page contains up to 100 envelopes, each permitting 64 KiB of ciphertext before base64 (API `social/relay.rs` checks decoded size); a valid page can exceed 8 MiB. Use a justified 16 MiB social cap and an actual HTTP maximum-page regression, retaining the 64 KiB error cap and 100 MiB stream refusals. Avoid logging attacker-controlled serde values. Main advanced after #176; publish a fresh current-base replacement, preserving the original head and checks. This does not wait on another slice.
 
 ## Built for you
