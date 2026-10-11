@@ -153,3 +153,5 @@ INS asks for the G1 re-review of the install chain (checklist items 1.1, 1.2 and
 - INT-05 refreshed combined real-API suite after the future-date fix: all 22 applicable browser cases pass (1.1m), including every new robustness case and the draft re-sign-in round trip; twelve unchanged pre-existing mock-only exclusions remain. Temporary fixture keys, database and API process were removed.
 
 - INT-05 form-integration preparation on the published foundation: the full local TypeScript gate passes (54s), with 159 admin units and 292 launcher units. Restored package/server/allowlist/compatibility inputs keep their original ETags or revisions; signing credentials remain outside drafts. The matching combined stack passes all 22 applicable real-API browser cases after the future-date fix.
+
+- INT-05: preceding admin adoption [#169](https://github.com/wouhliss/vgames/pull/169) merged at `d81eb7b` after all applicable current-base hosted checks passed. The forms portion is now being published on `d81eb7b`; remaining portions stay unpublished until their turn.
