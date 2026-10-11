@@ -76,7 +76,8 @@ fi
                 env={**os.environ, "PATH": str(tools) + os.pathsep + os.environ["PATH"],
                      "RUNNER_TEMP": tmp, "TARGET": "synthetic-target", "BUNDLES": "appimage",
                      "PROOF_RECEIPT": str(receipt), "PROOF_SENTINEL": MARKER,
-                     "PROOF_REAL_PYTHON": sys.executable},
+                     "PROOF_REAL_PYTHON": sys.executable,
+                     "MSYS2_ARG_CONV_EXCL": "", "MSYS2_ENV_CONV_EXCL": ""},
                 capture_output=True, text=True, timeout=30,
             )
             self.assertNotIn(MARKER, result.stdout + result.stderr)
