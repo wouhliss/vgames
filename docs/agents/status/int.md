@@ -37,6 +37,7 @@
 
 ## Blockers / contract questions
 - INT-06 fixture containment: four actual HTTP/path regressions pass, including metadata symlink refusal before reading and readiness requests excluded from application receipts. Removing the metadata containment guard fails the new regression; restoration passes all four. This proves the fixture boundary; the bundled signed install/restart round trip still requires a hosted run and is not claimed green.
+- INT-06 proposed shared updater preflight: the unchanged committed placeholder is correctly refused. An existing public test vector is accepted; disabling signed-version binding or artifact creation is refused. All three negative probes restore the original configuration and generate no private key. The real main dry run remains dependent on INT-08's committed public key; a candidate public-vector run cannot satisfy that acceptance item.
 - G1/F1 wiring is now on main from INS-03/04; INT-11 review remains; F2/F4/launcher F5 remain pending GAME; server F3/F5 are INT-04.
 - INT-08: no file-sending tool has been discovered. No release keys generated; follow the prescribed no-generation fallback if still unavailable when reached.
 
