@@ -129,7 +129,7 @@ async function evidence(name: string, run: () => Promise<void>): Promise<void> {
 }
 
 before(async () => {
-  session = await Session.create(port, app);
+  session = await Session.create(port, process.env.E2E_AUTOMATION_APP ?? app);
 });
 
 after(async () => {
@@ -206,13 +206,21 @@ async function part3() {
     },
     300_000,
   );
-  // The same automation connection must observe the actual restart into the new build.
+  // WebKit ends the old automation session when its owning process exits.
+  // Attach to the inherited inspector of the actual restarted process; never
+  // supply an application path here, which would start a replacement ourselves.
+  try {
+    await session.close();
+  } catch (error) {
+    if (!(error instanceof WebDriverError && error.code === "invalid session id")) throw error;
+  }
+  const inspector = readFileSync(env("E2E_UPDATE_INSPECTOR_RECEIPT"), "utf8").trim();
   await until(
     "the relaunched application to expose its automation window",
     async () => {
       try {
-        if (!(await session.focusLatestWindow())) return false;
-        return await exists(navLink("Settings"));
+        session = await Session.attach(port + 1, inspector);
+        return true;
       } catch (error) {
         if (error instanceof WebDriverError) return false;
         throw error;
@@ -220,6 +228,7 @@ async function part3() {
     },
     60_000,
   );
+  await shown(navLink("Settings"));
   await click(navLink("Settings"));
   await click({ xpath: '//a[normalize-space(.)="Updates"]' });
   await shown({ xpath: `//p[normalize-space(.)="vgames ${latest.version}"]` });

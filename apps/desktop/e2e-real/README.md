@@ -104,3 +104,8 @@ fresh sign-in codes; the API and instance logs remain available.
 
 Nightly in `.github/workflows/e2e.yml` (job `launcher`, parts 1 and 2). Part 1 is not on
 PRs: the release build alone takes longer than the 10 minutes INS-09 allows for a PR job.
+
+The updater restart ends WebKit's original automation session. The fixture captures
+only the local inspector address when starting the lower build, then attaches to
+the real restarted process with `webkitgtk:browserOptions.targetAddress`. The
+attach request contains no executable path and cannot launch a replacement.
