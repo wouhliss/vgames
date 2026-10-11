@@ -14,6 +14,7 @@
 ## Needs from others
 
 ## PLAY-04 prerequisites
+- `play/p2-controller-input` adds the navigation state machine and SDL classification. All 19 controller tests (including six new navigation/classification regressions), formatting and full desktop Clippy pass locally. The SDL thread, commands, tester and Settings screen are still in progress; this branch is stacked on the static SDL build.
 - Controller contract proposed in [#196](https://github.com/wouhliss/vgames/pull/196) for INT review; implementation can proceed against it.
 - [#197](https://github.com/wouhliss/vgames/pull/197) merged static SDL3 after all hosted checks and three-OS builds passed. The native version-call test and full desktop Clippy pass locally; Linux development prerequisites are documented and appended to all desktop build jobs. Native three-OS linkage and hosted checks are required before merge.
 

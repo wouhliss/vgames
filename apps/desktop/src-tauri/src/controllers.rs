@@ -4,6 +4,7 @@
 
 pub mod decision;
 pub mod mapping;
+pub mod navigation;
 
 #[cfg(test)]
 mod linkage_tests {
