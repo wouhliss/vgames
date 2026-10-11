@@ -10,7 +10,7 @@
 //! 8 GiB of large files at 1.0 (the nightly run), 1,000 files and ~80 MiB at the default.
 //!
 //! The crash is real: the first half of the download runs in a child process (this test
-//! binary, re-run as `install_e2e_child`) that is killed with SIGKILL at about 40 %.
+//! binary, re-run as `install_e2e_child`) that is killed with SIGKILL once at least 40 % is durable.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -38,8 +38,7 @@ use vgames_transfer::download::journal::{Journal, JournalKey};
 const CHILD_ENV: &str = "VGAMES_E2E_CHILD";
 /// The first run is killed once this share of the download is on disk.
 const KILL_AT: f64 = 0.40;
-/// The first run is throttled to finish in about this many seconds, so the kill (at `KILL_AT`,
-/// after the next journal flush) lands mid-way.
+/// Target duration at small scale; the full-scale bandwidth cap leaves time for journal flushes.
 const FIRST_RUN_SECONDS: u64 = 20;
 
 /// What the parent hands to the first (killed) run.
