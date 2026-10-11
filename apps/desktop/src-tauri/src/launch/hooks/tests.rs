@@ -478,3 +478,36 @@ async fn failed_exit_hooks_cannot_prevent_later_cleanup() {
         );
     }
 }
+
+#[tokio::test]
+async fn incompatible_runner_prefix_and_unexpected_source_errors_fail_closed() {
+    let ctx = context();
+    let wrong_runner = LaunchPlan::Wine(WinePlan {
+        wine: "wine".into(),
+        prefix: ctx.prefix_dir.clone().unwrap(),
+        graphics: Graphics::Dxmt,
+        env: BTreeMap::new(),
+        dll_overrides: String::new(),
+    });
+    let mut wrong_prefix = proton(&ctx);
+    if let LaunchPlan::Proton(plan) = &mut wrong_prefix {
+        plan.prefix = PathBuf::from("other-prefix");
+    }
+    for result in [
+        Ok(wrong_runner),
+        Ok(wrong_prefix),
+        Err(LaunchError::Io {
+            detail: "setup failed".into(),
+        }),
+    ] {
+        let registry = HookRegistry::default();
+        registry.register_plan_source(Arc::new(Source {
+            result,
+            calls: Calls::default(),
+        }));
+        assert!(matches!(
+            registry.plan(&ctx, &manifest()).await,
+            Err(LaunchError::CompatUnavailable { .. })
+        ));
+    }
+}

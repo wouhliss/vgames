@@ -91,3 +91,14 @@ Test names are `file::function` (Rust) or `file › test title` (Playwright, Vit
 
 None open.
 
+
+## Launch extensions (PLAY-01)
+
+| Property | Tests in `apps/desktop/src-tauri/src/launch/` | Runs |
+|---|---|---|
+| Plan setup precedes saves, controllers and overlay; duplicate stage registration cannot replace a live service | `hooks/tests.rs::fixed_order_and_successful_exit`, `::source_runs_before_hooks_and_compat_never_falls_back_to_native` | Required desktop job; Desktop matrix |
+| A save-conflict veto reaches IPC without spawning; already prepared hooks unwind in reverse order | `hooks/tests.rs::veto_aborts_previous_hooks_and_never_calls_later_hooks`, `::dropping_preparation_releases_partial_hooks_in_reverse_order`; `orchestrate/tests.rs::save_conflict_veto_reaches_the_command_without_spawning` | Required desktop job; Desktop matrix (orchestrator fixture currently Linux, ported in PLAY-02) |
+| Timeout, panic at future construction/poll and panic during cleanup cannot crash the launcher or prevent later cleanup | `hooks/tests.rs::timeout_and_both_kinds_of_panics_skip_only_the_failing_hook`, `::a_cleanup_panic_cannot_prevent_earlier_hooks_from_aborting`, `::failed_exit_hooks_cannot_prevent_later_cleanup` | Required desktop job; Desktop matrix |
+| Cancellation releases partial hook resources; missing, cancelled, panicking, unexpected or mismatched compat plans never fall back to direct spawn | `hooks/tests.rs::cancellation_unwinds_a_hook_while_it_is_pending`, `::source_panic_and_cancellation_fail_closed_without_a_timeout_budget`, `::source_runs_before_hooks_and_compat_never_falls_back_to_native`, `::incompatible_runner_prefix_and_unexpected_source_errors_fail_closed` | Required desktop job; Desktop matrix |
+| Save callbacks wait for the last child, run once after launcher re-attach, and never run on detach | `session/tests.rs::exit_hooks_wait_for_children_and_run_once_after_reattach` | Required desktop job; Linux Desktop matrix (portable process fixtures follow in PLAY-02) |
+| Existing overlay environment injection and cleanup are retained | `orchestrate/tests.rs::launch_hooks_add_variables_and_invalid_keys_are_skipped`; `overlay/mod.rs::tests::a_launch_that_fails_drops_the_broker` | Required desktop job; Desktop matrix (orchestrator fixture currently Linux) |
