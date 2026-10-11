@@ -1,10 +1,10 @@
 # PLAY status
 
 ## Done
+- PLAY-01: ordered launch hooks, cancellable compatibility plans and session-owned exit callbacks merged in [#193](https://github.com/wouhliss/vgames/pull/193). Every hosted check passed on Windows, Linux and macOS, including the launcher browser performance test.
 
 ## In progress
-- PLAY-02: Windows suspended spawn, explicit UTF-16 argv/environment, completion-port Job Object tracking and tree stop implemented locally. Portable self-executing process/orchestrator fixtures and Windows pre-resume error/panic/timeout tests added. Cross-target Clippy passes for the actual process sources in a small harness; All 54 Linux launch regressions pass (one existing benchmark ignored), and full desktop Clippy plus formatting pass. Native Windows and full hosted checks remain mandatory; repository write access is restored and publishing is underway. This branch depends on the local PLAY-01 commits until those merge.
-- PLAY-01: implemented ordered hook registry, cancellable compatibility plans, session-owned exit callbacks (including re-attach) and overlay migration. Rust/workspace, SQLx migration/offline checks, WASM, Linux desktop and real PostgreSQL/API tests pass. Admin browser suite passes; all 57 launcher functional browser tests pass, but the existing scroll-performance check exceeds the late-frame budget on this two-CPU sandbox (214 frames, five late, no long tasks). The complete TypeScript gate passes with sequential one-worker suites (292 launcher, 326 admin, six release-note tests), and supply-chain checks pass after configuring the managed CA. No assertions or budgets changed. Hosted three-OS validation and merge pending.
+- PLAY-02: Windows suspended spawn, explicit UTF-16 argv/environment, completion-port Job Object tracking and tree stop implemented locally. Portable self-executing process/orchestrator fixtures and Windows pre-resume error/panic/timeout tests added. Cross-target Clippy passes for the actual process sources in a small harness; All 54 Linux launch regressions pass (one existing benchmark ignored), and full desktop Clippy plus formatting pass. Native Windows and full hosted checks remain mandatory; repository write access is restored and publishing is underway. Rebased onto merged PLAY-01 and retargeted [#194](https://github.com/wouhliss/vgames/pull/194) to main. The first hosted Windows run passed 335 tests but failed the final post-exit re-attach check: OpenProcess returned access denied for a process being deleted. The backend now confirms absence in the live process snapshot before treating that denial as exited; live permission errors still fail closed. New hosted validation pending.
 
 ## Interfaces delivered (other agents may now rely on these)
 - Inherited from Agent 2: verified launch targets and environment preparation (`launch::{target,plan,prelaunch}`), Linux pidfd/process-group tracking, session records and playtime, the typed event bus, SQLite worker/migration/settings APIs, strict deep-link parsing and shortcut files. Phase-1 status stays unchanged.
@@ -17,7 +17,7 @@
 - `play/p2-sdl-static` builds SDL3 from source and links statically. The native version-call test and full desktop Clippy pass locally; Linux development prerequisites are documented and appended to all desktop build jobs. Native three-OS linkage and hosted checks are required before merge.
 
 ## Blockers / contract questions
-- Repository write access is restored. The initial retry hit GitHub email privacy protection; unpublished PLAY commits were rewritten with the account's GitHub no-reply address and rebased onto current main. Publishing and hosted validation are underway.
+- Repository write access and email privacy are resolved; PLAY commits use the account's GitHub no-reply address.
 
 ## Built for you
 - INT-01 prepares #103's reduced-motion setting for launcher mock accessibility scans, leaving the perf project unchanged. Updated Vitest imports use explicit `.ts` extensions with the matching no-emit compiler option to satisfy the newer loader. Adopt this note when the dependency triage PR merges.
