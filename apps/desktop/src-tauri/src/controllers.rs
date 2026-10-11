@@ -7,6 +7,7 @@ pub mod idle;
 pub mod input;
 pub mod mapping;
 pub mod profiles;
+pub mod navigation;
 
 #[cfg(test)]
 mod linkage_tests {
