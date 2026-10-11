@@ -158,3 +158,5 @@ INS asks for the G1 re-review of the install chain (checklist items 1.1, 1.2 and
 - INT-05 long-list preparation passes the full TypeScript gate (1m01s; 163 admin and 292 launcher units), including the 10,000-row scroll/window regressions. The matching combined robustness stack passes all 34 mock cases (1m09s). Current-base publication and hosted checks remain required. The preceding merge receipt below tracks the main base used for this portion.
 
 - INT-05: preceding admin adoption [#170](https://github.com/wouhliss/vgames/pull/170) merged at `6026c92` after all applicable current-base hosted checks passed. The lists portion is now being published on `6026c92`; remaining portions stay unpublished until their turn.
+
+- INT-05 long-list publication #171 stopped on its hosted keyboard-filter case: the unfiltered table already contains Hollow Harbor, so focus can land on a row removed by the pending filter. A replacement preserves every assertion, waits for that exact GET response before focusing, and additionally checks focus before Enter. No rerun, timeout increase, skip or published-head rewrite is used; fresh validation is required.

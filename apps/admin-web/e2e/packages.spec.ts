@@ -127,10 +127,22 @@ test("keyboard only: filter the list and open a package", async ({ page }) => {
   await expect(page.getByRole("table")).toBeVisible();
   await page.getByLabel("Search title or slug").focus();
   await page.keyboard.type("harbor");
+  // The unfiltered table already contains this title. Wait for the replacement
+  // response so focus is placed on the filtered row, not the disappearing one.
+  const filtered = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      response.request().method() === "GET" &&
+      url.pathname === "/v1/admin/packages" &&
+      url.searchParams.get("q") === "harbor"
+    );
+  });
   await page.keyboard.press("Enter");
+  expect((await filtered).status()).toBe(200);
   const link = page.getByRole("table").getByRole("link", { name: title });
   await expect(link).toBeVisible();
   await link.focus();
+  await expect(link).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("heading", { level: 1, name: title })).toBeVisible();
 });
