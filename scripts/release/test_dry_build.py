@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import stat
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -29,6 +30,11 @@ key = pathlib.Path(args[args.index('-w') + 1])
 key.write_text('synthetic-key-file')
 pathlib.Path(str(key) + '.pub').write_text('synthetic-public-key')
 password = key.parent / 'password'
+expected = password.read_text()
+if args[args.index('-p') + 1] != expected:
+    raise RuntimeError('Native signing password argument was converted')
+if os.environ['TAURI_SIGNING_PRIVATE_KEY_PASSWORD'] != expected:
+    raise RuntimeError('Native signing password environment was converted')
 private_acl = None
 if os.name == 'nt':
     code = """$a = Get-Acl -LiteralPath $env:PROOF_KEY_DIR;
@@ -50,12 +56,26 @@ print(os.environ['PROOF_SENTINEL'])
 print(os.environ['PROOF_SENTINEL'], file=sys.stderr)
 ''')
             pnpm.chmod(0o700)
+            # Force the real orchestration's password argument to begin with '/'.
+            # No production hook or cryptographic key is needed for this edge case.
+            python = tools / "python3"
+            python.write_text('''#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == - && "${2:-}" == */password ]]; then
+    cat >/dev/null
+    printf '%s' '/synthetic-public-argument' > "$2"
+else
+    exec "$PROOF_REAL_PYTHON" "$@"
+fi
+''')
+            python.chmod(0o700)
             receipt = scratch / "receipt.json"
             result = subprocess.run(
                 [os.environ.get("VGAMES_DRY_TEST_SHELL", "bash"), "scripts/release/dry-build.sh"], cwd=ROOT,
                 env={**os.environ, "PATH": str(tools) + os.pathsep + os.environ["PATH"],
                      "RUNNER_TEMP": tmp, "TARGET": "synthetic-target", "BUNDLES": "appimage",
-                     "PROOF_RECEIPT": str(receipt), "PROOF_SENTINEL": MARKER},
+                     "PROOF_RECEIPT": str(receipt), "PROOF_SENTINEL": MARKER,
+                     "PROOF_REAL_PYTHON": sys.executable},
                 capture_output=True, text=True, timeout=30,
             )
             self.assertEqual(result.returncode, 27, result.stdout + result.stderr)
