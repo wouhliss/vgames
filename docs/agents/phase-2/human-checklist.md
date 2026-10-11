@@ -1,5 +1,7 @@
 # What only the owner can do
 
+Session handoff (2026-10-11): main CI is green after restart repair #190. Pipeline #191 awaits its final signed-update proof. INT-08 secure file delivery remains unavailable; no production keys were generated. A6 still requires M4.
+
 Everything here is **non-blocking**: agents build and prove the automated path first, and each item says what it
 unlocks. INT keeps this file current. An agent that finds a new step only a person can take adds it here, in
 the same PR as the automated substitute.
