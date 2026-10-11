@@ -7,7 +7,8 @@
 //!
 //! Redirects are never followed (a bearer token must not reach another host), and every
 //! body is read through [`crate::api::read_capped`]: [`MAX_PROBLEM_BYTES`] for problems,
-//! [`crate::api::MAX_BODY_BYTES`] for results.
+//! [`MAX_SUCCESS_BYTES`] for results. A body the launcher cannot parse is logged by
+//! its error category and position only, never by the server's text.
 
 use std::time::Duration;
 
@@ -32,6 +33,11 @@ pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
 /// Largest problem body read from an error response.
 pub const MAX_PROBLEM_BYTES: usize = 64 * 1024;
+/// Largest successful response body. The biggest legal one is an inbox page
+/// (`inbox`, `limit=100`): 100 envelopes of up to `MAX_ENVELOPE_CIPHERTEXT`
+/// (64 KiB) of ciphertext, about 87 KiB each in base64 plus metadata, so about
+/// 8.6 MiB. 16 MiB keeps that page legal with room for metadata growth.
+pub const MAX_SUCCESS_BYTES: usize = 16 * 1024 * 1024;
 
 /// The HTTP client social calls share (connection pooling across calls).
 pub fn http_client() -> Result<reqwest::Client, reqwest::Error> {
@@ -171,11 +177,22 @@ impl SocialApi<'_> {
         body: Option<&B>,
     ) -> Result<T, SocialError> {
         let resp = self.send(method, path, body).await?;
-        let bytes = crate::api::read_capped(resp, crate::api::MAX_BODY_BYTES)
+        let bytes = crate::api::read_capped(resp, MAX_SUCCESS_BYTES)
             .await
             .map_err(|e| SocialError::internal("reading a server response", &e))?;
-        serde_json::from_slice(&bytes)
-            .map_err(|e| SocialError::internal("reading a server response", &e))
+        serde_json::from_slice(&bytes).map_err(|e| {
+            // serde's message can quote the server's text: log only where it failed.
+            tracing::error!(
+                category = ?e.classify(),
+                line = e.line(),
+                column = e.column(),
+                bytes = bytes.len(),
+                "unreadable social response"
+            );
+            SocialError::Internal {
+                detail: "reading a server response".to_owned(),
+            }
+        })
     }
 
     async fn empty<B: Serialize>(
@@ -446,6 +463,51 @@ mod tests {
                 .is_empty(),
             "the redirect target was contacted"
         );
+    }
+
+    #[tokio::test]
+    async fn a_full_inbox_page_at_the_maximum_ciphertext_size_is_accepted() {
+        use base64::Engine as _;
+        use vgames_proto::social::{InboxEnvelope, InboxPage, MAX_ENVELOPE_CIPHERTEXT};
+        let ciphertext =
+            base64::engine::general_purpose::STANDARD.encode(vec![0xa5; MAX_ENVELOPE_CIPHERTEXT]);
+        let page = InboxPage {
+            items: (0..100u128)
+                .map(|i| InboxEnvelope {
+                    id: Uuid::from_u128(i),
+                    conversation_id: Uuid::from_u128(1000),
+                    sender_user_id: Uuid::from_u128(2000),
+                    sender_device_id: Uuid::from_u128(3000),
+                    sender_identity_key: "k".repeat(43),
+                    algorithm: "olm.v1".into(),
+                    olm_message_type: 1,
+                    ciphertext: ciphertext.clone(),
+                    created_at: time::OffsetDateTime::UNIX_EPOCH,
+                })
+                .collect(),
+            next_cursor: Some("c".repeat(64)),
+        };
+        let body = serde_json::to_vec(&page).unwrap();
+        assert!(
+            body.len() > 8 * 1024 * 1024 && body.len() < MAX_SUCCESS_BYTES,
+            "{} bytes",
+            body.len()
+        );
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/inbox"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(body))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let http = http_client().unwrap();
+        let sessions = SessionSlot::new();
+        let api = SocialApi {
+            http: &http,
+            session: session(&format!("{}/", server.uri())),
+            sessions: &sessions,
+        };
+        assert_eq!(api.inbox().await.unwrap(), page);
     }
 
     /// Serves one response whose chunked body never ends before 100 MiB; returns the

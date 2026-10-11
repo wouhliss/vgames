@@ -11,7 +11,9 @@
   and 25-minute soak runs (`tests/social_chaos.rs`, `tests/social_soak.rs`).
 
 ## In progress
-- GAME-01 — F4, F5 (launcher), Q4 and the settings contract cleanup (`game/p2-security-fixes`).
+- GAME-01 — F4, F5 (launcher), Q4 and the settings contract cleanup: replacement of #177 on current `main`
+  (`game/p2-security-fixes-2`) with INT's review applied (16 MiB social success cap justified by the largest legal
+  inbox page, a real HTTP maximum-page test, no server text in logs). #177's head stays as it was.
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_proto::realtime::MAX_FRAME` (64 KiB, GAME-01): the server re-exports it from `apps/api/src/realtime/mod.rs`;
