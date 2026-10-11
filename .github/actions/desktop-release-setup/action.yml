@@ -54,4 +54,3 @@ runs:
         if compgen -G "crates/vgames-overlay/layers/*.json" > /dev/null; then
           cp crates/vgames-overlay/layers/*.json "$OVERLAY_DIR/"
         fi
-
