@@ -75,6 +75,23 @@ class UpdaterFixtureTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 fixture.routes(self.directory)
 
+    def test_metadata_symlinks_outside_artifacts_are_refused_before_reading(self):
+        with tempfile.TemporaryDirectory() as outside:
+            for name in ("latest.json", "changelog-user.json"):
+                with self.subTest(name=name):
+                    source = self.directory / name
+                    original = source.read_bytes()
+                    target = Path(outside) / name
+                    target.write_bytes(original)
+                    source.unlink()
+                    source.symlink_to(target)
+                    try:
+                        with self.assertRaisesRegex(ValueError, "metadata must be a file inside"):
+                            fixture.routes(self.directory)
+                    finally:
+                        source.unlink()
+                        source.write_bytes(original)
+
 
 if __name__ == "__main__":
     unittest.main()

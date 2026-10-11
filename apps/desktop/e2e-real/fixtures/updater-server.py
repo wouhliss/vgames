@@ -16,7 +16,11 @@ LATEST = PREFIX + "latest/download/"
 
 def routes(directory: Path) -> dict[str, Path]:
     directory = directory.resolve(strict=True)
-    result = {LATEST + name: directory / name for name in ("latest.json", "changelog-user.json")}
+    result = {LATEST + name: (directory / name).resolve(strict=True)
+              for name in ("latest.json", "changelog-user.json")}
+    for file in result.values():
+        if file.parent != directory or not file.is_file():
+            raise ValueError("metadata must be a file inside the dry-run directory")
     manifest = json.loads(result[LATEST + "latest.json"].read_text())
     for platform in manifest["platforms"].values():
         url = urlsplit(platform["url"])
@@ -32,9 +36,6 @@ def routes(directory: Path) -> dict[str, Path]:
         if artifact.parent != directory or not artifact.is_file():
             raise ValueError("artifact must be a file inside the dry-run directory")
         result[url.path] = artifact
-    for file in result.values():
-        if not file.is_file():
-            raise ValueError("missing dry-run file")
     return result
 
 
