@@ -11,15 +11,23 @@ the generated `src/bindings.ts` (tauri-specta).
 ```sh
 sudo apt install build-essential pkg-config libwebkit2gtk-4.1-dev libgtk-3-dev \
   libsoup-3.0-dev libjavascriptcoregtk-4.1-dev librsvg2-dev libxdo-dev \
-  libayatana-appindicator3-dev libssl-dev libudev-dev libdbus-1-dev
+  libayatana-appindicator3-dev libssl-dev libudev-dev libdbus-1-dev \
+  cmake libxss-dev libxcursor-dev libxi-dev libxfixes-dev libxrandr-dev \
+  libxinerama-dev libasound2-dev libpulse-dev libwayland-dev libxkbcommon-dev \
+  libegl1-mesa-dev libgles2-mesa-dev libdrm-dev libgbm-dev libdecor-0-dev
 ```
 
 Fedora: `webkit2gtk4.1-devel gtk3-devel libsoup3-devel librsvg2-devel libxdo-devel
 libappindicator-gtk3-devel openssl-devel systemd-devel dbus-devel`. Arch: `webkit2gtk-4.1 gtk3 libsoup3
 librsvg xdotool libappindicator-gtk3 openssl systemd dbus`.
 
-**Windows:** Visual Studio Build Tools (C++ workload) and WebView2 (preinstalled on Windows 11).
-**macOS:** Xcode Command Line Tools.
+SDL3 is compiled from its packaged source and linked statically; a system SDL3
+installation is not required. Linux needs the audio/window development packages
+above for that build. On Fedora and Arch, also install CMake and the equivalent
+SDL3 development prerequisites.
+
+**Windows:** Visual Studio Build Tools (C++ workload), CMake and WebView2 (preinstalled on Windows 11).
+**macOS:** Xcode Command Line Tools and CMake (`brew install cmake`).
 
 ## Run
 

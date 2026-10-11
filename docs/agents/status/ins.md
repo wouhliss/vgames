@@ -1,5 +1,8 @@
 # INS status
 
+## PLAY-04 build integration
+- `play/p2-sdl-static` enables SDL3 `build-from-source-static` without changing its version. Desktop builds now compile SDL3 with CMake and a C compiler; no system SDL3 installation is required.
+
 Install & Library (phase 2, `docs/agents/phase-2/ins-install-library.md`).
 
 ## Done

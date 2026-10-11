@@ -1,5 +1,8 @@
 # INT status
 
+## PLAY-04 build integration
+- `play/p2-sdl-static` enables SDL3 `build-from-source-static` without changing its version. Desktop builds now compile SDL3 with CMake and a C compiler; no system SDL3 installation is required. A native version call in the desktop suite makes the matrix prove linkage on all three OSes. Under README §5, PLAY also appends SDL source-build development packages to the Linux CI, matrix and release jobs; workflow permissions and signing gates stay unchanged.
+
 ## Done
 - Integrator contract review: additive GAME-02 contract #179 merged at `384010f1c21e49d9636ae8a100ebc59a0bb28cb1`, retaining GAME attribution; #178 closed with the actual receipt.
 - INT-06 fixture portion: #183 merged at `6584e681351d07c65ece24f0fa9ced85f204f0a3` after every applicable check and three OS legs. Four HTTP/containment regressions and a negative metadata mutation pass. Bundled restart acceptance remains pending separately.
