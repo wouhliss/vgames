@@ -14,6 +14,10 @@
 //!   the token and waits for the session to change.
 //! - Outgoing frames (`presence.set`, `typing`) are dropped while disconnected; their
 //!   owners re-send what matters after the next `hello`.
+//! - Inbound frames and messages are capped at [`MAX_INBOUND_FRAME`] (a small multiple of
+//!   the server's [`MAX_FRAME`]); a larger frame is refused from its header, before its
+//!   payload is buffered, and ends the connection. Every inbound text frame goes through
+//!   [`decode_envelope`].
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -24,14 +28,43 @@ use serde_json::Value;
 use time::OffsetDateTime;
 use tokio::sync::{Notify, mpsc, watch};
 use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
-use vgames_proto::realtime::{Envelope, Hello, close, kinds};
+use vgames_proto::realtime::{Envelope, Hello, MAX_FRAME, close, kinds};
 
 use super::api::SocialApi;
 use super::model::{SocialConnection, SocialConnectionState, SocialError};
 use super::ports::{ServerSession, SessionSlot};
+
+/// Largest inbound frame or message: four times the server's own limit.
+pub const MAX_INBOUND_FRAME: usize = 4 * MAX_FRAME;
+
+/// Socket limits for the realtime connection.
+fn ws_config() -> WebSocketConfig {
+    WebSocketConfig::default()
+        .max_message_size(Some(MAX_INBOUND_FRAME))
+        .max_frame_size(Some(MAX_INBOUND_FRAME))
+}
+
+/// Opens the WebSocket with [`ws_config`].
+async fn open_socket(url: &str) -> Result<WsStream, tokio_tungstenite::tungstenite::Error> {
+    tokio_tungstenite::connect_async_with_config(url, Some(ws_config()), false)
+        .await
+        .map(|(ws, _)| ws)
+}
+
+/// Decodes one inbound text frame. Anything over [`MAX_INBOUND_FRAME`], not an envelope,
+/// or not protocol version 1 is `None`; never panics, whatever the input.
+pub fn decode_envelope(text: &str) -> Option<Envelope> {
+    if text.len() > MAX_INBOUND_FRAME {
+        return None;
+    }
+    serde_json::from_str::<Envelope>(text)
+        .ok()
+        .filter(|env| env.v == 1)
+}
 
 /// Timeouts and backoff (tests shrink them).
 #[derive(Clone, Copy, Debug)]
@@ -368,7 +401,7 @@ impl Task {
                         return if code == Some(close::SESSION_REVOKED) { Ended::Revoked } else { Ended::AfterHello };
                     }
                     Ok(Some(Ok(Message::Text(text)))) => {
-                        let Ok(env) = serde_json::from_str::<Envelope>(text.as_str()) else {
+                        let Some(env) = decode_envelope(text.as_str()) else {
                             tracing::debug!("ignoring an unreadable realtime frame");
                             continue;
                         };
@@ -411,20 +444,18 @@ impl Task {
         url.set_scheme(scheme)
             .map_err(|()| Connect::Failed("bad scheme".into()))?;
         url.query_pairs_mut().append_pair("ticket", &ticket.ticket);
-        let (mut ws, _) = tokio_tungstenite::connect_async(url.as_str())
-            .await
-            .map_err(|e| match e {
-                tokio_tungstenite::tungstenite::Error::Http(r) if r.status() == 401 => {
-                    Connect::Unauthorized
-                }
-                other => Connect::Failed(other.to_string()),
-            })?;
+        let mut ws = open_socket(url.as_str()).await.map_err(|e| match e {
+            tokio_tungstenite::tungstenite::Error::Http(r) if r.status() == 401 => {
+                Connect::Unauthorized
+            }
+            other => Connect::Failed(other.to_string()),
+        })?;
         // The first frame must be `hello`.
         loop {
             match ws.next().await {
                 Some(Ok(Message::Text(text))) => {
-                    let env: Envelope = serde_json::from_str(text.as_str())
-                        .map_err(|e| Connect::Failed(e.to_string()))?;
+                    let env = decode_envelope(text.as_str())
+                        .ok_or_else(|| Connect::Failed("unreadable first frame".into()))?;
                     if env.kind != "hello" {
                         return Err(Connect::Failed(format!("expected hello, got {}", env.kind)));
                     }
@@ -490,7 +521,129 @@ async fn wait_identity_change(
 
 #[cfg(test)]
 mod tests {
+    use proptest::prelude::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio_tungstenite::tungstenite::error::{CapacityError, Error as WsError};
+    use tokio_tungstenite::tungstenite::handshake::derive_accept_key;
+
     use super::*;
+
+    /// Accepts one WebSocket handshake by hand, then sends only the header of a 2 MiB text
+    /// frame and keeps the socket open: a client that waited for the payload would hang.
+    async fn oversized_frame_server() -> std::net::SocketAddr {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let (mut sock, _) = listener.accept().await.unwrap();
+            let mut req = Vec::new();
+            let mut buf = [0u8; 1024];
+            while !req.windows(4).any(|w| w == b"\r\n\r\n") {
+                let n = sock.read(&mut buf).await.unwrap();
+                assert!(n > 0, "client hung up during the handshake");
+                req.extend_from_slice(&buf[..n]);
+            }
+            let req = String::from_utf8(req).unwrap();
+            let key = req
+                .lines()
+                .find_map(|l| {
+                    let (name, value) = l.split_once(':')?;
+                    name.eq_ignore_ascii_case("sec-websocket-key")
+                        .then(|| value.trim().to_owned())
+                })
+                .unwrap();
+            let accept = derive_accept_key(key.as_bytes());
+            let head = format!(
+                "HTTP/1.1 101 Switching Protocols\r\nupgrade: websocket\r\nconnection: Upgrade\r\nsec-websocket-accept: {accept}\r\n\r\n"
+            );
+            sock.write_all(head.as_bytes()).await.unwrap();
+            let mut frame = vec![0x81, 127];
+            frame.extend_from_slice(&(2u64 * 1024 * 1024).to_be_bytes());
+            frame.extend_from_slice(b"{\"v\":1");
+            sock.write_all(&frame).await.unwrap();
+            // Hold the connection; the payload never comes.
+            tokio::time::sleep(Duration::from_secs(30)).await;
+            drop(sock);
+        });
+        addr
+    }
+
+    #[tokio::test]
+    async fn a_2_mib_frame_is_refused_from_its_header() {
+        let addr = oversized_frame_server().await;
+        let mut ws = open_socket(&format!("ws://{addr}/v1/realtime"))
+            .await
+            .unwrap();
+        let next = tokio::time::timeout(Duration::from_secs(5), ws.next())
+            .await
+            .expect("the client waited for a payload it should have refused");
+        assert!(
+            matches!(
+                next,
+                Some(Err(WsError::Capacity(CapacityError::MessageTooLong { .. })))
+            ),
+            "{next:?}"
+        );
+    }
+
+    fn valid_frame() -> String {
+        serde_json::json!({
+            "v": 1,
+            "id": "0199a0b4-1c2d-7e3f-8a4b-5c6d7e8f9a0b",
+            "type": "presence.changed",
+            "ts": "2026-10-11T10:00:00Z",
+            "data": {"user_id": "0199a0b4-1c2d-7e3f-8a4b-5c6d7e8f9a0c", "status": "online"}
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn decode_envelope_accepts_v1_and_refuses_the_rest() {
+        let env = decode_envelope(&valid_frame()).unwrap();
+        assert_eq!(env.kind, kinds::PRESENCE_CHANGED);
+        assert!(decode_envelope(&valid_frame().replace("\"v\":1", "\"v\":2")).is_none());
+        assert!(decode_envelope("not json").is_none());
+        let mut big = valid_frame();
+        big.pop();
+        big.push_str(&format!(",\"pad\":\"{}\"}}", "x".repeat(MAX_INBOUND_FRAME)));
+        assert!(decode_envelope(&big).is_none());
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(512))]
+
+        #[test]
+        fn decode_envelope_never_panics_on_arbitrary_text(raw in ".{0,4096}") {
+            let _ = decode_envelope(&raw);
+        }
+
+        #[test]
+        fn decode_envelope_never_panics_on_arbitrary_bytes(raw in prop::collection::vec(any::<u8>(), 0..4096)) {
+            let _ = decode_envelope(&String::from_utf8_lossy(&raw));
+        }
+
+        #[test]
+        fn decode_envelope_never_panics_on_mutated_frames(
+            edits in prop::collection::vec((any::<prop::sample::Index>(), any::<u8>(), 0u8..3), 1..16),
+        ) {
+            let mut bytes = valid_frame().into_bytes();
+            for (at, byte, op) in edits {
+                if bytes.is_empty() {
+                    bytes.push(byte);
+                    continue;
+                }
+                let i = at.index(bytes.len());
+                match op {
+                    0 => bytes[i] = byte,
+                    1 => bytes.insert(i, byte),
+                    _ => { bytes.remove(i); }
+                }
+            }
+            let text = String::from_utf8_lossy(&bytes);
+            if let Some(env) = decode_envelope(&text) {
+                prop_assert_eq!(env.v, 1);
+            }
+        }
+    }
 
     #[test]
     fn backoff_stays_within_bounds_and_grows() {

@@ -8,8 +8,8 @@ import type {
   PackageOverlay,
   ServerProfile,
   SettingsError,
+  SocialError,
   SocialSettings,
-  SocialSettingsError,
 } from "../ipc";
 import { events } from "../ipc";
 import { fail, type Handler } from "./runtime";
@@ -21,7 +21,7 @@ export interface SettingsState {
   tokenStorageFallback: boolean;
   downloadSettings: DownloadSettings;
   socialSettings: SocialSettings;
-  overlayPackages: PackageOverlay[];
+  packageOverlays: PackageOverlay[];
   /** Accelerators the "operating system" already uses (hotkey conflicts). */
   takenHotkeys: Record<string, string | null>;
   licenses: string;
@@ -40,7 +40,7 @@ export function defaultSettingsState(): SettingsState {
       overlay_enabled: true,
       overlay_hotkey: "Shift+F3",
     },
-    overlayPackages: [],
+    packageOverlays: [],
     takenHotkeys: { "Alt+Tab": "the operating system", "Ctrl+Alt+Delete": "the operating system" },
     licenses:
       "vgames launcher\n\nThird-party notices\n\nreact 19 — MIT License\nCopyright (c) Meta Platforms, Inc. and affiliates.\n\n@tanstack/react-query — MIT License\nCopyright (c) 2021-present Tanner Linsley",
@@ -55,7 +55,7 @@ export const PERSISTED = [
   "libraries",
   "downloadSettings",
   "socialSettings",
-  "overlayPackages",
+  "packageOverlays",
   "sessions",
   "defaultRunner",
   "compatOverrides",
@@ -137,20 +137,20 @@ export function settingsHandlers(
       const next = args.settings as SocialSettings;
       if (next.overlay_hotkey !== state.socialSettings.overlay_hotkey) {
         if (!/^((Ctrl|Alt|Shift|Super)\+)*[A-Za-z0-9`\-=[\];',./]\w*$/.test(next.overlay_hotkey))
-          fail({ kind: "invalid" } satisfies SocialSettingsError);
+          fail({ kind: "invalid" } satisfies SocialError);
         if (next.overlay_hotkey in state.takenHotkeys)
           fail({
             kind: "in_use",
             by: state.takenHotkeys[next.overlay_hotkey] ?? null,
-          } satisfies SocialSettingsError);
+          } satisfies SocialError);
       }
       state.socialSettings = next;
       return next;
     },
-    package_overlays_list: () => state.overlayPackages,
+    package_overlays_list: () => state.packageOverlays,
     package_overlay_set: (args) => {
       const ref = args.packageRef as { server_id: string; package_id: string };
-      state.overlayPackages = state.overlayPackages.map((p) =>
+      state.packageOverlays = state.packageOverlays.map((p) =>
         p.package.server_id === ref.server_id && p.package.package_id === ref.package_id
           ? {
               ...p,
