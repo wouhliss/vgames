@@ -38,9 +38,10 @@ it("does not reveal a draft to another account", () => {
   expect(sessionStorage.getItem("vgames.admin.draft:example")).toBeNull();
 });
 
-it("rejects expired and malformed drafts", () => {
+it("rejects expired, future-dated and malformed drafts", () => {
   for (const stored of [
     { user: "account-one", at: Date.now() - 25 * 3600000, value: draft },
+    { user: "account-one", at: Date.now() + 3600000, value: draft },
     { user: "account-one", at: Date.now(), value: { text: 42 } },
   ]) {
     sessionStorage.setItem("vgames.admin.draft:example", JSON.stringify(stored));
