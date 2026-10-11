@@ -80,8 +80,8 @@
 /apps/desktop/src/overlay/                                        @wouhliss # team: GAME
 /apps/desktop/src/routes/friends/                                 @wouhliss # team: GAME
 /apps/desktop/src/routes/package/CompatPanel.tsx                  @wouhliss # team: GAME
-/apps/desktop/src-tauri/src/compat/                               @wouhliss # team: GAME # pending: GAME-03
-/crates/vgames-testapps/                                          @wouhliss # team: GAME # pending: GAME-05
+/apps/desktop/src-tauri/src/compat/                               @wouhliss # team: GAME
+/crates/vgames-testapps/                                          @wouhliss # team: GAME
 /docs/agents/status/game.md                                       @wouhliss # team: GAME # pending: GAME-01
 /apps/desktop/src/routes/settings/PrivacySection.tsx              @wouhliss # team: GAME
 /apps/desktop/src/routes/settings/OverlaySection.tsx              @wouhliss # team: GAME

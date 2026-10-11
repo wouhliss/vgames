@@ -61,6 +61,7 @@ pub fn extract(archive: &Path, format: ArchiveFormat, dest: &Path) -> Result<(),
     let file = File::open(archive)?;
     let mut sink = Sink::open(dest)?;
     match format {
+        ArchiveFormat::Tar => extract_tar(file, &mut sink)?,
         ArchiveFormat::TarGz => extract_tar(flate2::read::GzDecoder::new(file), &mut sink)?,
         ArchiveFormat::TarXz => extract_tar(liblzma::read::XzDecoder::new(file), &mut sink)?,
         ArchiveFormat::TarZst => extract_tar(

@@ -88,6 +88,13 @@
 - From GAME (GAME-03): `docs/security/runbooks.md` §7 step 4 now describes the per-key catalog version (F2, as
   `compat::catalog` implements it). New workspace dependencies (add-only) for runtime archives: `tar`, `flate2`,
   `liblzma` (static), `zip` (deflate only); all MIT/Apache-2.0.
+- From GAME (GAME-05): new workflow `.github/workflows/compat-e2e.yml` (job `proton`, ubuntu-24.04: Windows test games
+  cross-built with mingw, real umu-launcher + UMU-Proton pinned by `scripts/ci/proton-runtimes.sh`, the test-signed
+  catalog, a tampered-archive refusal, the D3D11 game through `Launcher::launch`, D3D12 attempted). Runs on PRs touching
+  compat/launch/testapps, nightly and on demand; not a required check. `.github/CODEOWNERS`: the `# pending` markers of
+  `compat/` and `crates/vgames-testapps/` are gone now that both exist. `vgames_core::runtimes::ArchiveFormat` gains
+  `Tar` (`"tar"`, umu-launcher's zipapp is an uncompressed tar), with a parse test; `runtimes/catalog.toml`'s comment
+  lists it.
 
 - From GAME (GAME-01): `apps/api/src/realtime/mod.rs` now re-exports `MAX_FRAME` from `vgames_proto::realtime`
   (one line; same value, 64 KiB) so server and launcher share the constant. Nothing else changed in your file.
