@@ -12,6 +12,10 @@
 - Adopted INS's `compat::prefix_dir` and install/collection event additions. The INT-01 accessibility/import note is preserved below.
 
 ## Needs from others
+- PLAY-04 controller notes proposed in [#196](https://github.com/wouhliss/vgames/pull/196) for INT review; implementation proceeds against the proposal.
+
+## PLAY-04 pending IPC and mocks
+- `play/p2-controller-ipc` defines pad metadata, profile/settings commands, tester selection and pad/tester events in `contract/controllers.ts`, with typed mock driver states and restart persistence. Four mock regressions pass and desktop typecheck passes; full UI validation pending. Rust service and Settings screen follow separately, then these pending entries are removed in favor of generated bindings.
 
 ## PLAY-04 prerequisites
 - Controller contract proposed in [#196](https://github.com/wouhliss/vgames/pull/196) for INT review; implementation can proceed against it.

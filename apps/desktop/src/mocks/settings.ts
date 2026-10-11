@@ -60,6 +60,8 @@ export const PERSISTED = [
   "defaultRunner",
   "compatOverrides",
   "runtimes",
+  "controllerSettings",
+  "controllerProfiles",
 ] as const;
 
 export function loadPersisted(key: string | null): Record<string, unknown> {
