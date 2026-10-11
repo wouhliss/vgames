@@ -41,6 +41,10 @@ def routes(directory: Path) -> dict[str, Path]:
 def handler(files: dict[str, Path], receipts: Path):
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
+            if self.path == "/vgames-updater-e2e-ready":
+                self.send_response(204)
+                self.end_headers()
+                return
             # Only fixed release paths; no directory listing or arbitrary file access.
             file = files.get(self.path)
             if file is None:

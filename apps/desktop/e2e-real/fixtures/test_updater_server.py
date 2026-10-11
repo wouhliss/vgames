@@ -36,6 +36,9 @@ class UpdaterFixtureTests(unittest.TestCase):
         thread.start()
         try:
             base = f"http://127.0.0.1:{server.server_port}"
+            with urlopen(base + "/vgames-updater-e2e-ready", timeout=5) as response:
+                self.assertEqual(response.status, 204)
+            self.assertFalse(receipts.exists(), "readiness must not count as an application request")
             path = "/wouhliss/vgames/releases/download/desktop-v0.1.0/vgames.AppImage"
             with urlopen(base + path, timeout=5) as response:
                 self.assertEqual(response.read(), self.artifact.read_bytes())

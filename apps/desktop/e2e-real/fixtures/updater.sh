@@ -41,7 +41,7 @@ server_job=$!
 ready=false
 for _ in $(seq 1 50); do
   if curl --noproxy '*' --connect-timeout 2 --max-time 5 -fsS -o /dev/null \
-      https://github.com/wouhliss/vgames/releases/latest/download/latest.json; then
+      https://github.com/vgames-updater-e2e-ready; then
     ready=true; break
   fi
   kill -0 "$server_job" 2>/dev/null || { wait "$server_job"; exit 1; }
