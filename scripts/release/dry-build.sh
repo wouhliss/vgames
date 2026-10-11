@@ -32,6 +32,12 @@ PY
 export TAURI_SIGNING_PRIVATE_KEY="$key_dir/updater.key"
 export TAURI_SIGNING_PRIVATE_KEY_PASSWORD
 TAURI_SIGNING_PRIVATE_KEY_PASSWORD=$(cat "$key_dir/password")
+if [ "${RUNNER_OS:-}" = Windows ]; then
+  # MSYS converts slash-prefixed base64 values as paths. Exclude only this
+  # password argument/environment value; pnpm's own paths still need conversion.
+  export MSYS2_ARG_CONV_EXCL="$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+  export MSYS2_ENV_CONV_EXCL=TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+fi
 CI=true pnpm --filter @vgames/desktop tauri signer generate -w "$TAURI_SIGNING_PRIVATE_KEY" \
   -p "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" > /dev/null 2>&1
 pubkey=$(cat "$key_dir/updater.key.pub")
