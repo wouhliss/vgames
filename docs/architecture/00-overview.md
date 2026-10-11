@@ -71,7 +71,7 @@ transfers can use the user's full bandwidth, and why the API stays small.
 | Local launcher DB | **SQLite** (`rusqlite`, bundled) | Libraries, installs, favorites, chat history, job journal. |
 | Controllers | **SDL3** (input), **ViGEmBus** (Windows virtual pad), **uinput** (Linux), **CoreHID** (macOS 15+, entitlement-gated) | SDL3 has the widest vendor coverage (HIDAPI drivers). |
 | In-game overlay | **hudhook** (Rust, D3D9/11/12 + OpenGL hooks, DLL injection) on Windows; own **Vulkan implicit layer** (Windows + Linux, covers Proton) + OpenGL preload on Linux; **NSPanel** over fullscreen Spaces on macOS; Dear ImGui UI | Packages have no anti-cheat, so in-process rendering is allowed and works in exclusive fullscreen. |
-| Compatibility | **umu-launcher + UMU-Proton / GE-Proton** (Linux); **WineHQ macOS builds + D3DMetal / DXMT / DXVK-macOS** (macOS; D3DMetal redistributed because vgames is non-commercial); versions pinned by a signed runtime catalog | One Windows upload plays on all three OSes; native builds still win. |
+| Compatibility | **umu-launcher + UMU-Proton / GE-Proton** (Linux); **WineHQ macOS builds + DXMT / DXVK-macOS + MoltenVK / wined3d** (macOS; D3DMetal deferred, so D3D12 titles are refused on Macs in v1, 09 §3); versions pinned by a signed runtime catalog | One Windows upload plays on all three OSes; native builds still win. |
 | Admin UI | **React + Vite**, served by the API at `/admin/` | Same origin as the API: cookie auth, no CORS. |
 | Lint/format | rustfmt + clippy; **Biome** for TS | Biome does not depend on the TypeScript compiler API, so it works with TS 7. |
 | CI/CD | GitHub Actions | Humans provide secrets and runners. |
