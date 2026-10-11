@@ -3,6 +3,7 @@
 ## Done
 
 ## In progress
+- PLAY-02: Windows suspended spawn, explicit UTF-16 argv/environment, completion-port Job Object tracking and tree stop implemented locally. Portable self-executing process/orchestrator fixtures and Windows pre-resume error/panic/timeout tests added. Cross-target Clippy passes for the actual process sources in a small harness; All 54 Linux launch regressions pass (one existing benchmark ignored), and full desktop Clippy plus formatting pass. Native Windows and full hosted checks remain mandatory; repository write access is restored and publishing is underway. This branch depends on the local PLAY-01 commits until those merge.
 - PLAY-01: implemented ordered hook registry, cancellable compatibility plans, session-owned exit callbacks (including re-attach) and overlay migration. Rust/workspace, SQLx migration/offline checks, WASM, Linux desktop and real PostgreSQL/API tests pass. Admin browser suite passes; all 57 launcher functional browser tests pass, but the existing scroll-performance check exceeds the late-frame budget on this two-CPU sandbox (214 frames, five late, no long tasks). The complete TypeScript gate passes with sequential one-worker suites (292 launcher, 326 admin, six release-note tests), and supply-chain checks pass after configuring the managed CA. No assertions or budgets changed. Hosted three-OS validation and merge pending.
 
 ## Interfaces delivered (other agents may now rely on these)
@@ -50,3 +51,11 @@ fn register_launch_services<T: vgames_desktop_lib::launch::orchestrate::TrustSou
     assert!(launcher.hooks().register(HookStage::Controllers, controllers));
 }
 ```
+
+## PLAY-02 Windows lifecycle and restart limits (branch `play/p2-windows`)
+
+- `RunningGame::spawn_suspended` creates a non-inherited primary thread and process in a private unnamed Job Object, with an explicit application path, MSVC-quoted argv and a double-NUL UTF-16 environment. `GameSessions` records the session, awaits the total two-second pre-resume budget and resumes even when a hook errors, panics or times out. Dropping an unresumed spawn kills that process; dropping a resumed game never kills it.
+- `SuspendedProcess::{process_handle, primary_thread_handle}` return borrowed native handles; `identity()` includes the PID and creation FILETIME. The view owns references so its handles stay valid for the asynchronous hook. No launcher handles are inherited by games.
+- The running tree blocks in `GetQueuedCompletionStatus`; cancellation posts a separate packet and leaves the game alive. Whole-tree exit is confirmed through job accounting. Stop terminates the job after the existing UI confirmation; Windows has no generic graceful SIGTERM equivalent, so both stop modes terminate it.
+- Restart does not reopen a job by name. It validates a live leader's creation time, assigns a fresh nested job, adopts discoverable live descendants with time/parent checks, and tracks later descendants through job inheritance. Access/assignment failures return an error and preserve the session record.
+- Restart cannot recover an orphan tree whose leader already exited, nor descendants whose ancestry disappeared before the snapshot. It returns no attachment for a missing/exited/reused leader, without an exit callback or save push. Existing in-memory job tracking still waits for orphan children. These limits are explicit Windows test cases; Linux keeps its process-group recovery test.

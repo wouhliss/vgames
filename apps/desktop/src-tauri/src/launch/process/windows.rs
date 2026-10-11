@@ -1,0 +1,497 @@
+//! Windows trees run in unnamed Job Objects. Closing our handles never kills
+//! a running game. The tracker sleeps in the job's completion port, and cancel
+//! posts a separate completion packet rather than polling.
+
+use std::io;
+use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+use std::ptr::{null, null_mut};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use windows_sys::Win32::Foundation::{FILETIME, HANDLE, INVALID_HANDLE_VALUE};
+use windows_sys::Win32::System::IO::{
+    CreateIoCompletionPort, GetQueuedCompletionStatus, OVERLAPPED, PostQueuedCompletionStatus,
+};
+use windows_sys::Win32::System::JobObjects::{
+    AssignProcessToJobObject, CreateJobObjectW, IsProcessInJob,
+    JOBOBJECT_ASSOCIATE_COMPLETION_PORT, JOBOBJECT_BASIC_ACCOUNTING_INFORMATION,
+    JobObjectAssociateCompletionPortInformation, JobObjectBasicAccountingInformation,
+    QueryInformationJobObject, SetInformationJobObject, TerminateJobObject,
+};
+use windows_sys::Win32::System::SystemServices::JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO;
+use windows_sys::Win32::System::Threading::{
+    CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT, CreateProcessW, GetExitCodeProcess,
+    GetProcessTimes, INFINITE, OpenProcess, PROCESS_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION,
+    PROCESS_SET_QUOTA, PROCESS_SYNCHRONIZE, PROCESS_TERMINATE, ResumeThread, STARTUPINFOW,
+    TerminateProcess, WaitForSingleObject,
+};
+
+use super::{GameExit, ProcessError, ProcessIdentity, SuspendedProcess, windows_args};
+use crate::launch::PreparedLaunch;
+
+const JOB_KEY: usize = 1;
+const CANCEL_KEY: usize = 2;
+const STOP_CODE: u32 = 1;
+
+pub(super) struct Game {
+    identity: ProcessIdentity,
+    process: Arc<OwnedHandle>,
+    thread: Option<Arc<OwnedHandle>>,
+    job: Arc<OwnedHandle>,
+    port: Arc<OwnedHandle>,
+    cancelled: Arc<AtomicBool>,
+    finished: Arc<AtomicBool>,
+    reattached: bool,
+}
+
+#[derive(Clone)]
+pub(super) struct Canceller {
+    port: Arc<OwnedHandle>,
+    cancelled: Arc<AtomicBool>,
+}
+
+#[derive(Clone)]
+pub(super) struct Killer {
+    job: Arc<OwnedHandle>,
+    finished: Arc<AtomicBool>,
+}
+
+impl Game {
+    pub(super) fn spawn(launch: &PreparedLaunch) -> Result<Self, ProcessError> {
+        let mut game = Self::spawn_suspended(launch)?;
+        game.resume()?;
+        Ok(game)
+    }
+
+    pub(super) fn spawn_suspended(launch: &PreparedLaunch) -> Result<Self, ProcessError> {
+        let program =
+            windows_args::wide(launch.program.as_os_str()).map_err(ProcessError::Spawn)?;
+        let directory =
+            windows_args::wide(launch.working_dir.as_os_str()).map_err(ProcessError::Spawn)?;
+        let mut command = windows_args::command_line(launch).map_err(ProcessError::Spawn)?;
+        let environment = windows_args::environment(launch).map_err(ProcessError::Spawn)?;
+        let (job, port) = new_job().map_err(ProcessError::Track)?;
+        let startup = STARTUPINFOW {
+            cb: u32::try_from(std::mem::size_of::<STARTUPINFOW>()).expect("Win32 structure size"),
+            ..Default::default()
+        };
+        let mut info = PROCESS_INFORMATION::default();
+        #[allow(unsafe_code)]
+        // SAFETY: all strings/buffers are terminated and live for this call; info
+        // is writable. Handles are not inherited. The application path is explicit.
+        let ok = unsafe {
+            CreateProcessW(
+                program.as_ptr(),
+                command.as_mut_ptr(),
+                null(),
+                null(),
+                0,
+                CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT,
+                environment.as_ptr().cast(),
+                directory.as_ptr(),
+                &startup,
+                &mut info,
+            )
+        };
+        if ok == 0 {
+            return Err(ProcessError::Spawn(io::Error::last_os_error()));
+        }
+        let process = Arc::new(own(info.hProcess).map_err(ProcessError::Track)?);
+        let thread = Arc::new(own(info.hThread).map_err(ProcessError::Track)?);
+        // Construct the guard before any fallible setup, so an error cannot strand
+        // a suspended process. Only a not-yet-resumed game is killed on drop.
+        let mut game = Self {
+            identity: ProcessIdentity {
+                pid: info.dwProcessId,
+                start_time: 0,
+            },
+            process,
+            thread: Some(thread),
+            job,
+            port,
+            cancelled: Arc::new(AtomicBool::new(false)),
+            finished: Arc::new(AtomicBool::new(false)),
+            reattached: false,
+        };
+        game.identity.start_time = creation_time(&game.process).map_err(ProcessError::Track)?;
+        assign(&game.job, &game.process).map_err(ProcessError::Track)?;
+        Ok(game)
+    }
+
+    pub(super) fn suspended(&self) -> Option<SuspendedProcess> {
+        Some(SuspendedProcess {
+            identity: self.identity,
+            process: self.process.clone(),
+            thread: self.thread.as_ref()?.clone(),
+        })
+    }
+
+    pub(super) fn resume(&mut self) -> Result<(), ProcessError> {
+        let Some(thread) = self.thread.as_ref() else {
+            return Ok(());
+        };
+        loop {
+            #[allow(unsafe_code)]
+            // SAFETY: this handle owns the primary thread created with CREATE_SUSPENDED.
+            // Drain any extra suspensions a failed hook left behind too.
+            let previous = unsafe { ResumeThread(raw(thread)) };
+            if previous == u32::MAX {
+                return Err(ProcessError::Track(io::Error::last_os_error()));
+            }
+            if previous <= 1 {
+                break;
+            }
+        }
+        self.thread = None;
+        Ok(())
+    }
+
+    pub(super) fn reattach(identity: ProcessIdentity) -> Result<Option<Self>, ProcessError> {
+        #[allow(unsafe_code)]
+        // SAFETY: OpenProcess takes a PID and flags; the returned handle is checked.
+        let handle = unsafe {
+            OpenProcess(
+                PROCESS_QUERY_LIMITED_INFORMATION
+                    | PROCESS_SYNCHRONIZE
+                    | PROCESS_SET_QUOTA
+                    | PROCESS_TERMINATE,
+                0,
+                identity.pid,
+            )
+        };
+        if handle.is_null() {
+            let error = io::Error::last_os_error();
+            // ERROR_INVALID_PARAMETER means there is no process with this PID.
+            return if error.raw_os_error() == Some(87) {
+                Ok(None)
+            } else {
+                Err(ProcessError::Track(error))
+            };
+        }
+        let process = Arc::new(own(handle).map_err(ProcessError::Track)?);
+        if creation_time(&process).map_err(ProcessError::Track)? != identity.start_time {
+            return Ok(None);
+        }
+        #[allow(unsafe_code)]
+        // SAFETY: the owned process handle supports synchronization; zero never blocks.
+        let state = unsafe { WaitForSingleObject(raw(&process), 0) };
+        if state == 0 {
+            return Ok(None);
+        }
+        if state == u32::MAX {
+            return Err(ProcessError::Track(io::Error::last_os_error()));
+        }
+        let (job, port) = new_job().map_err(ProcessError::Track)?;
+        assign(&job, &process).map_err(ProcessError::Track)?;
+        // New descendants inherit this job; existing descendants must be adopted too.
+        adopt_children(&job, identity).map_err(ProcessError::Track)?;
+        Ok(Some(Self {
+            identity,
+            process,
+            thread: None,
+            job,
+            port,
+            cancelled: Arc::new(AtomicBool::new(false)),
+            finished: Arc::new(AtomicBool::new(false)),
+            reattached: true,
+        }))
+    }
+
+    pub(super) fn identity(&self) -> ProcessIdentity {
+        self.identity
+    }
+
+    pub(super) fn canceller(&self) -> Canceller {
+        Canceller {
+            port: self.port.clone(),
+            cancelled: self.cancelled.clone(),
+        }
+    }
+
+    pub(super) fn killer(&self) -> Killer {
+        Killer {
+            job: self.job.clone(),
+            finished: self.finished.clone(),
+        }
+    }
+
+    pub(super) fn wait(self) -> Result<Option<GameExit>, ProcessError> {
+        if self.thread.is_some() {
+            return Err(ProcessError::Track(io::ErrorKind::InvalidInput.into()));
+        }
+        loop {
+            if self.cancelled.load(Ordering::Acquire) {
+                return Ok(None);
+            }
+            // Completion packets can precede our first wait, and Windows documents
+            // job notifications as a hint. Confirm every zero message with accounting.
+            if active_processes(&self.job).map_err(ProcessError::Track)? == 0 {
+                self.finished.store(true, Ordering::Release);
+                if self.reattached {
+                    return Ok(Some(GameExit::Unknown));
+                }
+                let mut code = 0;
+                #[allow(unsafe_code)]
+                // SAFETY: the process handle remains owned; code is writable storage.
+                let ok = unsafe { GetExitCodeProcess(raw(&self.process), &mut code) };
+                if ok == 0 {
+                    return Err(ProcessError::Track(io::Error::last_os_error()));
+                }
+                return Ok(Some(GameExit::Code(i32::from_ne_bytes(code.to_ne_bytes()))));
+            }
+            let mut message = 0;
+            let mut key = 0;
+            let mut packet: *mut OVERLAPPED = null_mut();
+            #[allow(unsafe_code)]
+            // SAFETY: port is owned, output pointers are live; packet is an opaque
+            // completion payload and is never dereferenced. INFINITE has no polling.
+            let ok = unsafe {
+                GetQueuedCompletionStatus(
+                    raw(&self.port),
+                    &mut message,
+                    &mut key,
+                    &mut packet,
+                    INFINITE,
+                )
+            };
+            if ok == 0 {
+                return Err(ProcessError::Track(io::Error::last_os_error()));
+            }
+            if key == CANCEL_KEY {
+                return Ok(None);
+            }
+            if key == JOB_KEY && message == JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO {
+                // Recheck accounting on the next iteration.
+                continue;
+            }
+        }
+    }
+}
+
+impl Drop for Game {
+    fn drop(&mut self) {
+        if self.thread.is_some() {
+            #[allow(unsafe_code)]
+            // SAFETY: this owned process has not been resumed; no game code ran.
+            unsafe {
+                TerminateProcess(raw(&self.process), STOP_CODE);
+            }
+        }
+    }
+}
+
+impl Canceller {
+    pub(super) fn cancel(&self) {
+        self.cancelled.store(true, Ordering::Release);
+        #[allow(unsafe_code)]
+        // SAFETY: posts an opaque packet to our owned port; no pointer is dereferenced.
+        let ok = unsafe { PostQueuedCompletionStatus(raw(&self.port), 0, CANCEL_KEY, null()) };
+        if ok == 0 {
+            tracing::warn!("cannot wake the Windows game tracker");
+        }
+    }
+}
+
+impl Killer {
+    pub(super) fn terminate(&self, _force: bool) -> Result<(), ProcessError> {
+        if self.finished.load(Ordering::Acquire) {
+            return Ok(());
+        }
+        // Windows has no SIGTERM equivalent for an arbitrary GUI process tree.
+        // The caller already obtained the player's stop confirmation.
+        #[allow(unsafe_code)]
+        // SAFETY: our job handle pins this tree even after a PID is recycled.
+        let ok = unsafe { TerminateJobObject(raw(&self.job), STOP_CODE) };
+        if ok == 0 {
+            return Err(ProcessError::Track(io::Error::last_os_error()));
+        }
+        Ok(())
+    }
+}
+
+fn raw(handle: &OwnedHandle) -> HANDLE {
+    handle.as_raw_handle()
+}
+
+fn own(handle: HANDLE) -> io::Result<OwnedHandle> {
+    if handle.is_null() || handle == INVALID_HANDLE_VALUE {
+        return Err(io::Error::last_os_error());
+    }
+    #[allow(unsafe_code)]
+    // SAFETY: callers supply a newly returned, valid, uniquely owned Win32 handle.
+    Ok(unsafe { OwnedHandle::from_raw_handle(handle) })
+}
+
+fn new_job() -> io::Result<(Arc<OwnedHandle>, Arc<OwnedHandle>)> {
+    #[allow(unsafe_code)]
+    // SAFETY: null security/name pointers create a private, non-inherited unnamed job.
+    let job = Arc::new(own(unsafe { CreateJobObjectW(null(), null()) })?);
+    // Default limits deliberately omit JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE.
+    #[allow(unsafe_code)]
+    // SAFETY: INVALID_HANDLE_VALUE creates a new port; no file is associated here.
+    let port = Arc::new(own(unsafe {
+        CreateIoCompletionPort(INVALID_HANDLE_VALUE, null_mut(), 0, 1)
+    })?);
+    let association = JOBOBJECT_ASSOCIATE_COMPLETION_PORT {
+        CompletionKey: JOB_KEY as *mut _,
+        CompletionPort: raw(&port),
+    };
+    #[allow(unsafe_code)]
+    // SAFETY: association is the structure required by this information class,
+    // with its exact size. Both handles live beyond the association.
+    let ok = unsafe {
+        SetInformationJobObject(
+            raw(&job),
+            JobObjectAssociateCompletionPortInformation,
+            (&association as *const JOBOBJECT_ASSOCIATE_COMPLETION_PORT).cast(),
+            u32::try_from(std::mem::size_of_val(&association)).expect("Win32 structure size"),
+        )
+    };
+    if ok == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok((job, port))
+}
+
+fn assign(job: &OwnedHandle, process: &OwnedHandle) -> io::Result<()> {
+    let mut already_assigned = 0;
+    #[allow(unsafe_code)]
+    // SAFETY: both handles are owned and the BOOL output is live writable storage.
+    if unsafe { IsProcessInJob(raw(process), raw(job), &mut already_assigned) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    if already_assigned != 0 {
+        return Ok(());
+    }
+    #[allow(unsafe_code)]
+    // SAFETY: both handles are owned; process was opened with job-assignment rights.
+    if unsafe { AssignProcessToJobObject(raw(job), raw(process)) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+fn creation_time(process: &OwnedHandle) -> io::Result<u64> {
+    let mut creation = FILETIME::default();
+    let mut exit = FILETIME::default();
+    let mut kernel = FILETIME::default();
+    let mut user = FILETIME::default();
+    #[allow(unsafe_code)]
+    // SAFETY: process supports query and each output points to a distinct live FILETIME.
+    if unsafe {
+        GetProcessTimes(
+            raw(process),
+            &mut creation,
+            &mut exit,
+            &mut kernel,
+            &mut user,
+        )
+    } == 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    Ok((u64::from(creation.dwHighDateTime) << 32) | u64::from(creation.dwLowDateTime))
+}
+
+fn active_processes(job: &OwnedHandle) -> io::Result<u32> {
+    let mut info = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION::default();
+    #[allow(unsafe_code)]
+    // SAFETY: exact-size writable accounting structure for the requested class.
+    if unsafe {
+        QueryInformationJobObject(
+            raw(job),
+            JobObjectBasicAccountingInformation,
+            (&mut info as *mut JOBOBJECT_BASIC_ACCOUNTING_INFORMATION).cast(),
+            u32::try_from(std::mem::size_of_val(&info)).expect("Win32 structure size"),
+            null_mut(),
+        )
+    } == 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(info.ActiveProcesses)
+}
+
+fn process_parents() -> io::Result<std::collections::BTreeMap<u32, u32>> {
+    use std::collections::BTreeMap;
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
+        TH32CS_SNAPPROCESS,
+    };
+    #[allow(unsafe_code)]
+    // SAFETY: snapshot has no pointer arguments and returns an owned handle.
+    let snapshot = own(unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) })?;
+    let mut entry = PROCESSENTRY32W {
+        dwSize: u32::try_from(std::mem::size_of::<PROCESSENTRY32W>())
+            .expect("Win32 structure size"),
+        ..Default::default()
+    };
+    let mut descendants = BTreeMap::new();
+    #[allow(unsafe_code)]
+    // SAFETY: entry's dwSize and buffer match the W API; snapshot is owned.
+    let mut found = unsafe { Process32FirstW(raw(&snapshot), &mut entry) };
+    while found != 0 {
+        descendants.insert(entry.th32ProcessID, entry.th32ParentProcessID);
+        #[allow(unsafe_code)]
+        // SAFETY: the same correctly initialized snapshot buffer remains live.
+        let next = unsafe { Process32NextW(raw(&snapshot), &mut entry) };
+        found = next;
+    }
+    let error = io::Error::last_os_error();
+    if error.raw_os_error() != Some(18) {
+        return Err(error);
+    }
+    Ok(descendants)
+}
+
+fn adopt_children(job: &OwnedHandle, leader: ProcessIdentity) -> io::Result<()> {
+    use std::collections::{BTreeMap, BTreeSet};
+    let descendants = process_parents()?;
+    let mut parents = BTreeMap::from([(leader.pid, leader.start_time)]);
+    let mut seen = BTreeSet::from([leader.pid]);
+    // Keep verified parents pinned through the scan to prevent their PID reuse.
+    let mut pinned = Vec::new();
+    loop {
+        let children: Vec<_> = descendants
+            .iter()
+            .filter(|(pid, parent)| !seen.contains(pid) && parents.contains_key(parent))
+            .map(|(&pid, &parent)| (pid, parent))
+            .collect();
+        if children.is_empty() {
+            break;
+        }
+        for (pid, parent) in children {
+            seen.insert(pid);
+            #[allow(unsafe_code)]
+            // SAFETY: OpenProcess uses a snapshot PID; time and parent are verified below.
+            let handle = unsafe {
+                OpenProcess(
+                    PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SET_QUOTA | PROCESS_TERMINATE,
+                    0,
+                    pid,
+                )
+            };
+            if handle.is_null() {
+                let error = io::Error::last_os_error();
+                if error.raw_os_error() == Some(87) {
+                    continue;
+                }
+                return Err(error);
+            }
+            let process = own(handle)?;
+            let started = creation_time(&process)?;
+            // A PID could have been recycled between snapshot and OpenProcess.
+            // Recheck its parent while the child and its verified parent are pinned.
+            if parents
+                .get(&parent)
+                .is_some_and(|&parent_start| started >= parent_start)
+                && process_parents()?.get(&pid) == Some(&parent)
+            {
+                assign(job, &process)?;
+                parents.insert(pid, started);
+                pinned.push(process);
+            }
+        }
+    }
+    Ok(())
+}

@@ -18,6 +18,9 @@ pub mod process;
 pub mod session;
 pub mod target;
 
+#[cfg(test)]
+pub(crate) mod testgame;
+
 pub use plan::{LaunchPlan, PreparedLaunch, ProtonPlan, WinePlan};
 pub use process::{GameExit, ProcessIdentity, RunningGame};
 pub use session::{GameSessions, SessionError};
