@@ -50,8 +50,13 @@ fn versions_compare_naturally() {
 }
 
 fn entry(id: &str, version: &str, min_launcher: &str) -> serde_json::Value {
+    let os = if matches!(id, "wine-macos" | "dxmt" | "dxvk-macos" | "moltenvk") {
+        "macos"
+    } else {
+        "linux"
+    };
     serde_json::json!({
-        "id": id, "version": version, "os": "linux", "arch": "x86_64",
+        "id": id, "version": version, "os": os, "arch": "x86_64",
         "url": format!("https://github.com/example/{id}/releases/download/{version}/{id}.tar.gz"),
         "sha256": format!("{:064x}", version.len() * 7 + id.len()),
         "size": 100, "archive": "tar.gz", "license": "MIT",
@@ -120,7 +125,7 @@ impl ProfileSource for FakeProfiles {
     }
 }
 
-struct FakeProbes(Mutex<Option<PreflightError>>);
+struct FakeProbes(Mutex<Option<PreflightError>>, std::sync::atomic::AtomicBool);
 
 impl Probes for FakeProbes {
     fn vulkan_devices(&self) -> Option<usize> {
@@ -138,14 +143,21 @@ impl Probes for FakeProbes {
     fn free_space(&self, _: &Path) -> Option<u64> {
         Some(100 * preflight::PREFIX_SPACE_BYTES)
     }
+    fn x86_64_runs(&self) -> bool {
+        self.1.load(std::sync::atomic::Ordering::SeqCst)
+    }
 }
 
 fn signed_profile(runner: serde_json::Value) -> SignedCompatProfile {
+    signed_profile_for("linux", runner)
+}
+
+fn signed_profile_for(target: &str, runner: serde_json::Value) -> SignedCompatProfile {
     use base64::Engine as _;
     let bytes = serde_json::to_vec(&serde_json::json!({
         "format": "vgames.compat/1",
         "server_id": SERVER_ID, "package_id": PACKAGE_ID,
-        "target": "linux", "revision": 1,
+        "target": target, "revision": 1,
         "created_at": "2026-10-01T10:00:00Z",
         "applies_to": {"platform": "windows-x86_64", "min_sequence": 1},
         "status": "verified",
@@ -155,7 +167,11 @@ fn signed_profile(runner: serde_json::Value) -> SignedCompatProfile {
     let envelope =
         vgames_core::Envelope::sign(&publisher_key(), vgames_core::Context::Compat, &bytes);
     SignedCompatProfile {
-        target: CompatTarget::Linux,
+        target: if target == "linux" {
+            CompatTarget::Linux
+        } else {
+            CompatTarget::Macos
+        },
         revision: 1,
         status: CompatStatus::Verified,
         document: base64::engine::general_purpose::STANDARD.encode(&bytes),
@@ -177,6 +193,13 @@ struct Rig {
 /// installed (the store never downloads here), with an `umu-run` that logs its
 /// arguments and prefix.
 async fn rig() -> Rig {
+    rig_for(Platform::LinuxX86_64).await
+}
+
+/// The fake `wine`: `wineboot` creates the prefix; every call is logged.
+const FAKE_WINE: &str = "#!/bin/sh\necho \"$*\" >> \"$WINEPREFIX/../wine.log\"\n[ \"$1\" = wineboot ] && mkdir -p \"$WINEPREFIX/drive_c/windows/system32\"\nexit 0\n";
+
+async fn rig_for(host: Platform) -> Rig {
     let dir = tempfile::tempdir().unwrap();
     let data = dir.path().join("data");
     let server = MockServer::start().await;
@@ -187,6 +210,9 @@ async fn rig() -> Rig {
         entry("umu-proton", "UMU-Proton-9.0-3", "0.1.0"),
         entry("umu-proton", "UMU-Proton-9.0-4e", "0.1.0"),
         entry("ge-proton", "GE-Proton10-17", "0.1.0"),
+        entry("wine-macos", "10.0", "0.1.0"),
+        entry("dxmt", "0.60", "0.1.0"),
+        entry("dxvk-macos", "1.10.3", "0.1.0"),
     ];
     let bytes = catalog_bytes(entries);
     let sig = minisign::sign(None, &key.sk, Cursor::new(&bytes), None, None)
@@ -239,6 +265,34 @@ async fn rig() -> Rig {
                         .unwrap();
                 }
             }
+            RuntimeId::WineMacos => {
+                let bin = dir.join("Wine.app/Contents/Resources/wine/bin");
+                std::fs::create_dir_all(&bin).unwrap();
+                std::fs::create_dir_all(
+                    dir.join("Wine.app/Contents/Resources/wine/lib/wine/x86_64-unix"),
+                )
+                .unwrap();
+                std::fs::write(bin.join("wine"), FAKE_WINE).unwrap();
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt as _;
+                    std::fs::set_permissions(
+                        bin.join("wine"),
+                        std::fs::Permissions::from_mode(0o755),
+                    )
+                    .unwrap();
+                }
+            }
+            RuntimeId::Dxmt => {
+                std::fs::create_dir_all(dir.join("dxmt/x86_64-windows")).unwrap();
+                std::fs::create_dir_all(dir.join("dxmt/x86_64-unix")).unwrap();
+                std::fs::write(dir.join("dxmt/x86_64-windows/d3d11.dll"), b"dxmt").unwrap();
+                std::fs::write(dir.join("dxmt/x86_64-unix/winemetal.so"), b"bridge").unwrap();
+            }
+            RuntimeId::DxvkMacos => {
+                std::fs::create_dir_all(dir.join("dxvk/x64")).unwrap();
+                std::fs::write(dir.join("dxvk/x64/d3d9.dll"), b"dxvk").unwrap();
+            }
             _ => {
                 std::fs::create_dir_all(dir.join(&rt.version)).unwrap();
                 std::fs::write(
@@ -251,14 +305,18 @@ async fn rig() -> Rig {
         crate::compat::runtimes::record(&db, rt).await.unwrap();
     }
     let profiles = Arc::new(FakeProfiles(Mutex::new(Vec::new())));
-    let probes = Arc::new(FakeProbes(Mutex::new(None)));
+    let probes = Arc::new(FakeProbes(
+        Mutex::new(None),
+        std::sync::atomic::AtomicBool::new(true),
+    ));
     let planner = CompatPlanner::new(
         data.clone(),
+        db.clone(),
         catalog,
         store,
-        Arc::new(Profiles::new(Arc::clone(&profiles), db)),
+        Arc::new(Profiles::new(Arc::clone(&profiles), db.clone())),
         Arc::clone(&probes),
-        Some(Platform::LinuxX86_64),
+        Some(host),
     );
     Rig {
         _dir: dir,
@@ -292,7 +350,11 @@ async fn a_windows_build_on_linux_gets_a_proton_plan_from_verified_parts() {
     }))];
     let LaunchPlan::Proton(plan) = r
         .planner
-        .plan_for(PACKAGE, &release(Platform::WindowsX86_64))
+        .plan_for(
+            PACKAGE,
+            &release(Platform::WindowsX86_64),
+            Path::new("/games/x/Game.exe"),
+        )
         .await
         .unwrap()
     else {
@@ -345,7 +407,11 @@ async fn without_a_profile_the_newest_umu_proton_is_used() {
     let r = rig().await;
     let LaunchPlan::Proton(plan) = r
         .planner
-        .plan_for(PACKAGE, &release(Platform::WindowsX86_64))
+        .plan_for(
+            PACKAGE,
+            &release(Platform::WindowsX86_64),
+            Path::new("/games/x/Game.exe"),
+        )
         .await
         .unwrap()
     else {
@@ -366,7 +432,11 @@ async fn a_failed_preflight_refuses_with_its_message() {
     *r.probes.0.lock().unwrap() = Some(PreflightError::NoVulkan);
     let err = r
         .planner
-        .plan_for(PACKAGE, &release(Platform::WindowsX86_64))
+        .plan_for(
+            PACKAGE,
+            &release(Platform::WindowsX86_64),
+            Path::new("/games/x/Game.exe"),
+        )
         .await
         .unwrap_err();
     assert_eq!(
@@ -378,7 +448,11 @@ async fn a_failed_preflight_refuses_with_its_message() {
     *r.probes.0.lock().unwrap() = Some(PreflightError::UserNamespacesRestricted { sysctl: "" });
     let err = r
         .planner
-        .plan_for(PACKAGE, &release(Platform::WindowsX86_64))
+        .plan_for(
+            PACKAGE,
+            &release(Platform::WindowsX86_64),
+            Path::new("/games/x/Game.exe"),
+        )
         .await
         .unwrap_err();
     assert!(
@@ -392,7 +466,9 @@ async fn other_hosts_and_builds_are_refused() {
     let r = rig().await;
     for platform in [Platform::WindowsAarch64, Platform::MacosX86_64] {
         assert!(matches!(
-            r.planner.plan_for(PACKAGE, &release(platform)).await,
+            r.planner
+                .plan_for(PACKAGE, &release(platform), Path::new("/games/x/Game.exe"))
+                .await,
             Err(LaunchError::CompatUnavailable { .. })
         ));
     }
@@ -407,7 +483,11 @@ async fn winetricks_verbs_run_once_per_prefix() {
     }))];
     for _ in 0..2 {
         r.planner
-            .plan_for(PACKAGE, &release(Platform::WindowsX86_64))
+            .plan_for(
+                PACKAGE,
+                &release(Platform::WindowsX86_64),
+                Path::new("/games/x/Game.exe"),
+            )
             .await
             .unwrap();
     }
@@ -476,4 +556,119 @@ async fn the_launcher_hook_plans_from_the_verified_manifest() {
         r.planner.plan(&cancelled, &manifest).await,
         Err(LaunchError::CompatUnavailable { .. })
     ));
+}
+
+mod wine {
+    use super::*;
+    use crate::compat::pe::tests::pe;
+    use crate::compat::plan::wine::{D3D12_ON_MAC, NEEDS_ROSETTA, graphics_chain};
+    use vgames_core::compat::Graphics;
+
+    fn game(dir: &Path, imports: &[&str]) -> PathBuf {
+        let path = dir.join("Game.exe");
+        std::fs::write(&path, pe(imports, &[], false)).unwrap();
+        path
+    }
+
+    async fn wine_plan(r: &Rig, exe: &Path) -> Result<crate::launch::WinePlan, LaunchError> {
+        match r
+            .planner
+            .plan_for(PACKAGE, &release(Platform::WindowsX86_64), exe)
+            .await?
+        {
+            LaunchPlan::Wine(plan) => Ok(plan),
+            other => panic!("not a Wine plan: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_d3d11_game_gets_dxmt_with_its_dlls_and_overrides() {
+        let r = rig_for(Platform::MacosAarch64).await;
+        let exe = game(&r.data, &["d3d11.dll"]);
+        let plan = wine_plan(&r, &exe).await.unwrap();
+        assert_eq!(plan.graphics, Graphics::Dxmt);
+        assert!(
+            plan.wine
+                .ends_with("Wine.app/Contents/Resources/wine/bin/wine")
+        );
+        assert_eq!(plan.prefix, crate::compat::prefix_dir(&r.data, &PACKAGE));
+        assert_eq!(plan.dll_overrides, "d3d11,d3d10core,dxgi=n,b");
+        assert_eq!(
+            std::fs::read(plan.prefix.join("drive_c/windows/system32/d3d11.dll")).unwrap(),
+            b"dxmt"
+        );
+        let log = std::fs::read_to_string(plan.prefix.parent().unwrap().join("wine.log")).unwrap();
+        assert!(
+            log.starts_with(
+                "wineboot --init\nreg add HKCU\\Software\\Wine\\Mac Driver /v RetinaMode"
+            ),
+            "{log}"
+        );
+        // The prefix exists now: a second plan does not boot it again.
+        wine_plan(&r, &exe).await.unwrap();
+        let log = std::fs::read_to_string(plan.prefix.parent().unwrap().join("wine.log")).unwrap();
+        assert_eq!(log.lines().count(), 2, "{log}");
+    }
+
+    #[tokio::test]
+    async fn d3d9_only_skips_dxmt_and_d3d12_is_refused_before_anything_runs() {
+        let r = rig_for(Platform::MacosX86_64).await;
+        let plan = wine_plan(&r, &game(&r.data, &["d3d9.dll"])).await.unwrap();
+        assert_eq!(plan.graphics, Graphics::Dxvk);
+        assert_eq!(plan.dll_overrides, "d3d9,d3d11,d3d10core,dxgi=n,b");
+
+        let r = rig_for(Platform::MacosAarch64).await;
+        let err = wine_plan(&r, &game(&r.data, &["kernel32.dll", "d3d12.dll"]))
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err,
+            LaunchError::CompatUnavailable {
+                detail: D3D12_ON_MAC.into()
+            }
+        );
+        assert!(
+            !crate::compat::prefix_dir(&r.data, &PACKAGE).exists(),
+            "nothing was prepared"
+        );
+    }
+
+    #[tokio::test]
+    async fn without_rosetta_the_launch_asks_for_it() {
+        let r = rig_for(Platform::MacosAarch64).await;
+        r.probes.1.store(false, std::sync::atomic::Ordering::SeqCst);
+        let err = wine_plan(&r, &game(&r.data, &["d3d11.dll"]))
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err,
+            LaunchError::CompatUnavailable {
+                detail: NEEDS_ROSETTA.into()
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn a_listed_d3dmetal_is_skipped_for_the_next_backend() {
+        let r = rig_for(Platform::MacosAarch64).await;
+        *r.profiles.0.lock().unwrap() = vec![signed_profile_for(
+            "macos",
+            serde_json::json!({
+                "kind": "wine",
+                "graphics": ["d3dmetal", "wined3d"],
+                "dll_overrides": {"xinput1_3": "native"}
+            }),
+        )];
+        let plan = wine_plan(&r, &game(&r.data, &["d3d11.dll"])).await.unwrap();
+        assert_eq!(plan.graphics, Graphics::Wined3d);
+        assert_eq!(plan.dll_overrides, "xinput1_3=native");
+    }
+
+    #[test]
+    fn the_default_chain_has_no_d3dmetal() {
+        assert_eq!(
+            graphics_chain(None),
+            [Graphics::Dxmt, Graphics::Dxvk, Graphics::Wined3d]
+        );
+    }
 }

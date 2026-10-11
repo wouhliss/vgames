@@ -3,7 +3,7 @@
 //! `compat-e2e.yml` job runs it on `ubuntu-24.04` (Xvfb, lavapipe) with:
 //!
 //! - `VGAMES_PROTON_E2E_RUNTIMES`: a JSON array of runtime-catalog entries pinning
-//!   the real upstream archives (`scripts/ci/proton-runtimes.sh` writes it);
+//!   the real upstream archives (`scripts/ci/compat-runtimes.sh` writes it);
 //! - `VGAMES_PROTON_E2E_GAME`: the Windows test game (`vgames-testapp-d3d11.exe`);
 //! - `VGAMES_PROTON_E2E_DATA` (optional): a launcher data directory kept between runs,
 //!   so the D3D12 run reuses the runtimes the D3D11 run installed;
@@ -213,6 +213,7 @@ async fn the_d3d11_test_game_runs_through_proton() {
     ));
     let planner = CompatPlanner::new(
         data.clone(),
+        db.clone(),
         runtime_catalog,
         Arc::clone(&store),
         Arc::new(Profiles::new(Arc::new(NoProfiles), db.clone())),

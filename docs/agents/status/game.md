@@ -31,6 +31,7 @@
   one toast visible: 0.28 ms (EGL) / 0.32 ms (GLX) per frame, upload included (05-social §6.1: ≤ 1 ms open); hidden: one
   atomic load per swap. Launcher preload for native Linux launches next.
 - GAME-04 (social part) — social REST on the API client's transport, caps kept (`game/p2-social-apiclient`).
+- GAME-06 — PE scan, D3D check on INS's priority-files hook, Rosetta, Wine plan, hosted macos-15 job (`game/p2-wine-macos`).
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_proto::realtime::MAX_FRAME` (64 KiB, GAME-01): the server re-exports it from `apps/api/src/realtime/mod.rs`;

@@ -138,8 +138,13 @@ impl AppState {
             Arc::clone(&servers),
             db.clone(),
         ));
+        downloads.set_priority_hook(Arc::new(crate::compat::d3d::D3dCheck::new(
+            db.clone(),
+            crate::launch::orchestrate::host_platform(),
+        )));
         let planner = Arc::new(crate::compat::plan::CompatPlanner::new(
             paths.data_dir.clone(),
+            db.clone(),
             Arc::clone(&runtime_catalog),
             Arc::clone(&runtime_store),
             Arc::clone(&compat_profiles),

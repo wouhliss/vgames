@@ -138,6 +138,10 @@ Install & Library (phase 2, `docs/agents/phase-2/ins-install-library.md`).
 - From INT (integrator-loop repair, INS-08): the full 8 GiB job in main E2E 37631363850 failed because a recent journal mtime can cover an earlier fsync snapshot. The repair branch `int/p2-install-durable-checkpoint` checks the manifest-bound journal bitset reaches 40 percent before SIGKILL; the existing resume threshold and integrity assertions are retained. Restart progress can also include newly downloaded chunks, so the repair measures the exact checkpoint after SIGKILL and verifies that only missing chunks are fetched. The full-scale first-run bandwidth is capped at 64 MiB/s; deadlines are unchanged. A late-mtime regression passes. The earlier full-scale run was interrupted without a result; PR-scale whole-launcher and install/publishing/chat checks pass on the current main base. The full-scale comparison now streams exact bytes instead of allocating two 8 GiB trees; the complete full-scale scenario passes in 420.85s, including exact missing-chunk reuse, byte equality, disk ceiling, corruption refusal, launch and uninstall. Reviewed #168 merged at `ffdab6f` after all hosted checks, all three desktop OS legs and exact-head full E2E passed; fresh main CI, desktop matrix and full E2E also passed (INT integrator-loop receipt).
 - For GAME: `compat::prefix_dir(data_dir, &PackageRef) -> PathBuf` = `<data_dir>/prefixes/<server_id>/<package_id>`
   on every OS ([#125](https://github.com/wouhliss/vgames/pull/125)); INS uses it for `has_prefix` and prefix removal on uninstall.
+- From GAME (GAME-06): `compat::d3d::D3dCheck` is registered as your `PriorityHook` in `AppState::new`
+  (`downloads.set_priority_hook`). It asks for the launch executables first only for a Windows build on a Mac, scans
+  their PE imports on a blocking thread and refuses D3D12 with `CompatBlocker::D3d12UnsupportedOnMac`; the scan is
+  recorded per (server, package, version) in `compat_d3d_scans` (launcher migration `0008_compat_d3d`).
 
 ## Blockers / contract questions
 - Closed (Q14): the phase-1 request "queue history needs a new migration" (`agent-2.md` → Agent 1). The launcher's
