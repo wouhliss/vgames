@@ -2,6 +2,8 @@
 //! INS under README §1 ("need it, build it") with exactly the shared signature.
 
 pub mod catalog;
+pub mod extract;
+pub mod runtimes;
 
 use std::path::{Path, PathBuf};
 

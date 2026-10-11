@@ -185,6 +185,7 @@ fn setup(app: &AppHandle, profile: Option<String>) -> Result<(), Box<dyn std::er
     state
         .runtime_catalog
         .spawn_refresher(&state.bus, state.shutdown.child_token());
+    compat::runtimes::spawn_collect_garbage(Arc::clone(&state.runtime_store), state.db.clone());
 
     // Deep links: from the first launch's arguments, and later from the OS
     // (macOS open-url) or a second instance (forwarded by single-instance).

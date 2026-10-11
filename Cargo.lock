@@ -3713,6 +3713,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "liblzma"
+version = "0.4.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2fe0a34ca854fd4f20c07f696fc8675aec78f87d88d29f5e10257a7490a1b2e1"
+dependencies = [
+ "liblzma-sys",
+]
+
+[[package]]
+name = "liblzma-sys"
+version = "0.4.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7c7e3581f367a78d7b7e7ae948d023310556f0cfc13156c2e4e00e25616492b9"
+dependencies = [
+ "cc",
+ "libc",
+ "pkg-config",
+]
+
+[[package]]
 name = "libredox"
 version = "0.1.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8186,10 +8206,12 @@ dependencies = [
  "chacha20poly1305",
  "directories",
  "evdev",
+ "flate2",
  "futures-util",
  "getrandom 0.4.3",
  "keyring",
  "libc",
+ "liblzma",
  "minisign",
  "open",
  "proptest",
@@ -8205,6 +8227,7 @@ dependencies = [
  "specta-typescript",
  "sqlx",
  "sysinfo",
+ "tar",
  "tauri",
  "tauri-build",
  "tauri-plugin-deep-link",
@@ -8237,6 +8260,8 @@ dependencies = [
  "windows-sys 0.61.2",
  "wiremock",
  "zeroize",
+ "zip 8.6.0",
+ "zstd",
 ]
 
 [[package]]
