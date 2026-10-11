@@ -69,6 +69,20 @@ clicks and typing on what a player sees.
 - **Part 2 (M2):** `fixtures/publish.sh` → Browse → the package page → Install into the
   default library → Downloads shows the job, then "Installed" → Play (the game runs) → Stop
   → Verify files ("Repaired version …") → Uninstall → the library is empty again.
+- **Part 3 (INT-06/M4):** start the lower-version signed-key AppImage, open Updates,
+  check for the new version, compare What's new with the generated player changelog,
+  install and restart, compare the installed artifact's bytes and observe the new
+  version in the relaunched application. `fixtures/updater.sh <artifacts> <older-AppImage>`
+  drives parts 1 and 3 against a throwaway API database (`E2E_DATABASE_URL`). It maps
+  `github.com` to loopback for this step only, serves the compiled release URLs over
+  HTTPS on port 443 with a trusted throwaway CA, and restores hosts/trust on exit.
+  The updater key and manifest come from the release dry run; no production transport
+  or signature policy changes. This fixture needs an isolated Linux CI VM with sudo.
+
+WebDriver and discovery requests have a thirty-second timeout. The fixture stops its
+isolated process group and removes CLI keys, TLS keys, account vaults and authorization
+links on exit. Sign-in failures do not capture screenshots or page text containing
+fresh sign-in codes; the API and instance logs remain available.
 
 ## Adding scenarios (PLAY, GAME)
 

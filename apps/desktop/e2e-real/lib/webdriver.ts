@@ -100,6 +100,18 @@ export class Session {
     await this.command("POST", "/refresh", {});
   }
 
+  /** Switch to a new automation window after the application restarts. */
+  async focusLatestWindow(): Promise<boolean> {
+    const handles = await this.command("GET", "/window/handles");
+    if (!Array.isArray(handles) || !handles.every((handle) => typeof handle === "string")) {
+      throw new Error("WebDriver returned invalid window handles");
+    }
+    const handle: unknown = handles.at(-1);
+    if (typeof handle !== "string") return false;
+    await this.command("POST", "/window", { handle });
+    return true;
+  }
+
   /** A PNG, base64. */
   async screenshot(): Promise<string> {
     return String(await this.command("GET", "/screenshot"));
@@ -112,6 +124,7 @@ export class Session {
 
 async function call(base: string, method: string, path: string, body?: unknown): Promise<unknown> {
   const response = await fetch(`${base}${path}`, {
+    signal: AbortSignal.timeout(30_000),
     method,
     headers: { "content-type": "application/json" },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
