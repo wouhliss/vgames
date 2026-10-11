@@ -45,7 +45,7 @@ fn waits_for_children_after_the_launched_process_exits() {
     );
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn escaped_children_are_not_tracked() {
     // `setsid` moves the child into its own group: the game counts as stopped.
@@ -92,7 +92,7 @@ fn reattach_checks_the_start_time_and_tracks_the_tree() {
     assert!(RunningGame::reattach(identity).unwrap().is_none());
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn reattach_finds_the_group_after_the_leader_exited() {
     let (dir, launch) = game("orphan");
@@ -153,6 +153,38 @@ fn closing_all_launcher_handles_leaves_the_game_running() {
         .unwrap()
         .expect("game survived handle closure");
     again.killer().terminate(true).unwrap();
+    assert_eq!(again.wait().unwrap(), Some(GameExit::Unknown));
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn kqueue_wait_has_no_periodic_wakeups() {
+    let (dir, launch) = game("wait");
+    let game = RunningGame::spawn(&launch).unwrap();
+    wait_for_file(&dir.path().join("ready"));
+    let identity = game.identity();
+    let iterations = game.inner.wait_counter();
+    let canceller = game.canceller();
+    let killer = game.killer();
+    let result = wait_in_thread(game);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while iterations.load(std::sync::atomic::Ordering::Relaxed) == 0 {
+        assert!(Instant::now() < deadline, "tracker never entered kevent");
+        thread::sleep(Duration::from_millis(5));
+    }
+    let before = iterations.load(std::sync::atomic::Ordering::Relaxed);
+    thread::sleep(Duration::from_secs(1));
+    assert_eq!(
+        iterations.load(std::sync::atomic::Ordering::Relaxed),
+        before
+    );
+    assert!(result.try_recv().is_err());
+    canceller.cancel();
+    assert_eq!(result.recv_timeout(Duration::from_secs(10)).unwrap(), None);
+    let again = RunningGame::reattach(identity)
+        .unwrap()
+        .expect("cancel left game alive");
+    killer.terminate(true).unwrap();
     assert_eq!(again.wait().unwrap(), Some(GameExit::Unknown));
 }
 

@@ -63,7 +63,7 @@ fn dummy_game() {
             std::fs::write("parent-ready", child.id().to_string()).unwrap();
             std::process::exit(0);
         }
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         "escape" => {
             let _child = child("escaped-child");
             while !Path::new("left").exists() {
@@ -71,7 +71,7 @@ fn dummy_game() {
             }
             std::process::exit(0);
         }
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         "escaped-child" => {
             #[allow(unsafe_code)]
             // SAFETY: setsid takes no arguments and only changes this fixture's session.
