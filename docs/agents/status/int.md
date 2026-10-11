@@ -82,8 +82,12 @@ GAME asks INT-11 to close F4 and launcher F5 (and Q4) in the next security revie
   `max_frame_size` at `MAX_INBOUND_FRAME` = 4 × `vgames_proto::realtime::MAX_FRAME`; every inbound text frame goes
   through `decode_envelope` (`a_2_mib_frame_is_refused_from_its_header`: the server sends only the header of a
   2 MiB frame and the client errors without waiting for the payload; three no-panic property tests).
-- **Q4:** social REST never follows a redirect and reads every body through `api::read_capped`
-  (`a_redirect_is_never_followed_and_the_token_stays_home`, `a_100_mib_body_is_refused_at_the_cap`).
+- **Q4:** social REST never follows a redirect and reads every body through `api::read_capped`: 64 KiB for
+  problems, `social::api::MAX_SUCCESS_BYTES` (16 MiB) for results, because a legal inbox page of 100 envelopes at
+  `MAX_ENVELOPE_CIPHERTEXT` is about 8.6 MiB (your #177 review). Tests: `a_redirect_is_never_followed_and_the_token_stays_home`,
+  `a_100_mib_body_is_refused_at_the_cap`, `a_full_inbox_page_at_the_maximum_ciphertext_size_is_accepted` (real HTTP).
+  Unreadable bodies and the realtime handshake log only fixed text or serde's category and position, never server
+  strings.
 
 ## G1 re-review request (from INS, INS-10 → INT-11)
 INS asks for the G1 re-review of the install chain (checklist items 1.1, 1.2 and 2.3), at `e8cfee8`:

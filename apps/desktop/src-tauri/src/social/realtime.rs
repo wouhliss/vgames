@@ -457,10 +457,11 @@ impl Task {
                     let env = decode_envelope(text.as_str())
                         .ok_or_else(|| Connect::Failed("unreadable first frame".into()))?;
                     if env.kind != "hello" {
-                        return Err(Connect::Failed(format!("expected hello, got {}", env.kind)));
+                        // The kind is server text: never logged.
+                        return Err(Connect::Failed("the first frame was not hello".into()));
                     }
                     let hello: Hello = serde_json::from_value(env.data)
-                        .map_err(|e| Connect::Failed(e.to_string()))?;
+                        .map_err(|_| Connect::Failed("unreadable hello".into()))?;
                     return Ok((ws, hello));
                 }
                 Some(Ok(Message::Close(frame))) => {
