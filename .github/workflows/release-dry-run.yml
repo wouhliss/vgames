@@ -46,6 +46,9 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/desktop-release-setup
+      - name: Private-key failure cleanup regression
+        shell: bash
+        run: python3 scripts/release/test_dry_build.py
       - name: Throwaway updater key, unsigned build and installation proof
         shell: bash
         run: bash scripts/release/dry-build.sh
