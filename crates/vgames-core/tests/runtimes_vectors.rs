@@ -14,7 +14,7 @@ use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
 use sha2::{Digest as _, Sha256};
-use vgames_core::runtimes::{RuntimeId, RuntimesError, verify_catalog};
+use vgames_core::runtimes::{RuntimeId, RuntimesError, key_id, verify_catalog};
 
 fn dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/vectors/runtimes")
@@ -33,6 +33,22 @@ fn sha256_hex(data: &[u8]) -> String {
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect()
+}
+
+#[test]
+fn key_id_matches_the_minisign_comment() {
+    let file = text("runtime-catalog-test.pub");
+    let comment = file.lines().next().unwrap();
+    let printed = comment.rsplit(' ').next().unwrap();
+    assert_eq!(key_id(&file).unwrap(), printed);
+    let line = file.lines().nth(1).unwrap();
+    assert_eq!(key_id(line).unwrap(), printed);
+    assert_eq!(
+        key_id("not base64!"),
+        Err(RuntimesError::PublicKeyMalformed)
+    );
+    assert_eq!(key_id("RWQ05QhL"), Err(RuntimesError::PublicKeyMalformed));
+    assert_eq!(key_id(""), Err(RuntimesError::PublicKeyMalformed));
 }
 
 #[test]

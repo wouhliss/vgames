@@ -56,6 +56,8 @@ pub struct AppState {
     pub update_triggers: Arc<crate::installs::updates::UpdateTriggers>,
     /// Admin publishing jobs (INS-06).
     pub publisher: Arc<crate::publishing::Publisher<Servers>>,
+    /// The signed compatibility runtime catalog (GAME-03).
+    pub runtime_catalog: Arc<crate::compat::catalog::RuntimeCatalog>,
 }
 
 impl AppState {
@@ -117,7 +119,13 @@ impl AppState {
             bus.clone(),
             vgames_transfer::upload::publish::PublishOptions::default(),
         ));
+        let runtime_catalog = Arc::new(crate::compat::catalog::RuntimeCatalog::new(
+            crate::compat::catalog::CatalogSource::from_build(),
+            db.clone(),
+            crate::compat::catalog::http_client()?,
+        ));
         Ok(Self {
+            runtime_catalog,
             publisher,
             paths,
             catalog,
