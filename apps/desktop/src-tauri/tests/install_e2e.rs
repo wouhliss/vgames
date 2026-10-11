@@ -354,7 +354,7 @@ fn run_and_kill_child(
 }
 
 /// A late mtime can belong to an earlier snapshot waiting for slow fsyncs.
-/// Only the authenticated journal bitset proves which bytes are durable.
+/// Only the manifest-bound journal bitset proves which bytes are durable.
 fn journalled_bytes(path: &Path, key: JournalKey, chunk_sizes: &[u64]) -> u64 {
     let journal = Journal::load_or_new(path, key);
     chunk_sizes
