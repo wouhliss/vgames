@@ -37,6 +37,7 @@ tokio.workspace = true
 tokio-util.workspace = true
 futures-util.workspace = true
 reqwest.workspace = true
+rustls.workspace = true
 semver.workspace = true
 tokio-tungstenite.workspace = true
 rusqlite.workspace = true

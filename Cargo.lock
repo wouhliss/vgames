@@ -8116,6 +8116,7 @@ dependencies = [
  "proptest",
  "reqwest",
  "rusqlite",
+ "rustls",
  "sdl3",
  "semver",
  "serde",

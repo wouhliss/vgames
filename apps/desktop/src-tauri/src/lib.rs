@@ -33,6 +33,8 @@ pub mod social;
 pub mod state;
 pub mod updater;
 
+mod tls;
+
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -55,6 +57,7 @@ struct LogGuardSlot(Mutex<Option<logging::LogGuard>>);
 
 pub fn run() {
     logging::install_panic_hook();
+    tls::initialize();
 
     let profile = match paths::debug_profile() {
         Ok(profile) => profile,
