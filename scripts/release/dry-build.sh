@@ -67,5 +67,5 @@ PY
   bash scripts/release/desktop-build.sh
   mkdir -p "$out/older"
   cp target/"$TARGET"/release/bundle/appimage/*0.0.1*.AppImage "$out/older/"
-  printf 'pending (INS-09): real application updater harness is not on main; older signed-key build retained.\n' >> "$GITHUB_STEP_SUMMARY"
+  printf 'Lower-version AppImage retained for the real signed updater round-trip job.\n' >> "$GITHUB_STEP_SUMMARY"
 fi
