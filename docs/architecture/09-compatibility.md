@@ -85,8 +85,9 @@ player asks for it.
   bytes arrive:
   1. a compat-profile hint decides before any byte is downloaded;
   2. otherwise the install fetches the launch executable first (the download engine's priority-files option)
-     and a bounded scan of its PE import table (`d3d9`, `d3d10`, `d3d11`, `d3d12.dll`) decides before any
-     other pack byte is requested.
+     and a bounded scan of its PE import table (`d3d9`, `d3d10`, `d3d11`, `d3d12.dll`) decides before
+     downloading the remaining installation data. Chunks needed for the executable can also contain
+     bytes from other files.
 
   The result is recorded per (server, package, version), so details and retries show it without downloading
   again. **D3D12 on any Mac** is refused with the blocker `d3d12_unsupported_on_mac` ("needs DirectX 12, not
