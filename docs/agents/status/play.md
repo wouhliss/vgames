@@ -12,7 +12,7 @@
 ## Needs from others
 
 ## Blockers / contract questions
-- Publishing is blocked: both `git push` and the connected GitHub app reject writes with HTTP 403 / `Resource not accessible by integration`. Local PLAY-01 commits and the draft PR description are ready; the connection needs repository Contents and Pull requests write access before hosted verification or merge.
+- Repository write access is restored. The initial retry hit GitHub email privacy protection; unpublished PLAY commits were rewritten with the account's GitHub no-reply address and rebased onto current main. Publishing and hosted validation are underway.
 
 ## Built for you
 - INT-01 prepares #103's reduced-motion setting for launcher mock accessibility scans, leaving the perf project unchanged. Updated Vitest imports use explicit `.ts` extensions with the matching no-emit compiler option to satisfy the newer loader. Adopt this note when the dependency triage PR merges.
