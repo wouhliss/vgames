@@ -14,6 +14,7 @@
 - Adopted INS's `compat::prefix_dir` and install/collection event additions. The INT-01 accessibility/import note is preserved below.
 
 ## Needs from others
+- Ready for INT: [#196](https://github.com/wouhliss/vgames/pull/196) additive controller contract; native controller implementation proceeds against it.
 - PLAY-04 controller notes proposed in [#196](https://github.com/wouhliss/vgames/pull/196) for INT review; implementation proceeds against the proposal.
 
 ## PLAY-04 pending IPC and mocks
