@@ -4,3 +4,13 @@
 
 pub mod decision;
 pub mod mapping;
+
+#[cfg(test)]
+mod linkage_tests {
+    #[test]
+    fn bundled_sdl3_links_and_reports_its_version() {
+        // This calls a native symbol: the three-OS desktop matrix must link SDL,
+        // even before the input service starts using it in production.
+        assert_eq!(sdl3::version::version().major, 3);
+    }
+}

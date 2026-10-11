@@ -1,5 +1,8 @@
 # GAME status (phase 2 · In-game & social)
 
+## PLAY-04 build integration
+- `play/p2-sdl-static` enables SDL3 `build-from-source-static` without changing its version. Desktop builds now compile SDL3 with CMake and a C compiler; no system SDL3 installation is required.
+
 ## Done
 
 ## In progress

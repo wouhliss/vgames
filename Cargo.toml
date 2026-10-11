@@ -155,7 +155,7 @@ cap-fs-ext = "3"
 sysinfo = "0.39"
 # Opens sign-in pages and confirmed links in the system browser (no WebView navigation).
 open = "5"
-sdl3 = "0.20"
+sdl3 = { version = "0.20", features = ["build-from-source-static"] }
 # tauri-specta v2 is a release candidate: keep `=` pins so the generated bindings stay stable.
 tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
 specta = { version = "=2.0.0-rc.25", features = ["derive", "uuid"] }
