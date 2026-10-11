@@ -43,7 +43,7 @@ compromised end-user machines.
 | Randomness | OS CSPRNG (`getrandom`) | Never `rand::thread_rng` for secrets |
 | E2EE | **Olm** (3DH + Double Ratchet, Curve25519, AES-256-CBC + HMAC-SHA-256 as specified by Olm) via **vodozemac** | See 05-social §4 |
 | Local secret storage | OS keychain (Windows Credential Manager, macOS Keychain, Secret Service) | Fallback in §8 |
-| Launcher updates | **minisign** (Ed25519) via `tauri-plugin-updater` + OS code signing | Separate key, see 08-release |
+| Launcher updates | Mandatory **minisign** (Ed25519) via `tauri-plugin-updater`; optional OS code signing | Separate key, see 08-release |
 | Runtime catalog (`runtimes.json`) | **minisign** (Ed25519), vgames runtime-catalog key compiled into the launcher; entries pin **SHA-256** of each runtime archive | Separate key from the updater, see 09-compatibility §5 |
 | Transport | TLS 1.2+ (rustls), HTTPS mandatory except `localhost` in dev builds | HSTS on the server |
 
@@ -316,7 +316,7 @@ notices and per-contact safety-number verification.
   duplicate crypto crates, only crates.io sources), `cargo audit`, `pnpm audit --prod`.
 - GitHub Actions pinned by commit SHA; `permissions:` least privilege per job;
   release workflow requires a protected environment with human approval.
-- Release artifacts: OS code signing (Authenticode, Apple notarization), updater
+- Release artifacts: optional OS code signing (Authenticode, Apple notarization), mandatory updater
   signatures, SHA-256 sums, SBOM (CycloneDX), build provenance attestation.
 
 ## 9. Security test requirements
