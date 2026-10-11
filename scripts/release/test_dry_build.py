@@ -63,7 +63,7 @@ print(os.environ['PROOF_SENTINEL'], file=sys.stderr)
 set -euo pipefail
 if [[ "$1" == - && "${2:-}" == */password ]]; then
     cat >/dev/null
-    printf '%s' '/synthetic-public-argument' > "$2"
+    exec "$PROOF_REAL_PYTHON" -c 'import os, sys; from pathlib import Path; Path(sys.argv[1]).write_text("/synthetic-public-argument"); os.chmod(sys.argv[1], 0o600)' "$2"
 else
     exec "$PROOF_REAL_PYTHON" "$@"
 fi
