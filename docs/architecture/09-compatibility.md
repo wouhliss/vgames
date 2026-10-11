@@ -4,6 +4,11 @@ Goal: an admin uploads **one Windows build**. Linux and Mac players install and 
 manual setup, and the launcher picks and maintains the right compatibility runtime. Native builds
 always win when they exist.
 
+**Version 1.1 (2026-10-05).** D3DMetal is deferred: no default chain includes it, no catalog entry, setting or
+license screen ships, and D3D12 titles are refused up front on every Mac (§3). The launcher-owned environment
+keys (§4), the per-key catalog version (§5), D3D detection before the full download (§3) and the prefix location
+on every OS (§2, §3) are now normative.
+
 ## 1. Release selection
 
 The launcher asks the server for the release matching its host, falling back to a Windows build:
@@ -35,7 +40,7 @@ signature checks (02-package-format). Only the *launch* differs.
   This is the one component outside our pinning (trust boundary: umu + Valve over HTTPS), **accepted**
   (decision 2026-09-24, §7).
 - **Invocation** (built by the launcher, explicit argv, no shell):
-  `umu-run <install>/<launch.executable> <args…>` with `WINEPREFIX=<app data>/prefixes/<server>/<package>`,
+  `umu-run <install>/<launch.executable> <args…>` with `WINEPREFIX=<prefix>` (§2.1),
   `GAMEID` (§4), `STORE=none` (or `steam` when the umu id comes from a Steam app id),
   `PROTONPATH=<runtime dir>`, profile `env`, and `WINEDLLOVERRIDES` from the compat profile.
 - **Windows dependencies** (`vcrun2022`, `d3dcompiler_47`, …): an allowlisted list of winetricks verbs
@@ -47,6 +52,14 @@ signature checks (02-package-format). Only the *launch* differs.
 - **Controllers:** Proton maps controllers to XInput itself (SDL/hidraw). vgames' virtual-pad layer
   stays **off** for Proton launches (07-controllers §3).
 
+### 2.1 Prefixes (every OS)
+
+One Wine/Proton prefix per package and server: `<data_dir>/prefixes/<server_id>/<package_id>`, where
+`<data_dir>` is the launcher's `AppPaths::data_dir` (Tauri's app data directory; on macOS
+`~/Library/Application Support/<bundle identifier>`, with no special case). It is computed by one pure function,
+`compat::prefix_dir(data_dir, package)`, created on first compat launch, and removed with the install when the
+player asks for it.
+
 ## 3. macOS: Wine with a Metal graphics backend
 
 - **Wine:** WineHQ macOS builds ([`Gcenx/macOS_Wine_builds`](https://github.com/Gcenx/macOS_Wine_builds),
@@ -55,26 +68,38 @@ signature checks (02-package-format). Only the *launch* differs.
 
 | Backend | APIs | License / distribution | Notes |
 |---|---|---|---|
-| **D3DMetal** (Apple Game Porting Toolkit) | D3D11, **D3D12** | Apple license: redistribution allowed for **non-commercial** use, unmodified and in its entirety, on Apple-branded hardware. vgames is non-commercial (§7), so it **is distributed through the runtime catalog** | Default first choice on Apple Silicon; the only practical DX12 path. Apple Silicon only |
 | **DXMT** ([`3Shain/dxmt`](https://github.com/3Shain/dxmt)) | D3D10/11 → Metal | LGPL-2.1, redistributable | Preferred open-source DX11 path |
 | **DXVK-macOS + MoltenVK** | D3D10/11 → Vulkan → Metal | zlib + Apache-2.0 | Fallback for DXMT gaps |
 | wined3d (built into Wine) | D3D ≤ 9, OpenGL | LGPL | Old titles |
 
-  The launcher detects which D3D a title needs by reading the launch executable's PE import table
-  (`d3d9/d3d11/d3d12.dll`). D3D12 titles need D3DMetal, so on **Intel Macs** they get a clear "needs a Mac
-  with Apple silicon" status before download, never a crash at launch.
-- **D3DMetal distribution rules** (from Apple's license): ship the framework **unmodified and complete**,
-  with Apple's license text next to it; offer it only on Apple-branded Macs; never charge for vgames
-  or anything bundling it. The catalog marks the entry `redistribution = "non-commercial"`, and the
-  launcher shows Apple's license in Settings → Compatibility → Licenses.
+  Default chain on every Mac: **DXMT → DXVK-macOS + MoltenVK → wined3d**.
+- **D3DMetal (Apple Game Porting Toolkit) is deferred in v1** (§7). No D3DMetal code path, catalog entry,
+  setting or license screen ships. The formats keep accepting it as data: `d3dmetal` stays a valid
+  `runner.graphics` value (`vgames_core::compat::Graphics::D3dmetal`) and runtime id
+  (`vgames_core::runtimes::RuntimeId::D3dmetal`). A profile that lists it is honoured from its next backend on,
+  and a local override cannot select it (`graphics_unavailable`). Bringing it back is a data change: a catalog
+  entry for the host architecture (`redistribution = "non-commercial"`, shipped unmodified and complete with
+  Apple's license text, offered only on Apple-branded Macs) enables it, and the license then appears in
+  Settings → Compatibility → Licenses.
+- **D3D detection, before the full download.** The launcher decides which D3D a title needs before the pack
+  bytes arrive:
+  1. a compat-profile hint decides before any byte is downloaded;
+  2. otherwise the install fetches the launch executable first (the download engine's priority-files option)
+     and a bounded scan of its PE import table (`d3d9`, `d3d10`, `d3d11`, `d3d12.dll`) decides before any
+     other pack byte is requested.
+
+  The result is recorded per (server, package, version), so details and retries show it without downloading
+  again. **D3D12 on any Mac** is refused with the blocker `d3d12_unsupported_on_mac` ("needs DirectX 12, not
+  available on Mac yet") until the runtime catalog lists D3DMetal for the host architecture; it is never a
+  crash at launch.
 - **Rosetta 2:** detected at startup (`arch -x86_64 /usr/bin/true`); if missing, prompt to install it
   (`softwareupdate --install-rosetta` behind an explicit confirmation). Apple announced that macOS 27 is
   the last release with full Rosetta 2, and that from macOS 28 only a subset for older games remains. The
   launcher must track Apple's policy per macOS release and surface "may stop working on macOS 28+" in
   the compat status. **Native Apple Silicon builds are the long-term answer**, and the admin UI should
   encourage uploading them.
-- **Prefixes:** `~/Library/Application Support/vgames/prefixes/<server>/<package>`, created on first launch.
-  Retina/high-DPI and `RetinaMode` defaults in the compat profile.
+- **Prefixes:** as on Linux (§2.1), under Tauri's app data directory. Retina/high-DPI and `RetinaMode` defaults
+  in the compat profile.
 - **Controllers:** Wine maps controllers to XInput itself (IOHID/SDL backends). Native Mac games use Apple's
   Game Controller framework, which supports Xbox, PlayStation (DS4/DualSense), Nintendo Switch Pro/Joy-Con and MFi
   controllers. See 07-controllers §4 for true virtual pads.
@@ -99,7 +124,7 @@ release, so they live in a separate small document instead of the manifest:
     "prefer": ["umu-proton", "ge-proton"],
     "min_version": "GE-Proton10-1",
     "umu_game_id": "umu-12345",           // optional; enables protonfixes
-    "graphics": ["d3dmetal", "dxmt", "dxvk", "wined3d"],   // macos only
+    "graphics": ["dxmt", "dxvk", "wined3d"],   // macos only; "d3dmetal" accepted, skipped in v1 (§3)
     "env": { "PROTON_ENABLE_NVAPI": "1" },
     "dll_overrides": { "d3dcompiler_47": "native,builtin" },
     "winetricks": ["vcrun2022"]
@@ -109,10 +134,16 @@ release, so they live in a separate small document instead of the manifest:
 
 - Signed with a publisher key (01-security §3), context `vgames/compat/v1`. The launcher verifies it
   against the same trust state as manifests and refuses a lower `revision` than the one it has.
-- Validation (`vgames-core::compat`): env keys `^[A-Z_][A-Z0-9_]{0,63}$` minus the manifest env denylist;
-  DLL override names `^[a-z0-9_.-]{1,64}$`; winetricks verbs from an allowlist maintained in `vgames-core`.
-- No profile → defaults (`status: untested`; UMU-Proton on Linux; D3DMetal → DXMT → DXVK-macOS → wined3d on
-  Apple Silicon, DXMT first on Intel Macs).
+- Validation (`vgames-core::compat`): env keys `^[A-Z_][A-Z0-9_]{0,63}$` minus the manifest env denylist and
+  minus the launcher-owned keys below; DLL override names `^[a-z0-9_.-]{1,64}$`; winetricks verbs from
+  `WINETRICKS_ALLOWLIST` in `vgames-core`.
+- **Launcher-owned environment keys** (`vgames_core::compat::is_launcher_owned_env_key`): the launcher sets these
+  itself for compat launches, and they never come from a profile, a manifest or a local override:
+  `WINEPREFIX`, `WINEDLLOVERRIDES`, `WINEDLLPATH`, `WINEPATH`, `WINELOADER`, `WINESERVER`, `PROTONPATH`, `GAMEID`,
+  `STORE`, and every key starting with `STEAM_COMPAT_`, `UMU_` or `PRESSURE_VESSEL_`. DLL overrides reach Wine
+  only through the validated `dll_overrides` map.
+- No profile → defaults (`status: untested`; UMU-Proton on Linux; DXMT → DXVK-macOS + MoltenVK → wined3d on
+  every Mac).
 - **Hints for admins:** when a package has a Steam app id, the metadata job also fetches the ProtonDB
   summary tier (informational only, shown in the admin UI) and looks up the umu id in the umu-database.
 - **Local overrides:** Settings → Compatibility lets a player override runtime version, graphics
@@ -130,8 +161,16 @@ They follow the same rule as packages: **nothing runs unless its bytes are pinne
 - It is published as an asset of the project's GitHub release stream and refreshed by a scheduled
   workflow maintained by Agent 5, which checks upstream releases, downloads, hashes, smoke-tests and opens a PR.
   Signing happens in the protected `release` environment.
-- The launcher downloads runtimes into `<app data>/runtimes/<id>/<version>/`, verifies the SHA-256
-  **before** extracting, extracts with the same path-safety rules as packages, keeps the versions still
+- **Rollback protection per key (F2).** The launcher keeps the highest catalog version it accepted **per
+  catalog key** (the minisign key id), never one global number: a high version signed by one key never blocks a
+  catalog signed by another (a rotated key starts its own sequence). A lower version under the same key is
+  refused. Release builds trust only the compiled-in key; a test override of the URL and key exists only in
+  debug builds.
+- The launcher refreshes the catalog on startup, on a server switch and before a compat launch, at most once
+  every 6 h (a stored timestamp, never a timer).
+- The launcher downloads runtimes into `<app data>/runtimes/<id>/<version>/`, verifies the size while
+  downloading and the SHA-256 **before** extracting, extracts with the same path-safety rules as packages (no
+  `..`, no absolute paths, no link leaving the target, no device files), keeps the versions still
   referenced by an installed package, and garbage-collects the rest.
 - Upstream checksum files (for example GE-Proton `.sha512sum`) are cross-checked by the catalog workflow but
   never trusted on their own at runtime.
@@ -147,5 +186,6 @@ snapshot records the **Windows-relative** path, so saves move freely between Win
 
 | Decision | Outcome | Consequence |
 |---|---|---|
-| Is vgames distributed commercially? | **No: vgames is non-commercial** | D3DMetal is redistributed through the runtime catalog (§3). If vgames ever becomes commercial, D3DMetal must leave the catalog in the same release, and Macs fall back to DXMT/DXVK (no DX12) |
+| Is vgames distributed commercially? | **No: vgames is non-commercial** | D3DMetal could be redistributed through the runtime catalog under Apple's license (§3). If vgames ever becomes commercial, no `non-commercial` entry may stay in the catalog |
 | Steam Linux Runtime trust boundary | **Accepted**: umu downloads it from Valve over HTTPS, unpinned | We do not mirror it. umu-launcher itself and Proton stay pinned |
+| D3DMetal in v1 (owner, 2026-10-05) | **Deferred** | No D3DMetal code path, catalog entry, setting or license screen ships. Macs run D3D9–11 through Wine + DXMT, DXVK-macOS + MoltenVK or wined3d; D3D12 titles get `d3d12_unsupported_on_mac` up front on every Mac until the catalog lists D3DMetal for the host architecture (a later data change). Formats keep accepting `d3dmetal` |
