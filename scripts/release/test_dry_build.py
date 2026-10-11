@@ -21,7 +21,7 @@ class DryBuildFailureTests(unittest.TestCase):
             tools.mkdir()
             pnpm = tools / "pnpm"
             pnpm.write_text('''#!/usr/bin/env python3
-import json, os, pathlib, stat, sys
+import json, os, pathlib, stat, subprocess, sys
 args = sys.argv[1:]
 if 'generate' not in args:
     sys.exit(27)
@@ -29,10 +29,22 @@ key = pathlib.Path(args[args.index('-w') + 1])
 key.write_text('synthetic-key-file')
 pathlib.Path(str(key) + '.pub').write_text('synthetic-public-key')
 password = key.parent / 'password'
+private_acl = None
+if os.name == 'nt':
+    code = """$a = Get-Acl -LiteralPath $env:PROOF_KEY_DIR;
+$s = [Security.Principal.WindowsIdentity]::GetCurrent().User;
+$r = @($a.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]));
+($a.AreAccessRulesProtected -and $r.Count -eq 1 -and
+$r[0].IdentityReference -eq $s -and $r[0].FileSystemRights -eq 'FullControl' -and
+$r[0].AccessControlType -eq 'Allow') | ConvertTo-Json"""
+    private_acl = json.loads(subprocess.check_output(
+        ['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', code],
+        text=True, env={**os.environ, 'PROOF_KEY_DIR': str(key.parent)}))
 pathlib.Path(os.environ['PROOF_RECEIPT']).write_text(json.dumps({
     'directory_mode': stat.S_IMODE(key.parent.stat().st_mode),
     'password_mode': stat.S_IMODE(password.stat().st_mode),
     'password_present': bool(password.read_bytes()),
+    'private_acl': private_acl,
 }))
 print(os.environ['PROOF_SENTINEL'])
 print(os.environ['PROOF_SENTINEL'], file=sys.stderr)
@@ -55,6 +67,8 @@ print(os.environ['PROOF_SENTINEL'], file=sys.stderr)
             if os.name == "posix":
                 self.assertEqual(proof["directory_mode"], stat.S_IRWXU)
                 self.assertEqual(proof["password_mode"], stat.S_IRUSR | stat.S_IWUSR)
+            else:
+                self.assertTrue(proof["private_acl"])
 
 
 if __name__ == "__main__":

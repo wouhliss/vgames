@@ -3,8 +3,24 @@
 set -euo pipefail
 set +x
 key_dir="$RUNNER_TEMP/updater-dry-key"
-mkdir -m 700 "$key_dir"
 trap 'rm -rf "$key_dir"' EXIT
+if [ "${RUNNER_OS:-}" = Windows ]; then
+  powershell.exe -NoProfile -NonInteractive -Command '
+    $ErrorActionPreference = "Stop"
+    $path = Join-Path $env:RUNNER_TEMP "updater-dry-key"
+    if (Test-Path -LiteralPath $path) { throw "Private directory already exists" }
+    [IO.Directory]::CreateDirectory($path) | Out-Null
+    $acl = Get-Acl -LiteralPath $path
+    $acl.SetAccessRuleProtection($true, $false)
+    $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User
+    $rule = [Security.AccessControl.FileSystemAccessRule]::new(
+      $sid, "FullControl", "ContainerInherit, ObjectInherit", "None", "Allow")
+    $acl.SetAccessRule($rule)
+    Set-Acl -LiteralPath $path -AclObject $acl
+  '
+else
+  mkdir -m 700 "$key_dir"
+fi
 export VERSION
 VERSION=$(node -p 'JSON.parse(require("fs").readFileSync("apps/desktop/package.json")).version')
 python3 - "$key_dir/password" <<'PY'
