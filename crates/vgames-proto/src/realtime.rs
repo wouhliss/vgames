@@ -7,6 +7,10 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
+/// Largest realtime frame the server accepts (64 KiB). Clients size their own limit as a
+/// small multiple of it.
+pub const MAX_FRAME: usize = 64 * 1024;
+
 /// Every frame, in both directions: `{ "v": 1, "id", "type", "ts", "data" }`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Envelope {

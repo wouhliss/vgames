@@ -8,7 +8,7 @@ import { Notice } from "../../components/Notice";
 import { Switch } from "../../components/Switch";
 import { useToast } from "../../components/Toast";
 import { formatDate, t } from "../../i18n";
-import { commands, type PackageOverlay, type SocialSettingsError } from "../../ipc";
+import { commands, type PackageOverlay, type SocialError } from "../../ipc";
 import { unwrap } from "../../ipc/query";
 import { acceleratorFrom, DEFAULT_HOTKEY } from "./hotkey";
 import styles from "./Settings.module.css";
@@ -17,7 +17,7 @@ import { useSocialSettings } from "./socialSettings";
 
 const OVERLAY_PACKAGES = ["overlay_packages"] as const;
 
-function hotkeyError(error: SocialSettingsError | "failed", hotkey: string): string {
+function hotkeyError(error: SocialError | "failed", hotkey: string): string {
   if (error === "failed") return t("settings.saveFailed");
   switch (error.kind) {
     case "invalid":
@@ -27,7 +27,7 @@ function hotkeyError(error: SocialSettingsError | "failed", hotkey: string): str
         ? t("settings.overlay.inUse", { hotkey, by: error.by })
         : t("settings.overlay.inUseUnknown", { hotkey });
     case "invalid_input":
-      // Until the hotkey errors are typed (A4-T10), the core refuses a shortcut as invalid input.
+      // An empty shortcut is refused by the settings validation before the hotkey check.
       return error.field === "overlay_hotkey"
         ? t("settings.overlay.invalid")
         : t("settings.saveFailed");
@@ -146,7 +146,7 @@ function GameRow({ pkg }: { pkg: PackageOverlay }) {
   const client = useQueryClient();
   const { toast } = useToast();
   const set = async (enabled: boolean) => {
-    const result = await commands.overlayPackageSet(pkg.package, enabled).catch(() => null);
+    const result = await commands.packageOverlaySet(pkg.package, enabled).catch(() => null);
     if (result?.status === "ok") await client.invalidateQueries({ queryKey: OVERLAY_PACKAGES });
     else toast({ tone: "danger", title: t("settings.saveFailed") });
   };
@@ -171,7 +171,7 @@ export function OverlaySection() {
   const { toast } = useToast();
   const games = useQuery({
     queryKey: OVERLAY_PACKAGES,
-    queryFn: async () => unwrap(await commands.overlayPackages()),
+    queryFn: async () => unwrap(await commands.packageOverlaysList()),
   });
 
   let body: ReactNode;

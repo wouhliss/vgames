@@ -4,10 +4,18 @@
 - `play/p2-sdl-static` enables SDL3 `build-from-source-static` without changing its version. Desktop builds now compile SDL3 with CMake and a C compiler; no system SDL3 installation is required.
 
 ## Done
+- Live on `main` from phase 1 (Agent 4, `agent-4.md` is the frozen record): A4-T01…T09 (social server, E2EE
+  launcher core, realtime, messaging, invites with in-process fakes; `tests/social_chat.rs`); overlay broker,
+  protocol, hub, safety valve, hotkey, fallback window and per-package switches (A4-T10 part 1); renderer link and
+  guard, Linux Vulkan layer (`crates/vgames-overlay/tests/vulkan_layer.rs`, 22 µs/frame on lavapipe); chaos tests
+  and 25-minute soak runs (`tests/social_chaos.rs`, `tests/social_soak.rs`).
 
 ## In progress
+- GAME-01 — F4, F5 (launcher), Q4 and the settings contract cleanup (`game/p2-security-fixes`).
 
 ## Interfaces delivered (other agents may now rely on these)
+- `vgames_proto::realtime::MAX_FRAME` (64 KiB, GAME-01): the server re-exports it from `apps/api/src/realtime/mod.rs`;
+  the launcher accepts at most `social::realtime::MAX_INBOUND_FRAME` (4 × `MAX_FRAME`).
 
 ## Needs from others
 

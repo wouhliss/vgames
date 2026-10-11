@@ -71,6 +71,20 @@
   memory at 32 connections and disk footprint, printed to the job summary. Runs on PRs touching `vgames-transfer` and
   on demand; not a required check. Fold it into the matrix or nightly if you prefer.
 
+- From GAME (GAME-01): `apps/api/src/realtime/mod.rs` now re-exports `MAX_FRAME` from `vgames_proto::realtime`
+  (one line; same value, 64 KiB) so server and launcher share the constant. Nothing else changed in your file.
+
+## F4/F5 closure request (from GAME, GAME-01 → INT-11)
+GAME asks INT-11 to close F4 and launcher F5 (and Q4) in the next security review:
+- **F4:** `vgames_overlay::protocol::ToBroker` has a manual `Debug` printing `[redacted]` for the `Hello` token
+  (`protocol::tests::hello_debug_never_prints_the_token`); `Endpoint` (broker) and the renderer link already redact.
+- **F5 (launcher):** `social/realtime.rs` connects with `connect_async_with_config`, `max_message_size` and
+  `max_frame_size` at `MAX_INBOUND_FRAME` = 4 × `vgames_proto::realtime::MAX_FRAME`; every inbound text frame goes
+  through `decode_envelope` (`a_2_mib_frame_is_refused_from_its_header`: the server sends only the header of a
+  2 MiB frame and the client errors without waiting for the payload; three no-panic property tests).
+- **Q4:** social REST never follows a redirect and reads every body through `api::read_capped`
+  (`a_redirect_is_never_followed_and_the_token_stays_home`, `a_100_mib_body_is_refused_at_the_cap`).
+
 ## G1 re-review request (from INS, INS-10 → INT-11)
 INS asks for the G1 re-review of the install chain (checklist items 1.1, 1.2 and 2.3), at `e8cfee8`:
 - **Install:** the worker verifies the release with [`install::fetch_release`](https://github.com/wouhliss/vgames/blob/e8cfee8a18e2726ed9539dac4cfee9f62915585f/apps/desktop/src-tauri/src/downloads/job.rs#L282)

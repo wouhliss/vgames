@@ -38,7 +38,7 @@ use hub::{InboundContext, Outbound};
 pub const TICKET_TTL: time::Duration = time::Duration::seconds(30);
 pub const PING_INTERVAL: Duration = Duration::from_secs(25);
 pub const IDLE_TIMEOUT: Duration = Duration::from_secs(60);
-pub const MAX_FRAME: usize = 64 * 1024;
+pub use vgames_proto::realtime::MAX_FRAME;
 const HANDLER_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub fn routes() -> OpenApiRouter<AppState> {

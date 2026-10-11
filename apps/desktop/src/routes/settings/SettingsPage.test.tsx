@@ -508,7 +508,7 @@ describe("settings", () => {
     it("switches the overlay per game and explains the safety valve", async () => {
       const ref = { server_id: MOCK_SERVER.id, package_id: "0192a6f0-1c2d-7e3f-8a9b-000000000001" };
       const { user, backend } = start("/settings/overlay", {
-        overlayPackages: [
+        packageOverlays: [
           {
             package: ref,
             title: "Hollow Harbor",
@@ -531,7 +531,7 @@ describe("settings", () => {
       await user.click(harbor);
       await waitFor(() => expect(harbor).toHaveAttribute("aria-checked", "true"));
       expect(screen.queryByText(/closed unexpectedly twice/)).toBeNull();
-      expect(backend.state.overlayPackages[0]?.disabled_by_safety_valve_at).toBeNull();
+      expect(backend.state.packageOverlays[0]?.disabled_by_safety_valve_at).toBeNull();
       await user.click(screen.getByRole("switch", { name: "In-game overlay" }));
       await waitFor(() => expect(backend.state.socialSettings.overlay_enabled).toBe(false));
     });
