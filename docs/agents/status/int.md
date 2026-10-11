@@ -77,6 +77,9 @@
 - From GAME (GAME-03): `desktop-matrix.yml` gains one step after the release build, `cargo test --release … --lib
   compat::catalog::tests::release_builds_ignore_the_overrides`, proving release builds ignore
   `VGAMES_RUNTIME_CATALOG_URL`/`VGAMES_RUNTIME_CATALOG_TEST_PUBKEY` on every OS. Fold it as you like in INT-03.
+- From GAME (GAME-03): `docs/security/runbooks.md` §7 step 4 now describes the per-key catalog version (F2, as
+  `compat::catalog` implements it). New workspace dependencies (add-only) for runtime archives: `tar`, `flate2`,
+  `liblzma` (static), `zip` (deflate only); all MIT/Apache-2.0.
 
 - From GAME (GAME-01): `apps/api/src/realtime/mod.rs` now re-exports `MAX_FRAME` from `vgames_proto::realtime`
   (one line; same value, 64 KiB) so server and launcher share the constant. Nothing else changed in your file.

@@ -222,9 +222,10 @@ Windows games on Linux and macOS. It still has to be published as this repositor
    (security code owners review it) and ship a launcher release carrying it.
 3. Publish the next catalog signed with the new key (release.md, "Runtime catalog"), with a version above anything
    the thief published.
-4. Launchers keep the highest catalog version they have seen and refuse lower ones (no rollback). If the thief
-   published a very high version, legitimate catalogs are refused until launchers track that version per catalog
-   key, so a key change starts over (finding for Agent 2, who wires the catalog into the launcher).
+4. Launchers keep the highest catalog version they have seen **per catalog key** (the minisign key id) and refuse
+   lower ones under that key (no rollback; `compat::catalog`, F2). A launcher release with the new key starts its
+   own sequence, so a very high version the thief published under the old key never blocks the new catalogs; the
+   old key's catalogs stop being used as soon as the launcher no longer trusts that key.
 5. Tell players on Linux and macOS (§11 "launcher update").
 
 ## 8. Compromised server
