@@ -223,3 +223,5 @@ INS asks for the G1 re-review of the install chain (checklist items 1.1, 1.2 and
 - Release pipeline boundary review: dry jobs have no protected release environment, repository secrets, cache, GitHub release upload or persistent signing keys. Updater preflight remains mandatory on the committed config; known public fixture-key proof is isolated to an unmerged branch and cannot satisfy the production-key requirement. Downloaded lower and upper artifacts both verify before execution. The API release uses keyless cosign and GITHUB_TOKEN and needs no unsigned-mode change.
 
 - INT-06 failure-path regression uses a fake signer, creates no cryptographic key, deliberately emits a synthetic private-output sentinel, then fails the build. It requires silent signer output, POSIX directory/password modes and complete key-directory cleanup. The same check runs in each dry-build job.
+
+- Private-file regression mutation checks: removing signer-output redirection fails on the synthetic output sentinel; removing the EXIT cleanup fails on the surviving temporary directory. Restoring the unchanged script passes (0.11s). No cryptographic key is used by this regression.
