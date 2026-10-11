@@ -14,9 +14,16 @@ mod linux;
 #[cfg(target_os = "linux")]
 use linux as sys;
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(windows)]
+mod windows;
+#[cfg(windows)]
+mod windows_args;
+#[cfg(windows)]
+use windows as sys;
+
+#[cfg(not(any(target_os = "linux", windows)))]
 mod unsupported;
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 use unsupported as sys;
 
 /// What the launcher persists to find a game again after a restart. The start
@@ -24,7 +31,7 @@ use unsupported as sys;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProcessIdentity {
     pub pid: u32,
-    /// Platform start time of the process (Linux: clock ticks since boot).
+    /// Platform start time (Linux: ticks since boot; Windows: creation FILETIME).
     pub start_time: u64,
 }
 
@@ -56,16 +63,28 @@ pub struct RunningGame {
 }
 
 /// Borrowed view of a Windows process before its primary thread is resumed.
-/// The Windows backend supplies the handles when suspended spawning lands (PLAY-02).
+/// Handle ownership keeps this view valid throughout asynchronous pre-resume hooks.
 #[cfg(windows)]
 pub struct SuspendedProcess {
     pub(crate) identity: ProcessIdentity,
+    pub(crate) process: std::sync::Arc<std::os::windows::io::OwnedHandle>,
+    pub(crate) thread: std::sync::Arc<std::os::windows::io::OwnedHandle>,
 }
 
 #[cfg(windows)]
 impl SuspendedProcess {
     pub fn identity(&self) -> ProcessIdentity {
         self.identity
+    }
+
+    pub fn process_handle(&self) -> std::os::windows::io::BorrowedHandle<'_> {
+        use std::os::windows::io::AsHandle;
+        self.process.as_handle()
+    }
+
+    pub fn primary_thread_handle(&self) -> std::os::windows::io::BorrowedHandle<'_> {
+        use std::os::windows::io::AsHandle;
+        self.thread.as_handle()
     }
 }
 
@@ -84,7 +103,29 @@ pub struct TreeKiller {
 impl RunningGame {
     /// Starts the prepared command in a new process group.
     pub fn spawn(launch: &PreparedLaunch) -> Result<Self, ProcessError> {
-        sys::Game::spawn(launch.command()).map(|inner| Self { inner })
+        #[cfg(not(windows))]
+        {
+            sys::Game::spawn(launch.command()).map(|inner| Self { inner })
+        }
+        #[cfg(windows)]
+        {
+            sys::Game::spawn(launch).map(|inner| Self { inner })
+        }
+    }
+
+    #[cfg(windows)]
+    pub fn spawn_suspended(launch: &PreparedLaunch) -> Result<Self, ProcessError> {
+        sys::Game::spawn_suspended(launch).map(|inner| Self { inner })
+    }
+
+    #[cfg(windows)]
+    pub fn suspended(&self) -> Option<SuspendedProcess> {
+        self.inner.suspended()
+    }
+
+    #[cfg(windows)]
+    pub fn resume(&mut self) -> Result<(), ProcessError> {
+        self.inner.resume()
     }
 
     /// Finds a game started by an earlier launcher run. `None` when it has
@@ -130,5 +171,5 @@ impl TreeKiller {
 }
 
 #[cfg(test)]
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", windows))]
 mod tests;

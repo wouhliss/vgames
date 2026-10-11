@@ -177,7 +177,10 @@ impl GameSessions {
                         "Launch cancelled",
                     )));
                 }
+                #[cfg(not(windows))]
                 let game = RunningGame::spawn(&launch)?;
+                #[cfg(windows)]
+                let game = RunningGame::spawn_suspended(&launch)?;
                 let identity = game.identity();
                 let record = SessionRecord {
                     format: SESSION_FORMAT.into(),
@@ -197,6 +200,20 @@ impl GameSessions {
             .await;
             match started {
                 Ok(Ok((game, record, root, hooks))) => {
+                    #[cfg(windows)]
+                    let game = {
+                        let mut game = game;
+                        if let (Some(hooks), Some(process)) = (&hooks, game.suspended()) {
+                            hooks.pre_resume(&process).await;
+                        }
+                        // Hook failures and timeouts never leave a frozen game.
+                        if let Err(error) = game.resume() {
+                            remove_record(&root);
+                            sessions.slots().remove(&package);
+                            return Err(error.into());
+                        }
+                        game
+                    };
                     let pid = record.pid;
                     sessions.track(package, root, game, record.started_at, hooks);
                     Ok(pid)

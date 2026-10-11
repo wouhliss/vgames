@@ -15,7 +15,15 @@ use super::*;
 use crate::db::rusqlite;
 use crate::events::{AppEvent, EventBus, GameStopped};
 
-const GAME: &[u8] = b"#!/bin/sh\nexit ${VGAMES_TEST_EXIT:-7}\n";
+#[cfg(windows)]
+const GAME_PATH: &str = "bin/game.exe";
+#[cfg(not(windows))]
+const GAME_PATH: &str = "bin/game";
+
+fn game_bytes() -> &'static [u8] {
+    static BINARY: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+    BINARY.get_or_init(|| fs::read(std::env::current_exe().unwrap()).unwrap())
+}
 
 struct FixedTrust(Option<Arc<TrustState>>);
 
@@ -70,7 +78,7 @@ impl Fixture {
 
 async fn fixture() -> Fixture {
     let files = [
-        FileSpec::script("bin/game", GAME),
+        FileSpec::script(GAME_PATH, game_bytes()),
         FileSpec::random("data/level.pak", 1000, 2),
     ];
     let execution = Execution {
@@ -79,10 +87,14 @@ async fn fixture() -> Fixture {
             targets: vec![LaunchTarget {
                 id: "play".into(),
                 label: "Play".into(),
-                executable: "bin/game".into(),
-                args: Vec::new(),
+                executable: GAME_PATH.into(),
+                args: vec![
+                    "--exact".into(),
+                    crate::launch::testgame::TEST_NAME.into(),
+                    "--nocapture".into(),
+                ],
                 working_dir: None,
-                env: BTreeMap::new(),
+                env: BTreeMap::from([("VGAMES_TEST_MODE".into(), "exit".into())]),
             }],
         }),
         ..Execution::default()
@@ -92,7 +104,10 @@ async fn fixture() -> Fixture {
         &[],
         Compression::None,
         PACK_SIZE,
-        &Identity::default(),
+        &Identity {
+            platform: host_platform().unwrap(),
+            ..Identity::default()
+        },
         &execution,
     );
     let library = tempfile::tempdir().unwrap();
@@ -212,13 +227,13 @@ async fn launch_hooks_add_variables_and_invalid_keys_are_skipped() {
 #[tokio::test]
 async fn a_modified_executable_is_blocked() {
     let f = fixture().await;
-    fs::write(f.root().join("bin/game"), b"#!/bin/sh\nexit 8\n").unwrap();
+    fs::write(f.root().join(GAME_PATH), b"#!/bin/sh\nexit 8\n").unwrap();
     assert_eq!(
         f.trusted()
             .launch(f.package_ref(), TargetChoice::Default)
             .await,
         Err(LaunchError::Integrity {
-            path: "bin/game".into()
+            path: GAME_PATH.into()
         })
     );
 }
@@ -274,15 +289,21 @@ async fn install_state_and_placement_are_checked_first() {
     );
     f.set_row("state", "installed".into()).await;
 
-    // A Windows build cannot run natively on Linux yet (Proton is A2-T16).
-    f.set_row("platform", "windows-x86_64".into()).await;
+    // A release for a different OS never falls back to a native spawn.
+    let incompatible = if cfg!(windows) {
+        "linux-x86_64"
+    } else {
+        "windows-x86_64"
+    };
+    f.set_row("platform", incompatible.into()).await;
     assert!(matches!(
         f.trusted()
             .launch(f.package_ref(), TargetChoice::Default)
             .await,
         Err(LaunchError::CompatUnavailable { .. })
     ));
-    f.set_row("platform", "linux-x86_64".into()).await;
+    f.set_row("platform", host_platform().unwrap().as_str().into())
+        .await;
 
     // The library's drive is gone.
     let library_path = f.library.path().to_string_lossy().into_owned();
@@ -354,4 +375,77 @@ async fn save_conflict_veto_reaches_the_command_without_spawning() {
             .join(super::super::session::SESSION_FILE)
             .exists()
     );
+}
+
+#[cfg(windows)]
+struct FailsPreResume {
+    observed: Arc<std::sync::atomic::AtomicBool>,
+    failure: &'static str,
+}
+
+#[cfg(windows)]
+impl LaunchHooks for FailsPreResume {
+    fn before_spawn<'a>(
+        &'a self,
+        _: &'a LaunchContext,
+    ) -> HookFuture<'a, Result<HookEnv, LaunchVeto>> {
+        Box::pin(async { Ok(HookEnv::default()) })
+    }
+
+    fn pre_resume<'a>(
+        &'a self,
+        _: &'a LaunchContext,
+        process: &'a super::super::process::SuspendedProcess,
+    ) -> HookFuture<'a, Result<(), String>> {
+        Box::pin(async move {
+            use std::os::windows::io::AsRawHandle;
+            use windows_sys::Win32::System::Threading::{ResumeThread, SuspendThread};
+            let thread = process.primary_thread_handle();
+            #[allow(unsafe_code)]
+            // SAFETY: the borrowed primary-thread handle is valid during this hook.
+            // Increment then restore its suspension count to observe the original value.
+            let before = unsafe { SuspendThread(thread.as_raw_handle()) };
+            assert_ne!(before, u32::MAX);
+            assert_eq!(before, 1, "main thread must already be suspended");
+            if self.failure != "extra-suspension" {
+                #[allow(unsafe_code)]
+                // SAFETY: balance only the extra suspension added by this test hook.
+                let restored = unsafe { ResumeThread(thread.as_raw_handle()) };
+                assert_eq!(restored, 2);
+            }
+            self.observed
+                .store(true, std::sync::atomic::Ordering::Release);
+            match self.failure {
+                "panic" => panic!("deliberate pre-resume panic"),
+                "timeout" => std::future::pending().await,
+                _ => Err("deliberate hook failure".into()),
+            }
+        })
+    }
+
+    fn aborted(&self, _: &LaunchContext) {}
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn pre_resume_observes_suspension_and_a_failed_hook_still_runs_the_game() {
+    for failure in ["error", "panic", "timeout", "extra-suspension"] {
+        let f = fixture().await;
+        let mut events = f.bus.subscribe();
+        let launcher = f.trusted();
+        let observed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        launcher.hooks().register(
+            HookStage::Overlay,
+            Arc::new(FailsPreResume {
+                observed: observed.clone(),
+                failure,
+            }),
+        );
+        launcher
+            .launch(f.package_ref(), TargetChoice::Default)
+            .await
+            .unwrap();
+        assert_eq!(stopped(&mut events).await.exit.code, Some(7));
+        assert!(observed.load(std::sync::atomic::Ordering::Acquire));
+    }
 }

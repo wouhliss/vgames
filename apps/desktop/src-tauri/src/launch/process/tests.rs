@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::sync::mpsc;
 use std::thread;
@@ -8,24 +6,11 @@ use std::time::{Duration, Instant};
 use tempfile::TempDir;
 
 use super::*;
-use crate::launch::{LaunchPlan, PreparedLaunch, ResolvedTarget};
+use crate::launch::PreparedLaunch;
 
-/// A "game" that is a shell script; children started with `&` stay in its group.
-fn game(script: &str) -> (TempDir, PreparedLaunch) {
+fn game(mode: &str) -> (TempDir, PreparedLaunch) {
     let dir = tempfile::tempdir().unwrap();
-    let exe = dir.path().join("game");
-    std::fs::write(&exe, format!("#!/bin/sh\n{script}\n")).unwrap();
-    std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let target = ResolvedTarget {
-        id: "play".into(),
-        executable: exe,
-        args: Vec::new(),
-        working_dir: dir.path().to_owned(),
-        env: BTreeMap::new(),
-    };
-    let launch = LaunchPlan::Native
-        .prepare(target, std::env::vars_os())
-        .unwrap();
+    let launch = crate::launch::testgame::launch(dir.path(), mode);
     (dir, launch)
 }
 
@@ -49,7 +34,7 @@ fn wait_for_file(path: &Path) {
 
 #[test]
 fn waits_for_children_after_the_launched_process_exits() {
-    let (_dir, launch) = game("sleep 0.6 &\nexit 3");
+    let (_dir, launch) = game("tree");
     let started = Instant::now();
     let exit = RunningGame::spawn(&launch).unwrap().wait().unwrap();
     assert_eq!(exit, Some(GameExit::Code(3)));
@@ -60,12 +45,11 @@ fn waits_for_children_after_the_launched_process_exits() {
     );
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn escaped_children_are_not_tracked() {
     // `setsid` moves the child into its own group: the game counts as stopped.
-    let (_dir, launch) = game(
-        "setsid sh -c 'touch left; exec sleep 5' &\nuntil [ -e left ]; do sleep 0.01; done\nexit 0",
-    );
+    let (_dir, launch) = game("escape");
     let started = Instant::now();
     let exit = RunningGame::spawn(&launch).unwrap().wait().unwrap();
     assert_eq!(exit, Some(GameExit::Code(0)));
@@ -74,7 +58,7 @@ fn escaped_children_are_not_tracked() {
 
 #[test]
 fn reattach_checks_the_start_time_and_tracks_the_tree() {
-    let (dir, launch) = game("sleep 30 &\ntouch ready\nwait");
+    let (dir, launch) = game("tree-wait");
     let game = RunningGame::spawn(&launch).unwrap();
     let identity = game.identity();
     let killer = game.killer();
@@ -94,10 +78,11 @@ fn reattach_checks_the_start_time_and_tracks_the_tree() {
     let reattached = wait_in_thread(again);
     killer.terminate(false).unwrap();
     let timeout = Duration::from_secs(10);
-    assert_eq!(
-        original.recv_timeout(timeout).unwrap(),
-        Some(GameExit::Signal(libc::SIGTERM))
-    );
+    #[cfg(not(windows))]
+    let expected = GameExit::Signal(libc::SIGTERM);
+    #[cfg(windows)]
+    let expected = GameExit::Code(1);
+    assert_eq!(original.recv_timeout(timeout).unwrap(), Some(expected));
     assert_eq!(
         reattached.recv_timeout(timeout).unwrap(),
         Some(GameExit::Unknown)
@@ -107,9 +92,10 @@ fn reattach_checks_the_start_time_and_tracks_the_tree() {
     assert!(RunningGame::reattach(identity).unwrap().is_none());
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn reattach_finds_the_group_after_the_leader_exited() {
-    let (dir, launch) = game("sleep 30 &\ntouch ready\nexit 0");
+    let (dir, launch) = game("orphan");
     let game = RunningGame::spawn(&launch).unwrap();
     let identity = game.identity();
     wait_for_file(&dir.path().join("ready"));
@@ -130,7 +116,7 @@ fn reattach_finds_the_group_after_the_leader_exited() {
 
 #[test]
 fn cancelling_the_wait_leaves_the_game_running() {
-    let (_dir, launch) = game("exec sleep 30");
+    let (_dir, launch) = game("wait");
     let game = RunningGame::spawn(&launch).unwrap();
     let identity = game.identity();
     let canceller = game.canceller();
@@ -148,10 +134,51 @@ fn cancelling_the_wait_leaves_the_game_running() {
 
 #[test]
 fn spawn_failure_is_reported() {
-    let (dir, launch) = game("exit 0");
-    std::fs::remove_file(dir.path().join("game")).unwrap();
+    let (dir, mut launch) = game("exit");
+    launch.program = dir.path().join("missing-game");
     assert!(matches!(
         RunningGame::spawn(&launch),
         Err(ProcessError::Spawn(_))
     ));
+}
+
+#[test]
+fn closing_all_launcher_handles_leaves_the_game_running() {
+    let (dir, launch) = game("tree-wait");
+    let game = RunningGame::spawn(&launch).unwrap();
+    let identity = game.identity();
+    wait_for_file(&dir.path().join("ready"));
+    drop(game);
+    let again = RunningGame::reattach(identity)
+        .unwrap()
+        .expect("game survived handle closure");
+    again.killer().terminate(true).unwrap();
+    assert_eq!(again.wait().unwrap(), Some(GameExit::Unknown));
+}
+
+#[cfg(windows)]
+#[test]
+fn reattach_cannot_recover_an_orphan_tree_without_the_original_job_handle() {
+    let (dir, launch) = game("orphan");
+    let game = RunningGame::spawn(&launch).unwrap();
+    wait_for_file(&dir.path().join("ready"));
+    // Wait for the leader handle to signal, without waiting for its live child.
+    use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, PROCESS_SYNCHRONIZE, WaitForSingleObject,
+    };
+    #[allow(unsafe_code)]
+    // SAFETY: OpenProcess takes the launcher's fresh identity and returns a checked handle.
+    let handle = unsafe { OpenProcess(PROCESS_SYNCHRONIZE, 0, game.identity().pid) };
+    assert!(!handle.is_null());
+    #[allow(unsafe_code)]
+    // SAFETY: this successful OpenProcess handle is uniquely owned here.
+    let process = unsafe { OwnedHandle::from_raw_handle(handle) };
+    #[allow(unsafe_code)]
+    // SAFETY: the process handle supports synchronization and the wait is bounded.
+    let result = unsafe { WaitForSingleObject(process.as_raw_handle(), 10_000) };
+    assert_eq!(result, 0);
+    assert!(RunningGame::reattach(game.identity()).unwrap().is_none());
+    game.killer().terminate(true).unwrap();
+    assert_eq!(game.wait().unwrap(), Some(GameExit::Code(0)));
 }

@@ -102,3 +102,13 @@ None open.
 | Cancellation releases partial hook resources; missing, cancelled, panicking, unexpected or mismatched compat plans never fall back to direct spawn | `hooks/tests.rs::cancellation_unwinds_a_hook_while_it_is_pending`, `::source_panic_and_cancellation_fail_closed_without_a_timeout_budget`, `::source_runs_before_hooks_and_compat_never_falls_back_to_native`, `::incompatible_runner_prefix_and_unexpected_source_errors_fail_closed` | Required desktop job; Desktop matrix |
 | Save callbacks wait for the last child, run once after launcher re-attach, and never run on detach | `session/tests.rs::exit_hooks_wait_for_children_and_run_once_after_reattach` | Required desktop job; Linux Desktop matrix (portable process fixtures follow in PLAY-02) |
 | Existing overlay environment injection and cleanup are retained | `orchestrate/tests.rs::launch_hooks_add_variables_and_invalid_keys_are_skipped`; `overlay/mod.rs::tests::a_launch_that_fails_drops_the_broker` | Required desktop job; Desktop matrix (orchestrator fixture currently Linux) |
+
+## Windows process lifecycle (PLAY-02)
+
+| Boundary | Regression | Runner |
+|---|---|---|
+| Explicit process inputs, without a shell or inherited environment | `argv_round_trips`, `quotes_empty_spaces_unicode_and_trailing_backslashes`, `environment_is_explicit_and_double_terminated` | Windows |
+| Track children after the leader exits; cancel without killing; guard reused PIDs; stop the whole tree | Portable `launch::process::tests` self-executing fixtures | Linux, Windows |
+| Closing every launcher handle must leave the game alive | `closing_all_launcher_handles_leaves_the_game_running` | Linux, Windows |
+| Hooks observe suspension, then errors/panics/timeouts still resume the game | `pre_resume_observes_suspension_and_a_failed_hook_still_runs_the_game` | Windows |
+| Restart cannot assume an old named job remains recoverable | `reattach_cannot_recover_an_orphan_tree_without_the_original_job_handle` | Windows |
