@@ -84,7 +84,8 @@ function take<T>(key: string, user: string, schema: z.ZodType<T>): T | null {
   try {
     const stored = JSON.parse(raw) as Partial<Stored>;
     if (stored.user !== user || typeof stored.at !== "number") return null;
-    if (Date.now() - stored.at > MAX_AGE_MS) return null;
+    const age = Date.now() - stored.at;
+    if (age < 0 || age > MAX_AGE_MS) return null;
     const parsed = schema.safeParse(stored.value);
     return parsed.success ? parsed.data : null;
   } catch {

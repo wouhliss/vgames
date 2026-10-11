@@ -3,4 +3,4 @@ audience: internal
 component: admin
 type: added
 ---
-A3-T18: form drafts (package create/editor, settings, allowlist, compatibility profiles) are stashed to sessionStorage on any 401 and restored once after sign-in, scoped to the account and carrying the ETag or revision they were edited against. The 401 hook moved into the HTTP layer so direct calls from forms reach it, not only queries.
+INT-05 / A3-T18: add account-bound, validated, one-day draft storage for subsequent form integration. Move the 401 hook to the HTTP layer and clear all account data, pending reads and the CSRF fallback before sign-in.
