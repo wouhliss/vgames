@@ -154,10 +154,7 @@ impl Game {
         // SAFETY: OpenProcess takes a PID and flags; the returned handle is checked.
         let handle = unsafe {
             OpenProcess(
-                PROCESS_QUERY_LIMITED_INFORMATION
-                    | PROCESS_SYNCHRONIZE
-                    | PROCESS_SET_QUOTA
-                    | PROCESS_TERMINATE,
+                PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE,
                 0,
                 identity.pid,
             )
@@ -190,6 +187,34 @@ impl Game {
         }
         if state == u32::MAX {
             return Err(ProcessError::Track(io::Error::last_os_error()));
+        }
+        // Only a verified live process needs the mutation rights required for
+        // assignment. Windows can deny SET_QUOTA for an exited process even
+        // while it remains visible in a snapshot and can still be queried.
+        #[allow(unsafe_code)]
+        // SAFETY: open a second owned handle to the validated PID, without inheritance.
+        let handle = unsafe {
+            OpenProcess(
+                PROCESS_QUERY_LIMITED_INFORMATION
+                    | PROCESS_SYNCHRONIZE
+                    | PROCESS_SET_QUOTA
+                    | PROCESS_TERMINATE,
+                0,
+                identity.pid,
+            )
+        };
+        if handle.is_null() {
+            let error = io::Error::last_os_error();
+            #[allow(unsafe_code)]
+            // SAFETY: the original query handle pins this identity; zero never blocks.
+            if unsafe { WaitForSingleObject(raw(&process), 0) } == 0 {
+                return Ok(None);
+            }
+            return Err(ProcessError::Track(error));
+        }
+        let process = Arc::new(own(handle).map_err(ProcessError::Track)?);
+        if creation_time(&process).map_err(ProcessError::Track)? != identity.start_time {
+            return Ok(None);
         }
         let (job, port) = new_job().map_err(ProcessError::Track)?;
         assign(&job, &process).map_err(ProcessError::Track)?;
