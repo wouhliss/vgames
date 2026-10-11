@@ -1,7 +1,8 @@
-# Windows test games through real compatibility runtimes (GAME-05). Owner: GAME.
-# Proton on ubuntu-24.04 with software rendering (Xvfb, lavapipe/llvmpipe). The runtime
+# Windows test games through real compatibility runtimes (GAME-05, GAME-06). Owner: GAME.
+# Proton on ubuntu-24.04 with software rendering (Xvfb, lavapipe/llvmpipe); Wine on macos-15
+# (Apple silicon, Rosetta 2, Metal when the runner exposes it). The runtime
 # catalog is signed by a key the test generates; the runtimes themselves are the real
-# upstream releases, pinned by size and SHA-256 (scripts/ci/proton-runtimes.sh).
+# upstream releases, pinned by size and SHA-256 (scripts/ci/compat-runtimes.sh).
 #
 # Rules: actions pinned by SHA, no secrets beyond the read-only token, caches saved only
 # from main/schedule runs.
@@ -15,7 +16,7 @@ on:
       - "apps/desktop/src-tauri/src/launch/**"
       - "crates/vgames-testapps/**"
       - "crates/vgames-core/src/runtimes.rs"
-      - "scripts/ci/proton-runtimes.sh"
+      - "scripts/ci/compat-runtimes.sh"
       - ".github/workflows/compat-e2e.yml"
   schedule:
     - cron: "41 3 * * *"
@@ -75,11 +76,18 @@ jobs:
         env:
           VGAMES_EXPECT_VULKAN: "1"
         run: xvfb-run -a cargo test --locked -p vgames-desktop --lib compat::preflight
+      - name: The PE scan reads the real test games
+        run: |
+          for api in d3d11 d3d12; do
+            VGAMES_PE_SAMPLE="$GITHUB_WORKSPACE/target/x86_64-pc-windows-gnu/release/vgames-testapp-$api.exe" \
+            VGAMES_PE_EXPECT=$api \
+            cargo test --locked -p vgames-desktop --lib compat::pe::tests::a_real_executable_is_scanned -- --ignored --nocapture
+          done
       - name: Pin the upstream runtimes
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          scripts/ci/proton-runtimes.sh > "$RUNNER_TEMP/runtimes.json"
+          scripts/ci/compat-runtimes.sh proton > "$RUNNER_TEMP/runtimes.json"
           jq '.[] | del(.sha256)' "$RUNNER_TEMP/runtimes.json" | tee -a "$GITHUB_STEP_SUMMARY"
           jq '(.[] | select(.id == "umu-proton") | .sha256) |= (.[0:63] + (if .[63:] == "0" then "1" else "0" end))' \
             "$RUNNER_TEMP/runtimes.json" > "$RUNNER_TEMP/runtimes-tampered.json"
@@ -147,4 +155,70 @@ jobs:
           OUTCOME: ${{ steps.d3d12.outcome }}
         run: |
           echo "D3D12 through VKD3D-Proton on lavapipe: ${OUTCOME} (a lavapipe gap goes to human-checklist §B3)" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+  wine:
+    name: Wine (macos-15 arm64)
+    runs-on: macos-15
+    timeout-minutes: 75
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Tools (mingw, jq)
+        run: brew install mingw-w64 jq
+      - name: Rosetta 2 and Metal on this runner (recorded)
+        run: |
+          if arch -x86_64 /usr/bin/true; then echo "Rosetta 2: present"; else echo "Rosetta 2: missing"; fi | tee -a "$GITHUB_STEP_SUMMARY"
+          system_profiler SPDisplaysDataType | grep -E "Metal|Chipset" | tee -a "$GITHUB_STEP_SUMMARY" || true
+      - name: Install toolchain (rust-toolchain.toml)
+        run: rustup toolchain install && rustup target add x86_64-pc-windows-gnu && rustup show active-toolchain
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: compat-e2e-macos
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'schedule' }}
+      - name: Build the Windows test games
+        run: cargo build --locked --release -p vgames-testapps --target x86_64-pc-windows-gnu
+      - name: Rosetta detection and the Wine plan rules
+        run: cargo test --locked -p vgames-desktop --lib -- compat::rosetta compat::plan::tests::wine compat::d3d
+      - name: Pin the upstream runtimes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          scripts/ci/compat-runtimes.sh wine > "$RUNNER_TEMP/runtimes.json"
+          jq '.[] | del(.sha256)' "$RUNNER_TEMP/runtimes.json" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: The D3D11 test game through Wine + DXMT (recorded; missing Metal goes to human-checklist §B4)
+        id: dxmt
+        continue-on-error: true
+        env:
+          VGAMES_WINE_E2E_RUNTIMES: ${{ runner.temp }}/runtimes.json
+          VGAMES_WINE_E2E_GAME: ${{ github.workspace }}/target/x86_64-pc-windows-gnu/release/vgames-testapp-d3d11.exe
+          VGAMES_WINE_E2E_GRAPHICS: dxmt
+        run: cargo test --locked -p vgames-desktop --lib compat::plan::wine_e2e -- --ignored --nocapture
+      - name: The D3D11 test game through Wine + DXVK-macOS (recorded)
+        id: dxvk
+        continue-on-error: true
+        env:
+          VGAMES_WINE_E2E_RUNTIMES: ${{ runner.temp }}/runtimes.json
+          VGAMES_WINE_E2E_GAME: ${{ github.workspace }}/target/x86_64-pc-windows-gnu/release/vgames-testapp-d3d11.exe
+          VGAMES_WINE_E2E_GRAPHICS: dxvk
+        run: cargo test --locked -p vgames-desktop --lib compat::plan::wine_e2e -- --ignored --nocapture
+      - name: The D3D11 test game through Wine + wined3d (recorded)
+        id: wined3d
+        continue-on-error: true
+        env:
+          VGAMES_WINE_E2E_RUNTIMES: ${{ runner.temp }}/runtimes.json
+          VGAMES_WINE_E2E_GAME: ${{ github.workspace }}/target/x86_64-pc-windows-gnu/release/vgames-testapp-d3d11.exe
+          VGAMES_WINE_E2E_GRAPHICS: wined3d
+        run: cargo test --locked -p vgames-desktop --lib compat::plan::wine_e2e -- --ignored --nocapture
+      - name: Record the Metal backends
+        if: always()
+        env:
+          DXMT: ${{ steps.dxmt.outcome }}
+          DXVK: ${{ steps.dxvk.outcome }}
+          WINED3D: ${{ steps.wined3d.outcome }}
+        run: |
+          echo "Wine + DXMT: ${DXMT}; Wine + DXVK-macOS: ${DXVK}; Wine + wined3d: ${WINED3D} (failures without Metal go to human-checklist §B4)" \
             | tee -a "$GITHUB_STEP_SUMMARY"

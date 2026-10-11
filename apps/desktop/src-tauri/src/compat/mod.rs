@@ -2,10 +2,13 @@
 //! INS under README §1 ("need it, build it") with exactly the shared signature.
 
 pub mod catalog;
+pub mod d3d;
 pub mod extract;
+pub mod pe;
 pub mod plan;
 pub mod preflight;
 pub mod profiles;
+pub mod rosetta;
 pub mod runtimes;
 
 use std::path::{Path, PathBuf};

@@ -37,6 +37,10 @@ pub trait Probes {
     fn sysctl(&self, name: &str) -> Option<String>;
     /// Free bytes on the file system holding `path`.
     fn free_space(&self, path: &Path) -> Option<u64>;
+    /// Whether x86_64 code runs on this Mac (Rosetta 2 on Apple silicon). Blocking.
+    fn x86_64_runs(&self) -> bool {
+        false
+    }
 }
 
 /// Runs every check; `prefix_exists` skips the space check for an existing prefix.
@@ -93,6 +97,20 @@ impl Probes for System {
 
     fn free_space(&self, path: &Path) -> Option<u64> {
         vgames_transfer::sys::available_space(path).ok()
+    }
+
+    fn x86_64_runs(&self) -> bool {
+        if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+            std::process::Command::new("arch")
+                .args(["-x86_64", "/usr/bin/true"])
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .is_ok_and(|s| s.success())
+        } else {
+            cfg!(target_os = "macos")
+        }
     }
 }
 

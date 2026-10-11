@@ -44,6 +44,7 @@ fn unavailable(detail: impl Into<String>) -> LaunchError {
 
 pub struct CompatPlanner<S, P> {
     data_dir: PathBuf,
+    db: crate::db::Db,
     catalog: Arc<RuntimeCatalog>,
     store: Arc<RuntimeStore>,
     profiles: Arc<Profiles<S>>,
@@ -52,8 +53,10 @@ pub struct CompatPlanner<S, P> {
 }
 
 impl<S: ProfileSource, P: Probes + Send + Sync + 'static> CompatPlanner<S, P> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         data_dir: PathBuf,
+        db: crate::db::Db,
         catalog: Arc<RuntimeCatalog>,
         store: Arc<RuntimeStore>,
         profiles: Arc<Profiles<S>>,
@@ -62,6 +65,7 @@ impl<S: ProfileSource, P: Probes + Send + Sync + 'static> CompatPlanner<S, P> {
     ) -> Self {
         Self {
             data_dir,
+            db,
             catalog,
             store,
             profiles,
@@ -75,11 +79,16 @@ impl<S: ProfileSource, P: Probes + Send + Sync + 'static> CompatPlanner<S, P> {
         &self,
         package: PackageRef,
         release: &ExpectedRelease,
+        executable: &Path,
     ) -> Result<LaunchPlan, LaunchError> {
         match (self.host, release.platform) {
             (Some(Platform::LinuxX86_64), Platform::WindowsX86_64) => {
                 self.proton(package, release).await.map(LaunchPlan::Proton)
             }
+            (Some(Platform::MacosAarch64 | Platform::MacosX86_64), Platform::WindowsX86_64) => self
+                .wine(package, release, executable)
+                .await
+                .map(LaunchPlan::Wine),
             (host, build) => Err(unavailable(format!(
                 "This {} build cannot run on {} yet.",
                 build.as_str(),
@@ -221,16 +230,27 @@ impl<S: ProfileSource, P: Probes + Send + Sync + 'static> PlanSource for CompatP
             platform: manifest.platform,
             sequence: manifest.sequence,
         };
+        let executable = launch_executable(ctx, manifest);
         Box::pin(async move {
             tokio::select! {
                 // Cancellation first: a plan that is ready on its first poll must not win over
                 // a launch that was already cancelled.
                 biased;
                 () = ctx.cancellation.cancelled() => Err(unavailable("The launch was cancelled.")),
-                plan = self.plan_for(ctx.package, &release) => plan,
+                plan = self.plan_for(ctx.package, &release, &executable) => plan,
             }
         })
     }
+}
+
+/// The default launch target's executable under the install root (the PE scan's
+/// fallback when no scan was recorded); the root itself when there is none.
+fn launch_executable(ctx: &LaunchContext, manifest: &vgames_core::manifest::Manifest) -> PathBuf {
+    manifest
+        .launch
+        .as_ref()
+        .and_then(|l| l.targets.iter().find(|t| t.id == l.default))
+        .map_or_else(|| ctx.root.clone(), |t| ctx.root.join(&t.executable))
 }
 
 /// The profile's Proton preference (unknown ids skipped), or the default.
@@ -406,8 +426,13 @@ async fn winetricks(plan: &ProtonPlan, verbs: &[String]) -> Result<(), LaunchErr
     Ok(())
 }
 
+mod wine;
+
 #[cfg(test)]
 mod tests;
 
 #[cfg(all(test, target_os = "linux"))]
 mod proton_e2e;
+
+#[cfg(all(test, target_os = "macos"))]
+mod wine_e2e;

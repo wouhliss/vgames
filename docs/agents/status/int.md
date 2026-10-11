@@ -89,7 +89,7 @@
   `compat::catalog` implements it). New workspace dependencies (add-only) for runtime archives: `tar`, `flate2`,
   `liblzma` (static), `zip` (deflate only); all MIT/Apache-2.0.
 - From GAME (GAME-05): new workflow `.github/workflows/compat-e2e.yml` (job `proton`, ubuntu-24.04: Windows test games
-  cross-built with mingw, real umu-launcher + UMU-Proton pinned by `scripts/ci/proton-runtimes.sh`, the test-signed
+  cross-built with mingw, real umu-launcher + UMU-Proton pinned by `scripts/ci/compat-runtimes.sh`, the test-signed
   catalog, a tampered-archive refusal, the D3D11 game through `Launcher::launch`, D3D12 attempted). Runs on PRs touching
   compat/launch/testapps, nightly and on demand; not a required check. `.github/CODEOWNERS`: the `# pending` markers of
   `compat/` and `crates/vgames-testapps/` are gone now that both exist. `vgames_core::runtimes::ArchiveFormat` gains
@@ -98,6 +98,9 @@
 
 - From GAME (GAME-01): `apps/api/src/realtime/mod.rs` now re-exports `MAX_FRAME` from `vgames_proto::realtime`
   (one line; same value, 64 KiB) so server and launcher share the constant. Nothing else changed in your file.
+- From GAME (GAME-06): `compat-e2e.yml` gains job `wine` (macos-15: Rosetta and Metal recorded, the Wine plan rules,
+  the D3D11 test game through Wine with DXMT, DXVK-macOS and wined3d, each recorded) and a PE-scan step on the real
+  test games in job `proton`; `scripts/ci/proton-runtimes.sh` becomes `scripts/ci/compat-runtimes.sh proton|wine`.
 
 ## F4/F5 closure request (from GAME, GAME-01 → INT-11)
 GAME asks INT-11 to close F4 and launcher F5 (and Q4) in the next security review:
