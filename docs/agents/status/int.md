@@ -74,6 +74,9 @@
   key id, 16 uppercase hex digits as minisign prints it), tested against the vectors' `.pub` comment in
   `tests/runtimes_vectors.rs`. The launcher keeps the highest catalog version per key id (F2). Once
   `runtimes/runtime-catalog.pub` lands, `build.rs` embeds it and the manager turns on by itself.
+- From GAME (GAME-03): `desktop-matrix.yml` gains one step after the release build, `cargo test --release … --lib
+  compat::catalog::tests::release_builds_ignore_the_overrides`, proving release builds ignore
+  `VGAMES_RUNTIME_CATALOG_URL`/`VGAMES_RUNTIME_CATALOG_TEST_PUBKEY` on every OS. Fold it as you like in INT-03.
 
 - From GAME (GAME-01): `apps/api/src/realtime/mod.rs` now re-exports `MAX_FRAME` from `vgames_proto::realtime`
   (one line; same value, 64 KiB) so server and launcher share the constant. Nothing else changed in your file.

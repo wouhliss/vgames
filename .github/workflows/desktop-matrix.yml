@@ -96,6 +96,10 @@ jobs:
           -p vgames-desktop -p vgames-core -p vgames-pack -p vgames-transfer -p vgames-overlay
       - name: Release build (unsigned, no bundle)
         run: cargo build --locked --release --target ${{ matrix.target }} -p vgames-desktop
+      - name: Release-only rules (debug overrides ignored)
+        run: >-
+          cargo test --locked --release --target ${{ matrix.target }}
+          -p vgames-desktop --lib compat::catalog::tests::release_builds_ignore_the_overrides
 
   gate:
     name: Desktop matrix gate
