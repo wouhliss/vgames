@@ -79,10 +79,13 @@ jobs:
         run: |
           for dir in downloaded/dry-bundle-*; do
             cargo xtask updater verify --latest "$dir/latest.json" --dir "$dir" --pubkey "$(cat "$dir/updater.pub")"
+            if [ -d "$dir/older" ]; then
+              cargo xtask updater verify --latest "$dir/older/latest.json" --dir "$dir/older" --pubkey "$(cat "$dir/updater.pub")"
+            fi
           done
   update:
     name: Real signed updater round trip
-    needs: build
+    needs: [build, verify]
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     permissions:
@@ -131,6 +134,8 @@ jobs:
           E2E_DATABASE_URL: postgres://vgames:vgames-e2e-only@localhost:5432/vgames
           E2E_WORK_DIR: ${{ runner.temp }}/updater-real
         run: |
+          cargo xtask updater verify --latest updater-artifacts/older/latest.json \
+            --dir updater-artifacts/older --pubkey "$(cat updater-artifacts/updater.pub)"
           chmod +x updater-artifacts/older/*.AppImage
           apps/desktop/e2e-real/fixtures/updater.sh updater-artifacts updater-artifacts/older/*.AppImage
       - name: Upload public updater request receipts and logs

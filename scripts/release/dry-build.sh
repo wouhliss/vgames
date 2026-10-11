@@ -67,5 +67,13 @@ PY
   bash scripts/release/desktop-build.sh
   mkdir -p "$out/older"
   cp target/"$TARGET"/release/bundle/appimage/*0.0.1*.AppImage "$out/older/"
+  older=("$out/older"/*.AppImage)
+  cargo xtask updater sign --version 0.0.1 "${older[@]}"
+  printf 'Lower-version dry-run fixture.\n' > "$key_dir/older-notes.txt"
+  cargo xtask updater manifest --version 0.0.1 --pubkey "$pubkey" \
+    --notes "$key_dir/older-notes.txt" --pub-date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    --url-base "https://github.com/wouhliss/vgames/releases/download/desktop-v0.0.1" \
+    --artifact "linux-x86_64=${older[0]}" --out "$out/older/latest.json"
+  cargo xtask updater verify --latest "$out/older/latest.json" --dir "$out/older" --pubkey "$pubkey"
   printf 'Lower-version AppImage retained for the real signed updater round-trip job.\n' >> "$GITHUB_STEP_SUMMARY"
 fi
