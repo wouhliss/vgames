@@ -6,8 +6,7 @@
 //! (A2-T12) and compat plans for Proton/Wine (A2-T16/T17).
 
 use std::future::Future;
-use std::pin::Pin;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
@@ -18,7 +17,7 @@ use vgames_core::trust::TrustState;
 use vgames_core::verify::ExpectedRelease;
 
 use super::prelaunch::{Prelaunch, PrelaunchError};
-use super::{GameSessions, LaunchPlan, SessionError, TargetChoice, TargetError};
+use super::{GameSessions, SessionError, TargetChoice, TargetError};
 use crate::db::{self, Db, DbError};
 use crate::events::PackageRef;
 use crate::servers::Servers;
@@ -40,17 +39,10 @@ impl TrustSource for Servers {
     }
 }
 
-/// Variables a [`LaunchHooks`] adds, once ready.
-pub type HookEnv<'a> = Pin<Box<dyn Future<Output = Vec<(String, String)>> + Send + 'a>>;
-
-/// Launcher-side extras for a game process (Agent 4: the in-game overlay).
-pub trait LaunchHooks: Send + Sync + 'static {
-    /// Variables to add just before `package` starts. Launcher-generated values
-    /// only, never package or network data; a refused key is skipped.
-    fn prepare(&self, package: PackageRef) -> HookEnv<'_>;
-    /// The game did not start after [`Self::prepare`].
-    fn aborted(&self, package: PackageRef);
-}
+pub use super::hooks::{
+    HookEnv, HookFuture, HookRegistry, HookStage, LaunchContext, LaunchHooks, LaunchLayer,
+    LaunchVeto, PlanSource,
+};
 
 /// An install that is busy with something else.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
@@ -113,7 +105,7 @@ pub struct Launcher<T> {
     prelaunch: Arc<Prelaunch>,
     last_launch: Mutex<Option<Instant>>,
     host: Option<Platform>,
-    hooks: OnceLock<Arc<dyn LaunchHooks>>,
+    hooks: Arc<HookRegistry>,
 }
 
 impl<T: TrustSource> Launcher<T> {
@@ -121,19 +113,17 @@ impl<T: TrustSource> Launcher<T> {
         Self {
             db,
             trust,
-            sessions,
+            sessions: sessions.clone(),
             prelaunch: Arc::new(Prelaunch::default()),
             last_launch: Mutex::new(None),
             host: host_platform(),
-            hooks: OnceLock::new(),
+            hooks: sessions.hooks().clone(),
         }
     }
 
-    /// Installs the launch hooks (once, at startup; later calls are ignored).
-    pub fn set_hooks(&self, hooks: Arc<dyn LaunchHooks>) {
-        if self.hooks.set(hooks).is_err() {
-            tracing::warn!("launch hooks already installed");
-        }
+    /// Shared with GameSessions, including games re-attached after restart.
+    pub fn hooks(&self) -> &Arc<HookRegistry> {
+        &self.hooks
     }
 
     pub fn prelaunch(&self) -> &Arc<Prelaunch> {
@@ -167,12 +157,11 @@ impl<T: TrustSource> Launcher<T> {
         let native = self
             .host
             .is_some_and(|host| runs_natively(expected.platform, host));
-        if !native {
+        // Fail closed before touching an unsupported install if no source exists.
+        let layer = LaunchLayer::for_platform(expected.platform, self.host)?;
+        if !native && !self.hooks.has_plan_source() {
             return Err(LaunchError::CompatUnavailable {
-                detail: format!(
-                    "This {} build needs a compatibility layer, which this launcher version cannot run yet.",
-                    expected.platform.as_str()
-                ),
+                detail: "This build needs a compatibility layer that is not available.".into(),
             });
         }
         let trust = self
@@ -184,6 +173,7 @@ impl<T: TrustSource> Launcher<T> {
                 detail: "Connect to this game's server once before launching it.".into(),
             })?;
 
+        let platform = expected.platform;
         let prelaunch = Arc::clone(&self.prelaunch);
         let root = row.root.clone();
         let library = row.library_path.clone();
@@ -200,31 +190,26 @@ impl<T: TrustSource> Launcher<T> {
         .await
         .map_err(|e| LaunchError::io("The pre-launch check stopped", &e))??;
 
-        let mut prepared = LaunchPlan::Native
+        let ctx = self
+            .sessions
+            .context(package, row.root.clone(), platform, layer);
+        let plan = self.hooks.plan(&ctx, &checked.manifest).await?;
+        let mut prepared = plan
             .prepare(checked.target, std::env::vars_os())
             .map_err(|e| from_prelaunch(PrelaunchError::Launch(e)))?;
-        let hooks = self.hooks.get();
-        if let Some(hooks) = hooks {
-            for (key, value) in hooks.prepare(package).await {
-                if let Err(error) = prepared.inject_env(&key, value) {
-                    tracing::warn!(%error, "launch hook variable refused");
-                }
+        let mut hooks = self.hooks.session(ctx);
+        for (key, value) in hooks.before_spawn().await?.0 {
+            if let Err(error) = prepared.inject_env(&key, value) {
+                tracing::warn!(%error, "launch hook variable refused");
             }
         }
-        let started = self
-            .sessions
-            .start(package, row.root, prepared)
+        self.sessions
+            .start_with_hooks(package, row.root, prepared, hooks)
             .await
             .map_err(|error| match error {
                 SessionError::AlreadyRunning => LaunchError::AlreadyRunning,
                 other => LaunchError::io("Cannot start the game", &other),
-            });
-        if started.is_err()
-            && let Some(hooks) = hooks
-        {
-            hooks.aborted(package);
-        }
-        started
+            })
     }
 
     fn rate_limit(&self) -> Result<(), LaunchError> {

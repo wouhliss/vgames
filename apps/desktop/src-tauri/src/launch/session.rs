@@ -20,9 +20,12 @@ use vgames_transfer::fsutil;
 use vgames_transfer::install::META_DIR;
 
 use super::PreparedLaunch;
+use super::hooks::{HookRegistry, LaunchContext, LaunchLayer, SessionHooks};
 use super::process::{self, ProcessError, ProcessIdentity, RunningGame, TreeKiller, WaitCanceller};
 use crate::db::{self, Db};
 use crate::events::{AppEvent, EventBus, GameExit, GameStarted, GameStopped, PackageRef};
+use tokio_util::sync::CancellationToken;
+use vgames_core::manifest::Platform;
 
 pub const SESSION_FILE: &str = "session.json";
 const SESSION_FORMAT: &str = "vgames.session/1";
@@ -72,16 +75,57 @@ struct Inner {
     db: Db,
     bus: EventBus,
     slots: Mutex<HashMap<PackageRef, Slot>>,
+    hooks: Arc<HookRegistry>,
+    data_dir: Option<PathBuf>,
+    shutdown: CancellationToken,
 }
 
 impl GameSessions {
     pub fn new(db: Db, bus: EventBus) -> Self {
+        Self::with_runtime(db, bus, None, CancellationToken::new())
+    }
+
+    pub fn with_runtime(
+        db: Db,
+        bus: EventBus,
+        data_dir: Option<PathBuf>,
+        shutdown: CancellationToken,
+    ) -> Self {
         Self {
             inner: Arc::new(Inner {
                 db,
                 bus,
                 slots: Mutex::new(HashMap::new()),
+                hooks: Arc::default(),
+                data_dir,
+                shutdown,
             }),
+        }
+    }
+
+    pub fn hooks(&self) -> &Arc<HookRegistry> {
+        &self.inner.hooks
+    }
+
+    pub fn context(
+        &self,
+        package: PackageRef,
+        root: PathBuf,
+        platform: Platform,
+        layer: LaunchLayer,
+    ) -> LaunchContext {
+        LaunchContext {
+            package,
+            root,
+            platform,
+            layer,
+            prefix_dir: self
+                .inner
+                .data_dir
+                .as_ref()
+                .filter(|_| layer != LaunchLayer::Native)
+                .map(|data| crate::compat::prefix_dir(data, &package)),
+            cancellation: self.inner.shutdown.child_token(),
         }
     }
 
@@ -97,41 +141,78 @@ impl GameSessions {
         install_root: PathBuf,
         launch: PreparedLaunch,
     ) -> Result<u32, SessionError> {
+        self.start_inner(package, install_root, launch, None).await
+    }
+
+    pub async fn start_with_hooks(
+        &self,
+        package: PackageRef,
+        install_root: PathBuf,
+        launch: PreparedLaunch,
+        hooks: SessionHooks,
+    ) -> Result<u32, SessionError> {
+        self.start_inner(package, install_root, launch, Some(hooks))
+            .await
+    }
+
+    async fn start_inner(
+        &self,
+        package: PackageRef,
+        install_root: PathBuf,
+        launch: PreparedLaunch,
+        hooks: Option<SessionHooks>,
+    ) -> Result<u32, SessionError> {
         self.reserve(package)?;
-        let started = tauri::async_runtime::spawn_blocking(move || {
-            let game = RunningGame::spawn(&launch)?;
-            let identity = game.identity();
-            let record = SessionRecord {
-                format: SESSION_FORMAT.into(),
-                server_id: package.server_id,
-                package_id: package.package_id,
-                pid: identity.pid,
-                start_time: identity.start_time,
-                started_at: db::now_unix(),
-            };
-            // The game runs either way; without the record only a launcher
-            // restart during this session loses its playtime.
-            if let Err(error) = write_record(&install_root, &record) {
-                tracing::warn!(%error, "cannot record the game session");
+        // Once reserved, this task owns spawn and tracking even if the IPC caller
+        // drops its future. A successfully spawned tree must never be orphaned.
+        let sessions = self.clone();
+        tauri::async_runtime::spawn(async move {
+            let started = tauri::async_runtime::spawn_blocking(move || {
+                if hooks
+                    .as_ref()
+                    .is_some_and(|hooks| hooks.ctx.cancellation.is_cancelled())
+                {
+                    return Err(SessionError::Record(io::Error::new(
+                        io::ErrorKind::Interrupted,
+                        "Launch cancelled",
+                    )));
+                }
+                let game = RunningGame::spawn(&launch)?;
+                let identity = game.identity();
+                let record = SessionRecord {
+                    format: SESSION_FORMAT.into(),
+                    server_id: package.server_id,
+                    package_id: package.package_id,
+                    pid: identity.pid,
+                    start_time: identity.start_time,
+                    started_at: db::now_unix(),
+                };
+                // The game runs either way; without the record only a launcher
+                // restart during this session loses its playtime.
+                if let Err(error) = write_record(&install_root, &record) {
+                    tracing::warn!(%error, "cannot record the game session");
+                }
+                Ok::<_, SessionError>((game, record, install_root, hooks))
+            })
+            .await;
+            match started {
+                Ok(Ok((game, record, root, hooks))) => {
+                    let pid = record.pid;
+                    sessions.track(package, root, game, record.started_at, hooks);
+                    Ok(pid)
+                }
+                Ok(Err(error)) => {
+                    sessions.slots().remove(&package);
+                    Err(error)
+                }
+                Err(join) => {
+                    sessions.slots().remove(&package);
+                    Err(SessionError::Record(io::Error::other(join)))
+                }
             }
-            Ok::<_, SessionError>((game, record, install_root))
         })
-        .await;
-        match started {
-            Ok(Ok((game, record, root))) => {
-                let pid = record.pid;
-                self.track(package, root, game, record.started_at);
-                Ok(pid)
-            }
-            Ok(Err(error)) => {
-                self.slots().remove(&package);
-                Err(error)
-            }
-            Err(join) => {
-                self.slots().remove(&package);
-                Err(SessionError::Record(io::Error::other(join)))
-            }
-        }
+        .await
+        .unwrap_or_else(|join| Err(SessionError::Record(io::Error::other(join))))
     }
 
     /// Finds a game left running by an earlier launcher run. Returns whether
@@ -168,7 +249,29 @@ impl GameSessions {
         .unwrap_or_else(|join| Err(SessionError::Record(io::Error::other(join))));
         match found {
             Ok(Some((game, started_at, root))) => {
-                self.track(package, root, game, started_at);
+                let row = match db::installs::row(&self.inner.db, package).await {
+                    Ok(row) => row,
+                    Err(error) => {
+                        self.slots().remove(&package);
+                        return Err(SessionError::Record(io::Error::other(error)));
+                    }
+                };
+                let mut hooks = row.and_then(|row| {
+                    let platform = Platform::ALL
+                        .into_iter()
+                        .find(|p| p.as_str() == row.platform)?;
+                    let layer =
+                        LaunchLayer::for_platform(platform, super::orchestrate::host_platform())
+                            .ok()?;
+                    Some(
+                        self.hooks()
+                            .session(self.context(package, root.clone(), platform, layer)),
+                    )
+                });
+                if let Some(hooks) = &mut hooks {
+                    hooks.reattached();
+                }
+                self.track(package, root, game, started_at, hooks);
                 Ok(true)
             }
             other => {
@@ -213,7 +316,17 @@ impl GameSessions {
         Ok(())
     }
 
-    fn track(&self, package: PackageRef, root: PathBuf, game: RunningGame, started_at: i64) {
+    fn track(
+        &self,
+        package: PackageRef,
+        root: PathBuf,
+        game: RunningGame,
+        started_at: i64,
+        mut hooks: Option<SessionHooks>,
+    ) {
+        if let Some(hooks) = &mut hooks {
+            hooks.started();
+        }
         let pid = game.identity().pid;
         let stopped_by_user = Arc::new(AtomicBool::new(false));
         self.slots().insert(
@@ -240,18 +353,26 @@ impl GameSessions {
         let sessions = self.clone();
         tauri::async_runtime::spawn(async move {
             let outcome = result.await;
-            sessions.slots().remove(&package);
             let exit = match outcome {
                 Ok(Ok(Some(exit))) => exit,
                 // Detached on launcher exit: the record stays for the next run.
-                Ok(Ok(None)) => return,
+                Ok(Ok(None)) => {
+                    sessions.slots().remove(&package);
+                    return;
+                }
                 Ok(Err(error)) => {
                     tracing::error!(error = %crate::error::DisplayChain(&error), "game tracking failed");
-                    process::GameExit::Unknown
+                    // Tracking failure does not prove the tree exited. In
+                    // particular, never push saves while the game may write.
+                    sessions.slots().remove(&package);
+                    return;
                 }
                 // The tracker never ran (no thread): the game may still be
                 // running, so keep its record for the next launcher run.
-                Err(_) => return,
+                Err(_) => {
+                    sessions.slots().remove(&package);
+                    return;
+                }
             };
             sessions
                 .finish(
@@ -260,6 +381,7 @@ impl GameSessions {
                     exit,
                     started_at,
                     stopped_by_user.load(Ordering::Acquire),
+                    hooks,
                 )
                 .await;
         });
@@ -272,6 +394,7 @@ impl GameSessions {
         exit: process::GameExit,
         started_at: i64,
         stopped_by_user: bool,
+        hooks: Option<SessionHooks>,
     ) {
         let ended_at = db::now_unix();
         let session_seconds =
@@ -295,14 +418,18 @@ impl GameSessions {
             process::GameExit::Code(code) => Some(code),
             process::GameExit::Signal(_) | process::GameExit::Unknown => None,
         };
-        self.inner.bus.publish(AppEvent::GameStopped(GameStopped {
-            package,
-            exit: GameExit {
-                code,
-                stopped_by_user,
-                session_seconds,
-            },
-        }));
+        let exit = GameExit {
+            code,
+            stopped_by_user,
+            session_seconds,
+        };
+        if let Some(hooks) = hooks {
+            hooks.after_exit(&exit).await;
+        }
+        self.slots().remove(&package);
+        self.inner
+            .bus
+            .publish(AppEvent::GameStopped(GameStopped { package, exit }));
     }
 
     fn slots(&self) -> std::sync::MutexGuard<'_, HashMap<PackageRef, Slot>> {

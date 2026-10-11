@@ -66,7 +66,13 @@ impl AppState {
         servers: Arc<Servers>,
     ) -> Result<Self, StateError> {
         let images = Arc::new(ImageCache::open(paths.cache_dir.join("images"))?);
-        let games = GameSessions::new(db.clone(), bus.clone());
+        let shutdown = CancellationToken::new();
+        let games = GameSessions::with_runtime(
+            db.clone(),
+            bus.clone(),
+            Some(paths.data_dir.clone()),
+            shutdown.child_token(),
+        );
         let launcher = Arc::new(Launcher::new(
             db.clone(),
             Arc::clone(&servers),
@@ -79,7 +85,6 @@ impl AppState {
             covers,
             crate::catalog::release::host_platform(),
         ));
-        let shutdown = CancellationToken::new();
         let downloads = Downloads::new(
             db.clone(),
             bus.clone(),

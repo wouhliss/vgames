@@ -179,16 +179,19 @@ async fn a_verified_install_launches_and_repeats_are_rate_limited() {
 struct ExitHook;
 
 impl LaunchHooks for ExitHook {
-    fn prepare(&self, _: PackageRef) -> HookEnv<'_> {
+    fn before_spawn<'a>(
+        &'a self,
+        _: &'a LaunchContext,
+    ) -> HookFuture<'a, Result<HookEnv, LaunchVeto>> {
         Box::pin(async {
-            vec![
+            Ok(HookEnv(vec![
                 ("BAD KEY".into(), "x".into()),
                 ("VGAMES_TEST_EXIT".into(), "9".into()),
-            ]
+            ]))
         })
     }
 
-    fn aborted(&self, _: PackageRef) {}
+    fn aborted(&self, _: &LaunchContext) {}
 }
 
 #[tokio::test]
@@ -196,7 +199,9 @@ async fn launch_hooks_add_variables_and_invalid_keys_are_skipped() {
     let f = fixture().await;
     let mut events = f.bus.subscribe();
     let launcher = f.trusted();
-    launcher.set_hooks(Arc::new(ExitHook));
+    launcher
+        .hooks()
+        .register(HookStage::Overlay, Arc::new(ExitHook));
     launcher
         .launch(f.package_ref(), TargetChoice::Default)
         .await
@@ -310,4 +315,43 @@ fn native_platforms() {
     assert!(!runs_natively(WindowsX86_64, LinuxX86_64));
     assert!(!runs_natively(LinuxAarch64, LinuxX86_64));
     assert!(!runs_natively(MacosAarch64, MacosX86_64));
+}
+
+struct SaveConflictHook;
+impl LaunchHooks for SaveConflictHook {
+    fn before_spawn<'a>(
+        &'a self,
+        _: &'a LaunchContext,
+    ) -> HookFuture<'a, Result<HookEnv, LaunchVeto>> {
+        Box::pin(async {
+            Err(LaunchVeto::SaveConflict {
+                conflict_id: "local-conflict".into(),
+            })
+        })
+    }
+    fn aborted(&self, _: &LaunchContext) {}
+}
+
+#[tokio::test]
+async fn save_conflict_veto_reaches_the_command_without_spawning() {
+    let f = fixture().await;
+    let launcher = f.trusted();
+    launcher
+        .hooks()
+        .register(HookStage::Saves, Arc::new(SaveConflictHook));
+    assert_eq!(
+        launcher
+            .launch(f.package_ref(), TargetChoice::Default)
+            .await,
+        Err(LaunchError::SaveConflict {
+            conflict_id: "local-conflict".into()
+        })
+    );
+    assert!(!launcher.sessions.is_running(f.package_ref()));
+    assert!(
+        !f.root()
+            .join(META_DIR)
+            .join(super::super::session::SESSION_FILE)
+            .exists()
+    );
 }

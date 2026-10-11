@@ -42,7 +42,10 @@ pub fn init(app: &AppHandle, state: &AppState, social: SocialService, hub: Arc<H
     );
     tauri::async_runtime::spawn_blocking(super::vulkan_layer::register_for_this_install);
     // Every game the launcher starts gets the overlay environment.
-    state.launcher.set_hooks(Arc::new(service.clone()));
+    state.launcher.hooks().register(
+        crate::launch::hooks::HookStage::Overlay,
+        Arc::new(service.clone()),
+    );
     // Do not disturb and the hotkey from the stored settings.
     let stored =
         tauri::async_runtime::block_on(state.db.call(|c| settings::get::<SocialSettingsKey>(c)))
