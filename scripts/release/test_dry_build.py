@@ -49,11 +49,12 @@ print(os.environ['PROOF_SENTINEL'], file=sys.stderr)
             self.assertEqual(result.returncode, 27, result.stdout + result.stderr)
             self.assertNotIn(MARKER, result.stdout + result.stderr)
             self.assertFalse((scratch / "updater-dry-key").exists())
-            self.assertEqual(json.loads(receipt.read_text()), {
-                "directory_mode": stat.S_IRWXU,
-                "password_mode": stat.S_IRUSR | stat.S_IWUSR,
-                "password_present": True,
-            })
+            proof = json.loads(receipt.read_text())
+            self.assertTrue(proof["password_present"])
+            # Windows does not expose POSIX mode bits through pathlib.stat().
+            if os.name == "posix":
+                self.assertEqual(proof["directory_mode"], stat.S_IRWXU)
+                self.assertEqual(proof["password_mode"], stat.S_IRUSR | stat.S_IWUSR)
 
 
 if __name__ == "__main__":
