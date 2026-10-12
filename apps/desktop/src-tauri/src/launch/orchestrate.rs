@@ -217,13 +217,16 @@ impl<T: TrustSource> Launcher<T> {
             .last_launch
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let now = Instant::now();
-        if last.is_some_and(|at| now.duration_since(at) < LAUNCH_INTERVAL) {
-            return Err(LaunchError::RateLimited);
-        }
-        *last = Some(now);
-        Ok(())
+        enforce_launch_interval(&mut last, Instant::now())
     }
+}
+
+fn enforce_launch_interval(last: &mut Option<Instant>, now: Instant) -> Result<(), LaunchError> {
+    if last.is_some_and(|at| now.duration_since(at) < LAUNCH_INTERVAL) {
+        return Err(LaunchError::RateLimited);
+    }
+    *last = Some(now);
+    Ok(())
 }
 
 fn busy(state: BusyState) -> LaunchError {

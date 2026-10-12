@@ -174,7 +174,7 @@ async fn stopped(events: &mut broadcast::Receiver<AppEvent>) -> GameStopped {
 }
 
 #[tokio::test]
-async fn a_verified_install_launches_and_repeats_are_rate_limited() {
+async fn a_verified_install_launches_and_reports_its_exit() {
     let f = fixture().await;
     let mut events = f.bus.subscribe();
     let launcher = f.trusted();
@@ -183,10 +183,35 @@ async fn a_verified_install_launches_and_repeats_are_rate_limited() {
         .await
         .unwrap();
     assert_eq!(stopped(&mut events).await.exit.code, Some(7));
+}
+
+#[test]
+fn launch_cooldown_rejects_repeats_until_the_exact_boundary() {
+    let start = Instant::now();
+    let mut last = None;
+    assert_eq!(enforce_launch_interval(&mut last, start), Ok(()));
+    for elapsed in [
+        Duration::ZERO,
+        Duration::from_millis(1),
+        LAUNCH_INTERVAL - Duration::from_nanos(1),
+    ] {
+        assert_eq!(
+            enforce_launch_interval(&mut last, start + elapsed),
+            Err(LaunchError::RateLimited)
+        );
+        assert_eq!(
+            last,
+            Some(start),
+            "rejected attempts must not extend the cooldown"
+        );
+    }
     assert_eq!(
-        launcher
-            .launch(f.package_ref(), TargetChoice::Default)
-            .await,
+        enforce_launch_interval(&mut last, start + LAUNCH_INTERVAL),
+        Ok(())
+    );
+    assert_eq!(last, Some(start + LAUNCH_INTERVAL));
+    assert_eq!(
+        enforce_launch_interval(&mut last, start + LAUNCH_INTERVAL + Duration::from_nanos(1)),
         Err(LaunchError::RateLimited)
     );
 }
