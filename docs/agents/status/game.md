@@ -4,6 +4,14 @@
 - `play/p2-sdl-static` enables SDL3 `build-from-source-static` without changing its version. Desktop builds now compile SDL3 with CMake and a C compiler; no system SDL3 installation is required.
 
 ## Done
+- GAME-01 — F4, F5 (launcher), Q4 and the settings contract cleanup:
+  [#182](https://github.com/wouhliss/vgames/pull/182), merged at `212ee98` (replaces #177, which INT reviewed).
+  Evidence: `protocol::tests::hello_debug_never_prints_the_token`; `social::realtime::tests::a_2_mib_frame_is_refused_from_its_header`
+  and three `decode_envelope` no-panic property tests; `social::api::tests::a_redirect_is_never_followed_and_the_token_stays_home`,
+  `a_100_mib_body_is_refused_at_the_cap`, `a_full_inbox_page_at_the_maximum_ciphertext_size_is_accepted`; no pending
+  `package_overlay`/`HotkeyError`/`SocialSettingsError` in `contract/settings.ts`. F4/F5/Q4 closure requested from INT-11 in `int.md`.
+- GAME-02 — 09-compatibility v1.1 without D3DMetal: [#178](https://github.com/wouhliss/vgames/pull/178), adopted by INT
+  on `main` as `2d95246` (+ `384010f`). The blocker rename and `compat::prefix_dir` were done by INS (INS-02, INS-04).
 - Live on `main` from phase 1 (Agent 4, `agent-4.md` is the frozen record): A4-T01…T09 (social server, E2EE
   launcher core, realtime, messaging, invites with in-process fakes; `tests/social_chat.rs`); overlay broker,
   protocol, hub, safety valve, hotkey, fallback window and per-package switches (A4-T10 part 1); renderer link and
@@ -11,9 +19,14 @@
   and 25-minute soak runs (`tests/social_chaos.rs`, `tests/social_soak.rs`).
 
 ## In progress
-- GAME-01 — F4, F5 (launcher), Q4 and the settings contract cleanup: replacement of #177 on current `main`
-  (`game/p2-security-fixes-2`) with INT's review applied (16 MiB social success cap justified by the largest legal
-  inbox page, a real HTTP maximum-page test, no server text in logs). #177's head stays as it was.
+- GAME-03 — runtime manager: signed catalog per key ([#180](https://github.com/wouhliss/vgames/pull/180)), safe
+  install, references and GC ([#181](https://github.com/wouhliss/vgames/pull/181)); both carry INT's review fixes
+  (no older catalog published over a newer one; due check under the refresh lock; link-graph resolution and
+  directory-handle confinement for extraction).
+- GAME-04 — compat profiles ([#184](https://github.com/wouhliss/vgames/pull/184)); social REST onto `ApiClient` next.
+- GAME-05 — `CompatPlanner` as PLAY-01's `PlanSource`, pre-flight, `save_base` ([#185](https://github.com/wouhliss/vgames/pull/185));
+  test apps and the hosted Proton run ([#187](https://github.com/wouhliss/vgames/pull/187)).
+- GAME-06 — PE scan, D3D check on INS's priority-files hook, Rosetta, Wine plan (`game/p2-wine-macos`, not pushed yet).
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_proto::realtime::MAX_FRAME` (64 KiB, GAME-01): the server re-exports it from `apps/api/src/realtime/mod.rs`;
@@ -22,10 +35,7 @@
 ## Needs from others
 
 ## Blockers / contract questions
-- INT review of [#177](https://github.com/wouhliss/vgames/pull/177#issuecomment-6108469677): social success bodies cannot use the generic 4 MiB cap. An inbox page contains up to 100 envelopes, each permitting 64 KiB of ciphertext before base64 (API `social/relay.rs` checks decoded size); a valid page can exceed 8 MiB. Use a justified 16 MiB social cap and an actual HTTP maximum-page regression, retaining the 64 KiB error cap and 100 MiB stream refusals. Avoid logging attacker-controlled serde values. Main advanced after #176; publish a fresh current-base replacement, preserving the original head and checks. This does not wait on another slice.
-
-- INT reviewed replacement #182: 16 MiB success bodies, the actual legal maximum-page HTTP regression, 64 KiB problem bodies and fixed serde metadata address the original finding. Current-base hosted checks remain required.
-- INT reviews #180/#181 remain open: publish no cached catalog older than a concurrently accepted version; serialize the six-hour due check; reject archive symlink-chain escapes including `b -> .`, `a -> b/../outside`; use directory-handle confinement for extraction writes. Exact PR comments document these independently of pending production key delivery.
+- INT reviews of #180/#181 are answered on each PR (fixes in `8b552ab`/`dc88e09` and their rebases); re-review requested.
 
 ## Built for you
 - INT adopted [#178](https://github.com/wouhliss/vgames/pull/178) on current main `54ce554` in `int/p2-game-compat-contract`, retaining GAME's contribution and its fragment. The contract matches the owner decisions and existing prefix/environment helpers; the priority-file wording accounts for shared chunks. Fresh current-base checks precede the replacement merge. No force-push or phase-1 status edit.
