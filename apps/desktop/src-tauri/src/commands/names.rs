@@ -137,6 +137,9 @@ pub const MAIN_WINDOW_COMMANDS: &[&str] = &[
     "saves_restore",
     "open_external_url",
     "app_licenses",
+    "controllers_list",
+    "controllers_tester_start",
+    "controllers_tester_stop",
 ];
 
 /// Commands the in-game overlay window may call. Only `overlay_*` commands

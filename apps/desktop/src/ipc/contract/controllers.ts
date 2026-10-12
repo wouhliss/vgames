@@ -1,6 +1,6 @@
 // PLAY-04 pending commands/events; replace with generated bindings as the Rust lands.
 // Shapes follow 07-controllers-notes and the existing Rust mapping/decision modules.
-import type { AppError, ControllerKind } from "../../bindings";
+import type { AppError } from "../../bindings";
 import { call, type Result } from "./runtime";
 
 export type ControllerConnection = "usb" | "bluetooth" | "unknown";
@@ -8,18 +8,7 @@ export type ControllerBattery = {
   percent: number | null;
   state: "charging" | "on_battery" | "wired" | "unknown";
 };
-export type ConnectedPad = {
-  instance_id: number;
-  kind: ControllerKind;
-  name: string;
-  connection: ControllerConnection;
-  battery: ControllerBattery;
-  player_index: number | null;
-};
-export type ControllerList = {
-  state: { kind: "ready" } | { kind: "unavailable"; detail: string };
-  pads: ConnectedPad[];
-};
+export type { ConnectedPad, ControllerList } from "../../bindings";
 export type {
   ControllerMapping,
   ControllerProfile,
@@ -71,20 +60,12 @@ export type ControllerDriverStatus = {
   emulation: ControllerDriverState;
   hiding: ControllerDriverState;
 };
-export type ControllerTester = { subscription_id: string; instance_id: number };
+export type { Tester as ControllerTester } from "../../bindings";
 export type { ControllerTesterState } from "../../bindings";
 
 export const controllerCommands = {
-  controllersList(): Promise<Result<ControllerList, AppError>> {
-    return call("controllers_list");
-  },
   controllersDriverStatus(): Promise<Result<ControllerDriverStatus, AppError>> {
     return call("controllers_driver_status");
   },
-  controllersTesterStart(instanceId: number): Promise<Result<ControllerTester, AppError>> {
-    return call("controllers_tester_start", { instanceId });
-  },
-  controllersTesterStop(subscriptionId: string): Promise<Result<null, AppError>> {
-    return call("controllers_tester_stop", { subscriptionId });
-  },
+
 };

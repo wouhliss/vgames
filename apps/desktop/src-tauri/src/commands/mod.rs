@@ -13,6 +13,7 @@ mod appearance;
 mod catalog;
 mod collections;
 mod compat;
+mod controller_runtime;
 mod controllers;
 mod downloads;
 mod games;
@@ -171,6 +172,9 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             saves::saves_restore,
             app_external::open_external_url,
             app_licenses::app_licenses,
+            controller_runtime::controllers_list,
+            controller_runtime::controllers_tester_start,
+            controller_runtime::controllers_tester_stop
         ])
         .events(tauri_specta::collect_events![
             DeeplinkRefused,
