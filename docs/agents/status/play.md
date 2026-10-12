@@ -1,6 +1,7 @@
 # PLAY status
 
 ## Done
+- PLAY-04 profile persistence merged in [#203](https://github.com/wouhliss/vgames/pull/203) after all seventeen hosted checks passed. Native SQLite regressions prove restart persistence, server/package isolation, stable saved overrides, validation without partial writes and corrupt-row preservation.
 - PLAY-03: macOS process-group/kqueue backend merged in [#195](https://github.com/wouhliss/vgames/pull/195) after all seventeen hosted checks passed, including native process/orchestrator tests, the blocking-kqueue regression and three-OS release builds.
 - PLAY-02: Windows suspended spawn, bounded pre-resume, UTF-16 inputs, completion-port job tracking and stop merged in [#194](https://github.com/wouhliss/vgames/pull/194). All seventeen hosted checks passed on current main, including native Windows regressions and three-OS release builds. Final exit waits for the leader signal and releases completed stop handles; the post-exit re-attach and cancellable final-wait regressions pass.
 - PLAY-01: ordered launch hooks, cancellable compatibility plans and session-owned exit callbacks merged in [#193](https://github.com/wouhliss/vgames/pull/193). Every hosted check passed on Windows, Linux and macOS, including the launcher browser performance test.
@@ -26,7 +27,7 @@
 - Controller profile storage validates before SQLite writes, isolates server/package rows, inherits global Nintendo labels for missing profiles and keeps saved per-package snapshots stable. Restart, invalid-update and corrupt-row regressions pass; typed commands and the screen follow next.
 - #198 fresh CI exposed an existing integration test assuming game startup/exit completes within the three-second cooldown. Launch/exit remains tested; cooldown rejection, exact expiry and non-extension by rejected attempts now have a deterministic monotonic-clock regression.
 - Controller contract proposed in [#196](https://github.com/wouhliss/vgames/pull/196) for INT review; implementation can proceed against it.
-- [#197](https://github.com/wouhliss/vgames/pull/197) merged static SDL3 after all hosted checks and three-OS builds passed. The native version-call test and full desktop Clippy pass locally; Linux development prerequisites are documented and appended to all desktop build jobs. Native three-OS linkage and hosted checks are required before merge.
+- [#197](https://github.com/wouhliss/vgames/pull/197) merged static SDL3 after all hosted checks and three-OS builds passed. The native version-call test and full desktop Clippy pass locally; Linux development prerequisites are documented and appended to all desktop build jobs. Native three-OS linkage and all seventeen hosted checks passed before merge.
 
 ## Blockers / contract questions
 - Repository write access and email privacy are resolved; PLAY commits use the account's GitHub no-reply address.
