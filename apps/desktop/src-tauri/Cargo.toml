@@ -84,7 +84,7 @@ sqlx.workspace = true
 [target.'cfg(windows)'.dependencies]
 # Virtual Xbox 360 pad through ViGEmBus (retired upstream, still the de-facto
 # driver). Keep behind the `VirtualPadBackend` trait so it can be swapped.
-vigem-client = "0.1"
+vigem-client = { version = "0.1", features = ["unstable_xtarget_notification"] }
 # Input idle time for `away` presence (social::idle).
 windows-sys = { workspace = true, features = ["Win32_UI_Input_KeyboardAndMouse", "Win32_System_SystemInformation", "Win32_System_Threading", "Win32_System_JobObjects", "Win32_System_IO", "Win32_System_SystemServices", "Win32_System_Diagnostics_ToolHelp", "Win32_Security", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
