@@ -34,7 +34,8 @@
 - GAME-06 — PE scan, D3D check on INS's priority-files hook, Rosetta, Wine plan, hosted macos-15 job (`game/p2-wine-macos`).
 - GAME-06 — PE scan, D3D check on INS's priority-files hook, Rosetta, Wine plan, hosted macos-15 job ([#220](https://github.com/wouhliss/vgames/pull/220)).
 - GAME-07 — compat commands, per-package overrides (`0009_compat_overrides`), settings UI on the generated bindings,
-  D3D12-on-every-Mac text (`game/p2-compat-commands`); catalog `CompatProvider` next.
+  D3D12-on-every-Mac text ([#221](https://github.com/wouhliss/vgames/pull/221)); the planner as the catalog
+  `CompatProvider`, blocker text tests in the install dialog and Downloads (`game/p2-compat-provider`).
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_proto::realtime::MAX_FRAME` (64 KiB, GAME-01): the server re-exports it from `apps/api/src/realtime/mod.rs`;

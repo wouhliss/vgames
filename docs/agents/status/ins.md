@@ -146,6 +146,9 @@ Install & Library (phase 2, `docs/agents/phase-2/ins-install-library.md`).
   runs DirectX 12 yet (i18n keys `compat.d3d12OnMac`/`d3d12OnMacText`, replacing `needsAppleSilicon*`); the catalog mock
   raises `d3d12_unsupported_on_mac` on both Mac hosts. The pending `ipc/contract/catalog.ts` is removed (its types are
   in `bindings.ts`).
+- From GAME (GAME-07): `catalog::compat::CompatQuery` now also carries the selected release's `version_id` and
+  `sequence` (profiles apply per sequence; D3D scans are recorded per version), and `compat_info` takes
+  `Option<(&ReleaseInfo, Route)>`. The provider registered in `AppState::new` is the `CompatPlanner`.
 
 ## Blockers / contract questions
 - Closed (Q14): the phase-1 request "queue history needs a new migration" (`agent-2.md` → Agent 1). The launcher's

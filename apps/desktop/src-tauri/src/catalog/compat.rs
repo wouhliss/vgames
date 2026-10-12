@@ -8,7 +8,8 @@ use std::pin::Pin;
 use super::release::Route;
 use super::types::{CompatBlocker, CompatInfo, CompatRunner, CompatStatus, ProtonDbTier};
 use crate::events::PackageRef;
-use vgames_proto::packages::Platform;
+use uuid::Uuid;
+use vgames_proto::packages::{Platform, ReleaseInfo};
 
 /// What a provider is asked about.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -16,6 +17,9 @@ pub struct CompatQuery {
     pub package: PackageRef,
     /// The build that would be installed.
     pub platform: Platform,
+    /// The release that would be installed (profiles' `applies_to`, recorded D3D scans).
+    pub version_id: Uuid,
+    pub sequence: u64,
     pub route: Route,
 }
 
@@ -49,10 +53,10 @@ impl CompatProvider for NoProfiles {
 pub async fn compat_info(
     provider: &dyn CompatProvider,
     package: PackageRef,
-    selected: Option<(Platform, Route)>,
+    selected: Option<(&ReleaseInfo, Route)>,
     protondb_tier: Option<ProtonDbTier>,
 ) -> CompatInfo {
-    let Some((platform, route)) = selected else {
+    let Some((release, route)) = selected else {
         return CompatInfo::Unavailable;
     };
     let layer = match route {
@@ -64,7 +68,9 @@ pub async fn compat_info(
     let profile = provider
         .profile(CompatQuery {
             package,
-            platform,
+            platform: release.platform,
+            version_id: release.version_id,
+            sequence: u64::try_from(release.sequence).unwrap_or(0),
             route,
         })
         .await;

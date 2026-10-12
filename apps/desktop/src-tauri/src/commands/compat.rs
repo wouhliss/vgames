@@ -14,7 +14,7 @@ use vgames_core::runtimes::{Arch, Catalog, Os, RuntimeId as CoreRuntimeId};
 use crate::compat::overrides::{
     self, CompatOverride, CompatSettingsError, GraphicsBackend, RunnerVersion, RuntimeId,
 };
-use crate::compat::plan::natural_cmp;
+use crate::compat::plan::{natural_cmp, rosetta_last_macos};
 use crate::compat::runtimes::RuntimeError;
 use crate::error::AppError;
 use crate::events::PackageRef;
@@ -193,17 +193,6 @@ pub fn graphics(catalog: Option<&Catalog>, layer: Option<HostLayer>) -> Vec<Grap
     }
     out.push(GraphicsBackend::Wined3d);
     out
-}
-
-/// The last macOS release the newest Wine build supports (`rosetta_sunset`).
-pub fn rosetta_last_macos(catalog: Option<&Catalog>) -> Option<String> {
-    catalog?
-        .runtimes
-        .iter()
-        .filter(|rt| rt.id == CoreRuntimeId::WineMacos)
-        .max_by(|a, b| natural_cmp(&a.version, &b.version))
-        .and_then(|rt| rt.macos_max_supported)
-        .map(|v| v.to_string())
 }
 
 async fn catalog(state: &AppState) -> Option<std::sync::Arc<Catalog>> {

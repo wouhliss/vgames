@@ -151,6 +151,8 @@ impl AppState {
             Arc::new(crate::compat::preflight::System),
             crate::launch::orchestrate::host_platform(),
         ));
+        // Package details show what a launch would do (GAME-07).
+        catalog.set_compat_provider(Arc::clone(&planner) as _);
         if !launcher.hooks().register_plan_source(planner) {
             tracing::warn!("a launch plan source was already registered");
         }

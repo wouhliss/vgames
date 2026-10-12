@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use vgames_core::compat::{CompatProfile, Target};
+use vgames_core::compat::{CompatProfile, RunnerKind, Target};
 use vgames_core::manifest::Platform;
 use vgames_core::runtimes::{Arch, Catalog, Os, Runtime, RuntimeId};
 use vgames_core::verify::ExpectedRelease;
@@ -35,6 +35,28 @@ pub const WINETRICKS_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 const WINETRICKS_DONE: &str = ".vgames-winetricks";
 /// Default Proton preference when the profile names none (09 §4).
 const DEFAULT_PROTON: [RuntimeId; 2] = [RuntimeId::UmuProton, RuntimeId::GeProton];
+
+/// The runner `plan_for` uses for a build on a host (`installs_list`'s `compat` layer agrees).
+pub const fn runner_for(host: Option<Platform>, build: Platform) -> Option<RunnerKind> {
+    match (host, build) {
+        (Some(Platform::LinuxX86_64), Platform::WindowsX86_64) => Some(RunnerKind::Proton),
+        (Some(Platform::MacosAarch64 | Platform::MacosX86_64), Platform::WindowsX86_64) => {
+            Some(RunnerKind::Wine)
+        }
+        _ => None,
+    }
+}
+
+/// The last macOS release the newest Wine build supports (`rosetta_sunset`).
+pub fn rosetta_last_macos(catalog: Option<&Catalog>) -> Option<String> {
+    catalog?
+        .runtimes
+        .iter()
+        .filter(|rt| rt.id == RuntimeId::WineMacos)
+        .max_by(|a, b| natural_cmp(&a.version, &b.version))
+        .and_then(|rt| rt.macos_max_supported)
+        .map(|v| v.to_string())
+}
 
 fn unavailable(detail: impl Into<String>) -> LaunchError {
     LaunchError::CompatUnavailable {
@@ -81,18 +103,16 @@ impl<S: ProfileSource, P: Probes + Send + Sync + 'static> CompatPlanner<S, P> {
         release: &ExpectedRelease,
         executable: &Path,
     ) -> Result<LaunchPlan, LaunchError> {
-        match (self.host, release.platform) {
-            (Some(Platform::LinuxX86_64), Platform::WindowsX86_64) => {
-                self.proton(package, release).await.map(LaunchPlan::Proton)
-            }
-            (Some(Platform::MacosAarch64 | Platform::MacosX86_64), Platform::WindowsX86_64) => self
+        match runner_for(self.host, release.platform) {
+            Some(RunnerKind::Proton) => self.proton(package, release).await.map(LaunchPlan::Proton),
+            Some(RunnerKind::Wine) => self
                 .wine(package, release, executable)
                 .await
                 .map(LaunchPlan::Wine),
-            (host, build) => Err(unavailable(format!(
+            None => Err(unavailable(format!(
                 "This {} build cannot run on {} yet.",
-                build.as_str(),
-                host.map_or("this computer", |h| h.as_str())
+                release.platform.as_str(),
+                self.host.map_or("this computer", |h| h.as_str())
             ))),
         }
     }
@@ -487,6 +507,7 @@ async fn winetricks(plan: &ProtonPlan, verbs: &[String]) -> Result<(), LaunchErr
     Ok(())
 }
 
+mod provider;
 mod wine;
 
 #[cfg(test)]
