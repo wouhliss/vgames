@@ -130,6 +130,7 @@ pub const MAIN_WINDOW_COMMANDS: &[&str] = &[
     "compat_override_reset",
     "compat_licenses",
     "rosetta_install",
+    "open_external_url",
 ];
 
 /// Commands the in-game overlay window may call. Only `overlay_*` commands

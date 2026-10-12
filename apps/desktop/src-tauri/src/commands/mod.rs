@@ -7,6 +7,7 @@
 pub(crate) mod account;
 mod app;
 mod app_diagnostics;
+mod app_external;
 mod appearance;
 mod catalog;
 mod collections;
@@ -160,6 +161,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             compat::compat_override_reset,
             compat::compat_licenses,
             compat::rosetta_install,
+            app_external::open_external_url,
         ])
         .events(tauri_specta::collect_events![
             GameStarted,
