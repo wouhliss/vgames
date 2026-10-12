@@ -9,6 +9,7 @@ mod app;
 mod appearance;
 mod catalog;
 mod collections;
+mod controller_drivers;
 mod controllers;
 mod downloads;
 mod games;
@@ -148,7 +149,8 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             publishing::publish_release,
             publishing::version_yank,
             appearance::appearance_get,
-            appearance::appearance_set
+            appearance::appearance_set,
+            controller_drivers::controllers_driver_status
         ])
         .events(tauri_specta::collect_events![
             GameStarted,
