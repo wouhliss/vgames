@@ -3,6 +3,7 @@
 //! build on these.
 
 pub mod decision;
+pub mod idle;
 pub mod mapping;
 
 #[cfg(test)]
