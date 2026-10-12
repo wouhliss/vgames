@@ -18,7 +18,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",
-    "@redocly/cli": "^2.57.0",
+    "@redocly/cli": "^2.62.1",
     "typescript": "^7.0.2"
   }
 }
