@@ -8,7 +8,7 @@ use tempfile::TempDir;
 use super::*;
 use crate::launch::PreparedLaunch;
 
-fn game(mode: &str) -> (TempDir, PreparedLaunch) {
+pub(super) fn game(mode: &str) -> (TempDir, PreparedLaunch) {
     let dir = tempfile::tempdir().unwrap();
     let launch = crate::launch::testgame::launch(dir.path(), mode);
     (dir, launch)
@@ -20,7 +20,7 @@ fn wait_in_thread(game: RunningGame) -> mpsc::Receiver<Option<GameExit>> {
     rx
 }
 
-fn wait_for_file(path: &Path) {
+pub(super) fn wait_for_file(path: &Path) {
     let deadline = Instant::now() + Duration::from_secs(10);
     while !path.exists() {
         assert!(

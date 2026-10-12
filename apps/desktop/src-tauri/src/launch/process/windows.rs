@@ -23,10 +23,10 @@ use windows_sys::Win32::System::JobObjects::{
 };
 use windows_sys::Win32::System::SystemServices::JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO;
 use windows_sys::Win32::System::Threading::{
-    CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT, CreateProcessW, GetExitCodeProcess,
+    CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT, CreateEventW, CreateProcessW, GetExitCodeProcess,
     GetProcessTimes, INFINITE, OpenProcess, PROCESS_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION,
     PROCESS_SET_QUOTA, PROCESS_SYNCHRONIZE, PROCESS_TERMINATE, ResumeThread, STARTUPINFOW,
-    TerminateProcess, WaitForSingleObject,
+    SetEvent, TerminateProcess, WaitForMultipleObjects, WaitForSingleObject,
 };
 
 use super::{GameExit, ProcessError, ProcessIdentity, SuspendedProcess, windows_args};
@@ -42,14 +42,18 @@ pub(super) struct Game {
     thread: Option<Arc<OwnedHandle>>,
     job: Arc<OwnedHandle>,
     port: Arc<OwnedHandle>,
+    cancel_event: Arc<OwnedHandle>,
     cancelled: Arc<AtomicBool>,
     finished: Arc<AtomicBool>,
     reattached: bool,
+    #[cfg(test)]
+    final_wait_entered: Arc<AtomicBool>,
 }
 
 #[derive(Clone)]
 pub(super) struct Canceller {
     port: Arc<OwnedHandle>,
+    event: Arc<OwnedHandle>,
     cancelled: Arc<AtomicBool>,
 }
 
@@ -73,7 +77,7 @@ impl Game {
             windows_args::wide(launch.working_dir.as_os_str()).map_err(ProcessError::Spawn)?;
         let mut command = windows_args::command_line(launch).map_err(ProcessError::Spawn)?;
         let environment = windows_args::environment(launch).map_err(ProcessError::Spawn)?;
-        let (job, port) = new_job().map_err(ProcessError::Track)?;
+        let (job, port, cancel_event) = new_job().map_err(ProcessError::Track)?;
         let startup = STARTUPINFOW {
             cb: u32::try_from(std::mem::size_of::<STARTUPINFOW>()).expect("Win32 structure size"),
             ..Default::default()
@@ -112,9 +116,12 @@ impl Game {
             thread: Some(thread),
             job,
             port,
+            cancel_event,
             cancelled: Arc::new(AtomicBool::new(false)),
             finished: Arc::new(AtomicBool::new(false)),
             reattached: false,
+            #[cfg(test)]
+            final_wait_entered: Arc::new(AtomicBool::new(false)),
         };
         game.identity.start_time = creation_time(&game.process).map_err(ProcessError::Track)?;
         assign(&game.job, &game.process).map_err(ProcessError::Track)?;
@@ -172,13 +179,10 @@ impl Game {
             return if absent {
                 Ok(None)
             } else {
-                Err(ProcessError::Track(error))
+                Err(track_error("open re-attach query handle", error))
             };
         }
         let process = Arc::new(own(handle).map_err(ProcessError::Track)?);
-        if creation_time(&process).map_err(ProcessError::Track)? != identity.start_time {
-            return Ok(None);
-        }
         #[allow(unsafe_code)]
         // SAFETY: the owned process handle supports synchronization; zero never blocks.
         let state = unsafe { WaitForSingleObject(raw(&process), 0) };
@@ -187,6 +191,11 @@ impl Game {
         }
         if state == u32::MAX {
             return Err(ProcessError::Track(io::Error::last_os_error()));
+        }
+        if creation_time(&process).map_err(|error| track_error("read re-attach identity", error))?
+            != identity.start_time
+        {
+            return Ok(None);
         }
         // Only a verified live process needs the mutation rights required for
         // assignment. Windows can deny SET_QUOTA for an exited process even
@@ -210,25 +219,29 @@ impl Game {
             if unsafe { WaitForSingleObject(raw(&process), 0) } == 0 {
                 return Ok(None);
             }
-            return Err(ProcessError::Track(error));
+            return Err(track_error("open re-attach assignment handle", error));
         }
         let process = Arc::new(own(handle).map_err(ProcessError::Track)?);
         if creation_time(&process).map_err(ProcessError::Track)? != identity.start_time {
             return Ok(None);
         }
-        let (job, port) = new_job().map_err(ProcessError::Track)?;
-        assign(&job, &process).map_err(ProcessError::Track)?;
+        let (job, port, cancel_event) = new_job().map_err(ProcessError::Track)?;
+        assign(&job, &process).map_err(|error| track_error("assign re-attach job", error))?;
         // New descendants inherit this job; existing descendants must be adopted too.
-        adopt_children(&job, identity).map_err(ProcessError::Track)?;
+        adopt_children(&job, identity)
+            .map_err(|error| track_error("adopt re-attach children", error))?;
         Ok(Some(Self {
             identity,
             process,
             thread: None,
             job,
             port,
+            cancel_event,
             cancelled: Arc::new(AtomicBool::new(false)),
             finished: Arc::new(AtomicBool::new(false)),
             reattached: true,
+            #[cfg(test)]
+            final_wait_entered: Arc::new(AtomicBool::new(false)),
         }))
     }
 
@@ -239,6 +252,7 @@ impl Game {
     pub(super) fn canceller(&self) -> Canceller {
         Canceller {
             port: self.port.clone(),
+            event: self.cancel_event.clone(),
             cancelled: self.cancelled.clone(),
         }
     }
@@ -261,6 +275,25 @@ impl Game {
             // Completion packets can precede our first wait, and Windows documents
             // job notifications as a hint. Confirm every zero message with accounting.
             if active_processes(&self.job).map_err(ProcessError::Track)? == 0 {
+                // Job accounting/notifications can reach zero before the
+                // process object finishes termination. Confirm the leader's
+                // signaled state before exit callbacks or further re-attach.
+                let handles = [raw(&self.process), raw(&self.cancel_event)];
+                #[cfg(test)]
+                self.final_wait_entered.store(true, Ordering::Release);
+                #[allow(unsafe_code)]
+                // SAFETY: both owned synchronization handles remain live;
+                // cancellation wakes this indefinite wait through SetEvent.
+                let state = unsafe { WaitForMultipleObjects(2, handles.as_ptr(), 0, INFINITE) };
+                if state == 1 || self.cancelled.load(Ordering::Acquire) {
+                    return Ok(None);
+                }
+                if state == u32::MAX {
+                    return Err(ProcessError::Track(io::Error::last_os_error()));
+                }
+                if state != 0 {
+                    return Err(ProcessError::Track(io::ErrorKind::InvalidData.into()));
+                }
                 self.finished.store(true, Ordering::Release);
                 if self.reattached {
                     return Ok(Some(GameExit::Unknown));
@@ -319,6 +352,11 @@ impl Canceller {
     pub(super) fn cancel(&self) {
         self.cancelled.store(true, Ordering::Release);
         #[allow(unsafe_code)]
+        // SAFETY: the owned manual-reset event wakes the final process wait.
+        if unsafe { SetEvent(raw(&self.event)) } == 0 {
+            tracing::warn!("cannot signal Windows game tracker cancellation");
+        }
+        #[allow(unsafe_code)]
         // SAFETY: posts an opaque packet to our owned port; no pointer is dereferenced.
         let ok = unsafe { PostQueuedCompletionStatus(raw(&self.port), 0, CANCEL_KEY, null()) };
         if ok == 0 {
@@ -357,7 +395,14 @@ fn own(handle: HANDLE) -> io::Result<OwnedHandle> {
     Ok(unsafe { OwnedHandle::from_raw_handle(handle) })
 }
 
-fn new_job() -> io::Result<(Arc<OwnedHandle>, Arc<OwnedHandle>)> {
+fn track_error(stage: &str, error: io::Error) -> ProcessError {
+    ProcessError::Track(io::Error::new(error.kind(), format!("{stage}: {error}")))
+}
+
+fn new_job() -> io::Result<(Arc<OwnedHandle>, Arc<OwnedHandle>, Arc<OwnedHandle>)> {
+    #[allow(unsafe_code)]
+    // SAFETY: null security/name creates a private, non-inherited manual-reset event.
+    let cancel_event = Arc::new(own(unsafe { CreateEventW(null(), 1, 0, null()) })?);
     #[allow(unsafe_code)]
     // SAFETY: null security/name pointers create a private, non-inherited unnamed job.
     let job = Arc::new(own(unsafe { CreateJobObjectW(null(), null()) })?);
@@ -385,7 +430,7 @@ fn new_job() -> io::Result<(Arc<OwnedHandle>, Arc<OwnedHandle>)> {
     if ok == 0 {
         return Err(io::Error::last_os_error());
     }
-    Ok((job, port))
+    Ok((job, port, cancel_event))
 }
 
 fn assign(job: &OwnedHandle, process: &OwnedHandle) -> io::Result<()> {
@@ -534,4 +579,50 @@ fn adopt_children(job: &OwnedHandle, leader: ProcessIdentity) -> io::Result<()> 
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::launch::process::tests::{game, wait_for_file};
+    use std::sync::mpsc;
+    use std::thread;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn zero_job_accounting_still_waits_for_process_exit_and_can_cancel() {
+        let (dir, launch) = game("wait");
+        let mut running = Game::spawn(&launch).unwrap();
+        wait_for_file(&dir.path().join("ready"));
+        let killer = running.killer();
+        let cancel = running.canceller();
+        let process = running.process.clone();
+        let entered = running.final_wait_entered.clone();
+        // Model the ordering boundary deterministically: job accounting is
+        // already zero but the owned leader handle has not been signaled.
+        let (empty_job, empty_port, _) = new_job().unwrap();
+        running.job = empty_job;
+        running.port = empty_port;
+        let (tx, result) = mpsc::channel();
+        thread::spawn(move || tx.send(running.wait()).unwrap());
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !entered.load(Ordering::Acquire) {
+            assert!(Instant::now() < deadline, "final process wait not entered");
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert!(result.recv_timeout(Duration::from_millis(50)).is_err());
+        cancel.cancel();
+        assert_eq!(
+            result
+                .recv_timeout(Duration::from_secs(10))
+                .unwrap()
+                .unwrap(),
+            None
+        );
+        #[allow(unsafe_code)]
+        // SAFETY: the owned synchronization handle remains valid; zero never blocks.
+        let state = unsafe { WaitForSingleObject(raw(&process), 0) };
+        assert_eq!(state, windows_sys::Win32::Foundation::WAIT_TIMEOUT);
+        killer.terminate(true).unwrap();
+    }
 }
