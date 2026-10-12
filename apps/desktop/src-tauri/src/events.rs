@@ -192,6 +192,76 @@ pub struct LibrariesChanged {}
 #[derive(Debug, Clone, Default, Serialize, Deserialize, Type, tauri_specta::Event)]
 pub struct CollectionsChanged {}
 
+/// Debounced controller navigation intent.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, tauri_specta::Event)]
+pub struct UiNav {
+    pub action: crate::controllers::navigation::NavAction,
+    pub controller: ControllerKind,
+    pub repeat: bool,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, Type, tauri_specta::Event)]
+pub struct ActiveControllerChanged {
+    pub controller: Option<ControllerKind>,
+}
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Type, tauri_specta::Event)]
+pub struct PadsChanged {}
+#[derive(Debug, Clone, Serialize, Deserialize, Type, tauri_specta::Event)]
+pub struct ControllerTesterState {
+    pub subscription_id: uuid::Uuid,
+    pub instance_id: u32,
+    pub buttons: Vec<crate::controllers::mapping::Button>,
+    pub left: (i16, i16),
+    pub right: (i16, i16),
+    pub left_trigger: i16,
+    pub right_trigger: i16,
+}
+
+/// Routes controller output to the shared bus, including the existing Guide
+/// event consumed by the overlay. No SDL handle crosses this boundary.
+pub fn controller_output(bus: &EventBus, output: crate::controllers::routing::Output) {
+    use crate::controllers::routing::Output;
+    let event = match output {
+        Output::Navigation {
+            action,
+            controller,
+            repeat,
+        } => AppEvent::UiNav(UiNav {
+            action,
+            controller,
+            repeat,
+        }),
+        Output::ActiveControllerChanged(controller) => {
+            AppEvent::ActiveControllerChanged(ActiveControllerChanged { controller })
+        }
+        Output::Connected(pad) => AppEvent::Controller(ControllerEvent {
+            instance_id: pad.instance_id,
+            change: ControllerChange::Connected {
+                controller: pad.kind,
+                name: pad.name,
+            },
+        }),
+        Output::Disconnected(instance_id) => AppEvent::Controller(ControllerEvent {
+            instance_id,
+            change: ControllerChange::Disconnected,
+        }),
+        Output::GuideHeld(instance_id) => AppEvent::Controller(ControllerEvent {
+            instance_id,
+            change: ControllerChange::GuideHeld,
+        }),
+        Output::PadsChanged => AppEvent::PadsChanged(PadsChanged {}),
+        Output::Tester(state) => AppEvent::ControllerTesterState(ControllerTesterState {
+            subscription_id: state.subscription_id,
+            instance_id: state.instance_id,
+            buttons: state.buttons,
+            left: state.left,
+            right: state.right,
+            left_trigger: state.left_trigger,
+            right_trigger: state.right_trigger,
+        }),
+    };
+    bus.publish(event);
+}
+
 /// Everything published on the internal bus.
 #[derive(Debug, Clone)]
 pub enum AppEvent {
@@ -218,6 +288,10 @@ pub enum AppEvent {
     LibrariesChanged(LibrariesChanged),
     /// A publishing job moved (INS-06).
     PublishProgress(crate::publishing::PublishProgress),
+    UiNav(UiNav),
+    ActiveControllerChanged(ActiveControllerChanged),
+    PadsChanged(PadsChanged),
+    ControllerTesterState(ControllerTesterState),
 }
 
 /// Cloneable handle to the internal broadcast bus.
@@ -276,6 +350,10 @@ pub fn spawn_ui_bridge<R: Runtime>(app: AppHandle<R>, bus: &EventBus, shutdown: 
                 Ok(AppEvent::CollectionsChanged(e)) => e.emit(&app),
                 Ok(AppEvent::LibrariesChanged(e)) => e.emit(&app),
                 Ok(AppEvent::PublishProgress(e)) => e.emit(&app),
+                Ok(AppEvent::UiNav(e)) => e.emit(&app),
+                Ok(AppEvent::ActiveControllerChanged(e)) => e.emit(&app),
+                Ok(AppEvent::PadsChanged(e)) => e.emit(&app),
+                Ok(AppEvent::ControllerTesterState(e)) => e.emit(&app),
                 Err(broadcast::error::RecvError::Lagged(skipped)) => {
                     tracing::warn!(skipped, "UI event bridge lagged");
                     Ok(())
@@ -353,5 +431,74 @@ mod tests {
         };
         let json = serde_json::to_value(&event).unwrap();
         assert_eq!(json["change"]["controller"], "switch_pro");
+    }
+}
+
+#[cfg(test)]
+mod controller_routing_tests {
+    use super::*;
+    use crate::controllers::navigation::NavAction;
+    use crate::controllers::routing::{Output, TesterState};
+
+    #[test]
+    fn controller_output_preserves_navigation_guide_and_tester_scope() {
+        let bus = EventBus::new();
+        let mut received = bus.subscribe();
+        controller_output(
+            &bus,
+            Output::Navigation {
+                action: NavAction::Accept,
+                controller: ControllerKind::Dualsense,
+                repeat: false,
+            },
+        );
+        let AppEvent::UiNav(nav) = received.try_recv().unwrap() else {
+            panic!("navigation event")
+        };
+        assert_eq!(
+            serde_json::to_value(nav).unwrap(),
+            serde_json::json!({
+                "action": "accept", "controller": "dualsense", "repeat": false,
+            })
+        );
+        controller_output(&bus, Output::GuideHeld(19));
+        assert!(matches!(
+            received.try_recv().unwrap(),
+            AppEvent::Controller(ControllerEvent {
+                instance_id: 19,
+                change: ControllerChange::GuideHeld,
+            })
+        ));
+        let subscription = uuid::Uuid::new_v4();
+        controller_output(
+            &bus,
+            Output::Tester(TesterState {
+                subscription_id: subscription,
+                instance_id: 19,
+                buttons: vec![crate::controllers::mapping::Button::South],
+                left: (-32768, 32767),
+                right: (0, 0),
+                left_trigger: 0,
+                right_trigger: 32767,
+            }),
+        );
+        let AppEvent::ControllerTesterState(state) = received.try_recv().unwrap() else {
+            panic!("tester event")
+        };
+        assert_eq!(state.subscription_id, subscription);
+        assert_eq!(state.instance_id, 19);
+        assert_eq!(state.left, (-32768, 32767));
+        assert_eq!(
+            serde_json::to_value(state).unwrap()["buttons"],
+            serde_json::json!(["south"])
+        );
+        controller_output(&bus, Output::ActiveControllerChanged(None));
+        let AppEvent::ActiveControllerChanged(active) = received.try_recv().unwrap() else {
+            panic!("active event")
+        };
+        assert_eq!(
+            serde_json::to_value(active).unwrap(),
+            serde_json::json!({"controller": null})
+        );
     }
 }
