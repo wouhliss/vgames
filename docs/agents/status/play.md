@@ -1,11 +1,12 @@
 # PLAY status
 
 ## Done
+- PLAY-03: macOS process-group/kqueue backend merged in [#195](https://github.com/wouhliss/vgames/pull/195) after all seventeen hosted checks passed, including native process/orchestrator tests, the blocking-kqueue regression and three-OS release builds.
 - PLAY-02: Windows suspended spawn, bounded pre-resume, UTF-16 inputs, completion-port job tracking and stop merged in [#194](https://github.com/wouhliss/vgames/pull/194). All seventeen hosted checks passed on current main, including native Windows regressions and three-OS release builds. Final exit waits for the leader signal and releases completed stop handles; the post-exit re-attach and cancellable final-wait regressions pass.
 - PLAY-01: ordered launch hooks, cancellable compatibility plans and session-owned exit callbacks merged in [#193](https://github.com/wouhliss/vgames/pull/193). Every hosted check passed on Windows, Linux and macOS, including the launcher browser performance test.
 
 ## In progress
-- PLAY-03: implemented macOS process-group tracking with kqueue, PID/start-time validation, child discovery, whole-group stop and cancellation without killing. Portable process/orchestrator fixtures now run on macOS; added a native idle-wakeup measurement. Cross-target Clippy passes and all 54 Linux launch regressions pass (one existing benchmark ignored). The native macOS suite passed, including the idle-wakeup measurement; fresh full validation runs after inheriting the latest Windows fix. Rebased onto merged PLAY-02/current main; #195 is retargeted to main for fresh validation.
+
 
 ## Interfaces delivered (other agents may now rely on these)
 - Inherited from Agent 2: verified launch targets and environment preparation (`launch::{target,plan,prelaunch}`), Linux pidfd/process-group tracking, session records and playtime, the typed event bus, SQLite worker/migration/settings APIs, strict deep-link parsing and shortcut files. Phase-1 status stays unchanged.
@@ -18,6 +19,7 @@
 - `play/p2-controller-ipc` defines pad metadata, profile/settings commands, tester selection and pad/tester events in `contract/controllers.ts`, with typed mock driver states and restart persistence. Four mock regressions, all 296 desktop UI tests, desktop typecheck and workspace lint pass. Local repository policy/security gates pass; hosted validation pending. Rust service and Settings screen follow separately, then these pending entries are removed in favor of generated bindings.
 
 ## PLAY-04 prerequisites
+- #198 fresh CI exposed an existing integration test assuming game startup/exit completes within the three-second cooldown. Launch/exit remains tested; cooldown rejection, exact expiry and non-extension by rejected attempts now have a deterministic monotonic-clock regression.
 - Controller contract proposed in [#196](https://github.com/wouhliss/vgames/pull/196) for INT review; implementation can proceed against it.
 - [#197](https://github.com/wouhliss/vgames/pull/197) merged static SDL3 after all hosted checks and three-OS builds passed. The native version-call test and full desktop Clippy pass locally; Linux development prerequisites are documented and appended to all desktop build jobs. Native three-OS linkage and hosted checks are required before merge.
 
