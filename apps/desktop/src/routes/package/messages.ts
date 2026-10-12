@@ -5,7 +5,7 @@ import type { CompatBlocker, InstallStartError } from "../../ipc";
 export function blockerText(blocker: CompatBlocker): string {
   switch (blocker.kind) {
     case "d3d12_unsupported_on_mac":
-      return t("compat.needsAppleSilicon");
+      return t("compat.d3d12OnMac");
     case "needs_rosetta":
       return t("compat.needsRosetta");
     case "rosetta_sunset":

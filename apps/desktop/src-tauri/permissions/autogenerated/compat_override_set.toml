@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-compat-override-set"
+description = "Enables the compat_override_set command without any pre-configured scope."
+commands.allow = ["compat_override_set"]
+
+[[permission]]
+identifier = "deny-compat-override-set"
+description = "Denies the compat_override_set command without any pre-configured scope."
+commands.deny = ["compat_override_set"]

@@ -10,6 +10,7 @@ mod app_diagnostics;
 mod appearance;
 mod catalog;
 mod collections;
+mod compat;
 mod controllers;
 mod downloads;
 mod games;
@@ -150,7 +151,15 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             publishing::version_yank,
             appearance::appearance_get,
             appearance::appearance_set,
-            app_diagnostics::app_diagnostics
+            app_diagnostics::app_diagnostics,
+            compat::compat_overview,
+            compat::compat_default_set,
+            compat::runtime_remove,
+            compat::compat_packages,
+            compat::compat_override_set,
+            compat::compat_override_reset,
+            compat::compat_licenses,
+            compat::rosetta_install,
         ])
         .events(tauri_specta::collect_events![
             GameStarted,

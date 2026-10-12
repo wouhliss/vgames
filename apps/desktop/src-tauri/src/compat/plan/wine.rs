@@ -114,7 +114,22 @@ impl<S: ProfileSource, P: Probes + Send + Sync + 'static> CompatPlanner<S, P> {
             None,
         )
         .ok_or_else(|| unavailable("No Wine build is listed for this Mac."))?;
-        let chain = graphics_chain(profile.as_ref());
+        let local = self.local_settings(package).await;
+        let wine_rt = local
+            .runner
+            .as_ref()
+            .and_then(|chosen| {
+                super::exact(&catalog, chosen, Os::Macos, Arch::X86_64, version)
+                    .filter(|rt| rt.id == RuntimeId::WineMacos)
+            })
+            .unwrap_or(wine_rt);
+        let mut chain = graphics_chain(profile.as_ref());
+        if let Some(chosen) = local.graphics.map(Graphics::from)
+            && chosen != Graphics::D3dmetal
+        {
+            chain.retain(|g| *g != chosen);
+            chain.insert(0, chosen);
+        }
         let (graphics, backend_rt) = chain
             .iter()
             .filter(|g| serves(**g, &imports))
@@ -162,10 +177,7 @@ impl<S: ProfileSource, P: Probes + Send + Sync + 'static> CompatPlanner<S, P> {
             }
             overrides.push_str(&extra);
         }
-        let env = profile
-            .as_ref()
-            .map(|p| p.runner.env.clone())
-            .unwrap_or_default();
+        let env = super::merged_env(profile.as_ref(), &local);
         Ok(WinePlan {
             wine,
             prefix,

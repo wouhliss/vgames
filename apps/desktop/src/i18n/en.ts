@@ -433,9 +433,9 @@ export const en = {
     },
     nativeText: "There's a version made for this computer.",
     rosettaText: "This is the Intel Mac version. It runs through Rosetta 2 on Apple silicon.",
-    needsAppleSilicon: "DirectX 12 games need a Mac with Apple silicon.",
-    needsAppleSiliconText:
-      "This game uses DirectX 12, which only runs on Macs with Apple silicon (M1 or newer).",
+    d3d12OnMac: "DirectX 12 games don't run on a Mac yet.",
+    d3d12OnMacText:
+      "This game uses DirectX 12, which the launcher can't run on any Mac for now. It runs on Windows and Linux.",
     needsRosetta: "Needs Rosetta 2",
     needsRosettaText:
       "Rosetta 2 lets Apple silicon Macs run apps made for Intel Macs. macOS installs it in a minute.",
@@ -1138,7 +1138,6 @@ export const en = {
       graphicsLabel: "Graphics",
       graphics: { d3dmetal: "D3DMetal", dxmt: "DXMT", dxvk: "DXVK", wined3d: "WineD3D" },
       graphicsText: {
-        d3dmetal: "From Apple. Runs DirectX 11 and 12.",
         dxmt: "Open source. Runs DirectX 10 and 11.",
         dxvk: "Open source, through Vulkan. Runs DirectX 10 and 11.",
         wined3d: "Built into Wine. For older games (DirectX 9 and earlier).",

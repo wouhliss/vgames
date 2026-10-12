@@ -674,3 +674,149 @@ mod wine {
         );
     }
 }
+
+mod overrides {
+    use super::*;
+    use crate::compat::overrides::{
+        self, CompatOverride, GraphicsBackend, RunnerVersion, RuntimeId as Id,
+    };
+
+    async fn proton_plan(r: &Rig) -> crate::launch::ProtonPlan {
+        match r
+            .planner
+            .plan_for(
+                PACKAGE,
+                &release(Platform::WindowsX86_64),
+                Path::new("/games/x/Game.exe"),
+            )
+            .await
+            .unwrap()
+        {
+            LaunchPlan::Proton(plan) => plan,
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn the_players_runner_and_env_win_and_unknown_versions_fall_back() {
+        let r = rig().await;
+        *r.profiles.0.lock().unwrap() = vec![signed_profile(serde_json::json!({
+            "kind": "proton", "env": {"DXVK_HUD": "fps", "A": "profile"}
+        }))];
+        // Default runner: GE-Proton for every package.
+        overrides::set_default_runner(
+            &r.planner.db,
+            Some(RunnerVersion {
+                runtime: Id::GeProton,
+                version: "GE-Proton10-17".into(),
+            }),
+        )
+        .await
+        .unwrap();
+        assert!(
+            proton_plan(&r)
+                .await
+                .proton_path
+                .ends_with("GE-Proton10-17")
+        );
+
+        // This package's override wins, and its env is added after the profile's.
+        overrides::set(
+            &r.planner.db,
+            PACKAGE,
+            &CompatOverride {
+                runner: Some(RunnerVersion {
+                    runtime: Id::UmuProton,
+                    version: "UMU-Proton-9.0-3".into(),
+                }),
+                graphics: None,
+                env: [("A".to_owned(), "mine".to_owned())].into(),
+            },
+        )
+        .await
+        .unwrap();
+        let plan = proton_plan(&r).await;
+        assert!(
+            plan.proton_path.ends_with("UMU-Proton-9.0-3"),
+            "{}",
+            plan.proton_path.display()
+        );
+        assert_eq!(plan.env.get("A").map(String::as_str), Some("mine"));
+        assert_eq!(plan.env.get("DXVK_HUD").map(String::as_str), Some("fps"));
+
+        // A version the catalog no longer lists: automatic choice.
+        overrides::set(
+            &r.planner.db,
+            PACKAGE,
+            &CompatOverride {
+                runner: Some(RunnerVersion {
+                    runtime: Id::UmuProton,
+                    version: "gone".into(),
+                }),
+                ..CompatOverride::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert!(
+            proton_plan(&r)
+                .await
+                .proton_path
+                .ends_with("UMU-Proton-9.0-4e")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_launcher_owned_key_planted_in_storage_never_reaches_the_plan() {
+        let r = rig().await;
+        let (server, package) = (
+            PACKAGE.server_id.to_string(),
+            PACKAGE.package_id.to_string(),
+        );
+        r.planner
+            .db
+            .call(move |conn| {
+                conn.execute(
+                    "INSERT INTO compat_overrides (server_id, package_id, env, updated_at)
+                     VALUES (?1, ?2, '{\"WINEPREFIX\":\"/tmp/evil\",\"OK\":\"1\"}', 0)",
+                    [server, package],
+                )?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        let plan = proton_plan(&r).await;
+        assert!(!plan.env.contains_key("WINEPREFIX"));
+        assert_eq!(plan.env.get("OK").map(String::as_str), Some("1"));
+    }
+
+    #[tokio::test]
+    async fn the_players_graphics_backend_goes_first_on_a_mac() {
+        let r = rig_for(Platform::MacosAarch64).await;
+        overrides::set(
+            &r.planner.db,
+            PACKAGE,
+            &CompatOverride {
+                graphics: Some(GraphicsBackend::Wined3d),
+                ..CompatOverride::default()
+            },
+        )
+        .await
+        .unwrap();
+        let exe = r.data.join("Game.exe");
+        std::fs::write(
+            &exe,
+            crate::compat::pe::tests::pe(&["d3d11.dll"], &[], false),
+        )
+        .unwrap();
+        let LaunchPlan::Wine(plan) = r
+            .planner
+            .plan_for(PACKAGE, &release(Platform::WindowsX86_64), &exe)
+            .await
+            .unwrap()
+        else {
+            panic!("not a Wine plan");
+        };
+        assert_eq!(plan.graphics, vgames_core::compat::Graphics::Wined3d);
+    }
+}

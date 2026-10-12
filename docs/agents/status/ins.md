@@ -142,6 +142,10 @@ Install & Library (phase 2, `docs/agents/phase-2/ins-install-library.md`).
   (`downloads.set_priority_hook`). It asks for the launch executables first only for a Windows build on a Mac, scans
   their PE imports on a blocking thread and refuses D3D12 with `CompatBlocker::D3d12UnsupportedOnMac`; the scan is
   recorded per (server, package, version) in `compat_d3d_scans` (launcher migration `0008_compat_d3d`).
+- From GAME (GAME-07): the D3D12 blocker text in `routes/package/messages.ts` and `CompatPanel.tsx` now says no Mac
+  runs DirectX 12 yet (i18n keys `compat.d3d12OnMac`/`d3d12OnMacText`, replacing `needsAppleSilicon*`); the catalog mock
+  raises `d3d12_unsupported_on_mac` on both Mac hosts. The pending `ipc/contract/catalog.ts` is removed (its types are
+  in `bindings.ts`).
 
 ## Blockers / contract questions
 - Closed (Q14): the phase-1 request "queue history needs a new migration" (`agent-2.md` → Agent 1). The launcher's

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-compat-packages"
+description = "Enables the compat_packages command without any pre-configured scope."
+commands.allow = ["compat_packages"]
+
+[[permission]]
+identifier = "deny-compat-packages"
+description = "Denies the compat_packages command without any pre-configured scope."
+commands.deny = ["compat_packages"]

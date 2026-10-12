@@ -115,6 +115,14 @@
     "allow-controllers-profile-set",
     "allow-appearance-get",
     "allow-appearance-set",
-    "allow-app-diagnostics"
+    "allow-app-diagnostics",
+    "allow-compat-overview",
+    "allow-compat-default-set",
+    "allow-runtime-remove",
+    "allow-compat-packages",
+    "allow-compat-override-set",
+    "allow-compat-override-reset",
+    "allow-compat-licenses",
+    "allow-rosetta-install"
   ]
 }

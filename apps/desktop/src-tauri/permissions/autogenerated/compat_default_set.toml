@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-compat-default-set"
+description = "Enables the compat_default_set command without any pre-configured scope."
+commands.allow = ["compat_default_set"]
+
+[[permission]]
+identifier = "deny-compat-default-set"
+description = "Denies the compat_default_set command without any pre-configured scope."
+commands.deny = ["compat_default_set"]

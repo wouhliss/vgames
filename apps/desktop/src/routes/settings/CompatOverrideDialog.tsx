@@ -22,6 +22,7 @@ import {
   findRunner,
   formatEnv,
   isDefaultOverride,
+  offeredBackends,
   parseEnv,
   runnerLabel,
   runnerValue,
@@ -142,7 +143,7 @@ export function CompatOverrideDialog({
           </p>
         ) : null}
         <Select
-          label={t(`settings.compat.runner.${pkg.layer}`)}
+          label={t(`settings.compat.runner.${pkg.layer === "wine" ? "wine" : "proton"}`)}
           value={runner}
           error={errors.runner ?? null}
           options={[
@@ -158,7 +159,7 @@ export function CompatOverrideDialog({
             error={errors.graphics ?? null}
             options={[
               { value: "auto", label: t("settings.compat.automatic") },
-              ...overview.graphics.map((g) => ({
+              ...offeredBackends(overview.graphics).map((g) => ({
                 value: g,
                 label: t(`settings.compat.graphics.${g}`),
                 description: t(`settings.compat.graphicsText.${g}`),

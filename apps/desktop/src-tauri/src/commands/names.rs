@@ -122,6 +122,14 @@ pub const MAIN_WINDOW_COMMANDS: &[&str] = &[
     "appearance_get",
     "appearance_set",
     "app_diagnostics",
+    "compat_overview",
+    "compat_default_set",
+    "runtime_remove",
+    "compat_packages",
+    "compat_override_set",
+    "compat_override_reset",
+    "compat_licenses",
+    "rosetta_install",
 ];
 
 /// Commands the in-game overlay window may call. Only `overlay_*` commands

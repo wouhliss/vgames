@@ -388,27 +388,31 @@ describe("package details", () => {
   });
 
   describe("blockers", () => {
-    it("blocks DirectX 12 games on an Intel Mac", async () => {
-      const { user } = setup(GARDEN, { host: "macos-x86_64" });
-      await heading("Gilded Garden");
-      const compat = screen.getByRole("region", { name: "Compatibility" });
-      expect(compat).toHaveTextContent("Runs with Wine");
-      expect(compat).toHaveTextContent(
-        "DirectX 12 games need a Mac with Apple silicon. This game uses DirectX 12",
-      );
-      const install = installButton("Gilded Garden");
-      expect(install).toHaveAttribute("aria-disabled", "true");
-      // Why, right under the button (and in the tooltip).
-      expect(install.closest("div")?.nextElementSibling).toHaveTextContent(
-        "DirectX 12 games need a Mac with Apple silicon.",
-      );
-      await user.click(install);
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-      await user.hover(install);
-      expect(await screen.findByRole("tooltip")).toHaveTextContent(
-        "DirectX 12 games need a Mac with Apple silicon.",
-      );
-    });
+    it.each(["macos-x86_64", "macos-aarch64"] as const)(
+      "blocks DirectX 12 games on every Mac (%s)",
+      async (host) => {
+        const { user } = setup(GARDEN, { host });
+        await heading("Gilded Garden");
+        const compat = screen.getByRole("region", { name: "Compatibility" });
+        expect(compat).toHaveTextContent("Runs with Wine");
+        expect(compat).toHaveTextContent(
+          "DirectX 12 games don't run on a Mac yet. This game uses DirectX 12",
+        );
+        expect(compat).not.toHaveTextContent("M1 or newer");
+        const install = installButton("Gilded Garden");
+        expect(install).toHaveAttribute("aria-disabled", "true");
+        // Why, right under the button (and in the tooltip).
+        expect(install.closest("div")?.nextElementSibling).toHaveTextContent(
+          "DirectX 12 games don't run on a Mac yet.",
+        );
+        await user.click(install);
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+        await user.hover(install);
+        expect(await screen.findByRole("tooltip")).toHaveTextContent(
+          "DirectX 12 games don't run on a Mac yet.",
+        );
+      },
+    );
 
     it("installs Rosetta 2 when it is missing, then allows the install", async () => {
       const { user, backend } = setup(FORGE, { host: "macos-aarch64", rosettaInstalled: false });

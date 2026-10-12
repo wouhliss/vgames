@@ -70,7 +70,7 @@ export interface MockPackage {
   total_size: number;
   version_label: string;
   sequence: number;
-  /** Uses Direct3D 12 (only D3DMetal runs it on a Mac, and only on Apple silicon). */
+  /** Uses Direct3D 12, which no Mac runs in v1 (`d3d12_unsupported_on_mac`). */
   d3d12: boolean;
   profile: { status: CompatStatus; notes: string | null } | null;
   protondb: ProtonDbTier | null;
@@ -220,7 +220,7 @@ function compatFor(pkg: MockPackage, state: CatalogState): CompatInfo {
     if (!state.rosettaInstalled) blockers.push({ kind: "needs_rosetta" });
     blockers.push({ kind: "rosetta_sunset", last_macos: "27" });
   }
-  if (choice.via === "wine" && state.host === "macos-x86_64" && pkg.d3d12)
+  if (choice.via === "wine" && state.host.startsWith("macos") && pkg.d3d12)
     blockers.push({ kind: "d3d12_unsupported_on_mac" });
   if (choice.via === "native") return { kind: "native" };
   if (choice.via === "rosetta") return { kind: "rosetta", blockers };
