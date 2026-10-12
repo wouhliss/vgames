@@ -5,8 +5,8 @@
 use std::io;
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
 use std::ptr::{null, null_mut};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use windows_sys::Win32::Foundation::{
     ERROR_ACCESS_DENIED, ERROR_INVALID_PARAMETER, ERROR_NO_MORE_FILES, FILETIME, HANDLE,
@@ -41,6 +41,7 @@ pub(super) struct Game {
     process: Arc<OwnedHandle>,
     thread: Option<Arc<OwnedHandle>>,
     job: Arc<OwnedHandle>,
+    killable_job: Arc<Mutex<Option<Arc<OwnedHandle>>>>,
     port: Arc<OwnedHandle>,
     cancel_event: Arc<OwnedHandle>,
     cancelled: Arc<AtomicBool>,
@@ -59,7 +60,7 @@ pub(super) struct Canceller {
 
 #[derive(Clone)]
 pub(super) struct Killer {
-    job: Arc<OwnedHandle>,
+    job: Arc<Mutex<Option<Arc<OwnedHandle>>>>,
     finished: Arc<AtomicBool>,
 }
 
@@ -114,6 +115,7 @@ impl Game {
             },
             process,
             thread: Some(thread),
+            killable_job: Arc::new(Mutex::new(Some(job.clone()))),
             job,
             port,
             cancel_event,
@@ -234,6 +236,7 @@ impl Game {
             identity,
             process,
             thread: None,
+            killable_job: Arc::new(Mutex::new(Some(job.clone()))),
             job,
             port,
             cancel_event,
@@ -259,7 +262,7 @@ impl Game {
 
     pub(super) fn killer(&self) -> Killer {
         Killer {
-            job: self.job.clone(),
+            job: self.killable_job.clone(),
             finished: self.finished.clone(),
         }
     }
@@ -295,6 +298,13 @@ impl Game {
                     return Err(ProcessError::Track(io::ErrorKind::InvalidData.into()));
                 }
                 self.finished.store(true, Ordering::Release);
+                // Finished stop handles no longer need to pin the job (and
+                // its terminated process objects). Active/detached sessions
+                // retain it, so cancellation never removes their stop handle.
+                self.killable_job
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .take();
                 if self.reattached {
                     return Ok(Some(GameExit::Unknown));
                 }
@@ -370,11 +380,19 @@ impl Killer {
         if self.finished.load(Ordering::Acquire) {
             return Ok(());
         }
+        let job = self
+            .job
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        let Some(job) = job else {
+            return Ok(());
+        };
         // Windows has no SIGTERM equivalent for an arbitrary GUI process tree.
         // The caller already obtained the player's stop confirmation.
         #[allow(unsafe_code)]
         // SAFETY: our job handle pins this tree even after a PID is recycled.
-        let ok = unsafe { TerminateJobObject(raw(&self.job), STOP_CODE) };
+        let ok = unsafe { TerminateJobObject(raw(&job), STOP_CODE) };
         if ok == 0 {
             return Err(ProcessError::Track(io::Error::last_os_error()));
         }
