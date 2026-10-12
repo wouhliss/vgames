@@ -12,6 +12,9 @@ use sdl3::event::{Event, EventSender};
 
 use super::idle;
 
+#[cfg(test)]
+pub(crate) static SDL_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 const DATABASE: &str = include_str!("../../resources/gamecontrollerdb.txt");
 
 pub enum InputEvent {
@@ -255,6 +258,7 @@ mod tests {
 
     #[test]
     fn input_thread_starts_blocks_when_idle_and_wakes_for_shutdown() {
+        let _serial = SDL_TEST_LOCK.lock().unwrap();
         let mut input = InputThread::start(|_| |_: InputEvent, _: &sdl3::GamepadSubsystem| {})
             .expect("SDL input starts");
         let before = input.iterations();
