@@ -122,12 +122,18 @@ impl Db {
     }
 }
 
+/// `PRAGMA cache_size` (negative: KiB).
+const CACHE_SIZE_KIB: i64 = -2048;
+
 fn configure(conn: &Connection) -> rusqlite::Result<()> {
     conn.busy_timeout(BUSY_TIMEOUT)?;
     // `journal_mode` returns the resulting mode; in-memory databases stay `memory`.
     let _mode: String = conn.query_row("PRAGMA journal_mode = WAL", [], |row| row.get(0))?;
     conn.pragma_update(None, "synchronous", "NORMAL")?;
     conn.pragma_update(None, "foreign_keys", true)?;
+    // An explicit page cache bound (2 MiB): memory soaks then see the launcher's own growth,
+    // not the cache filling up (GAME-13).
+    conn.pragma_update(None, "cache_size", CACHE_SIZE_KIB)?;
     Ok(())
 }
 
@@ -159,16 +165,18 @@ mod tests {
     async fn pragmas_are_applied() {
         let dir = tempfile::tempdir().unwrap();
         let db = Db::open(&dir.path().join("t.sqlite3")).unwrap();
-        let (mode, fk): (String, i64) = db
+        let (mode, fk, cache): (String, i64, i64) = db
             .call(|c| {
                 let mode = c.query_row("PRAGMA journal_mode", [], |r| r.get(0))?;
                 let fk = c.query_row("PRAGMA foreign_keys", [], |r| r.get(0))?;
-                Ok((mode, fk))
+                let cache = c.query_row("PRAGMA cache_size", [], |r| r.get(0))?;
+                Ok((mode, fk, cache))
             })
             .await
             .unwrap();
         assert_eq!(mode, "wal");
         assert_eq!(fk, 1);
+        assert_eq!(cache, CACHE_SIZE_KIB);
     }
 
     #[tokio::test]

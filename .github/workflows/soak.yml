@@ -1,6 +1,9 @@
 # 24 h launcher leak test (08-release §1). Owner: Agent 5 (workflow); the soak scripts
 # belong to Agent 2 (apps/desktop/perf/, A2-T14) and Agent 4 (social soak, A4-T12).
 #
+# The social soak (GAME-13) runs on hosted runners: 1 h of chat at 2 msg/s and 5 h 30 min of
+# idle sockets against the real API in process (tests/social_soak.rs), whole-process RSS sampled.
+#
 # Runs on a self-hosted runner with a desktop session (labels: self-hosted, linux,
 # vgames-soak), which humans provide (infra/README.md). Until the repository variable
 # VGAMES_SOAK_RUNNER is "true" the job is skipped instead of waiting for a runner forever.
@@ -16,6 +19,14 @@ on:
       hours:
         description: Duration in hours
         default: "24"
+        required: true
+      chat_secs:
+        description: Social chat soak, seconds
+        default: "3600"
+        required: true
+      idle_secs:
+        description: Social idle soak, seconds (hosted jobs stop at 6 h)
+        default: "19800"
         required: true
 
 permissions: {}
@@ -59,6 +70,85 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: soak-results
+          path: ${{ runner.temp }}/soak
+          if-no-files-found: ignore
+          retention-days: 30
+
+  social:
+    name: Social soak (${{ matrix.name }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ matrix.timeout }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: chat, test: sustained_chat_keeps_memory_flat, timeout: 120 }
+          - { name: idle, test: idle_sockets_stay_up, timeout: 358 }
+    services:
+      postgres:
+        image: postgres:18.6-alpine
+        env:
+          POSTGRES_USER: vgames
+          POSTGRES_PASSWORD: vgames-soak-only
+          POSTGRES_DB: vgames
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U vgames -d vgames"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      VGAMES_TEST_DATABASE_URL: postgres://vgames:vgames-soak-only@localhost:5432/postgres
+      VGAMES_SOAK_CHAT_SECS: ${{ inputs.chat_secs || '3600' }}
+      VGAMES_SOAK_IDLE_SECS: ${{ inputs.idle_secs || '19800' }}
+      SQLX_OFFLINE: "true"
+      CARGO_INCREMENTAL: "0"
+      TEST: ${{ matrix.test }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate the durations
+        run: |
+          for v in "$VGAMES_SOAK_CHAT_SECS" "$VGAMES_SOAK_IDLE_SECS"; do
+            if ! [[ "$v" =~ ^[0-9]{1,5}$ ]] || [ "$v" -lt 60 ] || [ "$v" -gt 19800 ]; then
+              echo "::error::durations must be 60-19800 seconds"; exit 1
+            fi
+          done
+      - name: System libraries (Tauri 2 on Linux)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev \
+            cmake libxss-dev libxcursor-dev libxi-dev libxfixes-dev libxrandr-dev \
+            libxinerama-dev libasound2-dev libpulse-dev libwayland-dev \
+            libxkbcommon-dev libegl1-mesa-dev libgles2-mesa-dev libdrm-dev \
+            libgbm-dev libdecor-0-dev \
+            libdbus-1-dev libudev-dev pkg-config build-essential
+      - name: Install toolchain (rust-toolchain.toml)
+        run: rustup toolchain install && rustup show active-toolchain
+      - name: Build the soak test
+        run: cargo test --locked -p vgames-desktop --test social_soak --no-run
+      - name: Soak
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/soak"
+          cargo test --locked -p vgames-desktop --test social_soak -- --ignored --nocapture --exact "$TEST" \
+            2>&1 | tee "$RUNNER_TEMP/soak/$TEST.log"
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Social soak: $TEST"
+            echo '```'
+            grep -E "soak:|rss after|rss sample" "$RUNNER_TEMP/soak/$TEST.log" | tail -60 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: social-soak-${{ matrix.name }}
           path: ${{ runner.temp }}/soak
           if-no-files-found: ignore
           retention-days: 30
