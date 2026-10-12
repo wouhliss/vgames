@@ -9,6 +9,7 @@ pub mod mapping;
 pub mod navigation;
 pub mod profiles;
 pub mod routing;
+pub mod service;
 
 #[cfg(test)]
 mod linkage_tests {
