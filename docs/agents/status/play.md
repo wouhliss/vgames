@@ -8,6 +8,7 @@
 
 ## In progress
 - PLAY-01 hook fixture corrected after native Linux CI: a controlled FIFO holds the child until the test releases it, so startup duration cannot invalidate the early-exit assertion. Full process-tree and exactly-once re-attach checks remain unchanged.
+- PLAY-04 SDL routing adapter implemented: physical handles stay on their owner, cached metadata and scoped testers are exposed through Service, and releasing inputs cancels scheduled wakeups. Native startup/command integration follows separately.
 
 
 ## Interfaces delivered (other agents may now rely on these)
