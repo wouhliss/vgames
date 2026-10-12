@@ -16,10 +16,11 @@
 - PLAY-04 controller notes proposed in [#196](https://github.com/wouhliss/vgames/pull/196) for INT review; implementation proceeds against the proposal.
 
 ## PLAY-04 pending IPC and mocks
-- `play/p2-controller-ipc` defines pad metadata, profile/settings commands, tester selection and pad/tester events in `contract/controllers.ts`, with typed mock driver states and restart persistence. Four mock regressions, all 296 desktop UI tests, desktop typecheck and workspace lint pass. Local repository policy/security gates pass; hosted validation pending. Rust service and Settings screen follow separately, then these pending entries are removed in favor of generated bindings.
+- `play/p2-controller-ipc` defines pad metadata, profile/settings commands, tester selection and pad/tester events in `contract/controllers.ts`, with typed mock driver states and restart persistence. Four mock regressions, all 296 desktop UI tests, desktop typecheck and workspace lint pass. Local repository policy/security gates pass; all seventeen hosted checks passed in #198. Rust service and Settings screen follow separately, then these pending entries are removed in favor of generated bindings.
 
 ## PLAY-04 prerequisites
-- #198 fresh CI exposed an existing integration test assuming game startup/exit completes within the three-second cooldown. Launch/exit remains tested; cooldown rejection, exact expiry and non-extension by rejected attempts now have a deterministic monotonic-clock regression.
+- [#198](https://github.com/wouhliss/vgames/pull/198) merged the pending controller commands/events and persistent mock fixtures after all seventeen hosted checks passed. The launch/exit integration and deterministic cooldown rejection/expiry regressions pass on all three runners.
+- Native no-pad wait adapters: Linux inotify/eventfd, Windows device-notification messages/event and macOS IOKit/CFRunLoop sources. Linux device-node lifecycle tests and cross-target Windows/macOS Clippy pass. The integrated SDL thread records zero voluntary switches and zero CPU over 60 s locally; native hosted checks remain required before merge.
 - Controller contract proposed in [#196](https://github.com/wouhliss/vgames/pull/196) for INT review; implementation can proceed against it.
 - [#197](https://github.com/wouhliss/vgames/pull/197) merged static SDL3 after all hosted checks and three-OS builds passed. The native version-call test and full desktop Clippy pass locally; Linux development prerequisites are documented and appended to all desktop build jobs. Native three-OS linkage and hosted checks are required before merge.
 
