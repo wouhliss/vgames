@@ -208,7 +208,7 @@ job_supply-chain() {
   cargo deny --workspace --locked check
   cargo audit
   need pnpm "corepack enable (Node 22)"
-  pnpm audit --prod
+  pnpm audit
 }
 
 job_secrets() {
