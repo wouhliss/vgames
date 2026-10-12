@@ -7,6 +7,7 @@
 - PLAY-01: ordered launch hooks, cancellable compatibility plans and session-owned exit callbacks merged in [#193](https://github.com/wouhliss/vgames/pull/193). Every hosted check passed on Windows, Linux and macOS, including the launcher browser performance test.
 
 ## In progress
+- PLAY-08 external-link command implemented early for controller driver help: native validation restricts links to http(s), refuses credentials and IDN homographs, and never echoes rejected URLs. SafeMarkdown retains its existing confirmation flow; the pending function is replaced by generated bindings.
 
 
 ## Interfaces delivered (other agents may now rely on these)
