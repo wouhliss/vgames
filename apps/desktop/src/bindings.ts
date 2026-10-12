@@ -228,6 +228,9 @@ export const commands = {
 	publishRelease: (serverId: string, versionId: string) => typedError<PublishVersion, PublishCommandError>(__TAURI_INVOKE("publish_release", { serverId, versionId })),
 	/**  Withdraws a published version (`reason`: 3–500 characters, kept by the server). */
 	versionYank: (serverId: string, versionId: string, reason: string) => typedError<PublishVersion, PublishCommandError>(__TAURI_INVOKE("version_yank", { serverId, versionId, reason })),
+	controllersList: () => typedError<ControllerList, AppError>(__TAURI_INVOKE("controllers_list")),
+	controllersTesterStart: (instanceId: number) => typedError<Tester, AppError>(__TAURI_INVOKE("controllers_tester_start", { instanceId })),
+	controllersTesterStop: (subscriptionId: string) => typedError<null, AppError>(__TAURI_INVOKE("controllers_tester_stop", { subscriptionId })),
 };
 
 /** Events */
@@ -351,6 +354,13 @@ export type AvailableUpdate = {
 	installed_yanked: boolean,
 };
 
+export type Battery = {
+	percent: number | null,
+	state: BatteryState,
+};
+
+export type BatteryState = "charging" | "on_battery" | "wired" | "unknown";
+
 /**  Why an update check or install must wait. */
 export type Blocked = "game_running" | "downloads_active";
 
@@ -468,6 +478,17 @@ export type CompatRunner = "proton" | "wine";
 
 export type CompatStatus = "verified" | "playable" | "unsupported" | "untested";
 
+export type ConnectedPad = {
+	instance_id: number,
+	kind: ControllerKind,
+	name: string,
+	connection: Connection,
+	battery: Battery,
+	player_index: number | null,
+};
+
+export type Connection = "usb" | "bluetooth" | "unknown";
+
 /**  Whether the launcher could reach a server on its last attempt. */
 export type ConnectivityChanged = {
 	server_id: string,
@@ -493,6 +514,8 @@ export type ContactSecurity = {
 	devices: ContactDevice[],
 };
 
+export type ControllerAvailability = { kind: "ready" } | { kind: "unavailable"; detail: string };
+
 /**  What happened to a controller. */
 export type ControllerChange = { kind: "connected"; controller: ControllerKind; name: string } | { kind: "disconnected" } | 
 /**  Guide/PS held for 1 s (opens the in-game overlay, 05-social §6). */
@@ -507,6 +530,11 @@ export type ControllerEvent = {
 
 /**  Controller family, as classified by the input thread (07-controllers §2). */
 export type ControllerKind = "xinput" | "dualshock4" | "dualsense" | "switch_pro" | "generic";
+
+export type ControllerList = {
+	state: ControllerAvailability,
+	pads: ConnectedPad[],
+};
 
 export type ControllerMapping = {
 	nintendo_labels: boolean,
@@ -1335,6 +1363,11 @@ export type SocialSettings = {
 	do_not_disturb: boolean,
 	overlay_enabled: boolean,
 	overlay_hotkey: string,
+};
+
+export type Tester = {
+	subscription_id: string,
+	instance_id: number,
 };
 
 /**  Where session tokens are stored. */

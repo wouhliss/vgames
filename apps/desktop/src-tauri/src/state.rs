@@ -58,6 +58,7 @@ pub struct AppState {
     pub publisher: Arc<crate::publishing::Publisher<Servers>>,
     /// The signed compatibility runtime catalog (GAME-03).
     pub runtime_catalog: Arc<crate::compat::catalog::RuntimeCatalog>,
+    pub controllers: crate::controllers::handle::Controllers,
 }
 
 impl AppState {
@@ -126,6 +127,7 @@ impl AppState {
         ));
         Ok(Self {
             runtime_catalog,
+            controllers: Default::default(),
             publisher,
             paths,
             catalog,

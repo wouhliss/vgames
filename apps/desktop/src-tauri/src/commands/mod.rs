@@ -8,6 +8,7 @@ pub(crate) mod account;
 mod app;
 mod catalog;
 mod collections;
+mod controller_runtime;
 mod controllers;
 mod downloads;
 mod games;
@@ -145,7 +146,10 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             publishing::publish_resume,
             publishing::publish_dismiss,
             publishing::publish_release,
-            publishing::version_yank
+            publishing::version_yank,
+            controller_runtime::controllers_list,
+            controller_runtime::controllers_tester_start,
+            controller_runtime::controllers_tester_stop
         ])
         .events(tauri_specta::collect_events![
             GameStarted,
