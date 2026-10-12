@@ -697,6 +697,93 @@ mod tests {
         assert_eq!(overlay.prepare_launch(game, "Arena").await.len(), 3);
     }
 
+    /// The in-game renderer's side of the link: reads until a `Panel` message.
+    fn panel_message(s: &mut std::net::TcpStream) -> bool {
+        loop {
+            match protocol::read_frame::<ToRenderer>(s).expect("a frame in time") {
+                ToRenderer::Panel { open } => return open,
+                _ => continue,
+            }
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn guide_hold_opens_the_panel_in_game_and_reply_opens_the_launcher() {
+        let (overlay, bus, _fallback, _tripped) = service().await;
+        if cfg!(target_os = "macos") {
+            return;
+        }
+        let (otx, mut orx) = mpsc::unbounded_channel();
+        overlay.on_open_launcher(move || {
+            let _ = otx.send(());
+        });
+        let game = PackageRef {
+            server_id: Uuid::from_u128(1),
+            package_id: Uuid::from_u128(4),
+        };
+        let env = overlay.prepare_launch(game, "Arena").await;
+        let addr: std::net::SocketAddr = env[1].1.parse().unwrap();
+        let token = protocol::parse_token(&env[2].1).unwrap();
+        let mut renderer = tokio::task::spawn_blocking(move || {
+            let mut s = std::net::TcpStream::connect(addr).unwrap();
+            s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+            protocol::write_frame(
+                &mut s,
+                &ToBroker::Hello {
+                    version: PROTOCOL_VERSION,
+                    token,
+                    renderer: RendererKind::OpenGl,
+                },
+            )
+            .unwrap();
+            assert!(matches!(
+                protocol::read_frame::<ToRenderer>(&mut s).unwrap(),
+                ToRenderer::Welcome { .. }
+            ));
+            s
+        })
+        .await
+        .unwrap();
+
+        // Guide/PS held (PLAY-04's event on the bus): the game's renderer opens the panel.
+        bus.publish(AppEvent::Controller(crate::events::ControllerEvent {
+            instance_id: 0,
+            change: ControllerChange::GuideHeld,
+        }));
+        renderer = tokio::task::spawn_blocking(move || {
+            assert!(panel_message(&mut renderer), "the panel opens in game");
+            renderer
+        })
+        .await
+        .unwrap();
+
+        // "Reply" in the panel: the renderer asks for the launcher; the panel closes.
+        renderer = tokio::task::spawn_blocking(move || {
+            protocol::write_frame(
+                &mut renderer,
+                &ToBroker::Action(protocol::Action::OpenLauncher),
+            )
+            .unwrap();
+            assert!(!panel_message(&mut renderer), "the panel closes");
+            renderer
+        })
+        .await
+        .unwrap();
+        next(&mut orx).await;
+        assert!(!overlay.hub().current().visible_panel);
+
+        // The hotkey takes the same path.
+        overlay.toggle_panel();
+        let renderer = tokio::task::spawn_blocking(move || {
+            let mut r = renderer;
+            assert!(panel_message(&mut r), "the hotkey opens the panel in game");
+            r
+        })
+        .await
+        .unwrap();
+        drop(renderer);
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn a_launch_that_fails_drops_the_broker() {
         let (overlay, _bus, mut fallback, _tripped) = service().await;
