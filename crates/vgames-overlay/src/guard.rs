@@ -6,6 +6,18 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 static DISABLED: AtomicBool = AtomicBool::new(false);
+static VULKAN_DRAWS: AtomicBool = AtomicBool::new(false);
+
+/// The Vulkan layer has a swapchain it can draw into: the GL hooks stand down (a GL game
+/// running on Vulkan, such as Zink, would otherwise get the overlay twice).
+pub fn note_vulkan_draws() {
+    VULKAN_DRAWS.store(true, Ordering::Relaxed);
+}
+
+#[inline]
+pub fn vulkan_draws() -> bool {
+    VULKAN_DRAWS.load(Ordering::Relaxed)
+}
 
 /// `true` after a hook panicked (or [`disable`] was called).
 #[inline]

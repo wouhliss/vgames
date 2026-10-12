@@ -82,6 +82,14 @@ impl Endpoint {
     }
 }
 
+/// The process's one broker link, started by the first backend that asks (none without the
+/// launch environment). The Vulkan layer and the GL hooks share it.
+pub fn shared(renderer: RendererKind) -> Option<&'static Arc<Link>> {
+    static LINK: std::sync::OnceLock<Option<Arc<Link>>> = std::sync::OnceLock::new();
+    LINK.get_or_init(|| Endpoint::from_env().map(|e| Link::start(e, renderer)))
+        .as_ref()
+}
+
 struct State {
     view: Arc<View>,
     /// When each toast of the current view expires.

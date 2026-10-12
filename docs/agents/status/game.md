@@ -27,6 +27,9 @@
 - GAME-05 — `CompatPlanner` as PLAY-01's `PlanSource`, pre-flight, `save_base` ([#185](https://github.com/wouhliss/vgames/pull/185));
   test apps and the hosted Proton run ([#187](https://github.com/wouhliss/vgames/pull/187)).
 - GAME-06 — PE scan, D3D check on INS's priority-files hook, Rosetta, Wine plan (`game/p2-wine-macos`, not pushed yet).
+- GAME-08 — GL preload hooks in `libvgames_overlay.so` (`game/p2-gl-preload`). Frame cost on llvmpipe, release, 640×480,
+  one toast visible: 0.28 ms (EGL) / 0.32 ms (GLX) per frame, upload included (05-social §6.1: ≤ 1 ms open); hidden: one
+  atomic load per swap. Launcher preload for native Linux launches next.
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_proto::realtime::MAX_FRAME` (64 KiB, GAME-01): the server re-exports it from `apps/api/src/realtime/mod.rs`;
