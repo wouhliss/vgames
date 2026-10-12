@@ -1,7 +1,7 @@
 // PLAY-04 pending commands/events; replace with generated bindings as the Rust lands.
 // Shapes follow 07-controllers-notes and the existing Rust mapping/decision modules.
 import type { AppError, ControllerKind } from "../../bindings";
-import { call, makeEvents, type Result } from "./runtime";
+import { call, type Result } from "./runtime";
 
 export type ControllerConnection = "usb" | "bluetooth" | "unknown";
 export type ControllerBattery = {
@@ -72,13 +72,7 @@ export type ControllerDriverStatus = {
   hiding: ControllerDriverState;
 };
 export type ControllerTester = { subscription_id: string; instance_id: number };
-export type ControllerTesterState = ControllerTester & {
-  buttons: ControllerButton[];
-  left: [number, number];
-  right: [number, number];
-  left_trigger: number;
-  right_trigger: number;
-};
+export type { ControllerTesterState } from "../../bindings";
 
 export const controllerCommands = {
   controllersList(): Promise<Result<ControllerList, AppError>> {
@@ -94,8 +88,3 @@ export const controllerCommands = {
     return call("controllers_tester_stop", { subscriptionId });
   },
 };
-
-export const controllerEvents = makeEvents<{
-  padsChanged: Record<string, never>;
-  controllerTesterState: ControllerTesterState;
-}>({ padsChanged: "pads-changed", controllerTesterState: "controller-tester-state" });
