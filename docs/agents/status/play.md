@@ -1,11 +1,12 @@
 # PLAY status
 
 ## Done
+- PLAY-03: macOS process-group/kqueue backend merged in [#195](https://github.com/wouhliss/vgames/pull/195) after all seventeen hosted checks passed, including native process/orchestrator tests, the blocking-kqueue regression and three-OS release builds.
 - PLAY-02: Windows suspended spawn, bounded pre-resume, UTF-16 inputs, completion-port job tracking and stop merged in [#194](https://github.com/wouhliss/vgames/pull/194). All seventeen hosted checks passed on current main, including native Windows regressions and three-OS release builds. Final exit waits for the leader signal and releases completed stop handles; the post-exit re-attach and cancellable final-wait regressions pass.
 - PLAY-01: ordered launch hooks, cancellable compatibility plans and session-owned exit callbacks merged in [#193](https://github.com/wouhliss/vgames/pull/193). Every hosted check passed on Windows, Linux and macOS, including the launcher browser performance test.
 
 ## In progress
-- PLAY-03: implemented macOS process-group tracking with kqueue, PID/start-time validation, child discovery, whole-group stop and cancellation without killing. Portable process/orchestrator fixtures now run on macOS; added a native idle-wakeup measurement. Cross-target Clippy passes and all 54 Linux launch regressions pass (one existing benchmark ignored). The native macOS suite passed, including the idle-wakeup measurement; fresh full validation runs after inheriting the latest Windows fix. Rebased onto merged PLAY-02/current main; #195 is retargeted to main for fresh validation.
+
 
 ## Interfaces delivered (other agents may now rely on these)
 - Inherited from Agent 2: verified launch targets and environment preparation (`launch::{target,plan,prelaunch}`), Linux pidfd/process-group tracking, session records and playtime, the typed event bus, SQLite worker/migration/settings APIs, strict deep-link parsing and shortcut files. Phase-1 status stays unchanged.
@@ -14,7 +15,7 @@
 ## Needs from others
 
 ## PLAY-04 prerequisites
-- WIP input thread and named-thread perf gate: lifecycle/wakeup code and the original counter-based 20-test suite passed, but the stronger Linux idle test intentionally exposes upstream headless polling. With SDL 3.4.16, the exact-source no-pad probe measured 55,526 voluntary switches and 0.78 s CPU over 60 s (1.30%). `SDL_events.c` falls back to a one-millisecond pump without an active video window. This prototype stays off main until a blocking event notification plus native hot-plug wakeup passes the unchanged zero-switch gate. Proposed contract #196 records the finding; remaining work is input event routing, native monitors, commands, tester and Settings UI.
+- Input thread: the Linux no-pad path now blocks on inotify/eventfd. The exact-source SDL 3.4.16 probe records **0 voluntary / 0 involuntary switches and 0.00 s CPU over 60 s**; all 22 controller tests and full desktop Clippy pass. Windows uses the SDL owner thread’s device-notification messages plus an event; macOS uses IOKit/CFRunLoop sources. Both adapters pass cross-target Clippy; native hosted validation remains required. The Linux unit gate now checks actual thread switches over 60 s; Windows/macOS keep the 10 s event-loop counter gate. Remaining PLAY-04 work includes input routing, profile/commands, tester and Settings UI.
 - `play/p2-controller-input` adds the navigation state machine and SDL classification. All 19 controller tests (including six new navigation/classification regressions), formatting and full desktop Clippy pass locally. The SDL thread, commands, tester and Settings screen are still in progress; this branch is stacked on the static SDL build.
 - Controller contract proposed in [#196](https://github.com/wouhliss/vgames/pull/196) for INT review; implementation can proceed against it.
 - [#197](https://github.com/wouhliss/vgames/pull/197) merged static SDL3 after all hosted checks and three-OS builds passed. The native version-call test and full desktop Clippy pass locally; Linux development prerequisites are documented and appended to all desktop build jobs. Native three-OS linkage and hosted checks are required before merge.

@@ -1,5 +1,6 @@
-//! Dedicated SDL event thread. Idle has no Rust timer and shutdown pushes a
-//! private SDL event. SDL handles and event pumping stay on their owner thread.
+//! Dedicated SDL event thread. With no pad, native device notifications block
+//! without a discovery timer; shutdown pushes a private SDL event and signals
+//! the native wait. SDL handles and event pumping stay on their owner thread.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -8,6 +9,16 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use sdl3::event::{Event, EventSender};
+
+#[cfg(target_os = "linux")]
+#[path = "input_linux.rs"]
+mod idle;
+#[cfg(target_os = "windows")]
+#[path = "input_windows.rs"]
+mod idle;
+#[cfg(target_os = "macos")]
+#[path = "input_macos.rs"]
+mod idle;
 
 const DATABASE: &str = include_str!("../../resources/gamecontrollerdb.txt");
 
@@ -19,18 +30,29 @@ pub enum InputEvent {
 struct Wake {
     sender: EventSender,
     event_type: u32,
+    #[cfg(target_os = "linux")]
+    idle: Arc<std::os::fd::OwnedFd>,
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    idle: Arc<idle::Wake>,
 }
 
 impl Wake {
-    fn push(&self) -> Result<(), sdl3::Error> {
-        self.sender.push_event(Event::User {
-            timestamp: 0,
-            window_id: 0,
-            type_: self.event_type,
-            code: 0,
-            data1: std::ptr::null_mut(),
-            data2: std::ptr::null_mut(),
-        })
+    fn push(&self) -> Result<(), String> {
+        let queued = self
+            .sender
+            .push_event(Event::User {
+                timestamp: 0,
+                window_id: 0,
+                type_: self.event_type,
+                code: 0,
+                data1: std::ptr::null_mut(),
+                data2: std::ptr::null_mut(),
+            })
+            .map_err(|error| error.to_string());
+        // Signal after enqueueing: no callback-before-enqueue lost-wakeup race.
+        // Even a full SDL queue must not prevent a cancelled native wait.
+        idle::signal(&self.idle).map_err(|error| error.to_string())?;
+        queued
     }
 }
 
@@ -69,6 +91,7 @@ impl InputThread {
                     ] {
                         sdl3::hint::set(hint, "1");
                     }
+                    let idle = idle::IdleWait::new().map_err(|error| error.to_string())?;
                     let sdl = sdl3::init().map_err(|error| error.to_string())?;
                     let gamepads = sdl.gamepad().map_err(|error| error.to_string())?;
                     gamepads
@@ -83,6 +106,7 @@ impl InputThread {
                     let wake = Arc::new(Wake {
                         sender: events.event_sender(),
                         event_type,
+                        idle: idle.sender(),
                     });
                     let mut pump = sdl.event_pump().map_err(|error| error.to_string())?;
                     // Construct the handler here so it can own non-Send gamepad
@@ -95,7 +119,29 @@ impl InputThread {
                     }
                     ready.send(Ok(wake)).map_err(|error| error.to_string())?;
                     while !stop.load(Ordering::Acquire) {
-                        let event = pump.wait_event();
+                        let event = if gamepads
+                            .gamepads()
+                            .map_err(|error| error.to_string())?
+                            .is_empty()
+                        {
+                            // Drain queued events before blocking. A device notification
+                            // arriving during enumeration stays pending in the native monitor.
+                            if let Some(event) = pump.poll_event() {
+                                Some(event)
+                            } else {
+                                idle.wait().map_err(|error| error.to_string())?;
+                                count.fetch_add(1, Ordering::Relaxed);
+                                if stop.load(Ordering::Acquire) {
+                                    break;
+                                }
+                                pump.poll_event()
+                            }
+                        } else {
+                            Some(pump.wait_event())
+                        };
+                        let Some(event) = event else {
+                            continue;
+                        };
                         count.fetch_add(1, Ordering::Relaxed);
                         if stop.load(Ordering::Acquire) {
                             break;
@@ -211,6 +257,9 @@ mod tests {
         thread::sleep(Duration::from_millis(100));
         #[cfg(target_os = "linux")]
         let switches = input_thread_switches();
+        #[cfg(target_os = "linux")]
+        thread::sleep(Duration::from_secs(60));
+        #[cfg(not(target_os = "linux"))]
         thread::sleep(Duration::from_secs(10));
         assert_eq!(
             input.iterations(),
