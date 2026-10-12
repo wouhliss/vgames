@@ -41,53 +41,7 @@ impl Service {
         let router = Arc::new(Mutex::new(Router::new(emit)));
         let routed = router.clone();
         let input = InputThread::start_with_wake(move |subsystem, wake| {
-            let mut pads = BTreeMap::<u32, Gamepad>::new();
-            let mut deadline = Deadline::new(runtime, wake);
-            if let Ok(ids) = subsystem.gamepads() {
-                for id in ids {
-                    open(subsystem, &mut pads, &routed, id);
-                }
-            }
-            move |event: InputEvent, subsystem: &GamepadSubsystem| {
-                let now = Instant::now();
-                match event {
-                    InputEvent::Native(Event::GamepadAdded { which, .. }) => {
-                        open(subsystem, &mut pads, &routed, which);
-                    }
-                    InputEvent::Native(Event::GamepadRemoved { which, .. }) => {
-                        pads.remove(&which.raw());
-                        if let Ok(mut router) = routed.lock() {
-                            router.disconnected(which.raw());
-                        }
-                    }
-                    InputEvent::Native(Event::GamepadButtonDown { which, button, .. }) => {
-                        if let Some(button) = canonical_button(button)
-                            && let Ok(mut router) = routed.lock()
-                        {
-                            router.button(which.raw(), button, true, now);
-                        }
-                    }
-                    InputEvent::Native(Event::GamepadButtonUp { which, button, .. }) => {
-                        if let Some(button) = canonical_button(button)
-                            && let Ok(mut router) = routed.lock()
-                        {
-                            router.button(which.raw(), button, false, now);
-                        }
-                    }
-                    InputEvent::Native(Event::GamepadAxisMotion {
-                        which, axis, value, ..
-                    }) => {
-                        if let Ok(mut router) = routed.lock() {
-                            router.axis(which.raw(), canonical_axis(axis), value, now);
-                        }
-                    }
-                    _ => {}
-                }
-                if let Ok(mut router) = routed.lock() {
-                    router.tick(now);
-                    deadline.arm(router.next_deadline());
-                }
-            }
+            sdl_handler(subsystem, routed, runtime, wake)
         })
         .map_err(ServiceError::Unavailable)?;
         Ok(Self { router, input })
@@ -115,6 +69,61 @@ impl Service {
     pub fn navigation_enabled(&self, enabled: bool) -> Result<(), ServiceError> {
         self.state()?.navigation_enabled(enabled);
         self.input.wake().map_err(ServiceError::Unavailable)
+    }
+}
+
+fn sdl_handler(
+    subsystem: &GamepadSubsystem,
+    routed: Arc<Mutex<Router>>,
+    runtime: Handle,
+    wake: InputWake,
+) -> impl FnMut(InputEvent, &GamepadSubsystem) + use<> {
+    let mut pads = BTreeMap::<u32, Gamepad>::new();
+    let mut deadline = Deadline::new(runtime, wake);
+    if let Ok(ids) = subsystem.gamepads() {
+        for id in ids {
+            open(subsystem, &mut pads, &routed, id);
+        }
+    }
+    move |event: InputEvent, subsystem: &GamepadSubsystem| {
+        let now = Instant::now();
+        match event {
+            InputEvent::Native(Event::GamepadAdded { which, .. }) => {
+                open(subsystem, &mut pads, &routed, which);
+            }
+            InputEvent::Native(Event::GamepadRemoved { which, .. }) => {
+                pads.remove(&which.raw());
+                if let Ok(mut router) = routed.lock() {
+                    router.disconnected(which.raw());
+                }
+            }
+            InputEvent::Native(Event::GamepadButtonDown { which, button, .. }) => {
+                if let Some(button) = canonical_button(button)
+                    && let Ok(mut router) = routed.lock()
+                {
+                    router.button(which.raw(), button, true, now);
+                }
+            }
+            InputEvent::Native(Event::GamepadButtonUp { which, button, .. }) => {
+                if let Some(button) = canonical_button(button)
+                    && let Ok(mut router) = routed.lock()
+                {
+                    router.button(which.raw(), button, false, now);
+                }
+            }
+            InputEvent::Native(Event::GamepadAxisMotion {
+                which, axis, value, ..
+            }) => {
+                if let Ok(mut router) = routed.lock() {
+                    router.axis(which.raw(), canonical_axis(axis), value, now);
+                }
+            }
+            _ => {}
+        }
+        if let Ok(mut router) = routed.lock() {
+            router.tick(now);
+            deadline.arm(router.next_deadline());
+        }
     }
 }
 
@@ -249,6 +258,115 @@ fn canonical_button(button: sdl3::gamepad::Button) -> Option<Button> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn native_sdl_hotplug_routes_buttons_testers_and_disconnect() {
+        use sdl3::joystick::{JoystickType, VirtualJoystickDescription};
+        use std::sync::mpsc;
+        use std::time::Duration;
+        let _serial = super::super::input::SDL_TEST_LOCK.lock().unwrap();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let (outputs, receive) = mpsc::channel();
+        let router = Arc::new(Mutex::new(Router::new(Arc::new(move |output| {
+            outputs.send(output).unwrap();
+        }))));
+        let routed = router.clone();
+        enum Control {
+            Plug,
+            Button(bool),
+            Unplug,
+        }
+        let (send, controls) = mpsc::channel();
+        let (ready, wake) = mpsc::channel();
+        let handle = runtime.handle().clone();
+        let mut input = InputThread::start_with_wake(move |subsystem, wake| {
+            let mut route = sdl_handler(subsystem, routed, handle, wake.clone());
+            let sdl = sdl3::init().unwrap();
+            let joystick = sdl.joystick().unwrap();
+            let mut connection = None;
+            ready.send(wake).unwrap();
+            move |event: InputEvent, subsystem: &GamepadSubsystem| {
+                if matches!(event, InputEvent::Wake) {
+                    while let Ok(control) = controls.try_recv() {
+                        match control {
+                            Control::Plug => {
+                                connection = Some(
+                                    joystick
+                                        .attach_virtual_joystick(
+                                            VirtualJoystickDescription::new()
+                                                .name("vgames software fixture")
+                                                .joystick_type(JoystickType::Gamepad)
+                                                .with_button(sdl3::gamepad::Button::South)
+                                                .with_axis(sdl3::gamepad::Axis::LeftX),
+                                        )
+                                        .unwrap(),
+                                )
+                            }
+                            Control::Button(down) => joystick
+                                .open(connection.as_ref().unwrap().id())
+                                .unwrap()
+                                .set_virtual_button(sdl3::gamepad::Button::South as u32, down)
+                                .unwrap(),
+                            Control::Unplug => {
+                                connection = None;
+                            }
+                        }
+                    }
+                }
+                route(event, subsystem);
+            }
+        })
+        .unwrap();
+        let wake = wake.recv_timeout(Duration::from_secs(1)).unwrap();
+        let next = |accept: &dyn Fn(&Output) -> bool| {
+            let until = Instant::now() + Duration::from_secs(3);
+            loop {
+                let output = receive
+                    .recv_timeout(until.saturating_duration_since(Instant::now()))
+                    .unwrap();
+                if accept(&output) {
+                    return output;
+                }
+            }
+        };
+        send.send(Control::Plug).unwrap();
+        wake.wake().unwrap();
+        let Output::Connected(pad) = next(&|output| matches!(output, Output::Connected(_))) else {
+            unreachable!()
+        };
+        assert_eq!(pad.name, "vgames software fixture");
+        let subscription = router
+            .lock()
+            .unwrap()
+            .tester_start(pad.instance_id, Instant::now())
+            .unwrap();
+        send.send(Control::Button(true)).unwrap();
+        wake.wake().unwrap();
+        let Output::Navigation { action, repeat, .. } =
+            next(&|output| matches!(output, Output::Navigation { .. }))
+        else {
+            unreachable!()
+        };
+        assert_eq!(action, super::super::navigation::NavAction::Accept);
+        assert!(!repeat);
+        let Output::Tester(state) = next(
+            &|output| matches!(output, Output::Tester(state) if state.buttons.contains(&Button::South)),
+        ) else {
+            unreachable!()
+        };
+        assert_eq!(state.subscription_id, subscription.subscription_id);
+        send.send(Control::Button(false)).unwrap();
+        send.send(Control::Unplug).unwrap();
+        wake.wake().unwrap();
+        let Output::Disconnected(id) = next(&|output| matches!(output, Output::Disconnected(_)))
+        else {
+            unreachable!()
+        };
+        assert_eq!(id, pad.instance_id);
+        assert!(router.lock().unwrap().list().is_empty());
+        assert!(router.lock().unwrap().next_deadline().is_none());
+        input.stop();
+    }
+
     #[tokio::test]
     async fn releasing_the_last_input_cancels_the_only_scheduled_wakeup() {
         let (send, mut receive) = tokio::sync::mpsc::unbounded_channel();
