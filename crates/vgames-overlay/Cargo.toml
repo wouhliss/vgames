@@ -20,6 +20,9 @@ default = []
 # Build the in-game renderer (broker link, CPU-drawn cards, Vulkan layer). The launcher
 # depends on this crate without it, for the IPC protocol types only.
 renderer = ["dep:ash", "dep:font8x8", "dep:libc"]
+# Tests only (never in a release build): `vgames_overlay_fault_device_lost` makes the Vulkan
+# layer's next copy fail as if the device were lost.
+fault-injection = ["renderer"]
 
 [dependencies]
 serde.workspace = true
