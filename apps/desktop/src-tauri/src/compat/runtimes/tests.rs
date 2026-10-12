@@ -257,3 +257,34 @@ async fn a_version_in_use_cannot_be_removed() {
     assert!(!r.root.join("umu-proton/1").exists());
     let _ = &r.db;
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn an_escaping_link_leaves_no_runtime_behind() {
+    // A correctly pinned archive whose links escape through a chain (`b -> .`,
+    // `a -> b/../outside`): refused after extraction, staging removed.
+    let mut tar = Vec::new();
+    for (name, target) in [("b", "."), ("a", "b/../outside")] {
+        let mut h = tar::Header::new_gnu();
+        h.set_entry_type(tar::EntryType::Symlink);
+        h.set_size(0);
+        h.set_mode(0o777);
+        h.set_link_name(target).unwrap();
+        h.set_path(name).unwrap();
+        h.set_cksum();
+        tar.extend_from_slice(h.as_bytes());
+    }
+    tar.resize(tar.len() + 1024, 0);
+    let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+    std::io::Write::write_all(&mut gz, &tar).unwrap();
+    let archive = gz.finish().unwrap();
+
+    let server = MockServer::start().await;
+    let r = rig();
+    let rt = runtime(&server, RuntimeId::UmuLauncher, "1", &archive);
+    serve(&server, &rt, archive).await;
+    let err = r.store.ensure(&rt, package(2)).await.unwrap_err();
+    assert!(matches!(err, RuntimeError::Extract(_)), "{err}");
+    assert_eq!(tree(&r.root), [".work"], "no runtime, no staging");
+    assert!(r.store.list().await.unwrap().is_empty());
+}
