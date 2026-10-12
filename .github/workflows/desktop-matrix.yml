@@ -97,9 +97,17 @@ jobs:
       - name: Release build (unsigned, no bundle)
         run: cargo build --locked --release --target ${{ matrix.target }} -p vgames-desktop
       - name: Release-only rules (debug overrides ignored)
-        run: >-
-          cargo test --locked --release --target ${{ matrix.target }}
-          -p vgames-desktop --lib compat::catalog::tests::release_builds_ignore_the_overrides
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then
+            # SDL3's static Cocoa code calls compiler-rt's ___isPlatformVersionAtLeast (behind @available);
+            # a thin-LTO release test binary does not get it from Rust's builtins, so link Apple's compiler-rt.
+            rt="$(xcrun clang -print-resource-dir)/lib/darwin/libclang_rt.osx.a"
+            test -f "$rt"
+            export CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS="-C link-arg=$rt"
+          fi
+          cargo test --locked --release --target ${{ matrix.target }} \
+            -p vgames-desktop --lib compat::catalog::tests::release_builds_ignore_the_overrides
 
   gate:
     name: Desktop matrix gate
