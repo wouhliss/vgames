@@ -14,17 +14,14 @@ function IpcInvalidation(): null {
   return null;
 }
 
-/** Shows the window once the first frame is painted (no white flash, A2-T01). */
+/** Shows the committed view without waiting for a hidden WebView to paint. */
 function useAppReady(): void {
   useEffect(() => {
-    const frame = requestAnimationFrame(() => {
-      setTimeout(() => {
-        commands.appReady().catch(() => {
-          // Outside Tauri there is no window to show.
-        });
-      }, 0);
+    // WebKitGTK suspends animation frames while the native window is hidden.
+    // Waiting for one here leaves app_ready waiting on the window it must show.
+    commands.appReady().catch(() => {
+      // Outside Tauri there is no window to show.
     });
-    return () => cancelAnimationFrame(frame);
   }, []);
 }
 

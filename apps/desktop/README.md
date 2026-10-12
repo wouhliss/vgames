@@ -40,6 +40,8 @@ VGAMES_LOG=debug pnpm dev:desktop        # tracing EnvFilter directive
 
 The main window starts hidden and appears when the UI calls `commands.appReady()`
 (or after 15 s if the UI never does, so a broken UI cannot leave an invisible app).
+Readiness is sent after the first UI commit, without waiting for an animation frame:
+WebKitGTK can suspend those frames until the native window is visible.
 
 ## Bindings
 
