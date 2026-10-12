@@ -30,7 +30,7 @@ export type { AppearanceSettings, Theme } from "../../bindings";
 // ------------------------------------------------------------------------------------------------
 // Events
 
-export type { NavAction, UiNav, ActiveControllerChanged } from "../../bindings";
+export type { ActiveControllerChanged, NavAction, UiNav } from "../../bindings";
 
 // ------------------------------------------------------------------------------------------------
 // Commands
@@ -41,4 +41,3 @@ export const coreCommands = {
     return call("open_external_url", { url });
   },
 };
-
