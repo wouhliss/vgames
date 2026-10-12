@@ -4,6 +4,7 @@
 
 pub mod decision;
 pub mod idle;
+pub mod input;
 pub mod mapping;
 
 #[cfg(test)]
