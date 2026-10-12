@@ -336,6 +336,19 @@ describe("package details", () => {
       );
     });
 
+    it("says why when the install is refused for DirectX 12 on a Mac", async () => {
+      const { user, backend } = setup(HARBOR);
+      backend.on("install_start", () =>
+        Promise.reject({ kind: "blocked", blocker: { kind: "d3d12_unsupported_on_mac" } }),
+      );
+      const dialog = await openInstall(user, "Hollow Harbor");
+      await within(dialog).findByRole("radiogroup", { name: "Install to" });
+      await user.click(within(dialog).getByRole("button", { name: "Install" }));
+      expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+        "DirectX 12 games don't run on a Mac yet.",
+      );
+    });
+
     it("explains that new installs are paused when the server's trust expired", async () => {
       const { user } = setup(HARBOR, { trustExpired: true });
       const dialog = await openInstall(user, "Hollow Harbor");

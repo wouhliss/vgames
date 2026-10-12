@@ -821,3 +821,197 @@ mod overrides {
         assert_eq!(plan.graphics, vgames_core::compat::Graphics::Wined3d);
     }
 }
+
+mod provider {
+    use super::*;
+    use crate::catalog::compat::{CompatProfile as CatalogProfile, CompatProvider, CompatQuery};
+    use crate::catalog::release::Route;
+    use crate::catalog::{CompatBlocker, CompatStatus};
+    use crate::compat::pe::D3dImports;
+    use crate::compat::plan::provider::APPLE_LAST_FULL_ROSETTA;
+    use vgames_proto::packages::Platform as WirePlatform;
+
+    const VERSION: Uuid = Uuid::from_u128(9);
+
+    fn query(platform: WirePlatform, route: Route) -> CompatQuery {
+        CompatQuery {
+            package: PACKAGE,
+            platform,
+            version_id: VERSION,
+            sequence: 1,
+            route,
+        }
+    }
+
+    async fn ask(r: &Rig, platform: WirePlatform, route: Route) -> Option<CatalogProfile> {
+        CompatProvider::profile(&r.planner, query(platform, route)).await
+    }
+
+    fn sunset() -> CompatBlocker {
+        CompatBlocker::RosettaSunset {
+            last_macos: APPLE_LAST_FULL_ROSETTA.into(),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_verified_profile_gives_its_status_and_no_blockers_on_linux() {
+        let r = rig().await;
+        let none = ask(&r, WirePlatform::WindowsX86_64, Route::Proton).await;
+        assert_eq!(
+            none,
+            Some(CatalogProfile {
+                status: CompatStatus::Untested,
+                notes: None,
+                blockers: vec![],
+            })
+        );
+        *r.profiles.0.lock().unwrap() = vec![signed_profile(serde_json::json!({"kind": "proton"}))];
+        let got = ask(&r, WirePlatform::WindowsX86_64, Route::Proton)
+            .await
+            .unwrap();
+        assert_eq!(got.status, CompatStatus::Verified);
+        assert!(got.blockers.is_empty());
+        // A profile for macOS never answers for Linux.
+        let r = rig().await;
+        *r.profiles.0.lock().unwrap() = vec![signed_profile_for(
+            "macos",
+            serde_json::json!({"kind": "wine"}),
+        )];
+        let got = ask(&r, WirePlatform::WindowsX86_64, Route::Proton)
+            .await
+            .unwrap();
+        assert_eq!(got.status, CompatStatus::Untested);
+        // The same profile answers for Wine on a Mac.
+        let mac = rig_for(Platform::MacosX86_64).await;
+        *mac.profiles.0.lock().unwrap() = vec![signed_profile_for(
+            "macos",
+            serde_json::json!({"kind": "wine"}),
+        )];
+        let route = Route::Wine {
+            needs_rosetta: false,
+        };
+        let got = ask(&mac, WirePlatform::WindowsX86_64, route).await.unwrap();
+        assert_eq!(got.status, CompatStatus::Verified);
+    }
+
+    #[tokio::test]
+    async fn a_recorded_d3d12_scan_blocks_on_every_mac() {
+        for host in [Platform::MacosAarch64, Platform::MacosX86_64] {
+            let r = rig_for(host).await;
+            let route = Route::Wine {
+                needs_rosetta: host == Platform::MacosAarch64,
+            };
+            let before = ask(&r, WirePlatform::WindowsX86_64, route).await.unwrap();
+            assert!(
+                !before
+                    .blockers
+                    .contains(&CompatBlocker::D3d12UnsupportedOnMac),
+                "unscanned builds are checked while they download"
+            );
+            crate::compat::d3d::record(
+                &r.planner.db,
+                PACKAGE,
+                VERSION,
+                D3dImports {
+                    d3d12: true,
+                    ..D3dImports::default()
+                },
+            )
+            .await
+            .unwrap();
+            let after = ask(&r, WirePlatform::WindowsX86_64, route).await.unwrap();
+            assert!(
+                after
+                    .blockers
+                    .contains(&CompatBlocker::D3d12UnsupportedOnMac),
+                "{host:?}"
+            );
+            // Another version of the package is not blocked by this scan.
+            let mut other = query(WirePlatform::WindowsX86_64, route);
+            other.version_id = Uuid::from_u128(10);
+            let other = CompatProvider::profile(&r.planner, other).await.unwrap();
+            assert!(
+                !other
+                    .blockers
+                    .contains(&CompatBlocker::D3d12UnsupportedOnMac)
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn rosetta_routes_say_when_rosetta_is_missing_and_warn_about_the_sunset() {
+        let r = rig_for(Platform::MacosAarch64).await;
+        let wine = Route::Wine {
+            needs_rosetta: true,
+        };
+        let got = ask(&r, WirePlatform::WindowsX86_64, wine).await.unwrap();
+        assert_eq!(got.blockers, vec![sunset()]);
+        r.probes.1.store(false, std::sync::atomic::Ordering::SeqCst);
+        let got = ask(&r, WirePlatform::WindowsX86_64, wine).await.unwrap();
+        assert_eq!(got.blockers, vec![CompatBlocker::NeedsRosetta, sunset()]);
+        let got = ask(&r, WirePlatform::MacosX86_64, Route::Rosetta)
+            .await
+            .unwrap();
+        assert_eq!(got.status, CompatStatus::Untested);
+        assert_eq!(got.blockers, vec![CompatBlocker::NeedsRosetta, sunset()]);
+        // Wine on an Intel Mac needs no Rosetta and has no sunset.
+        let intel = rig_for(Platform::MacosX86_64).await;
+        intel
+            .probes
+            .1
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        let got = ask(
+            &intel,
+            WirePlatform::WindowsX86_64,
+            Route::Wine {
+                needs_rosetta: false,
+            },
+        )
+        .await
+        .unwrap();
+        assert!(got.blockers.is_empty());
+    }
+
+    #[tokio::test]
+    async fn native_builds_are_never_asked_about() {
+        let r = rig().await;
+        assert_eq!(
+            ask(&r, WirePlatform::LinuxX86_64, Route::Native).await,
+            None
+        );
+        assert_eq!(
+            ask(&r, WirePlatform::WindowsX86_64, Route::WindowsEmulation).await,
+            None
+        );
+    }
+}
+
+/// `installs_list` derives its `compat` layer from the catalog route; it must name the runner `plan_for` uses.
+#[test]
+fn the_installs_list_layer_matches_the_plan_for_every_host_and_build() {
+    use crate::catalog::release::{Route, route_for};
+    const ALL: [Platform; 6] = [
+        Platform::WindowsX86_64,
+        Platform::WindowsAarch64,
+        Platform::LinuxX86_64,
+        Platform::LinuxAarch64,
+        Platform::MacosAarch64,
+        Platform::MacosX86_64,
+    ];
+    for host in ALL {
+        for build in ALL {
+            let wire: vgames_proto::packages::Platform =
+                serde_json::from_value(serde_json::to_value(build).unwrap()).unwrap();
+            let listed = match route_for(&[wire], host) {
+                Some((_, Route::Proton)) => Some(RunnerKind::Proton),
+                Some((_, Route::Wine { .. })) => Some(RunnerKind::Wine),
+                _ => None,
+            };
+            assert_eq!(
+                listed,
+                runner_for(Some(host), build),
+                "{host:?} running {build:?}"
+            );
+        }
+    }
+}

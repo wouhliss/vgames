@@ -305,6 +305,12 @@ describe("downloads", () => {
         "withdrew it",
         false,
       ],
+      [
+        { kind: "blocked", blocker: { kind: "d3d12_unsupported_on_mac" } },
+        "This game can't run on this computer",
+        "DirectX 12 games don't run on a Mac yet.",
+        false,
+      ],
     ] as const)("%o", async (error, title, text, retry) => {
       setup({ downloads: [{ ...HARBOR, state: failed(error) }] });
       const item = await waitFor(() => row("Hollow Harbor"));

@@ -340,7 +340,7 @@ impl<C: Connections> Catalog<C> {
         compat_info(
             provider.as_ref(),
             package,
-            selected.map(|(r, route)| (r.platform, route)),
+            selected,
             detail.protondb_tier.map(Into::into),
         )
         .await
