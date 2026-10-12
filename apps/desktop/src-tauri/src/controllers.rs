@@ -8,6 +8,7 @@ pub mod input;
 pub mod mapping;
 pub mod navigation;
 pub mod profiles;
+pub mod routing;
 
 #[cfg(test)]
 mod linkage_tests {
