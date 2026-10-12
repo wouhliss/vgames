@@ -374,12 +374,12 @@ mod tests {
         })
         .unwrap();
         let wake = wake.recv_timeout(Duration::from_secs(1)).unwrap();
-        let next = |accept: &dyn Fn(&Output) -> bool| {
+        let next = |label: &str, accept: &dyn Fn(&Output) -> bool| {
             let until = Instant::now() + Duration::from_secs(3);
             loop {
                 let output = receive
                     .recv_timeout(until.saturating_duration_since(Instant::now()))
-                    .unwrap();
+                    .unwrap_or_else(|error| panic!("{label}: {error}"));
                 if accept(&output) {
                     return output;
                 }
@@ -387,7 +387,9 @@ mod tests {
         };
         send.send(Control::Plug).unwrap();
         wake.wake().unwrap();
-        let Output::Connected(pad) = next(&|output| matches!(output, Output::Connected(_))) else {
+        let Output::Connected(pad) =
+            next("connect", &|output| matches!(output, Output::Connected(_)))
+        else {
             unreachable!()
         };
         assert_eq!(pad.name, "vgames software fixture");
@@ -398,14 +400,15 @@ mod tests {
             .unwrap();
         send.send(Control::Button(true)).unwrap();
         wake.wake().unwrap();
-        let Output::Navigation { action, repeat, .. } =
-            next(&|output| matches!(output, Output::Navigation { .. }))
-        else {
+        let Output::Navigation { action, repeat, .. } = next("navigation", &|output| {
+            matches!(output, Output::Navigation { .. })
+        }) else {
             unreachable!()
         };
         assert_eq!(action, super::super::navigation::NavAction::Accept);
         assert!(!repeat);
         let Output::Tester(state) = next(
+            "tester",
             &|output| matches!(output, Output::Tester(state) if state.buttons.contains(&Button::South)),
         ) else {
             unreachable!()
@@ -414,8 +417,9 @@ mod tests {
         send.send(Control::Button(false)).unwrap();
         send.send(Control::Unplug).unwrap();
         wake.wake().unwrap();
-        let Output::Disconnected(id) = next(&|output| matches!(output, Output::Disconnected(_)))
-        else {
+        let Output::Disconnected(id) = next("disconnect", &|output| {
+            matches!(output, Output::Disconnected(_))
+        }) else {
             unreachable!()
         };
         assert_eq!(id, pad.instance_id);
