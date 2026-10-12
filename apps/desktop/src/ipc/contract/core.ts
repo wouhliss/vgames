@@ -36,7 +36,7 @@ export type AppearanceSettings = {
 // ------------------------------------------------------------------------------------------------
 // Events
 
-export type { NavAction, UiNav, ActiveControllerChanged } from "../../bindings";
+export type { ActiveControllerChanged, NavAction, UiNav } from "../../bindings";
 
 // ------------------------------------------------------------------------------------------------
 // Commands
@@ -57,4 +57,3 @@ export const coreCommands = {
     return call("appearance_set", { settings });
   },
 };
-
