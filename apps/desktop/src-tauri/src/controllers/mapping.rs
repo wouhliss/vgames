@@ -7,11 +7,12 @@
 //! allocation.
 
 use serde::{Deserialize, Serialize};
+use specta::Type;
 
 use crate::events::ControllerKind;
 
 /// Buttons of the canonical (SDL gamepad) layout.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum Button {
     South,
@@ -59,7 +60,7 @@ impl Button {
 }
 
 /// XInput (XUSB) buttons, with their report bits.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum XButton {
     DpadUp,
@@ -134,7 +135,7 @@ pub struct XReport {
 }
 
 /// Per-stick settings, in percent of full deflection.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(deny_unknown_fields, default)]
 pub struct StickSettings {
     /// Radial deadzone (default 8 %).
@@ -156,7 +157,7 @@ impl Default for StickSettings {
 
 /// The user's mapping profile for a package (or the global default), stored
 /// as JSON in `controller_profiles.profile`.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(deny_unknown_fields, default)]
 pub struct Profile {
     /// "Use Nintendo button labels": map Switch Pro face buttons by label
@@ -169,7 +170,7 @@ pub struct Profile {
     pub remap: Vec<Remap>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(deny_unknown_fields)]
 pub struct Remap {
     pub from: Button,

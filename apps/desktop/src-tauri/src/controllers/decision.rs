@@ -1,12 +1,13 @@
 //! Per-launch emulation decision (07-controllers §3).
 
 use serde::{Deserialize, Serialize};
+use specta::Type;
 use vgames_core::manifest::{self, ControllerKind as ManifestKind, EmulatedController};
 
 use crate::events::ControllerKind;
 
 /// The player's per-package choice (`controller_profiles.mode`).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum EmulationMode {
     #[default]
