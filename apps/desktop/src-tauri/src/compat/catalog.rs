@@ -200,14 +200,10 @@ impl RuntimeCatalog {
         };
         // The database is not trusted more than the network: verify again.
         match verify_catalog(&row.catalog, &row.signature, &source.public_key, None) {
-            Ok(verified) => {
-                let accepted = Accepted {
-                    catalog: Arc::new(verified.catalog),
-                    key_id: source.key_id.clone(),
-                };
-                *lock(&self.current) = Some(accepted.clone());
-                Ok(Some(accepted))
-            }
+            Ok(verified) => Ok(Some(self.publish(Accepted {
+                catalog: Arc::new(verified.catalog),
+                key_id: source.key_id.clone(),
+            }))),
             Err(error) => {
                 tracing::warn!(%error, "ignoring a stored runtime catalog that no longer verifies");
                 Ok(None)
@@ -215,27 +211,56 @@ impl RuntimeCatalog {
         }
     }
 
+    /// Makes `candidate` the catalog in use unless a higher version already is
+    /// (a slow read of an older stored row never replaces a newer accepted one).
+    fn publish(&self, candidate: Accepted) -> Accepted {
+        let mut current = lock(&self.current);
+        match current.as_ref() {
+            Some(existing)
+                if existing.key_id == candidate.key_id
+                    && existing.catalog.version >= candidate.catalog.version =>
+            {
+                existing.clone()
+            }
+            _ => {
+                *current = Some(candidate.clone());
+                candidate
+            }
+        }
+    }
+
     /// Fetches the catalog unless the last successful check is younger than
-    /// [`REFRESH_EVERY`]. Returns the catalog in use afterwards.
+    /// [`REFRESH_EVERY`]. Returns the catalog in use afterwards. The check runs
+    /// under the refresh lock, so concurrent callers fetch at most once.
     pub async fn refresh_if_due(&self) -> Result<Option<Accepted>, CatalogError> {
-        let source = self.source.as_ref().ok_or(CatalogError::Off)?;
+        let source = self.source.clone().ok_or(CatalogError::Off)?;
+        let one = self.refreshing.lock().await;
         let checked = stored_checked_at(&self.db, &source.key_id).await?;
         let due = checked.is_none_or(|at| {
             let age = now_unix().saturating_sub(at);
             age < 0 || u64::try_from(age).unwrap_or(0) >= REFRESH_EVERY.as_secs()
         });
         if due {
-            self.refresh().await
+            self.refresh_locked(&source, one).await
         } else {
+            drop(one);
             self.current().await
         }
     }
 
-    /// Fetches, verifies and stores the catalog now.
+    /// Fetches, verifies and stores the catalog now (forced, whatever the 6 h rule says).
     pub async fn refresh(&self) -> Result<Option<Accepted>, CatalogError> {
         let source = self.source.clone().ok_or(CatalogError::Off)?;
-        let _one = self.refreshing.lock().await;
-        let result = self.fetch_and_accept(&source).await;
+        let one = self.refreshing.lock().await;
+        self.refresh_locked(&source, one).await
+    }
+
+    async fn refresh_locked(
+        &self,
+        source: &CatalogSource,
+        _one: tokio::sync::MutexGuard<'_, ()>,
+    ) -> Result<Option<Accepted>, CatalogError> {
+        let result = self.fetch_and_accept(source).await;
         *lock(&self.last_error) = result.as_ref().err().map(ToString::to_string);
         if let Err(error) = &result {
             tracing::warn!(%error, "runtime catalog refresh failed");
@@ -281,7 +306,7 @@ impl RuntimeCatalog {
                 .unwrap_or(version);
             return Err(RuntimesError::Rollback { got: version, seen }.into());
         }
-        *lock(&self.current) = Some(Accepted {
+        self.publish(Accepted {
             catalog: Arc::new(verified.catalog),
             key_id: source.key_id.clone(),
         });
