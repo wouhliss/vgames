@@ -334,3 +334,67 @@ async fn without_a_key_the_manager_is_off() {
     assert_eq!(m.status().await, CatalogStatus::Off);
     assert!(matches!(m.refresh_if_due().await, Err(CatalogError::Off)));
 }
+
+#[tokio::test]
+async fn an_older_read_never_replaces_a_newer_accepted_catalog() {
+    // A reader verified the stored v1 row, then paused; meanwhile v2 was accepted.
+    let server = MockServer::start().await;
+    let db = Db::open_in_memory().unwrap();
+    let m = manager(source(&server, None), db.clone());
+    serve(
+        &server,
+        vector("runtimes-v2.json"),
+        vector("runtimes-v2.json.minisig"),
+    )
+    .await;
+    m.refresh().await.unwrap();
+    let key = source(&server, None);
+    let older = verify_catalog(
+        &vector("runtimes-v1.json"),
+        &vector_text("runtimes-v1.json.minisig"),
+        &key.public_key,
+        None,
+    )
+    .unwrap();
+    let published = m.publish(Accepted {
+        catalog: Arc::new(older.catalog),
+        key_id: key.key_id.clone(),
+    });
+    assert_eq!(
+        published.catalog.version, 2,
+        "the paused reader gets the newer catalog"
+    );
+    assert_eq!(m.current().await.unwrap().unwrap().catalog.version, 2);
+}
+
+#[tokio::test]
+async fn concurrent_due_checks_fetch_once() {
+    let server = MockServer::start().await;
+    serve(
+        &server,
+        vector("runtimes-v2.json"),
+        vector("runtimes-v2.json.minisig"),
+    )
+    .await;
+    let m = Arc::new(manager(
+        source(&server, None),
+        Db::open_in_memory().unwrap(),
+    ));
+    let calls: Vec<_> = (0..8)
+        .map(|_| {
+            let m = Arc::clone(&m);
+            tokio::spawn(async move { m.refresh_if_due().await.unwrap().unwrap().catalog.version })
+        })
+        .collect();
+    for call in calls {
+        assert_eq!(call.await.unwrap(), 2);
+    }
+    assert_eq!(
+        server.received_requests().await.unwrap().len(),
+        2,
+        "one catalog and one signature request"
+    );
+    // A forced refresh still fetches.
+    m.refresh().await.unwrap();
+    assert_eq!(server.received_requests().await.unwrap().len(), 4);
+}
