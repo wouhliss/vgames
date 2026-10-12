@@ -14,6 +14,10 @@ export const commands = {
 	 */
 	appReady: () => typedError<null, CommandError>(__TAURI_INVOKE("app_ready")),
 	appInfo: () => __TAURI_INVOKE<AppInfo>("app_info"),
+	controllersSettingsGet: () => typedError<ControllerSettings, AppError>(__TAURI_INVOKE("controllers_settings_get")),
+	controllersSettingsSet: (settings: ControllerSettings) => typedError<ControllerSettings, AppError>(__TAURI_INVOKE("controllers_settings_set", { settings })),
+	controllersProfileGet: (packageRef: PackageRef) => typedError<ControllerProfile, AppError>(__TAURI_INVOKE("controllers_profile_get", { packageRef })),
+	controllersProfileSet: (packageRef: PackageRef, profile: ControllerProfile) => typedError<ControllerProfile, AppError>(__TAURI_INVOKE("controllers_profile_set", { packageRef, profile })),
 	/**
 	 *  Every stored server, the active one flagged. A database failure is logged
 	 *  and reads as an empty list (the UI then offers to add a server).
@@ -351,6 +355,11 @@ export type BlockedUser = {
 /**  An install that is busy with something else. */
 export type BusyState = "installing" | "updating" | "repairing" | "moving" | "uninstalling";
 
+/**  Buttons of the canonical (SDL gamepad) layout. */
+export type Button = "south" | "east" | "west" | "north" | "back" | "guide" | "start" | "left_stick" | "right_stick" | "left_shoulder" | "right_shoulder" | "dpad_up" | "dpad_down" | "dpad_left" | "dpad_right" | 
+/**  DualSense touchpad click. */
+"touchpad";
+
 export type CatalogError = 
 /**  The package doesn't exist anymore, or isn't published. */
 { kind: "not_found" } | { kind: "offline" } | { kind: "unauthenticated" } | { kind: "server"; code: string; message: string };
@@ -491,6 +500,28 @@ export type ControllerEvent = {
 /**  Controller family, as classified by the input thread (07-controllers §2). */
 export type ControllerKind = "xinput" | "dualshock4" | "dualsense" | "switch_pro" | "generic";
 
+export type ControllerMapping = {
+	nintendo_labels: boolean,
+	left_stick: ControllerStickSettings,
+	right_stick: ControllerStickSettings,
+	remap: Remap[],
+};
+
+export type ControllerProfile = {
+	mode: EmulationMode,
+	mapping: ControllerMapping,
+};
+
+export type ControllerSettings = {
+	nintendo_labels: boolean,
+};
+
+export type ControllerStickSettings = {
+	deadzone: number,
+	anti_deadzone: number,
+	invert_y: boolean,
+};
+
 export type Conversation = {
 	id: string,
 	kind: ConversationKind,
@@ -587,6 +618,9 @@ export type DownloadState = { kind: "active" } | { kind: "queued" } | { kind: "p
 
 /**  The queue or the history changed (jobs added, reordered, paused, finished, removed). */
 export type DownloadsChanged = Record<string, never>;
+
+/**  The player's per-package choice (`controller_profiles.mode`). */
+export type EmulationMode = "auto" | "always" | "never";
 
 /**  Stable, closed set of error codes for the UI. */
 export type ErrorCode = 
@@ -1165,6 +1199,11 @@ export type ReleaseNotes = {
 	entries: ChangeEntry[],
 };
 
+export type Remap = {
+	from: Button,
+	to: XButton | null,
+};
+
 export type Role = "user" | "admin" | "owner";
 
 export type Screenshot = {
@@ -1359,6 +1398,9 @@ export type WhatsNew = {
 	/**  True when the changelog could not be used and `notes` from `latest.json` are shown. */
 	from_latest_notes: boolean,
 };
+
+/**  XInput (XUSB) buttons, with their report bits. */
+export type XButton = "dpad_up" | "dpad_down" | "dpad_left" | "dpad_right" | "start" | "back" | "left_thumb" | "right_thumb" | "left_shoulder" | "right_shoulder" | "guide" | "a" | "b" | "x" | "y";
 
 /* Tauri Specta runtime */
 async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; data: T } | { status: "error"; error: E }> {

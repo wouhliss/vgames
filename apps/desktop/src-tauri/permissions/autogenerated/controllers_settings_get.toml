@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-controllers-settings-get"
+description = "Enables the controllers_settings_get command without any pre-configured scope."
+commands.allow = ["controllers_settings_get"]
+
+[[permission]]
+identifier = "deny-controllers-settings-get"
+description = "Denies the controllers_settings_get command without any pre-configured scope."
+commands.deny = ["controllers_settings_get"]

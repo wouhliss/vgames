@@ -108,6 +108,10 @@
     "allow-publish-resume",
     "allow-publish-dismiss",
     "allow-publish-release",
-    "allow-version-yank"
+    "allow-version-yank",
+    "allow-controllers-settings-get",
+    "allow-controllers-settings-set",
+    "allow-controllers-profile-get",
+    "allow-controllers-profile-set"
   ]
 }
