@@ -51,9 +51,13 @@ impl LaunchHooks for OverlayService {
         Result<crate::launch::hooks::HookEnv, crate::launch::hooks::LaunchVeto>,
     > {
         Box::pin(async move {
-            Ok(crate::launch::hooks::HookEnv(
-                self.prepare_launch(ctx.package, "").await,
-            ))
+            let mut env = self.prepare_launch(ctx.package, "").await;
+            if !env.is_empty()
+                && let Some(preload) = gl_preload(ctx, this_install_library().as_deref())
+            {
+                env.push(preload);
+            }
+            Ok(crate::launch::hooks::HookEnv(env))
         })
     }
 
@@ -72,6 +76,33 @@ impl LaunchHooks for OverlayService {
     fn aborted(&self, ctx: &crate::launch::hooks::LaunchContext) {
         self.end_session(ctx.package);
     }
+}
+
+/// The renderer library of this install, if it is there.
+fn this_install_library() -> Option<std::path::PathBuf> {
+    vulkan_layer::installed_library().filter(|p| p.is_file())
+}
+
+/// `LD_PRELOAD` for the GL hooks (GAME-08): native 64-bit Linux games only (Proton and Wine
+/// games present through Vulkan, which the implicit layer covers; a 32-bit game could not load
+/// the library), and only for a path `LD_PRELOAD` can carry (no space or colon).
+fn gl_preload(
+    ctx: &crate::launch::hooks::LaunchContext,
+    library: Option<&std::path::Path>,
+) -> Option<(String, String)> {
+    use vgames_core::manifest::Platform;
+    if !cfg!(all(target_os = "linux", target_arch = "x86_64"))
+        || ctx.layer != crate::launch::hooks::LaunchLayer::Native
+        || ctx.platform != Platform::LinuxX86_64
+    {
+        return None;
+    }
+    let path = library?.to_str()?;
+    if !std::path::Path::new(path).is_absolute() || path.contains([' ', ':', '\t', '\n']) {
+        tracing::warn!("the overlay library path cannot be preloaded; GL games get the fallback");
+        return None;
+    }
+    Some(("LD_PRELOAD".to_owned(), path.to_owned()))
 }
 
 /// How the overlay shows when it is not drawn inside the game (05-social §6.2–§6.3).
@@ -693,6 +724,53 @@ mod tests {
                 "the broker still listens"
             );
             tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    }
+
+    #[test]
+    fn only_native_64_bit_linux_games_get_the_gl_preload() {
+        use crate::launch::hooks::{LaunchContext, LaunchLayer};
+        use vgames_core::manifest::Platform;
+        let ctx = |layer, platform| LaunchContext {
+            package: PackageRef {
+                server_id: Uuid::from_u128(1),
+                package_id: Uuid::from_u128(2),
+            },
+            root: std::path::PathBuf::new(),
+            platform,
+            layer,
+            prefix_dir: None,
+            cancellation: CancellationToken::new(),
+        };
+        let lib = std::path::Path::new("/opt/vgames/libvgames_overlay.so");
+        let native = ctx(LaunchLayer::Native, Platform::LinuxX86_64);
+        let expected = cfg!(all(target_os = "linux", target_arch = "x86_64"))
+            .then(|| ("LD_PRELOAD".to_owned(), lib.to_str().unwrap().to_owned()));
+        assert_eq!(gl_preload(&native, Some(lib)), expected);
+        // Vulkan covers Proton and Wine; other builds cannot load the library.
+        assert_eq!(
+            gl_preload(
+                &ctx(LaunchLayer::Proton, Platform::WindowsX86_64),
+                Some(lib)
+            ),
+            None
+        );
+        assert_eq!(
+            gl_preload(&ctx(LaunchLayer::Native, Platform::LinuxAarch64), Some(lib)),
+            None
+        );
+        // Nothing to preload, or a path LD_PRELOAD would split.
+        assert_eq!(gl_preload(&native, None), None);
+        for bad in [
+            "/opt/v games/libvgames_overlay.so",
+            "/opt/a:b/libvgames_overlay.so",
+            "lib.so",
+        ] {
+            assert_eq!(
+                gl_preload(&native, Some(std::path::Path::new(bad))),
+                None,
+                "{bad}"
+            );
         }
     }
 

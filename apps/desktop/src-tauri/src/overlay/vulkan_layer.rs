@@ -100,6 +100,14 @@ pub fn sync(dir: &Path, library: Option<&Path>) -> io::Result<Registration> {
     Ok(Registration::Written)
 }
 
+/// Where this install keeps the renderer library (next to the launcher executable; GAME-11
+/// moves it into the bundle's resources). The Vulkan layer manifest and the GL preload both
+/// point here.
+pub fn installed_library() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    Some(exe.parent()?.join(LIBRARY_FILE))
+}
+
 /// Registers the layer for this install (Linux; a no-op elsewhere for now). Never fails the
 /// launcher: problems are logged and games run without the in-game renderer.
 pub fn register_for_this_install() {
@@ -111,10 +119,7 @@ pub fn register_for_this_install() {
         tracing::debug!("no data directory for the Vulkan layer manifest");
         return;
     };
-    let library = std::env::current_exe()
-        .ok()
-        .and_then(|exe| exe.parent().map(|d| d.join(LIBRARY_FILE)));
-    match sync(&dir, library.as_deref()) {
+    match sync(&dir, installed_library().as_deref()) {
         Ok(result) => tracing::debug!(?result, "Vulkan overlay layer"),
         Err(error) => tracing::warn!(%error, "cannot register the Vulkan overlay layer"),
     }
