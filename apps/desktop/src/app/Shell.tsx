@@ -9,6 +9,7 @@ import { events } from "../ipc";
 import { useTauriEvent } from "../ipc/events";
 import { InviteHost } from "../routes/friends/invites";
 import { canPublish } from "../routes/publish/model";
+import { OverlayDisabledNotice } from "./OverlayDisabledNotice";
 import { useActiveServer, useOnboardingNeed, useServers } from "./queries";
 import styles from "./Shell.module.css";
 import { AccountMenu, DownloadIndicator, ServerSwitcher } from "./TopBar";
@@ -104,6 +105,7 @@ export function Shell() {
           <AccountMenu server={server} />
         </header>
         <UpdateBanner />
+        <OverlayDisabledNotice />
         {offline.has(server.id) ? (
           <div className={styles.banner} role="status">
             <span className={styles.bannerIcon}>
