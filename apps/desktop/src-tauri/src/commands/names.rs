@@ -135,6 +135,7 @@ pub const MAIN_WINDOW_COMMANDS: &[&str] = &[
     "save_conflict_resolve",
     "saves_history",
     "saves_restore",
+    "open_external_url",
 ];
 
 /// Commands the in-game overlay window may call. Only `overlay_*` commands

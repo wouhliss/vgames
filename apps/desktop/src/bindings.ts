@@ -264,6 +264,7 @@ export const commands = {
 	 *  confirms first; refused while the game runs or a conflict is open.
 	 */
 	savesRestore: (pkg: PackageRef, source: SaveSource) => typedError<SaveStatus, AppError>(__TAURI_INVOKE("saves_restore", { pkg, source })),
+	openExternalUrl: (url: string) => typedError<null, AppError>(__TAURI_INVOKE("open_external_url", { url })),
 };
 
 /** Events */
