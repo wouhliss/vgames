@@ -7,9 +7,11 @@ process. Context switches are the closest /proc proxy for wakeups: an idle,
 event-driven process sits in blocking waits and switches only when the OS or the
 compositor pokes it.
 
-Usage: idle.py <pid> [seconds=60]
+Usage: idle.py <pid> [seconds=60] [--thread vgames-sdl]
 """
 
+import argparse
+import math
 import os
 import sys
 import time
@@ -89,12 +91,71 @@ def sample(pids):
     return data
 
 
+def thread_sample(pid, tid):
+    base = f"/proc/{pid}/task/{tid}"
+    with open(f"{base}/stat") as f:
+        fields = f.read().rsplit(")", 1)[1].split()
+    with open(f"{base}/status") as f:
+        status = dict(line.split(":", 1) for line in f if ":" in line)
+    return {
+        "started": int(fields[19]),
+        "cpu": int(fields[11]) + int(fields[12]),
+        "voluntary": int(status["voluntary_ctxt_switches"]),
+        "involuntary": int(status["nonvoluntary_ctxt_switches"]),
+    }
+
+
+def measure_thread(pid, thread_name, seconds, require_zero):
+    matches = []
+    for tid in os.listdir(f"/proc/{pid}/task"):
+        try:
+            with open(f"/proc/{pid}/task/{tid}/comm") as f:
+                if f.read().strip() == thread_name:
+                    matches.append(int(tid))
+        except OSError:
+            pass
+    if len(matches) != 1:
+        raise RuntimeError(f"expected one {thread_name!r} thread; found {len(matches)}")
+    tid = matches[0]
+    before = thread_sample(pid, tid)
+    start = time.monotonic()
+    time.sleep(seconds)
+    elapsed = time.monotonic() - start
+    after = thread_sample(pid, tid)
+    if before["started"] != after["started"]:
+        raise RuntimeError("thread identity changed during measurement")
+    voluntary = after["voluntary"] - before["voluntary"]
+    involuntary = after["involuntary"] - before["involuntary"]
+    cpu = (after["cpu"] - before["cpu"]) / CLK_TCK
+    if min(voluntary, involuntary, cpu) < 0:
+        raise RuntimeError("thread counters decreased during measurement")
+    print(f"pid: {pid}; tid: {tid}; thread: {thread_name}; window: {elapsed:.1f} s")
+    print(f"cpu: {cpu:.2f} s ({100 * cpu / elapsed:.2f}%)")
+    print(f"voluntary context switches: {voluntary}")
+    print(f"involuntary context switches: {involuntary}")
+    if require_zero and voluntary != 0:
+        raise RuntimeError("idle thread had voluntary context switches")
+
+
 def main():
-    if len(sys.argv) < 2:
-        print(__doc__)
-        sys.exit(2)
-    root = int(sys.argv[1])
-    seconds = float(sys.argv[2]) if len(sys.argv) > 2 else 60.0
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("pid", type=int)
+    parser.add_argument("seconds", nargs="?", type=float, default=60.0)
+    parser.add_argument("--thread", help="Measure one named thread instead of the process tree.")
+    parser.add_argument("--require-zero-voluntary", action="store_true")
+    args = parser.parse_args()
+    if args.pid <= 0 or not math.isfinite(args.seconds) or args.seconds <= 0:
+        parser.error("pid and seconds must be positive; seconds must be finite")
+    if args.require_zero_voluntary and not args.thread:
+        parser.error("--require-zero-voluntary needs --thread")
+    root, seconds = args.pid, args.seconds
+    if args.thread:
+        try:
+            measure_thread(root, args.thread, seconds, args.require_zero_voluntary)
+        except (OSError, RuntimeError, ValueError) as error:
+            print(f"measurement failed: {error}", file=sys.stderr)
+            sys.exit(1)
+        return
     pids = tree(root)
     before = sample(pids)
     start = time.monotonic()

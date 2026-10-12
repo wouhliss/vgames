@@ -14,6 +14,7 @@
 ## Needs from others
 
 ## PLAY-04 prerequisites
+- WIP input thread and named-thread perf gate: lifecycle/wakeup code and the original counter-based 20-test suite passed, but the stronger Linux idle test intentionally exposes upstream headless polling. With SDL 3.4.16, the exact-source no-pad probe measured 55,526 voluntary switches and 0.78 s CPU over 60 s (1.30%). `SDL_events.c` falls back to a one-millisecond pump without an active video window. This prototype stays off main until a blocking event notification plus native hot-plug wakeup passes the unchanged zero-switch gate. Proposed contract #196 records the finding; remaining work is input event routing, native monitors, commands, tester and Settings UI.
 - `play/p2-controller-input` adds the navigation state machine and SDL classification. All 19 controller tests (including six new navigation/classification regressions), formatting and full desktop Clippy pass locally. The SDL thread, commands, tester and Settings screen are still in progress; this branch is stacked on the static SDL build.
 - Controller contract proposed in [#196](https://github.com/wouhliss/vgames/pull/196) for INT review; implementation can proceed against it.
 - [#197](https://github.com/wouhliss/vgames/pull/197) merged static SDL3 after all hosted checks and three-OS builds passed. The native version-call test and full desktop Clippy pass locally; Linux development prerequisites are documented and appended to all desktop build jobs. Native three-OS linkage and hosted checks are required before merge.
