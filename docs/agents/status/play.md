@@ -7,6 +7,7 @@
 - PLAY-01: ordered launch hooks, cancellable compatibility plans and session-owned exit callbacks merged in [#193](https://github.com/wouhliss/vgames/pull/193). Every hosted check passed on Windows, Linux and macOS, including the launcher browser performance test.
 
 ## In progress
+- PLAY-01 hook fixture corrected after native Linux CI: a controlled FIFO holds the child until the test releases it, so startup duration cannot invalidate the early-exit assertion. Full process-tree and exactly-once re-attach checks remain unchanged.
 
 
 ## Interfaces delivered (other agents may now rely on these)
