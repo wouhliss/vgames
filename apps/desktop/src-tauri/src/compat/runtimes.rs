@@ -441,7 +441,7 @@ async fn is_recorded(db: &Db, rt: &Runtime) -> Result<bool, DbError> {
     .await
 }
 
-async fn record(db: &Db, rt: &Runtime) -> Result<(), DbError> {
+pub(super) async fn record(db: &Db, rt: &Runtime) -> Result<(), DbError> {
     let arch = match rt.arch {
         vgames_core::runtimes::Arch::X86_64 => "x86_64",
         vgames_core::runtimes::Arch::Aarch64 => "aarch64",

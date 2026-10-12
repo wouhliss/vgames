@@ -33,7 +33,7 @@ tauri-plugin-process.workspace = true
 tauri-specta.workspace = true
 specta.workspace = true
 specta-typescript.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["process"] }
 tokio-util.workspace = true
 futures-util.workspace = true
 reqwest.workspace = true
@@ -102,6 +102,8 @@ libc.workspace = true
 evdev = "0.13"
 # Game process tracking (pidfd, poll, eventfd, process groups).
 libc.workspace = true
+# Proton pre-flight: is there a Vulkan driver (compat::preflight)?
+ash.workspace = true
 
 [lints]
 workspace = true
