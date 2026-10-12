@@ -56,6 +56,11 @@
 - From GAME (GAME-03): `build.rs` gains `embed_runtime_catalog_key()`, which copies `runtimes/runtime-catalog.pub`
   (INT-08) into `OUT_DIR` (an empty file without it) for `compat::catalog`; it watches `runtimes/`. Nothing else
   in the build changed.
+- From GAME (GAME-05): `compat::plan::CompatPlanner` implements your `launch::hooks::PlanSource` and is registered in
+  `AppState::new` with `launcher.hooks().register_plan_source(..)`; it builds the release from the verified manifest
+  and honours `ctx.cancellation`. `compat::save_base(prefix, runner, base) -> Option<PathBuf>` (README §1 signature)
+  maps every 06 §1 base into a prefix per 09 §6 (`steamuser` for Proton, the login name for Wine; `None` for
+  `install`) for PLAY-06.
 
 ## PLAY-01 integration API (branch `play/p2-launch-hooks`)
 

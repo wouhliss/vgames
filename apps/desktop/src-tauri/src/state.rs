@@ -138,6 +138,17 @@ impl AppState {
             Arc::clone(&servers),
             db.clone(),
         ));
+        let planner = Arc::new(crate::compat::plan::CompatPlanner::new(
+            paths.data_dir.clone(),
+            Arc::clone(&runtime_catalog),
+            Arc::clone(&runtime_store),
+            Arc::clone(&compat_profiles),
+            Arc::new(crate::compat::preflight::System),
+            crate::launch::orchestrate::host_platform(),
+        ));
+        if !launcher.hooks().register_plan_source(planner) {
+            tracing::warn!("a launch plan source was already registered");
+        }
         Ok(Self {
             compat_profiles,
             runtime_store,
