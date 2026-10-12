@@ -11,13 +11,23 @@ dedicated `vgames-sdl` thread owns SDL initialization and gamepad handles, enabl
 the HIDAPI drivers and loads the bundled `gamecontrollerdb.txt`. Initialization
 failure is reported to Settings; it never prevents a native game launch.
 
-The thread blocks in **`SDL_WaitEvent`**, replacing §2's
+The thread consumes events with **`SDL_WaitEvent`**, replacing §2's
 `SDL_WaitEventTimeout`. Shutdown pushes a private SDL event. With no connected pad
-there is no recurring timer, polling or periodic wakeup. Navigation repeat and the
+there must be no recurring timer, polling or periodic wakeup. Navigation repeat and the
 one-second Guide hold use deadlines armed only while a relevant input is held;
 release, disconnect and shutdown cancel them. They wake the event queue, rather
 than changing it into an idle polling loop. Tests measure the input loop and the
 named thread, including the disconnected idle state.
+
+**Measured headless SDL caveat:** SDL 3.4.16's `SDL_WaitEvent` falls back to an
+internal one-millisecond pump loop without an active SDL video window. The local
+Ubuntu 24.04 no-pad probe recorded 55,526 voluntary context switches in 60 seconds
+and 0.78 s CPU, despite an unchanged Rust event-loop counter. That counter alone
+cannot establish idle blocking. The implementation must gate headless queue
+consumption with a real blocking event notification, retain native device-change
+notifications for hot-plug, and pass `perf/idle.py --thread vgames-sdl`'s actual
+context-switch measurement before shipment. It must not replace this check with
+a Rust iteration counter or a periodic discovery timer.
 
 An instance id identifies one connection, not a persisted physical device. Each
 pad exposes `instance_id`, `kind` (`ControllerKind`), `name`, `connection`
