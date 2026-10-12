@@ -1,11 +1,11 @@
 # PLAY status
 
 ## Done
+- PLAY-02: Windows suspended spawn, bounded pre-resume, UTF-16 inputs, completion-port job tracking and stop merged in [#194](https://github.com/wouhliss/vgames/pull/194). All seventeen hosted checks passed on current main, including native Windows regressions and three-OS release builds. Final exit waits for the leader signal and releases completed stop handles; the post-exit re-attach and cancellable final-wait regressions pass.
 - PLAY-01: ordered launch hooks, cancellable compatibility plans and session-owned exit callbacks merged in [#193](https://github.com/wouhliss/vgames/pull/193). Every hosted check passed on Windows, Linux and macOS, including the launcher browser performance test.
 
 ## In progress
-- PLAY-02: suspended Windows spawn, explicit UTF-16 inputs, unnamed Job Object tracking and stop implemented in [#194](https://github.com/wouhliss/vgames/pull/194), based on merged PLAY-01. Cross-target process Clippy, full Linux desktop Clippy and all 54 Linux launch regressions pass (one existing benchmark ignored). Hosted Windows repeatedly passed 335 tests but failed the post-exit re-attach check: a retained process object can still appear in Toolhelp while OpenProcess returns access denied. The backend now excludes zero-thread entries from the live snapshot and requests query rights before mutation rights; live access errors still fail closed. Fresh native/hosted validation pending. The tracker now confirms the leader handle is signaled after job accounting reaches zero, with a separate cancellation event for that final wait. A deterministic native regression models zero accounting with an unsignaled leader and proves cancellation leaves it alive. Re-attach errors identify the failed native stage. Finished stop handles now release their job reference instead of pinning terminated process objects; active and detached stop handles retain it.
-- PLAY-03: implemented macOS process-group tracking with kqueue, PID/start-time validation, child discovery, whole-group stop and cancellation without killing. Portable process/orchestrator fixtures now run on macOS; added a native idle-wakeup measurement. Cross-target Clippy passes and all 54 Linux launch regressions pass (one existing benchmark ignored). The native macOS suite passed, including the idle-wakeup measurement; fresh full validation runs after inheriting the latest Windows fix. Stacked on PLAY-02 until it merges.
+- PLAY-03: implemented macOS process-group tracking with kqueue, PID/start-time validation, child discovery, whole-group stop and cancellation without killing. Portable process/orchestrator fixtures now run on macOS; added a native idle-wakeup measurement. Cross-target Clippy passes and all 54 Linux launch regressions pass (one existing benchmark ignored). The native macOS suite passed, including the idle-wakeup measurement; fresh full validation runs after inheriting the latest Windows fix. Rebased onto merged PLAY-02/current main; #195 is retargeted to main for fresh validation.
 
 ## Interfaces delivered (other agents may now rely on these)
 - Inherited from Agent 2: verified launch targets and environment preparation (`launch::{target,plan,prelaunch}`), Linux pidfd/process-group tracking, session records and playtime, the typed event bus, SQLite worker/migration/settings APIs, strict deep-link parsing and shortcut files. Phase-1 status stays unchanged.
@@ -15,7 +15,7 @@
 
 ## PLAY-04 prerequisites
 - Controller contract proposed in [#196](https://github.com/wouhliss/vgames/pull/196) for INT review; implementation can proceed against it.
-- `play/p2-sdl-static` builds SDL3 from source and links statically. The native version-call test and full desktop Clippy pass locally; Linux development prerequisites are documented and appended to all desktop build jobs. Native three-OS linkage and hosted checks are required before merge.
+- [#197](https://github.com/wouhliss/vgames/pull/197) merged static SDL3 after all hosted checks and three-OS builds passed. The native version-call test and full desktop Clippy pass locally; Linux development prerequisites are documented and appended to all desktop build jobs. Native three-OS linkage and hosted checks are required before merge.
 
 ## Blockers / contract questions
 - Repository write access and email privacy are resolved; PLAY commits use the account's GitHub no-reply address.
