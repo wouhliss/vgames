@@ -10,15 +10,7 @@ use std::time::Duration;
 
 use sdl3::event::{Event, EventSender};
 
-#[cfg(target_os = "linux")]
-#[path = "input_linux.rs"]
-mod idle;
-#[cfg(target_os = "windows")]
-#[path = "input_windows.rs"]
-mod idle;
-#[cfg(target_os = "macos")]
-#[path = "input_macos.rs"]
-mod idle;
+use super::idle;
 
 const DATABASE: &str = include_str!("../../resources/gamecontrollerdb.txt");
 
@@ -30,9 +22,6 @@ pub enum InputEvent {
 struct Wake {
     sender: EventSender,
     event_type: u32,
-    #[cfg(target_os = "linux")]
-    idle: Arc<std::os::fd::OwnedFd>,
-    #[cfg(any(target_os = "windows", target_os = "macos"))]
     idle: Arc<idle::Wake>,
 }
 
