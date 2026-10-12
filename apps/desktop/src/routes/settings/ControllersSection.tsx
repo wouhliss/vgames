@@ -9,6 +9,7 @@ import { type ConnectedPad, commands, events } from "../../ipc";
 import { useTauriEvent } from "../../ipc/events";
 import { unwrap } from "../../ipc/query";
 import { ControllerDrivers } from "./ControllerDrivers";
+import { ControllerProfiles } from "./ControllerProfiles";
 import { ControllerTesterDialog } from "./ControllerTesterDialog";
 import styles from "./Settings.module.css";
 import { Section } from "./SettingsPage";
@@ -104,6 +105,7 @@ export function ControllersSection() {
         )}
       </div>
       <ControllerDrivers />
+      <ControllerProfiles />
       {liveTester ? (
         <ControllerTesterDialog
           key={liveTester.instance_id}

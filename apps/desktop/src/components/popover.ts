@@ -44,6 +44,7 @@ export function useDismissPopover(
 ): void {
   useEffect(() => {
     if (!open) return;
+    const openingRect = anchor.current?.getBoundingClientRect();
     function onPointerDown(e: PointerEvent) {
       const target = e.target as Node;
       if (popover.current?.contains(target) || anchor.current?.contains(target)) return;
@@ -51,6 +52,19 @@ export function useDismissPopover(
     }
     function onScroll(e: Event) {
       if (popover.current && e.target instanceof Node && popover.current.contains(e.target)) return;
+      const rect = anchor.current?.getBoundingClientRect();
+      // A click may scroll the anchor into view before opening, with its scroll
+      // event delivered afterwards. Keep the menu if the measured anchor did
+      // not move; close when actual scrolling changes its position.
+      if (
+        openingRect &&
+        rect &&
+        openingRect.left === rect.left &&
+        openingRect.top === rect.top &&
+        openingRect.right === rect.right &&
+        openingRect.bottom === rect.bottom
+      )
+        return;
       close();
     }
     document.addEventListener("pointerdown", onPointerDown, true);
