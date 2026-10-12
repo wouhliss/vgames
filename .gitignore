@@ -32,3 +32,7 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# Overlay renderers staged for bundling (GAME-11); build outputs.
+apps/desktop/src-tauri/resources/overlay/*
+!apps/desktop/src-tauri/resources/overlay/README.md

@@ -40,7 +40,20 @@ pub fn init(app: &AppHandle, state: &AppState, social: SocialService, hub: Arc<H
         &state.bus,
         state.shutdown.child_token(),
     );
-    tauri::async_runtime::spawn_blocking(super::vulkan_layer::register_for_this_install);
+    // The renderers ship in the bundle's resources (GAME-11); without them games run as usual.
+    let library = app
+        .path()
+        .resource_dir()
+        .ok()
+        .map(|dir| super::vulkan_layer::installed_library(&dir))
+        .filter(|p| p.is_file());
+    if library.is_none() {
+        tracing::info!("the in-game overlay renderer is not bundled; games get the fallback");
+    }
+    service.set_library(library.clone());
+    tauri::async_runtime::spawn_blocking(move || {
+        super::vulkan_layer::register_for_this_install(library);
+    });
     // Every game the launcher starts gets the overlay environment.
     state.launcher.hooks().register(
         crate::launch::hooks::HookStage::Overlay,

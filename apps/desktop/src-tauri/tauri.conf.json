@@ -71,6 +71,9 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "resources": {
+      "resources/overlay/": "overlay/"
+    },
     "windows": {
       "nsis": {
         "installMode": "currentUser"

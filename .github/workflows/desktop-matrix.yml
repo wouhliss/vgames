@@ -94,6 +94,22 @@ jobs:
         run: >-
           cargo test --locked --target ${{ matrix.target }}
           -p vgames-desktop -p vgames-core -p vgames-pack -p vgames-transfer -p vgames-overlay
+      # GAME-11: the in-game renderer is a bundle resource (`overlay/` in Tauri's resource
+      # directory). Staged before the release build, which copies it next to the executable,
+      # where a cargo build's resource directory is.
+      - name: Overlay renderer (staged as a bundle resource)
+        if: runner.os != 'macOS'
+        shell: bash
+        run: |
+          cargo build --locked --release --target "$TARGET" -p vgames-overlay --features renderer --lib
+          dir=apps/desktop/src-tauri/resources/overlay
+          if [ "$RUNNER_OS" = Windows ]; then
+            cp "target/$TARGET/release/vgames_overlay.dll" "$dir/vgames_overlay64.dll"
+          else
+            cp "target/$TARGET/release/libvgames_overlay.so" "$dir/"
+          fi
+        env:
+          TARGET: ${{ matrix.target }}
       - name: Release build (unsigned, no bundle)
         run: cargo build --locked --release --target ${{ matrix.target }} -p vgames-desktop
       - name: Release-only rules (debug overrides ignored)
@@ -108,6 +124,16 @@ jobs:
           fi
           cargo test --locked --release --target ${{ matrix.target }} \
             -p vgames-desktop --lib compat::catalog::tests::release_builds_ignore_the_overrides
+      - name: The overlay renderer is where the launcher looks
+        if: runner.os != 'macOS'
+        shell: bash
+        run: |
+          case "$RUNNER_OS" in Windows) file=vgames_overlay64.dll ;; *) file=libvgames_overlay.so ;; esac
+          found="target/$TARGET/release/overlay/$file"
+          test -f "$found" || { echo "missing $found"; ls -R "target/$TARGET/release/overlay" || true; exit 1; }
+          echo "bundled renderer: $found"
+        env:
+          TARGET: ${{ matrix.target }}
 
   gate:
     name: Desktop matrix gate

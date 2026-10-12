@@ -53,7 +53,7 @@ impl LaunchHooks for OverlayService {
         Box::pin(async move {
             let mut env = self.prepare_launch(ctx.package, "").await;
             if !env.is_empty()
-                && let Some(preload) = gl_preload(ctx, this_install_library().as_deref())
+                && let Some(preload) = gl_preload(ctx, self.library().as_deref())
             {
                 env.push(preload);
             }
@@ -76,11 +76,6 @@ impl LaunchHooks for OverlayService {
     fn aborted(&self, ctx: &crate::launch::hooks::LaunchContext) {
         self.end_session(ctx.package);
     }
-}
-
-/// The renderer library of this install, if it is there.
-fn this_install_library() -> Option<std::path::PathBuf> {
-    vulkan_layer::installed_library().filter(|p| p.is_file())
 }
 
 /// `LD_PRELOAD` for the GL hooks (GAME-08): native 64-bit Linux games only (Proton and Wine
@@ -162,6 +157,8 @@ struct Inner {
     sessions: Mutex<HashMap<PackageRef, Session>>,
     shutdown: CancellationToken,
     open_launcher: Mutex<Option<Callback>>,
+    /// The renderer library this install ships (`None`: not bundled; games run without it).
+    library: Mutex<Option<std::path::PathBuf>>,
     valve_tripped: Mutex<Option<PackageCallback>>,
     hotkeys: Mutex<hotkey::HotkeyState>,
     /// Shows (`Some`) or hides (`None`) the fallback.
@@ -202,6 +199,7 @@ impl OverlayService {
                 sessions: Mutex::new(HashMap::new()),
                 shutdown: shutdown.clone(),
                 open_launcher: Mutex::new(None),
+                library: Mutex::new(None),
                 valve_tripped: Mutex::new(None),
                 hotkeys: Mutex::new(hotkey::HotkeyState::new()),
                 fallback: Mutex::new(None),
@@ -260,6 +258,15 @@ impl OverlayService {
     }
 
     /// What "Open vgames" does (show the main window).
+    /// The renderer library found in the bundle's resources (see `vulkan_layer::installed_library`).
+    pub fn set_library(&self, library: Option<std::path::PathBuf>) {
+        *lock(&self.inner.library) = library;
+    }
+
+    fn library(&self) -> Option<std::path::PathBuf> {
+        lock(&self.inner.library).clone()
+    }
+
     pub fn on_open_launcher(&self, f: impl Fn() + Send + Sync + 'static) {
         *lock(&self.inner.open_launcher) = Some(Box::new(f));
     }
