@@ -29,7 +29,7 @@ use ash::vk::{self, Handle as _};
 
 use crate::draw::{self, Region};
 use crate::guard;
-use crate::link::{Endpoint, Link};
+use crate::link::Link;
 use crate::protocol::{RendererKind, View};
 
 /// Drawing may take this long per frame on average before the layer turns itself off.
@@ -267,9 +267,7 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 
 /// The broker link, started with the first instance (none without the launch environment).
 fn link() -> Option<&'static Arc<Link>> {
-    static LINK: OnceLock<Option<Arc<Link>>> = OnceLock::new();
-    LINK.get_or_init(|| Endpoint::from_env().map(|e| Link::start(e, RendererKind::Vulkan)))
-        .as_ref()
+    crate::link::shared(RendererKind::Vulkan)
 }
 
 /// Runs an entry point body; a panic turns the overlay off and returns `fallback`.
@@ -676,10 +674,14 @@ unsafe extern "system" fn create_swapchain(
             ours.image_format,
             vk::Format::B8G8R8A8_UNORM | vk::Format::B8G8R8A8_SRGB
         );
+        let usable = transfer && !images.is_empty();
+        if usable {
+            guard::note_vulkan_draws();
+        }
         lock(&data.state).swapchains.insert(
             handle,
             Swapchain {
-                usable: transfer && !images.is_empty(),
+                usable,
                 images,
                 extent: ours.image_extent,
                 bgra,

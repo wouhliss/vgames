@@ -19,6 +19,11 @@ pub mod protocol;
 /// CPU layout and rasterisation of the overlay cards.
 #[cfg(feature = "renderer")]
 pub mod draw;
+/// Linux OpenGL hooks loaded with `LD_PRELOAD` (FFI with the dynamic linker and the driver:
+/// `unsafe` is allowed here, and every block carries a `SAFETY` comment).
+#[cfg(all(feature = "renderer", target_os = "linux"))]
+#[allow(unsafe_code)]
+pub mod gl;
 /// Hook panic safety net shared by every renderer backend.
 #[cfg(any(feature = "renderer", test))]
 pub mod guard;

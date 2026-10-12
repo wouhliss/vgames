@@ -8245,6 +8245,7 @@ version = "0.1.0"
 dependencies = [
  "ash",
  "font8x8",
+ "libc",
  "libloading 0.8.9",
  "postcard",
  "proptest",
