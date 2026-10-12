@@ -1,6 +1,6 @@
 // PLAY-04 pending commands/events; replace with generated bindings as the Rust lands.
 // Shapes follow 07-controllers-notes and the existing Rust mapping/decision modules.
-import type { AppError, ControllerKind, PackageRef } from "../../bindings";
+import type { AppError, ControllerKind } from "../../bindings";
 import { call, makeEvents, type Result } from "./runtime";
 
 export type ControllerConnection = "usb" | "bluetooth" | "unknown";
@@ -20,7 +20,12 @@ export type ControllerList = {
   state: { kind: "ready" } | { kind: "unavailable"; detail: string };
   pads: ConnectedPad[];
 };
-export type ControllerSettings = { nintendo_labels: boolean };
+export type {
+  ControllerMapping,
+  ControllerProfile,
+  ControllerSettings,
+  ControllerStickSettings,
+} from "../../bindings";
 export type ControllerButton =
   | "south"
   | "east"
@@ -54,21 +59,6 @@ export type XboxButton =
   | "dpad_down"
   | "dpad_left"
   | "dpad_right";
-export type ControllerStickSettings = {
-  deadzone: number;
-  anti_deadzone: number;
-  invert_y: boolean;
-};
-export type ControllerMapping = {
-  nintendo_labels: boolean;
-  left_stick: ControllerStickSettings;
-  right_stick: ControllerStickSettings;
-  remap: { from: ControllerButton; to: XboxButton | null }[];
-};
-export type ControllerProfile = {
-  mode: "auto" | "always" | "never";
-  mapping: ControllerMapping;
-};
 export type ControllerDriverState =
   | { kind: "available" }
   | { kind: "not_required" }
@@ -93,23 +83,6 @@ export type ControllerTesterState = ControllerTester & {
 export const controllerCommands = {
   controllersList(): Promise<Result<ControllerList, AppError>> {
     return call("controllers_list");
-  },
-  controllersSettingsGet(): Promise<Result<ControllerSettings, AppError>> {
-    return call("controllers_settings_get");
-  },
-  controllersSettingsSet(
-    settings: ControllerSettings,
-  ): Promise<Result<ControllerSettings, AppError>> {
-    return call("controllers_settings_set", { settings });
-  },
-  controllersProfileGet(pkg: PackageRef): Promise<Result<ControllerProfile, AppError>> {
-    return call("controllers_profile_get", { packageRef: pkg });
-  },
-  controllersProfileSet(
-    pkg: PackageRef,
-    profile: ControllerProfile,
-  ): Promise<Result<ControllerProfile, AppError>> {
-    return call("controllers_profile_set", { packageRef: pkg, profile });
   },
   controllersDriverStatus(): Promise<Result<ControllerDriverStatus, AppError>> {
     return call("controllers_driver_status");

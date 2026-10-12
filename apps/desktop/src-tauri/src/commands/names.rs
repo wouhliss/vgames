@@ -13,6 +13,10 @@
 pub const MAIN_WINDOW_COMMANDS: &[&str] = &[
     "app_ready",
     "app_info",
+    "controllers_settings_get",
+    "controllers_settings_set",
+    "controllers_profile_get",
+    "controllers_profile_set",
     "servers_list",
     "server_preview",
     "server_confirm",

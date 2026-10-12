@@ -8,6 +8,7 @@ pub(crate) mod account;
 mod app;
 mod catalog;
 mod collections;
+mod controllers;
 mod downloads;
 mod games;
 mod installs;
@@ -37,6 +38,10 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         .commands(tauri_specta::collect_commands![
             app::app_ready,
             app::app_info,
+            controllers::controllers_settings_get,
+            controllers::controllers_settings_set,
+            controllers::controllers_profile_get,
+            controllers::controllers_profile_set,
             servers::servers_list,
             servers::server_preview,
             servers::server_confirm,
