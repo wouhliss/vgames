@@ -28,6 +28,8 @@ pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 /// Largest JSON body accepted from the API.
 pub const MAX_BODY_BYTES: usize = 4 * 1024 * 1024;
+/// Largest problem document read from an error response.
+pub const MAX_PROBLEM_BYTES: usize = 64 * 1024;
 /// Retries after the first attempt, idempotent requests only.
 const MAX_RETRIES: u32 = 2;
 /// Longest `Retry-After` honored automatically; longer waits are left to the user.
@@ -171,7 +173,9 @@ pub async fn read_capped(mut response: reqwest::Response, cap: usize) -> Result<
 pub async fn problem_from(response: reqwest::Response) -> ApiError {
     let status = response.status();
     let retry_after = retry_after(&response).and_then(|d| u32::try_from(d.as_secs()).ok());
-    let body = read_capped(response, 64 * 1024).await.unwrap_or_default();
+    let body = read_capped(response, MAX_PROBLEM_BYTES)
+        .await
+        .unwrap_or_default();
     let mut error = parse_problem(status, &body);
     if let ApiError::Problem { problem, .. } = &mut error {
         problem.retry_after_seconds = retry_after;

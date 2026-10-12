@@ -1,13 +1,16 @@
 //! REST calls to the active server's social endpoints (03-api, `social` tag), and the
 //! mapping of problem responses to [`SocialError`].
 //!
-//! Every call carries the session's bearer token and has a timeout. A `401` reports the
-//! token to the session owner ([`SessionSlot::report_unauthorized`]) and returns
-//! `not_signed_in`; the call is not retried here.
+//! Calls go through the API client's transport: [`crate::api::send_with_retries`] (network
+//! retries and short waits for idempotent calls only) and [`crate::api::problem_from`]
+//! (the bounded RFC 9457 body, a sanitized `code`, field errors, `Retry-After`). Every call
+//! carries the session's bearer token and has a timeout. A `401` asks the session bridge
+//! for a fresh token once (the server's single-flight `api::Session::refresh`) and then
+//! returns `not_signed_in`.
 //!
 //! Redirects are never followed (a bearer token must not reach another host), and every
 //! body is read through [`crate::api::read_capped`]: [`MAX_PROBLEM_BYTES`] for problems,
-//! [`MAX_SUCCESS_BYTES`] for results. A body the launcher cannot parse is logged by
+//! [`MAX_SUCCESS_BYTES`] for results (the API's own 4 MiB cap is too small for a full inbox page). A body the launcher cannot parse is logged by
 //! its error category and position only, never by the server's text.
 
 use std::time::Duration;
@@ -28,11 +31,12 @@ use vgames_proto::social::{
 
 use super::model::{SocialError, SocialLimit};
 use super::ports::{ServerSession, SessionSlot};
+use crate::api::{ApiError, ProblemBody};
 
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
 /// Largest problem body read from an error response.
-pub const MAX_PROBLEM_BYTES: usize = 64 * 1024;
+pub const MAX_PROBLEM_BYTES: usize = crate::api::MAX_PROBLEM_BYTES;
 /// Largest successful response body. The biggest legal one is an inbox page
 /// (`inbox`, `limit=100`): 100 envelopes of up to `MAX_ENVELOPE_CIPHERTEXT`
 /// (64 KiB) of ciphertext, about 87 KiB each in base64 plus metadata, so about
@@ -56,31 +60,42 @@ pub struct SocialApi<'a> {
     pub sessions: &'a SessionSlot,
 }
 
-#[derive(serde::Deserialize, Default)]
-struct Problem {
-    #[serde(default)]
+/// Maps an API failure to the UI error (05-social-notes §5).
+fn map_error(error: ApiError) -> SocialError {
+    match error {
+        ApiError::Timeout | ApiError::Network(_) | ApiError::Tls(_) => SocialError::Offline,
+        ApiError::Unauthenticated | ApiError::TrustBlocked => SocialError::NotSignedIn,
+        ApiError::InvalidResponse(_) => SocialError::Internal {
+            detail: "reading a server response".to_owned(),
+        },
+        ApiError::Problem {
+            status,
+            code,
+            message,
+            problem,
+        } => map_problem(
+            StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+            code,
+            message,
+            *problem,
+        ),
+    }
+}
+
+/// Maps a problem response (already bounded and checked by [`crate::api::problem_from`]).
+fn map_problem(
+    status: StatusCode,
     code: String,
-    #[serde(default)]
-    title: String,
-    #[serde(default)]
-    errors: Vec<ProblemField>,
-}
-
-#[derive(serde::Deserialize)]
-struct ProblemField {
-    field: String,
-    #[serde(default)]
-    message: Option<String>,
-}
-
-/// Maps a problem response to the UI error (05-social-notes §5).
-fn map_problem(status: StatusCode, retry_after: Option<u32>, problem: Problem) -> SocialError {
-    match (status, problem.code.as_str()) {
+    message: String,
+    problem: ProblemBody,
+) -> SocialError {
+    let title = problem.title.unwrap_or_else(|| message.clone());
+    match (status, code.as_str()) {
         (StatusCode::UNAUTHORIZED, _) => SocialError::NotSignedIn,
         (StatusCode::NOT_FOUND, "friend_code_invalid") => SocialError::CodeInvalid,
         (StatusCode::NOT_FOUND, _) => SocialError::NotFound,
         (StatusCode::TOO_MANY_REQUESTS, _) => SocialError::RateLimited {
-            retry_after_seconds: retry_after.unwrap_or(60),
+            retry_after_seconds: problem.retry_after_seconds.unwrap_or(60),
         },
         (StatusCode::CONFLICT, "friend_limit_reached") => SocialError::LimitReached {
             limit: SocialLimit::Friends,
@@ -89,27 +104,28 @@ fn map_problem(status: StatusCode, retry_after: Option<u32>, problem: Problem) -
             limit: SocialLimit::PendingRequests,
         },
         (StatusCode::CONFLICT, _) => SocialError::Conflict {
-            code: problem.code,
-            message: problem.title,
+            code,
+            message: title,
         },
         (StatusCode::BAD_REQUEST, _) => match problem.errors.into_iter().next() {
             Some(f) => SocialError::InvalidInput {
-                message: f.message.unwrap_or_else(|| problem.title.clone()),
+                message: f.message.unwrap_or(title),
                 field: f.field,
             },
             None => SocialError::InvalidInput {
                 field: String::new(),
-                message: problem.title,
+                message: title,
             },
         },
         (s, _) if s.is_server_error() => SocialError::Offline,
+        // A bare status (no usable server code) is named by its number, as before.
         _ => SocialError::Server {
-            code: if problem.code.is_empty() {
+            code: if code == "http_error" {
                 status.as_u16().to_string()
             } else {
-                problem.code
+                code
             },
-            message: problem.title,
+            message: title,
         },
     }
 }
@@ -132,23 +148,28 @@ impl SocialApi<'_> {
         let mut session = self.session.clone();
         let mut retried = false;
         loop {
-            let mut req = self
-                .http
-                .request(method.clone(), url.clone())
-                .bearer_auth(session.access_token.as_str());
-            if let Some(b) = body {
-                req = req.json(b);
-            }
-            let resp = req.send().await.map_err(|e| {
-                tracing::debug!(error = %e.without_url(), "social request failed");
-                SocialError::Offline
+            // ApiClient's transport: network retries for idempotent calls, no redirects.
+            let resp = crate::api::send_with_retries(&method, || {
+                let req = self
+                    .http
+                    .request(method.clone(), url.clone())
+                    .bearer_auth(session.access_token.as_str());
+                match body {
+                    Some(b) => req.json(b),
+                    None => req,
+                }
+            })
+            .await
+            .map_err(|e| {
+                tracing::debug!(error = %e, "social request failed");
+                map_error(e)
             })?;
             let status = resp.status();
             if status.is_success() {
                 return Ok(resp);
             }
             if status == StatusCode::UNAUTHORIZED {
-                // Once: the token may just have expired (the session bridge refreshes it).
+                // Once: the bridge refreshes through the server's single-flight `Session::refresh`.
                 if !retried && let Some(fresh) = self.sessions.refreshed(&session).await {
                     retried = true;
                     session = fresh;
@@ -156,17 +177,7 @@ impl SocialApi<'_> {
                 }
                 return Err(SocialError::NotSignedIn);
             }
-            let retry_after = resp
-                .headers()
-                .get(reqwest::header::RETRY_AFTER)
-                .and_then(|v| v.to_str().ok())
-                .and_then(|v| v.parse().ok());
-            let problem = crate::api::read_capped(resp, MAX_PROBLEM_BYTES)
-                .await
-                .ok()
-                .and_then(|body| serde_json::from_slice::<Problem>(&body).ok())
-                .unwrap_or_default();
-            return Err(map_problem(status, retry_after, problem));
+            return Err(map_error(crate::api::problem_from(resp).await));
         }
     }
 
@@ -424,6 +435,68 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn reads_retry_a_brief_outage_and_writes_never_do() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/friends"))
+            .respond_with(ResponseTemplate::new(503).insert_header("retry-after", "0"))
+            .up_to_n_times(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/v1/friends"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "friends": [], "incoming": [], "outgoing": []
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/v1/friend-codes"))
+            .respond_with(ResponseTemplate::new(503).set_body_json(serde_json::json!({
+                "code": "<script>", "title": "down"
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let http = http_client().unwrap();
+        let sessions = SessionSlot::new();
+        let api = SocialApi {
+            http: &http,
+            session: session(&format!("{}/", server.uri())),
+            sessions: &sessions,
+        };
+        let list = api.friends().await.unwrap();
+        assert!(list.friends.is_empty());
+        assert_eq!(api.friend_code().await.unwrap_err(), SocialError::Offline);
+    }
+
+    #[tokio::test]
+    async fn a_server_code_that_is_not_a_plain_identifier_is_not_shown() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/friends"))
+            .respond_with(ResponseTemplate::new(403).set_body_json(serde_json::json!({
+                "code": "<img src=x>", "title": "No"
+            })))
+            .mount(&server)
+            .await;
+        let http = http_client().unwrap();
+        let sessions = SessionSlot::new();
+        let api = SocialApi {
+            http: &http,
+            session: session(&format!("{}/", server.uri())),
+            sessions: &sessions,
+        };
+        assert_eq!(
+            api.friends().await.unwrap_err(),
+            SocialError::Server {
+                code: "forbidden".into(),
+                message: "No".into()
+            }
+        );
+    }
+
+    #[tokio::test]
     async fn a_redirect_is_never_followed_and_the_token_stays_home() {
         let target = MockServer::start().await;
         Mock::given(method("GET"))
@@ -558,7 +631,7 @@ mod tests {
             match status {
                 "200 OK" => assert!(matches!(err, SocialError::Internal { .. }), "{err:?}"),
                 _ => assert!(
-                    matches!(&err, SocialError::Conflict { code, .. } if code.is_empty()),
+                    matches!(&err, SocialError::Conflict { code, .. } if code == "http_error"),
                     "{err:?}"
                 ),
             }
@@ -571,18 +644,18 @@ mod tests {
         }
     }
 
-    fn problem(code: &str, field: Option<&str>) -> Problem {
-        Problem {
-            code: code.into(),
-            title: "t".into(),
+    fn problem(field: Option<&str>) -> ProblemBody {
+        ProblemBody {
+            title: Some("t".into()),
             errors: field
                 .map(|f| {
-                    vec![ProblemField {
+                    vec![crate::api::ProblemField {
                         field: f.into(),
                         message: Some("m".into()),
                     }]
                 })
                 .unwrap_or_default(),
+            ..ProblemBody::default()
         }
     }
 
@@ -651,7 +724,7 @@ mod tests {
         ];
         for (status, code, field, want) in cases {
             assert_eq!(
-                map_problem(status, None, problem(code, field)),
+                map_problem(status, code.into(), "detail".into(), problem(field)),
                 want,
                 "{status} {code}"
             );
@@ -659,8 +732,12 @@ mod tests {
         assert_eq!(
             map_problem(
                 StatusCode::TOO_MANY_REQUESTS,
-                Some(42),
-                problem("rate_limited", None)
+                "rate_limited".into(),
+                "detail".into(),
+                ProblemBody {
+                    retry_after_seconds: Some(42),
+                    ..problem(None)
+                }
             ),
             SocialError::RateLimited {
                 retry_after_seconds: 42
