@@ -8,8 +8,9 @@ export type ControllerBattery = {
   percent: number | null;
   state: "charging" | "on_battery" | "wired" | "unknown";
 };
-export type { ConnectedPad, ControllerList } from "../../bindings";
 export type {
+  ConnectedPad,
+  ControllerList,
   ControllerMapping,
   ControllerProfile,
   ControllerSettings,
@@ -60,12 +61,10 @@ export type ControllerDriverStatus = {
   emulation: ControllerDriverState;
   hiding: ControllerDriverState;
 };
-export type { Tester as ControllerTester } from "../../bindings";
-export type { ControllerTesterState } from "../../bindings";
+export type { ControllerTesterState, Tester as ControllerTester } from "../../bindings";
 
 export const controllerCommands = {
   controllersDriverStatus(): Promise<Result<ControllerDriverStatus, AppError>> {
     return call("controllers_driver_status");
   },
-
 };
