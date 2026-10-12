@@ -7,6 +7,7 @@
 - PLAY-01: ordered launch hooks, cancellable compatibility plans and session-owned exit callbacks merged in [#193](https://github.com/wouhliss/vgames/pull/193). Every hosted check passed on Windows, Linux and macOS, including the launcher browser performance test.
 
 ## In progress
+- PLAY-04/05 driver availability command implemented with native probes on the blocking pool and the scoped uaccess resource; virtual report forwarding and runtime entitlement verification remain separate PLAY-05 work.
 
 
 ## Interfaces delivered (other agents may now rely on these)
