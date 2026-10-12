@@ -285,8 +285,29 @@ async fn exit_hooks_wait_for_children_and_run_once_after_reattach() {
         LaunchLayer::Native,
     ));
     hooks.before_spawn().await.unwrap();
+    use std::io::Write;
+    use std::os::unix::ffi::OsStrExt;
+    let fifo = f.root().join("release-child.fifo");
+    let name = std::ffi::CString::new(fifo.as_os_str().as_bytes()).unwrap();
+    #[allow(unsafe_code)]
+    // SAFETY: a terminated path in this private fixture directory; mkfifo
+    // creates a new owner-only FIFO, checked before any process is started.
+    let created = unsafe { libc::mkfifo(name.as_ptr(), 0o600) };
+    assert_eq!(created, 0, "{}", std::io::Error::last_os_error());
+    // Keep a writer open before spawning. The child cannot see EOF or exit
+    // while startup/database work is delayed by the rest of the test suite.
+    let mut release = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(fifo)
+        .unwrap();
     f.sessions
-        .start_with_hooks(PACKAGE, f.root(), f.launch("sleep 0.4 &\nexit 4"), hooks)
+        .start_with_hooks(
+            PACKAGE,
+            f.root(),
+            f.launch("(read _ < release-child.fifo) &\nexit 4"),
+            hooks,
+        )
         .await
         .unwrap();
     assert!(
@@ -295,6 +316,10 @@ async fn exit_hooks_wait_for_children_and_run_once_after_reattach() {
             .is_err(),
         "leader exit must not run after_exit while its child lives"
     );
+    tokio::task::spawn_blocking(move || release.write_all(b"finish\n"))
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(f.stopped().await.exit.code, Some(4));
     assert_eq!(rx.recv().await.unwrap(), (PACKAGE, LaunchLayer::Native));
     assert!(rx.try_recv().is_err());
