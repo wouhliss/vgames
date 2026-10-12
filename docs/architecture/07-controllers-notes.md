@@ -29,6 +29,14 @@ notifications for hot-plug, and pass `perf/idle.py --thread vgames-sdl`'s actual
 context-switch measurement before shipment. It must not replace this check with
 a Rust iteration counter or a periodic discovery timer.
 
+The proposed no-pad adapters use Linux device-node notifications plus eventfd,
+Windows device-notification messages on the SDL owner thread plus an event, and
+macOS IOKit/CFRunLoop sources. A private control event is enqueued before the
+native wake signal, so waking cannot outrun queue insertion. Notifications are
+registered before SDL enumerates devices. The local updated SDL 3.4.16 probe
+records 0 voluntary switches and 0.00 s CPU over 60 s; native hosted validation
+and real device recognition remain required before PLAY-04 is complete.
+
 An instance id identifies one connection, not a persisted physical device. Each
 pad exposes `instance_id`, `kind` (`ControllerKind`), `name`, `connection`
 (`usb | bluetooth | unknown`), `battery` (nullable percentage plus
