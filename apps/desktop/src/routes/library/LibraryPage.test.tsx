@@ -1,7 +1,7 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { routes } from "../../app/router";
 import { events, type InstalledPackage, type LibraryInfo } from "../../ipc";
 import { installMockBackend, MOCK_LIBRARY, MOCK_SERVER, type MockState } from "../../mocks/backend";
@@ -97,6 +97,12 @@ function dataTransfer() {
     dropEffect: "none",
   };
 }
+
+// Prepare the lazy page before timing UI assertions. Vite transforms this
+// module on its first import; that work is outside the empty-state behavior.
+beforeAll(async () => {
+  await import("./LibraryPage");
+});
 
 beforeEach(() => {
   localStorage.clear();
