@@ -4,3 +4,7 @@ packages:
   - apps/admin-web
   - packages/*
   - scripts/release-notes
+
+# GHSA-68fv-2mgg-jv7q: css-tree pins an affected source-map-js release.
+overrides:
+  css-tree>source-map-js: 1.2.2
