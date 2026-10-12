@@ -265,7 +265,7 @@ describe("compatibility settings", () => {
       expect(backend.callsTo("rosetta_install")).toHaveLength(1);
     });
 
-    it("with Apple silicon: picks a graphics backend per game, D3DMetal included", async () => {
+    it("with Apple silicon: picks a graphics backend per game, never D3DMetal", async () => {
       const [game] = MAC;
       if (!game) throw new Error("fixture");
       const { user, backend } = start({ host: "macos-aarch64", installs: MAC });
@@ -283,7 +283,28 @@ describe("compatibility settings", () => {
 
       await user.click(screen.getByRole("button", { name: `Customize how ${game.title} runs` }));
       await user.click(await screen.findByRole("combobox", { name: "Graphics" }));
-      expect(screen.getByRole("option", { name: /^D3DMetal/ })).toBeVisible();
+      expect(screen.getByRole("option", { name: /^DXMT/ })).toBeVisible();
+      expect(screen.queryByRole("option", { name: /D3DMetal/ })).toBeNull();
+      expect(screen.queryByText(/DirectX 11 and 12/)).toBeNull();
+    });
+
+    it("hides D3DMetal even if the core ever lists it, and refuses it with a message", async () => {
+      const [game] = MAC;
+      if (!game) throw new Error("fixture");
+      const { user, backend } = start({ host: "macos-aarch64", installs: MAC });
+      backend.on("compat_overview", () => ({
+        host: { kind: "wine", apple_silicon: true, rosetta: "installed", rosetta_last_macos: null },
+        runtimes: [],
+        runners: [],
+        graphics: ["d3dmetal", "dxmt", "wined3d"],
+        default_runner: null,
+      }));
+      await user.click(
+        await screen.findByRole("button", { name: `Customize how ${game.title} runs` }),
+      );
+      await user.click(await screen.findByRole("combobox", { name: "Graphics" }));
+      expect(screen.queryByRole("option", { name: /D3DMetal/ })).toBeNull();
+      expect(screen.getByRole("option", { name: /^WineD3D/ })).toBeVisible();
     });
 
     it("on an Intel Mac: no Rosetta 2 section and no D3DMetal", async () => {
@@ -301,19 +322,18 @@ describe("compatibility settings", () => {
       expect(screen.queryByRole("option", { name: /^D3DMetal/ })).toBeNull();
     });
 
-    it("shows Apple's D3DMetal license as plain text", async () => {
+    it("shows runtime licenses as plain text, with no Apple license", async () => {
       const { user, backend } = start({ host: "macos-aarch64", installs: MAC });
       backend.state.runtimeLicenses = backend.state.runtimeLicenses.map((l) =>
-        l.runtime === "d3dmetal" ? { ...l, text: "<b>Apple</b> license text" } : l,
+        l.runtime === "wine-macos" ? { ...l, text: "<b>Wine</b> license text" } : l,
       );
       await user.click(await screen.findByRole("button", { name: "Runtime licenses" }));
       const dialog = await screen.findByRole("dialog", { name: "Runtime licenses" });
-      const d3dmetal = await within(dialog).findByRole("region", {
-        name: "D3DMetal (Apple Game Porting Toolkit)",
-      });
-      expect(within(d3dmetal).getByText("LicenseRef-Apple-GPTK")).toBeVisible();
-      expect(within(d3dmetal).getByText("<b>Apple</b> license text")).toBeVisible();
+      const wine = await within(dialog).findByRole("region", { name: "Wine" });
+      expect(within(wine).getByText("LGPL-2.1-or-later")).toBeVisible();
+      expect(within(wine).getByText("<b>Wine</b> license text")).toBeVisible();
       expect(dialog.querySelector("b")).toBeNull();
+      expect(within(dialog).queryByText(/D3DMetal|Apple|LicenseRef-Apple/)).toBeNull();
     });
   });
 

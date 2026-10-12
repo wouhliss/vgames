@@ -1,10 +1,15 @@
 // Pure helpers for Settings → Compatibility: runner names and select values, the extra-environment
 // editor (one NAME=value per line) and a one-line summary of a package's override.
 import { t } from "../../i18n";
-import type { CompatOverride, RunnerVersion, RuntimeId } from "../../ipc";
+import type { CompatOverride, GraphicsBackend, RunnerVersion, RuntimeId } from "../../ipc";
 
 export const COMPAT_OVERVIEW = ["compat_overview"] as const;
 export const COMPAT_PACKAGES = ["compat_packages"] as const;
+
+/** Backends a player can pick. D3DMetal is deferred (09-compatibility §3) and never offered. */
+export type OfferedBackend = Exclude<GraphicsBackend, "d3dmetal">;
+export const offeredBackends = (list: GraphicsBackend[]): OfferedBackend[] =>
+  list.filter((g): g is OfferedBackend => g !== "d3dmetal");
 
 const RUNTIME_NAMES: Record<RuntimeId, string> = {
   "umu-proton": "UMU-Proton",

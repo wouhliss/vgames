@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-runtime-remove"
+description = "Enables the runtime_remove command without any pre-configured scope."
+commands.allow = ["runtime_remove"]
+
+[[permission]]
+identifier = "deny-runtime-remove"
+description = "Denies the runtime_remove command without any pre-configured scope."
+commands.deny = ["runtime_remove"]

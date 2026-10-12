@@ -1,6 +1,6 @@
 // How this package runs on this computer (09-compatibility): natively, through Rosetta 2, or through
 // Proton/Wine with the signed profile's status and notes, the ProtonDB tier as a hint, and anything
-// that blocks it (DirectX 12 on an Intel Mac, missing Rosetta 2).
+// that blocks it (DirectX 12 on any Mac, missing Rosetta 2).
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button } from "../../components/Button";
@@ -28,7 +28,7 @@ function BlockerNotice({ blocker, packageId }: { blocker: CompatBlocker; package
     case "d3d12_unsupported_on_mac":
       return (
         <Notice tone="danger" role="status">
-          <strong>{t("compat.needsAppleSilicon")}</strong> {t("compat.needsAppleSiliconText")}
+          <strong>{t("compat.d3d12OnMac")}</strong> {t("compat.d3d12OnMacText")}
         </Notice>
       );
     case "rosetta_sunset":

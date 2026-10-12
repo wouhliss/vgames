@@ -1,6 +1,6 @@
 // Compatibility (09-compatibility): how Windows games run here (Proton on Linux, Wine on macOS),
 // Rosetta 2 on Apple silicon, the default runner, downloaded runtimes with their disk use, per-game
-// overrides, and the runtimes' licenses (Apple's for D3DMetal).
+// overrides, and the runtimes' licenses. D3DMetal is deferred (09-compatibility §3): never offered.
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useRef, useState } from "react";
 import { Button } from "../../components/Button";

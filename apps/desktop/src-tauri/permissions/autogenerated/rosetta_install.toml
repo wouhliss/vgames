@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-rosetta-install"
+description = "Enables the rosetta_install command without any pre-configured scope."
+commands.allow = ["rosetta_install"]
+
+[[permission]]
+identifier = "deny-rosetta-install"
+description = "Denies the rosetta_install command without any pre-configured scope."
+commands.deny = ["rosetta_install"]

@@ -46,7 +46,6 @@ export function defaultCompatState(): CompatState {
         used_by: 0,
       },
       { os: "macos", runtime: "wine-macos", version: "10.0", size_bytes: 820 * MIB, used_by: 2 },
-      { os: "macos", runtime: "d3dmetal", version: "2.1", size_bytes: 96 * MIB, used_by: 2 },
       { os: "macos", runtime: "dxmt", version: "0.60", size_bytes: 18 * MIB, used_by: 0 },
     ],
     runners: [
@@ -77,13 +76,6 @@ export function defaultCompatState(): CompatState {
       },
       {
         os: "macos",
-        runtime: "d3dmetal",
-        name: "D3DMetal (Apple Game Porting Toolkit)",
-        spdx: "LicenseRef-Apple-GPTK",
-        text: "Apple Game Porting Toolkit license\n\n(The full license text ships next to the D3DMetal framework and is shown here unchanged.)",
-      },
-      {
-        os: "macos",
         runtime: "wine-macos",
         name: "Wine",
         spdx: "LGPL-2.1-or-later",
@@ -93,8 +85,10 @@ export function defaultCompatState(): CompatState {
   };
 }
 
-/** Keys the Rust core refuses (the manifest env denylist, 02-package-format §5). */
-const DENIED_ENV = /^(PATH|LD_PRELOAD|LD_LIBRARY_PATH|DYLD_.*|PYTHONPATH|COMSPEC)$/;
+/** Keys the Rust core refuses: the manifest env denylist (02-package-format §5) and the
+ * launcher-owned compat keys (09-compatibility §4). */
+const DENIED_ENV =
+  /^(PATH|LD_PRELOAD|LD_LIBRARY_PATH|DYLD_.*|PYTHONPATH|COMSPEC|WINEPREFIX|WINEDLLOVERRIDES|WINEDLLPATH|WINEPATH|WINELOADER|WINESERVER|PROTONPATH|GAMEID|STORE|STEAM_COMPAT_.*|UMU_.*|PRESSURE_VESSEL_.*)$/;
 const ENV_KEY = /^[A-Z_][A-Z0-9_]{0,63}$/;
 
 const osOf = (host: Platform): HostOs | null =>
@@ -124,12 +118,9 @@ export function compatHandlers(
   const strip = <T extends { os: HostOs }>({ os: _os, ...rest }: T) => rest;
   const forHost = <T extends { os: HostOs }>(list: T[]) =>
     list.filter((item) => item.os === osOf(state.host)).map(strip);
+  // D3DMetal is deferred (09-compatibility §3): never offered, on any Mac.
   const graphics = (): GraphicsBackend[] =>
-    state.host === "macos-aarch64"
-      ? ["d3dmetal", "dxmt", "dxvk", "wined3d"]
-      : state.host === "macos-x86_64"
-        ? ["dxmt", "dxvk", "wined3d"]
-        : [];
+    osOf(state.host) === "macos" ? ["dxmt", "dxvk", "wined3d"] : [];
   const knownRunner = (runner: RunnerVersion) =>
     forHost(state.runners).some((r) => sameRunner(r, runner));
 
@@ -172,10 +163,10 @@ export function compatHandlers(
         }));
     },
     compat_override_set: (args) => {
-      const ref = args.package as { server_id: string; package_id: string };
+      const ref = args.pkg as { server_id: string; package_id: string };
       if (!state.installs.some((i) => key(i.package) === key(ref) && i.compat !== "native"))
         fail({ kind: "not_found" } satisfies CompatSettingsError);
-      const next = args.override as CompatOverride;
+      const next = args.settings as CompatOverride;
       if (next.runner && !knownRunner(next.runner))
         fail({ kind: "unknown_runner" } satisfies CompatSettingsError);
       if (next.graphics && !graphics().includes(next.graphics))
@@ -193,7 +184,7 @@ export function compatHandlers(
       return null;
     },
     compat_override_reset: (args) => {
-      const ref = args.package as { server_id: string; package_id: string };
+      const ref = args.pkg as { server_id: string; package_id: string };
       if (!state.installs.some((i) => key(i.package) === key(ref)))
         fail({ kind: "not_found" } satisfies AppError);
       const { [key(ref)]: _removed, ...rest } = state.compatOverrides;

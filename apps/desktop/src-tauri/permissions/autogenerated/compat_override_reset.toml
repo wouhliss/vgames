@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-compat-override-reset"
+description = "Enables the compat_override_reset command without any pre-configured scope."
+commands.allow = ["compat_override_reset"]
+
+[[permission]]
+identifier = "deny-compat-override-reset"
+description = "Denies the compat_override_reset command without any pre-configured scope."
+commands.deny = ["compat_override_reset"]

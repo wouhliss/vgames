@@ -44,7 +44,7 @@ fn unavailable(detail: impl Into<String>) -> LaunchError {
 
 pub struct CompatPlanner<S, P> {
     data_dir: PathBuf,
-    db: crate::db::Db,
+    pub(super) db: crate::db::Db,
     catalog: Arc<RuntimeCatalog>,
     store: Arc<RuntimeStore>,
     profiles: Arc<Profiles<S>>,
@@ -160,6 +160,16 @@ impl<S: ProfileSource, P: Probes + Send + Sync + 'static> CompatPlanner<S, P> {
                 unavailable("No Proton build that this game accepts is listed for this computer.")
             })?;
 
+        let local = self.local_settings(package).await;
+        let proton = local
+            .runner
+            .as_ref()
+            .and_then(|chosen| {
+                exact(&catalog, chosen, Os::Linux, Arch::X86_64, launcher_version)
+                    .filter(|rt| matches!(rt.id, RuntimeId::UmuProton | RuntimeId::GeProton))
+            })
+            .unwrap_or(proton);
+
         let prefix = super::prefix_dir(&self.data_dir, &package);
         let (probes, check_at) = (Arc::clone(&self.probes), prefix.clone());
         tokio::task::spawn_blocking(move || {
@@ -194,10 +204,7 @@ impl<S: ProfileSource, P: Probes + Send + Sync + 'static> CompatPlanner<S, P> {
             prefix,
             umu_game_id: profile.as_ref().and_then(|p| p.runner.umu_game_id.clone()),
             store: "none".to_owned(),
-            env: profile
-                .as_ref()
-                .map(|p| p.runner.env.clone())
-                .unwrap_or_default(),
+            env: merged_env(profile.as_ref(), &local),
             dll_overrides: profile
                 .as_ref()
                 .map(CompatProfile::wine_dll_overrides)
@@ -207,6 +214,27 @@ impl<S: ProfileSource, P: Probes + Send + Sync + 'static> CompatPlanner<S, P> {
             winetricks(&plan, &profile.runner.winetricks).await?;
         }
         Ok(plan)
+    }
+
+    /// The player's override for `package` (runner falling back to the default runner).
+    pub(super) async fn local_settings(
+        &self,
+        package: PackageRef,
+    ) -> super::overrides::CompatOverride {
+        let mut local = super::overrides::get(&self.db, package)
+            .await
+            .unwrap_or_else(|error| {
+                tracing::warn!(%error, "cannot read the compat override; using defaults");
+                None
+            })
+            .unwrap_or_default();
+        if local.runner.is_none() {
+            local.runner = super::overrides::default_runner(&self.db)
+                .await
+                .ok()
+                .flatten();
+        }
+        local
     }
 
     async fn ensure(&self, rt: &Runtime, package: PackageRef) -> Result<PathBuf, LaunchError> {
@@ -298,6 +326,39 @@ pub fn newest<'a>(
         )
         .filter(|rt| min_version.is_none_or(|min| natural_cmp(&rt.version, min) != Ordering::Less))
         .max_by(|a, b| natural_cmp(&a.version, &b.version))
+}
+
+/// The catalog entry a player chose, if this launcher may use it here.
+pub fn exact<'a>(
+    catalog: &'a Catalog,
+    chosen: &super::overrides::RunnerVersion,
+    os: Os,
+    arch: Arch,
+    launcher_version: &str,
+) -> Option<&'a Runtime> {
+    let launcher = semver::Version::parse(launcher_version).ok()?;
+    let id: RuntimeId = chosen.runtime.into();
+    catalog.runtimes.iter().find(|rt| {
+        rt.id == id
+            && rt.version == chosen.version
+            && rt.os == os
+            && rt.arch == arch
+            && semver::Version::parse(&rt.min_launcher_version).is_ok_and(|need| launcher >= need)
+    })
+}
+
+/// The profile's environment, then the player's (checked again; the player's wins).
+pub fn merged_env(
+    profile: Option<&CompatProfile>,
+    local: &super::overrides::CompatOverride,
+) -> std::collections::BTreeMap<String, String> {
+    let mut env = profile.map(|p| p.runner.env.clone()).unwrap_or_default();
+    for (key, value) in &local.env {
+        if super::overrides::check_env(key, value).is_ok() {
+            env.insert(key.clone(), value.clone());
+        }
+    }
+    env
 }
 
 /// Compares version texts with digit runs as numbers (`GE-Proton10-2` < `GE-Proton10-17`).

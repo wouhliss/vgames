@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-compat-licenses"
+description = "Enables the compat_licenses command without any pre-configured scope."
+commands.allow = ["compat_licenses"]
+
+[[permission]]
+identifier = "deny-compat-licenses"
+description = "Denies the compat_licenses command without any pre-configured scope."
+commands.deny = ["compat_licenses"]

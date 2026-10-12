@@ -4,6 +4,7 @@
 pub mod catalog;
 pub mod d3d;
 pub mod extract;
+pub mod overrides;
 pub mod pe;
 pub mod plan;
 pub mod preflight;

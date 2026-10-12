@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-compat-overview"
+description = "Enables the compat_overview command without any pre-configured scope."
+commands.allow = ["compat_overview"]
+
+[[permission]]
+identifier = "deny-compat-overview"
+description = "Denies the compat_overview command without any pre-configured scope."
+commands.deny = ["compat_overview"]
