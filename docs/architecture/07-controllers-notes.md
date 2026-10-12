@@ -115,3 +115,16 @@ Proton/Wine always use passthrough. Emulation exists only during a running
 session, passes rumble back, supports hot-plug and releases physical grabs on
 exit/abort. Backend failure disables that pad's emulation with a notice and
 does not veto the launch.
+
+## 5. Launch identity and verified controller configuration
+
+LaunchContext gains a unique session_id for each launch and re-attachment, plus
+the controller configuration from the signed manifest that passed pre-launch
+verification. A hook never re-parses an unverified install file to choose an
+emulation target. Profile and controller configuration are captured per session.
+
+Controller resources are keyed by session_id, not package alone: delayed exit
+work from a previous run cannot destroy a newly prepared run of the same package.
+Abort and confirmed-tree-exit teardown are idempotent for that identity. A
+reattached game gets a fresh local identity; restore virtual output after input
+initialization without rerunning save pull or process-injection hooks.
