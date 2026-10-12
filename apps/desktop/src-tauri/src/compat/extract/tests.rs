@@ -1,3 +1,5 @@
+use std::fs;
+
 use tar::{EntryType, Header};
 
 use super::*;
@@ -75,6 +77,7 @@ fn refused(items: &[Item<'_>]) -> (ExtractError, Case) {
     (err, c)
 }
 
+#[cfg(unix)]
 #[test]
 fn a_well_formed_runtime_is_extracted() {
     let c = case(
@@ -156,19 +159,82 @@ fn absolute_paths_are_refused() {
 
 #[test]
 fn links_leaving_the_target_are_refused() {
+    // The archive is refused; the store removes the staging directory (see
+    // `runtimes::tests::an_escaping_link_leaves_no_runtime_behind`).
     for target in ["../../outside", "/etc/passwd", "a/../../.."] {
-        let (err, c) = refused(&[Item::Symlink("lib/link", target)]);
+        let (err, _) = refused(&[Item::Symlink("lib/link", target)]);
         assert!(
             matches!(err, ExtractError::Unsafe { .. }),
             "{target}: {err}"
         );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_link_chain_leaving_the_target_is_refused_in_either_order() {
+    // INT's review: `b -> .` makes `b/..` the staging root's parent.
+    for items in [
+        vec![Item::Symlink("b", "."), Item::Symlink("a", "b/../outside")],
+        vec![Item::Symlink("a", "b/../outside"), Item::Symlink("b", ".")],
+        vec![
+            Item::Dir("x/y"),
+            Item::Symlink("x/up", ".."),
+            Item::Symlink("x/y/z", "../up/../../escape"),
+        ],
+    ] {
+        let (err, _) = refused(&items);
         assert!(
-            fs::symlink_metadata(c.dest.join("lib/link")).is_err(),
-            "{target}"
+            matches!(
+                err,
+                ExtractError::Unsafe {
+                    reason: "links outside the runtime",
+                    ..
+                }
+            ),
+            "{err}"
         );
     }
 }
 
+#[cfg(unix)]
+#[test]
+fn link_loops_are_refused() {
+    let (err, _) = refused(&[Item::Symlink("x", "y"), Item::Symlink("y", "x")]);
+    assert!(
+        matches!(
+            err,
+            ExtractError::Unsafe {
+                reason: "is part of a link loop",
+                ..
+            }
+        ),
+        "{err}"
+    );
+    let (err, _) = refused(&[Item::Symlink("self", "self/next")]);
+    assert!(matches!(err, ExtractError::Unsafe { .. }), "{err}");
+}
+
+#[cfg(unix)]
+#[test]
+fn internal_link_chains_are_kept() {
+    let c = case(
+        &tar_gz(&[
+            Item::Dir("files/lib64"),
+            Item::File("files/lib64/libvk.so.1.3", b"so", 0o644),
+            Item::Symlink("files/lib64/libvk.so.1", "libvk.so.1.3"),
+            Item::Symlink("files/lib", "lib64"),
+            Item::Symlink("lib", "files/lib"),
+            Item::Symlink("libvk.so", "lib/libvk.so.1"),
+            Item::Symlink("here", "."),
+        ]),
+        "chain.tar.gz",
+    );
+    extract(&c.archive, ArchiveFormat::TarGz, &c.dest).unwrap();
+    assert_eq!(fs::read(c.dest.join("libvk.so")).unwrap(), b"so");
+}
+
+#[cfg(unix)]
 #[test]
 fn nothing_is_written_through_an_extracted_link() {
     // A link that stays inside, then a file below it: refused (it could be swapped).
@@ -200,6 +266,24 @@ fn nothing_is_written_through_an_extracted_link() {
         ),
         "{err}"
     );
+}
+
+/// Runtimes are for Linux and macOS: on Windows any link refuses the archive.
+#[cfg(not(unix))]
+#[test]
+fn links_are_refused_on_windows() {
+    let (err, c) = refused(&[Item::File("a", b"1", 0o644), Item::Symlink("b", "a")]);
+    assert!(
+        matches!(
+            err,
+            ExtractError::Unsafe {
+                reason: "is a link (runtimes are for Linux and macOS)",
+                ..
+            }
+        ),
+        "{err}"
+    );
+    assert!(fs::symlink_metadata(c.dest.join("b")).is_err());
 }
 
 #[test]
@@ -243,6 +327,7 @@ fn stored(mode: u32) -> zip::write::SimpleFileOptions {
         .unix_permissions(mode)
 }
 
+#[cfg(unix)]
 #[test]
 fn zip_archives_follow_the_same_rules() {
     let good = zip_bytes(|w| {
@@ -265,6 +350,19 @@ fn zip_archives_follow_the_same_rules() {
         Err(ExtractError::Unsafe { .. })
     ));
     assert!(!c.root.join("box/escaped").exists());
+
+    let chain = zip_bytes(|w| {
+        w.add_symlink("b", ".", stored(0o777)).unwrap();
+        w.add_symlink("a", "b/../outside", stored(0o777)).unwrap();
+    });
+    let c = case(&chain, "chain.zip");
+    assert!(matches!(
+        extract(&c.archive, ArchiveFormat::Zip, &c.dest),
+        Err(ExtractError::Unsafe {
+            reason: "links outside the runtime",
+            ..
+        })
+    ));
 
     let outward = zip_bytes(|w| {
         w.add_symlink("bin/sh", "/bin/sh", stored(0o777)).unwrap();

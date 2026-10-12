@@ -63,6 +63,7 @@ zeroize.workspace = true
 chacha20poly1305 = { workspace = true, features = ["zeroize"] }
 getrandom.workspace = true
 tar.workspace = true
+cap-std.workspace = true
 flate2.workspace = true
 liblzma.workspace = true
 zip.workspace = true
