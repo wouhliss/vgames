@@ -11,6 +11,8 @@ pub mod linux;
 mod linux_feedback;
 #[cfg(windows)]
 pub mod windows;
+#[cfg(target_os = "macos")]
+pub mod macos;
 
 #[derive(Debug, thiserror::Error)]
 pub enum BackendError {
