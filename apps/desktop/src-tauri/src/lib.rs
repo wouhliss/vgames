@@ -168,6 +168,16 @@ fn setup(app: &AppHandle, profile: Option<String>) -> Result<(), Box<dyn std::er
     ));
     let state = AppState::new(paths, db, bus, Arc::clone(&servers))?;
     events::spawn_ui_bridge(app.clone(), &state.bus, state.shutdown.child_token());
+    let controller_bus = state.bus.clone();
+    state.controllers.navigation_enabled(
+        app.get_webview_window(MAIN_WINDOW)
+            .is_some_and(|window| window.is_focused().unwrap_or(false)),
+    );
+    state.controllers.start(
+        tauri::async_runtime::handle().inner().clone(),
+        Arc::new(move |output| events::controller_output(&controller_bus, output)),
+        state.shutdown.child_token(),
+    );
     spawn_show_fallback(app.clone(), &state);
     // Before the first deep link is published: `server/add`, `auth/callback` and `launch`.
     deeplink::spawn_router(
@@ -284,6 +294,16 @@ fn on_second_instance(app: &AppHandle, argv: Vec<String>, _cwd: String) {
 }
 
 fn on_run_event(app: &AppHandle, event: RunEvent) {
+    if let RunEvent::WindowEvent {
+        label,
+        event: tauri::WindowEvent::Focused(focused),
+        ..
+    } = &event
+        && label == MAIN_WINDOW
+        && let Some(state) = app.try_state::<AppState>()
+    {
+        state.controllers.navigation_enabled(*focused);
+    }
     if let RunEvent::Exit = event {
         if let Some(state) = app.try_state::<AppState>() {
             state.shutdown.cancel();

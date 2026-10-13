@@ -8,7 +8,9 @@
 
 ## In progress
 - PLAY-01 hook fixture corrected after native Linux CI: a controlled FIFO holds the child until the test releases it, so startup duration cannot invalidate the early-exit assertion. Full process-tree and exactly-once re-attach checks remain unchanged.
+- PLAY-04 native controller startup/list/tester integration implemented. Initialization and worker joining use the blocking pool; unavailable input is reported to the screen, Guide remains active in the background, and navigation follows main-window focus.
 - PLAY-04 SDL routing adapter implemented: physical handles stay on their owner, cached metadata and scoped testers are exposed through Service, and releasing inputs cancels scheduled wakeups. Native startup/command integration follows separately.
+- PLAY-04 typed controller event bridge implemented: navigation, active family, pad-list changes and scoped tester states are registered for generated bindings; Guide holds reuse the overlay bus event.
 
 
 ## Interfaces delivered (other agents may now rely on these)

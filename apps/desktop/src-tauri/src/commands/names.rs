@@ -119,6 +119,9 @@ pub const MAIN_WINDOW_COMMANDS: &[&str] = &[
     "publish_dismiss",
     "publish_release",
     "version_yank",
+    "controllers_list",
+    "controllers_tester_start",
+    "controllers_tester_stop",
 ];
 
 /// Commands the in-game overlay window may call. Only `overlay_*` commands

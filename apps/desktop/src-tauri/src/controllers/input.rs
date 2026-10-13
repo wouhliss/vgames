@@ -2,6 +2,7 @@
 //! without a discovery timer; shutdown pushes a private SDL event and signals
 //! the native wait. SDL handles and event pumping stay on their owner thread.
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc;
@@ -54,6 +55,18 @@ impl Wake {
         // Even a full SDL queue must not prevent a cancelled native wait.
         idle::signal(&self.idle).map_err(|error| error.to_string())?;
         queued
+    }
+}
+
+fn track_connection(connected: &mut BTreeSet<sdl3::joystick::JoystickId>, event: &Event) {
+    match event {
+        Event::GamepadAdded { which, .. } => {
+            connected.insert(*which);
+        }
+        Event::GamepadRemoved { which, .. } => {
+            connected.remove(which);
+        }
+        _ => {}
     }
 }
 
@@ -121,18 +134,22 @@ impl InputThread {
                     // Construct the handler here so it can own non-Send gamepad
                     // handles and is dropped before the SDL context, even on unwind.
                     let mut on_event = factory(&gamepads, InputWake(wake.clone()));
+                    // Enumerate once: SDL enumeration allocates, so hotplug events
+                    // maintain the connected set instead of allocating per input.
+                    let mut connected: BTreeSet<_> = gamepads
+                        .gamepads()
+                        .map_err(|error| error.to_string())?
+                        .into_iter()
+                        .collect();
                     // Initial device notifications are dispatched before ready;
                     // the measured steady-state counter starts at zero.
                     for event in pump.poll_iter() {
+                        track_connection(&mut connected, &event);
                         on_event(InputEvent::Native(event), &gamepads);
                     }
                     ready.send(Ok(wake)).map_err(|error| error.to_string())?;
                     while !stop.load(Ordering::Acquire) {
-                        let event = if gamepads
-                            .gamepads()
-                            .map_err(|error| error.to_string())?
-                            .is_empty()
-                        {
+                        let event = if connected.is_empty() {
                             // Drain queued events before blocking. A device notification
                             // arriving during enumeration stays pending in the native monitor.
                             if let Some(event) = pump.poll_event() {
@@ -143,6 +160,11 @@ impl InputThread {
                                 if stop.load(Ordering::Acquire) {
                                     break;
                                 }
+                                // Discovery can lazily establish the first mapping.
+                                // Refresh only after a real native notification.
+                                connected.extend(
+                                    gamepads.gamepads().map_err(|error| error.to_string())?,
+                                );
                                 pump.poll_event()
                             }
                         } else {
@@ -155,8 +177,16 @@ impl InputThread {
                         if stop.load(Ordering::Acquire) {
                             break;
                         }
+                        track_connection(&mut connected, &event);
                         if matches!(event, Event::User { type_, .. } if type_ == event_type) {
                             on_event(InputEvent::Wake, &gamepads);
+                            // A control callback may attach the first software or
+                            // virtual pad; ordinary input never enumerates devices.
+                            if connected.is_empty() {
+                                connected.extend(
+                                    gamepads.gamepads().map_err(|error| error.to_string())?,
+                                );
+                            }
                         } else {
                             on_event(InputEvent::Native(event), &gamepads);
                         }
