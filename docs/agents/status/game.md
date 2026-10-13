@@ -17,6 +17,18 @@
   protocol, hub, safety valve, hotkey, fallback window and per-package switches (A4-T10 part 1); renderer link and
   guard, Linux Vulkan layer (`crates/vgames-overlay/tests/vulkan_layer.rs`, 22 µs/frame on lavapipe); chaos tests
   and 25-minute soak runs (`tests/social_chaos.rs`, `tests/social_soak.rs`).
+- GAME-13 — social soak on hosted runners ([#230](https://github.com/wouhliss/vgames/pull/230)): `soak.yml` job
+  `Social soak (chat|idle)`, `ubuntu-24.04`, the real API in process with a Postgres 18 service. RSS is the whole
+  test process (API, pools and both launchers). Run [38339025747](https://github.com/wouhliss/vgames/actions/runs/38339025747)
+  at `8bdb609`, 40 samples per job:
+  - [chat](https://github.com/wouhliss/vgames/actions/runs/38339025747/job/115105615312), 1 h at 2 msg/s: 7201 messages
+    sent and delivered, 0 duplicates, 0 drops. RSS (KiB): first 63968, after warm-up 68032, median 68734, end 70008
+    (limit warm-up + 16384), last 70536. Slope after warm-up +3.7 MiB/h; flat (+2.5 MiB/h) from 21 to 46 min, then
+    +6.7 MiB/h over the last quarter. Within the limit, but not yet shown to level off: a 5 h 30 min chat run follows.
+  - [idle](https://github.com/wouhliss/vgames/actions/runs/38339025747/job/115105615519), 5 h 30 min: 0 connection
+    drops; the message sent after the idle period arrived. RSS (KiB): first 62788, after warm-up 62796, median 62800,
+    end 62804 (limit warm-up + 8192), last 62804. Slope after warm-up +3 KiB/h, 0 over the last quarter.
+  - The 24 h idle run is in human-checklist §B7 with its steps.
 
 ## In progress
 - GAME-03 — runtime manager: signed catalog per key ([#180](https://github.com/wouhliss/vgames/pull/180)), safe
