@@ -230,6 +230,7 @@ export const commands = {
 	versionYank: (serverId: string, versionId: string, reason: string) => typedError<PublishVersion, PublishCommandError>(__TAURI_INVOKE("version_yank", { serverId, versionId, reason })),
 	appearanceGet: () => __TAURI_INVOKE<AppearanceSettings>("appearance_get"),
 	appearanceSet: (settings: AppearanceSettings) => typedError<AppearanceSettings, AppError>(__TAURI_INVOKE("appearance_set", { settings })),
+	appDiagnostics: () => __TAURI_INVOKE<string>("app_diagnostics"),
 };
 
 /** Events */
