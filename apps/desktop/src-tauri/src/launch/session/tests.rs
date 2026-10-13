@@ -351,3 +351,22 @@ async fn exit_hooks_wait_for_children_and_run_once_after_reattach() {
     );
     assert!(rx.try_recv().is_err());
 }
+
+#[tokio::test]
+async fn every_launch_context_has_a_distinct_identity_without_unverified_controller_config() {
+    let f = fixture().await;
+    let context = || {
+        f.sessions.context(
+            PACKAGE,
+            f.install.path().into(),
+            Platform::LinuxX86_64,
+            LaunchLayer::Native,
+        )
+    };
+    let first = context();
+    let next = context();
+    assert_ne!(first.session_id, next.session_id);
+    assert_eq!(first.clone().session_id, first.session_id);
+    assert!(first.controllers.is_none());
+    assert!(next.controllers.is_none());
+}

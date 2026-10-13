@@ -73,6 +73,8 @@ fn register(
 
 fn context() -> LaunchContext {
     LaunchContext {
+        session_id: uuid::Uuid::new_v4(),
+        controllers: None,
         package: PackageRef {
             server_id: uuid::Uuid::from_u128(1),
             package_id: uuid::Uuid::from_u128(2),

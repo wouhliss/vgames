@@ -30,6 +30,10 @@ pub enum LaunchLayer {
 
 #[derive(Debug, Clone)]
 pub struct LaunchContext {
+    /// Unique per launch or re-attachment; teardown must never key only by package.
+    pub session_id: uuid::Uuid,
+    /// Copied from the verified signed manifest. None on an unverified re-attachment.
+    pub controllers: Option<vgames_core::manifest::Controllers>,
     pub package: PackageRef,
     pub root: PathBuf,
     /// Platform of the signed release, not the host.
