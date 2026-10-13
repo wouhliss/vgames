@@ -86,7 +86,7 @@ sqlx.workspace = true
 # driver). Keep behind the `VirtualPadBackend` trait so it can be swapped.
 vigem-client = { version = "0.1", features = ["unstable_xtarget_notification"] }
 # Input idle time for `away` presence (social::idle).
-windows-sys = { workspace = true, features = ["Win32_UI_Input_KeyboardAndMouse", "Win32_System_SystemInformation", "Win32_System_Threading", "Win32_System_JobObjects", "Win32_System_IO", "Win32_System_SystemServices", "Win32_System_Diagnostics_ToolHelp", "Win32_Security", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { workspace = true, features = ["Win32_Devices_DeviceAndDriverInstallation", "Win32_Devices_Properties", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_SystemInformation", "Win32_System_Threading", "Win32_System_JobObjects", "Win32_System_IO", "Win32_System_SystemServices", "Win32_System_Diagnostics_ToolHelp", "Win32_Security", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 libc.workspace = true
