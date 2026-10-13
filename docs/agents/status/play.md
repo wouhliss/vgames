@@ -39,6 +39,9 @@
   inotify event from that change (e.g. `IN_CLOSE_WRITE` after the `IN_CREATE` that already woke and drained the wait)
   can wake it early. Draining until the queue stays empty for a short quiet period before asserting the block would
   make it deterministic.
+- From GAME (GAME-11): `bundle.resources` in `tauri.conf.json` now maps `src-tauri/resources/overlay/` to `overlay/`
+  (the PLAY-09 slot). The renderers are staged there by CI and git-ignored; a committed `README.md` keeps the directory
+  present for `tauri-build`. The launcher resolves them with `app.path().resource_dir()` and runs without them.
 - INT-01 prepares #103's reduced-motion setting for launcher mock accessibility scans, leaving the perf project unchanged. Updated Vitest imports use explicit `.ts` extensions with the matching no-emit compiler option to satisfy the newer loader. Adopt this note when the dependency triage PR merges.
 - From INS (INS-04): appended to `events.rs` (append-only, README §5): the bus variants and UI events
   `InstallsChanged` (`installs-changed`) and `CollectionsChanged` (`collections-changed`). INS-03 appends

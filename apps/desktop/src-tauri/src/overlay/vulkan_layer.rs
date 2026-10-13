@@ -24,14 +24,18 @@ pub const NEGOTIATE_SYMBOL: &str = "vgames_overlay_vkNegotiateLoaderLayerInterfa
 /// Set to `1` to keep the layer out of a process that has `VGAMES_OVERLAY=1`.
 pub const DISABLE_ENV: &str = "VGAMES_OVERLAY_DISABLE";
 
-/// The renderer library's file name on this OS.
+/// The renderer library's file name on this OS, as staged in the bundle (Windows ships a
+/// 64-bit and a 32-bit build side by side; the Vulkan layer is the 64-bit one).
 pub const LIBRARY_FILE: &str = if cfg!(windows) {
-    "vgames_overlay.dll"
+    "vgames_overlay64.dll"
 } else if cfg!(target_os = "macos") {
     "libvgames_overlay.dylib"
 } else {
     "libvgames_overlay.so"
 };
+
+/// The renderers' directory inside Tauri's resource directory (`bundle.resources`).
+pub const RESOURCE_DIR: &str = "overlay";
 
 /// What [`sync`] did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -100,17 +104,18 @@ pub fn sync(dir: &Path, library: Option<&Path>) -> io::Result<Registration> {
     Ok(Registration::Written)
 }
 
-/// Where this install keeps the renderer library (next to the launcher executable; GAME-11
-/// moves it into the bundle's resources). The Vulkan layer manifest and the GL preload both
-/// point here.
-pub fn installed_library() -> Option<PathBuf> {
-    let exe = std::env::current_exe().ok()?;
-    Some(exe.parent()?.join(LIBRARY_FILE))
+/// Where this install keeps the renderer library: `overlay/` in Tauri's resource directory
+/// (`/usr/lib/vgames/` for deb/rpm, `$APPDIR/usr/lib/vgames/` in the AppImage,
+/// `Contents/Resources/` in the `.app`, the install directory on Windows, the executable's
+/// directory for `cargo` builds). The Vulkan layer manifest and the GL preload both point here.
+pub fn installed_library(resource_dir: &Path) -> PathBuf {
+    resource_dir.join(RESOURCE_DIR).join(LIBRARY_FILE)
 }
 
-/// Registers the layer for this install (Linux; a no-op elsewhere for now). Never fails the
-/// launcher: problems are logged and games run without the in-game renderer.
-pub fn register_for_this_install() {
+/// Registers the layer for this install (Linux; a no-op elsewhere for now): written while the
+/// renderer ships, removed when it does not. Never fails the launcher: problems are logged
+/// and games run without the in-game renderer.
+pub fn register_for_this_install(library: Option<PathBuf>) {
     if !cfg!(target_os = "linux") {
         return;
     }
@@ -119,7 +124,7 @@ pub fn register_for_this_install() {
         tracing::debug!("no data directory for the Vulkan layer manifest");
         return;
     };
-    match sync(&dir, installed_library().as_deref()) {
+    match sync(&dir, library.as_deref()) {
         Ok(result) => tracing::debug!(?result, "Vulkan overlay layer"),
         Err(error) => tracing::warn!(%error, "cannot register the Vulkan overlay layer"),
     }
@@ -130,6 +135,15 @@ mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
 
     use super::*;
+
+    #[test]
+    fn the_library_is_looked_up_under_the_bundled_overlay_directory() {
+        let resources = Path::new("/usr/lib/vgames");
+        assert_eq!(
+            installed_library(resources),
+            resources.join("overlay").join(LIBRARY_FILE)
+        );
+    }
 
     #[test]
     fn the_manifest_loads_only_with_the_overlay_variable() {
