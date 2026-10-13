@@ -43,7 +43,7 @@ fn physical(index: usize) -> VirtualDevice {
     let mut builder = VirtualDevice::builder()
         .unwrap()
         .name(&name)
-        .input_id(InputId::new(BusType::BUS_USB, 0x054c, 0x0ce6, 0x0100))
+        .input_id(InputId::new(BusType::BUS_USB, 0x1209, 0x0001, 0x0100))
         .with_keys(&keys)
         .unwrap();
     for axis in [
@@ -130,26 +130,9 @@ fn kernel_hotplug_reports_and_rumble_are_event_driven_with_p99_under_two_ms() {
     let (disconnected, disconnection) = mpsc::channel();
     let mut input = InputThread::start(move |_| {
         let mut pads = BTreeMap::new();
-        let mut diagnostics = 0;
         let joysticks = sdl3::init().unwrap().joystick().unwrap();
-        let mapper = Mapper::new(ControllerKind::Dualsense, &Profile::default());
+        let mapper = Mapper::new(ControllerKind::Generic, &Profile::default());
         move |event: SdlInput, subsystem: &sdl3::GamepadSubsystem| {
-            if diagnostics < 4
-                && matches!(
-                    event,
-                    SdlInput::Native(
-                        Event::JoyButtonDown { .. }
-                            | Event::JoyButtonUp { .. }
-                            | Event::GamepadButtonDown { .. }
-                            | Event::GamepadButtonUp { .. }
-                    )
-                )
-            {
-                if let SdlInput::Native(ref native) = event {
-                    println!("kernel input diagnostic: {native:?}");
-                }
-                diagnostics += 1;
-            }
             match event {
                 SdlInput::Native(Event::GamepadAdded { which, .. }) => {
                     let pad = subsystem.open(which).unwrap();
