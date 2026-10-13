@@ -558,6 +558,8 @@ async fn the_launcher_hook_plans_from_the_verified_manifest() {
     ));
 }
 
+// The fake `wine` is a shell script: Unix hosts only (Wine runs on macOS; Windows needs none).
+#[cfg(unix)]
 mod wine {
     use super::*;
     use crate::compat::pe::tests::pe;
