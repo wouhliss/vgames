@@ -705,6 +705,8 @@ mod tests {
             package_id: Uuid::from_u128(3),
         };
         let ctx = crate::launch::hooks::LaunchContext {
+            session_id: Uuid::new_v4(),
+            controllers: None,
             package: game,
             root: std::path::PathBuf::new(),
             platform: crate::launch::orchestrate::host_platform().unwrap(),
@@ -739,6 +741,8 @@ mod tests {
         use crate::launch::hooks::{LaunchContext, LaunchLayer};
         use vgames_core::manifest::Platform;
         let ctx = |layer, platform| LaunchContext {
+            session_id: Uuid::new_v4(),
+            controllers: None,
             package: PackageRef {
                 server_id: Uuid::from_u128(1),
                 package_id: Uuid::from_u128(2),

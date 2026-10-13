@@ -115,6 +115,8 @@ impl GameSessions {
         layer: LaunchLayer,
     ) -> LaunchContext {
         LaunchContext {
+            session_id: Uuid::new_v4(),
+            controllers: None,
             package,
             root,
             platform,
