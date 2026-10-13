@@ -24,7 +24,11 @@
   - [chat](https://github.com/wouhliss/vgames/actions/runs/38339025747/job/115105615312), 1 h at 2 msg/s: 7201 messages
     sent and delivered, 0 duplicates, 0 drops. RSS (KiB): first 63968, after warm-up 68032, median 68734, end 70008
     (limit warm-up + 16384), last 70536. Slope after warm-up +3.7 MiB/h; flat (+2.5 MiB/h) from 21 to 46 min, then
-    +6.7 MiB/h over the last quarter. Within the limit, but not yet shown to level off: a 5 h 30 min chat run follows.
+    +6.7 MiB/h over the last quarter. Within the limit, so a 5 h 30 min chat run followed:
+  - [chat, 5 h 30 min](https://github.com/wouhliss/vgames/actions/runs/38370146446/job/115204826528) at `49898cd`:
+    39597 messages sent and delivered, 0 duplicates, 0 drops. RSS (KiB): first 65716, after warm-up 74648, median
+    74794, end 76208 (limit warm-up + 16384), last 76332. Growth slows every quarter: +4.3, +3.1, +0.9, +0.2 MiB/h;
+    the 1 h run's late climb was the end of warm-up, not a leak.
   - [idle](https://github.com/wouhliss/vgames/actions/runs/38339025747/job/115105615519), 5 h 30 min: 0 connection
     drops; the message sent after the idle period arrived. RSS (KiB): first 62788, after warm-up 62796, median 62800,
     end 62804 (limit warm-up + 8192), last 62804. Slope after warm-up +3 KiB/h, 0 over the last quarter.
