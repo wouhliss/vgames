@@ -95,11 +95,21 @@ describe("app shell", () => {
     installMockBackend();
     // user-event installs a clipboard stub we can read back.
     const user = userEvent.setup();
-    renderWithProviders(<CrashScreen error={new TypeError("x is undefined")} />);
+    renderWithProviders(
+      <CrashScreen
+        error={
+          new TypeError(
+            "token=vga_abcdefghijklmnop /home/player/private https://example.test/?signature=private",
+          )
+        }
+      />,
+    );
     await user.click(screen.getByRole("button", { name: "Copy details" }));
     expect(await screen.findByText(/Diagnostics copied/)).toBeInTheDocument();
     const copied = await navigator.clipboard.readText();
     expect(copied).toContain("vgames 0.4.0");
-    expect(copied).toContain("TypeError: x is undefined");
+    expect(copied).toContain("ui error: TypeError");
+    for (const secret of ["abcdefghijklmnop", "/home/player", "signature=private"])
+      expect(copied).not.toContain(secret);
   });
 });

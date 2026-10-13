@@ -121,6 +121,7 @@ pub const MAIN_WINDOW_COMMANDS: &[&str] = &[
     "version_yank",
     "appearance_get",
     "appearance_set",
+    "app_diagnostics",
 ];
 
 /// Commands the in-game overlay window may call. Only `overlay_*` commands
