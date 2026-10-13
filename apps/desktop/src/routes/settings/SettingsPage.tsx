@@ -7,6 +7,7 @@ import { Page } from "../Page";
 import { AboutSection } from "./AboutSection";
 import { AccountSection } from "./AccountSection";
 import { CompatSection } from "./CompatSection";
+import { ControllersSection } from "./ControllersSection";
 import { DownloadsSection } from "./DownloadsSection";
 import { GeneralSection } from "./GeneralSection";
 import { OverlaySection } from "./OverlaySection";
@@ -23,6 +24,7 @@ const SECTIONS = {
   storage: StorageSection,
   downloads: DownloadsSection,
   compatibility: CompatSection,
+  controllers: ControllersSection,
   privacy: PrivacySection,
   overlay: OverlaySection,
   updates: UpdatesSection,

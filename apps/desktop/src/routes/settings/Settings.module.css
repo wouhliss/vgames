@@ -243,3 +243,10 @@
   max-height: 30vh;
   margin-top: var(--space-2);
 }
+
+.controllerRule {
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

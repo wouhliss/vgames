@@ -119,7 +119,7 @@ function validate(profile: ControllerProfile): void {
 }
 
 function profileKey(pkg: PackageRef): string {
-  if (!pkg || !pkg.server_id || !pkg.package_id) invalid("package_ref");
+  if (!pkg?.server_id || !pkg.package_id) invalid("package_ref");
   return `${pkg.server_id}/${pkg.package_id}`;
 }
 
