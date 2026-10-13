@@ -6,6 +6,7 @@
 
 pub(crate) mod account;
 mod app;
+mod appearance;
 mod catalog;
 mod collections;
 mod controllers;
@@ -145,7 +146,9 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             publishing::publish_resume,
             publishing::publish_dismiss,
             publishing::publish_release,
-            publishing::version_yank
+            publishing::version_yank,
+            appearance::appearance_get,
+            appearance::appearance_set
         ])
         .events(tauri_specta::collect_events![
             GameStarted,
