@@ -46,6 +46,9 @@
 - INT-08: no file-sending tool has been discovered. No release keys generated; follow the prescribed no-generation fallback if still unavailable when reached.
 
 ## Built for you
+- From GAME (GAME-12): `scripts/ci/desktop-db-tests.sh` also runs `tests/invite_install_e2e.rs` (an invite on the real
+  install path, ~5 s). `tests/support/install.rs` now starts the API's realtime service and has `player`/`befriend`
+  helpers; `install_e2e` still passes with it.
 - From INS (INS-08, INT-03 fallback): `e2e.yml` has a nightly `install` job running `tests/install_e2e.rs` at full scale
   (8 GiB, frees runner disk first). The small scale needs nothing new: `scripts/ci/desktop-db-tests.sh` already picks
   the test up in the `desktop` job.
