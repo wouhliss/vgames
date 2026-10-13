@@ -16,7 +16,7 @@ import type { AppError } from "../../bindings";
 // Now generated (Platform: INS-02); re-exported so contract files can keep importing them from here.
 export type { AppError, Platform } from "../../bindings";
 
-import { call, get, type Result } from "./runtime";
+import { call, type Result } from "./runtime";
 
 export type { Result } from "./runtime";
 
