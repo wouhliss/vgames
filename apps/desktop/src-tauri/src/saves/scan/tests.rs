@@ -108,6 +108,40 @@ fn missing_locations_limits_bad_filters_and_cancellation_do_not_create_or_change
 }
 #[cfg(unix)]
 #[test]
+fn dangling_known_folder_is_refused_even_when_a_child_is_missing() {
+    let root = tempfile::tempdir().unwrap();
+    let base = root.path().join("Documents");
+    std::os::unix::fs::symlink(root.path().join("absent"), &base).unwrap();
+    for path in [&base, &base.join("nested")] {
+        assert!(matches!(Location::open(&config(), path), Err(Error::Link)));
+    }
+}
+#[test]
+fn absent_known_folder_is_empty_without_creation_and_preserves_overlap_checks() {
+    let root = tempfile::tempdir().unwrap();
+    let base = root.path().join("Documents/nested");
+    let cancel = CancellationToken::new();
+    let location = Location::open(&config(), &base).unwrap();
+    let result = scan(&[location], &BTreeMap::new(), &cancel).unwrap();
+    assert!(result.files.is_empty());
+    assert_eq!(result.hashed_files, 0);
+    assert!(!root.path().join("Documents").exists());
+    let mut second = config();
+    second.id = "second".into();
+    second.path = "nested/game/child".into();
+    let locations = [
+        Location::open(&config(), &base).unwrap(),
+        Location::open(&second, &root.path().join("Documents")).unwrap(),
+    ];
+    assert!(matches!(
+        scan(&locations, &BTreeMap::new(), &cancel),
+        Err(Error::Invalid)
+    ));
+    std::fs::write(root.path().join("not-a-folder"), b"fixture").unwrap();
+    assert!(Location::open(&config(), &root.path().join("not-a-folder")).is_err());
+}
+#[cfg(unix)]
+#[test]
 fn both_location_and_descendant_links_are_refused_before_reading_outside_bytes() {
     let root = tempfile::tempdir().unwrap();
     let outside = tempfile::tempdir().unwrap();
