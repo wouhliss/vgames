@@ -33,6 +33,12 @@
 - Repository write access and email privacy are resolved; PLAY commits use the account's GitHub no-reply address.
 
 ## Built for you
+- From GAME (flaky test report, no code change): `controllers::idle::platform::tests::device_directory_creation_permissions_and_replacement_wake_without_polling`
+  failed with "wait did not block" (`input_linux.rs:183`) on three unrelated GAME heads (#181, #187, #221). The
+  `notification` helper asserts the next blocking wait does not return within 50 ms of the previous change; a late
+  inotify event from that change (e.g. `IN_CLOSE_WRITE` after the `IN_CREATE` that already woke and drained the wait)
+  can wake it early. Draining until the queue stays empty for a short quiet period before asserting the block would
+  make it deterministic.
 - INT-01 prepares #103's reduced-motion setting for launcher mock accessibility scans, leaving the perf project unchanged. Updated Vitest imports use explicit `.ts` extensions with the matching no-emit compiler option to satisfy the newer loader. Adopt this note when the dependency triage PR merges.
 - From INS (INS-04): appended to `events.rs` (append-only, README §5): the bus variants and UI events
   `InstallsChanged` (`installs-changed`) and `CollectionsChanged` (`collections-changed`). INS-03 appends
