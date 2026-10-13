@@ -77,11 +77,18 @@ impl Fixture {
 }
 
 async fn fixture() -> Fixture {
+    fixture_with_controllers(None).await
+}
+
+async fn fixture_with_controllers(
+    controllers: Option<vgames_pack::manifest::Controllers>,
+) -> Fixture {
     let files = [
         FileSpec::script(GAME_PATH, game_bytes()),
         FileSpec::random("data/level.pak", 1000, 2),
     ];
     let execution = Execution {
+        controllers,
         launch: Some(Launch {
             default: "play".into(),
             targets: vec![LaunchTarget {
@@ -473,4 +480,47 @@ async fn pre_resume_observes_suspension_and_a_failed_hook_still_runs_the_game() 
         assert_eq!(stopped(&mut events).await.exit.code, Some(7));
         assert!(observed.load(std::sync::atomic::Ordering::Acquire));
     }
+}
+
+struct ControllerContextHook(std::sync::Mutex<Option<LaunchContext>>);
+impl LaunchHooks for ControllerContextHook {
+    fn before_spawn<'a>(
+        &'a self,
+        ctx: &'a LaunchContext,
+    ) -> HookFuture<'a, Result<HookEnv, LaunchVeto>> {
+        *self.0.lock().unwrap() = Some(ctx.clone());
+        Box::pin(async { Ok(HookEnv::default()) })
+    }
+    fn aborted(&self, _: &LaunchContext) {}
+}
+
+#[tokio::test]
+async fn controller_hooks_receive_configuration_from_the_verified_signed_manifest() {
+    use vgames_core::manifest::{ControllerKind, Controllers, EmulatedController};
+    let config = Controllers {
+        supported: vec![ControllerKind::Dualsense],
+        emulate_as: Some(EmulatedController::Xbox360),
+    };
+    let f = fixture_with_controllers(Some(vgames_pack::manifest::Controllers {
+        supported: vec!["dualsense".into()],
+        emulate_as: Some("xbox360".into()),
+    }))
+    .await;
+    let mut events = f.bus.subscribe();
+    let launcher = f.trusted();
+    let hook = Arc::new(ControllerContextHook(std::sync::Mutex::new(None)));
+    assert!(
+        launcher
+            .hooks()
+            .register(HookStage::Controllers, hook.clone())
+    );
+    launcher
+        .launch(f.package_ref(), TargetChoice::Default)
+        .await
+        .unwrap();
+    let ctx = hook.0.lock().unwrap().clone().unwrap();
+    assert_eq!(ctx.package, f.package_ref());
+    assert_eq!(ctx.controllers, Some(config));
+    assert_ne!(ctx.session_id, Uuid::nil());
+    stopped(&mut events).await;
 }
