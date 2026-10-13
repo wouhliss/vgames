@@ -121,7 +121,14 @@ impl Api {
         ]);
         let config = vgames_api::Config::from_lookup(|k| env.get(k).cloned()).unwrap();
         let state = vgames_api::AppState::new(config, pool.clone()).unwrap();
+        // Realtime too: the invite end to end runs social over this API (GAME-12).
+        vgames_api::realtime::start(&state);
         tokio::spawn(vgames_api::server::serve_on(listener, state.clone()));
+        let mut ready = state.realtime_ready.subscribe();
+        tokio::time::timeout(Duration::from_secs(10), ready.wait_for(|r| *r))
+            .await
+            .unwrap()
+            .unwrap();
 
         let (owner_id, token) = seed_owner(&pool).await;
         let api = Self {
@@ -138,6 +145,33 @@ impl Api {
         };
         api.upload_trust_bundle(owner_id).await;
         api
+    }
+
+    /// A player signed in on a desktop: their id and access token (valid for the whole run).
+    pub async fn player(&self, name: &str, discord_id: &str) -> (Uuid, String) {
+        let user_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO users (discord_id, username) VALUES ($1, $2) RETURNING id",
+        )
+        .bind(discord_id)
+        .bind(name)
+        .fetch_one(&self.pool)
+        .await
+        .unwrap();
+        (user_id, desktop_session(&self.pool, user_id).await)
+    }
+
+    /// Accepted friends.
+    pub async fn befriend(&self, a: Uuid, b: Uuid) {
+        let (low, high) = if a < b { (a, b) } else { (b, a) };
+        sqlx::query(
+            "INSERT INTO friendships (user_low, user_high, state, requested_by, accepted_at)
+             VALUES ($1, $2, 'accepted', $1, now())",
+        )
+        .bind(low)
+        .bind(high)
+        .execute(&self.pool)
+        .await
+        .unwrap();
     }
 
     /// The server-side jobs, `version.verify` among them.
@@ -350,18 +384,23 @@ impl Api {
 
 /// An owner and a long-lived desktop session (the nightly run takes a while).
 async fn seed_owner(pool: &PgPool) -> (Uuid, String) {
-    let mut raw = [0u8; 32];
-    getrandom::fill(&mut raw).unwrap();
-    let token = format!(
-        "vga_{}",
-        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw)
-    );
     let user_id: Uuid = sqlx::query_scalar(
         "INSERT INTO users (discord_id, username, role) VALUES ('100000000000000777', 'e2e-owner', 'owner') RETURNING id",
     )
     .fetch_one(pool)
     .await
     .unwrap();
+    (user_id, desktop_session(pool, user_id).await)
+}
+
+/// A desktop session for `user_id`; returns its access token.
+async fn desktop_session(pool: &PgPool, user_id: Uuid) -> String {
+    let mut raw = [0u8; 32];
+    getrandom::fill(&mut raw).unwrap();
+    let token = format!(
+        "vga_{}",
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw)
+    );
     let mut refresh = [0u8; 32];
     getrandom::fill(&mut refresh).unwrap();
     sqlx::query(
@@ -374,7 +413,7 @@ async fn seed_owner(pool: &PgPool) -> (Uuid, String) {
     .execute(pool)
     .await
     .unwrap();
-    (user_id, token)
+    token
 }
 
 /// `PublishApi` over HTTP, the same routes as the `vgames` CLI.
