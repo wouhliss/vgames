@@ -7,11 +7,11 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
 use vigem_client::Client;
-use windows_sys::Win32::Foundation::ERROR_IO_PENDING;
+use windows_sys::Win32::Foundation::{ERROR_IO_PENDING, WAIT_OBJECT_0, WAIT_TIMEOUT};
 use windows_sys::Win32::System::IO::{
     CancelIoEx, DeviceIoControl, GetOverlappedResult, OVERLAPPED,
 };
-use windows_sys::Win32::System::Threading::CreateEventW;
+use windows_sys::Win32::System::Threading::{CreateEventW, WaitForSingleObject};
 
 use super::windows_ds4_report::{header, plugin, report};
 use super::{BackendError, Rumble, RumbleSink, VirtualPad};
@@ -81,6 +81,30 @@ impl Request {
         }
         Ok(())
     }
+    fn complete_bounded(&mut self, client: &Client) -> Result<(), BackendError> {
+        #[allow(unsafe_code)]
+        // SAFETY: this owned private event stays live through completion.
+        let wait = unsafe { WaitForSingleObject(self.event.as_raw_handle(), 2000) };
+        if wait == WAIT_OBJECT_0 {
+            return self.complete(client);
+        }
+        let error = if wait == WAIT_TIMEOUT {
+            std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "The virtual controller driver timed out.",
+            )
+        } else {
+            std::io::Error::last_os_error()
+        };
+        #[allow(unsafe_code)]
+        // SAFETY: this exact stable OVERLAPPED belongs to this live file object.
+        // Cancel and drain before freeing or reusing any buffer, including on timeout.
+        unsafe {
+            CancelIoEx(client.as_raw_handle(), &*self.overlapped);
+        }
+        let _ = self.complete(client);
+        Err(error.into())
+    }
     fn complete(&mut self, client: &Client) -> Result<(), BackendError> {
         let _ = &self.event;
         let mut transferred = 0;
@@ -105,7 +129,7 @@ impl Request {
 fn command(client: &Client, code: u32, bytes: Vec<u8>) -> Result<(), BackendError> {
     let mut request = Request::new(bytes)?;
     request.begin(client, code)?;
-    request.complete(client)
+    request.complete_bounded(client)
 }
 
 struct Pad {
@@ -216,7 +240,7 @@ impl VirtualPad for Pad {
             .bytes
             .copy_from_slice(&report(self.serial, state));
         self.report.begin(&self.client, REPORT)?;
-        self.report.complete(&self.client)
+        self.report.complete_bounded(&self.client)
     }
     fn player_index(&self) -> u16 {
         self.index

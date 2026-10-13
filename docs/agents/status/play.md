@@ -99,3 +99,5 @@ fn register_launch_services<T: vgames_desktop_lib::launch::orchestrate::TrustSou
 - Missing/reused identities return no attachment. Permission, enumeration and registration errors fail closed and retain session records. Exit is confirmed only after every live group member disappears; native tests cover forked/orphan children, restart, stop, cancellation, escaped children and a one-second interval without periodic queue wakeups.
 
 - PLAY-05 DS4 output uses pinned public ViGEm bus ABI byte buffers, retained per-report event/storage, neutral hat/axis and explicit XInput-to-DS4 conversion; blocking notification cancellation drains before join. Preserves the requested logical player order for DS4. Real-driver hardware proof remains checklist B; hosted ABI/conversion and no-driver checks are required.
+
+- PLAY-05 ViGEm preparation has a single two-second deadline; timeout cancels and drains pending readiness I/O. DS4 control/report requests also cancel/drain before releasing stable request storage; feedback remains an indefinite driver wait with explicit stop cancellation. These deadlines exist only around submitted operations.
