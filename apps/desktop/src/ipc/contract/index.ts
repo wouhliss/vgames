@@ -1,7 +1,6 @@
 // Every command and event the UI needs that is not in the generated bindings yet, by domain.
 import { catalogCommands } from "./catalog";
 import { compatCommands } from "./compat";
-import { controllerCommands } from "./controllers";
 import { coreCommands } from "./core";
 import { settingsCommands } from "./settings";
 
@@ -10,13 +9,11 @@ export const pendingCommands = {
   ...catalogCommands,
   ...settingsCommands,
   ...compatCommands,
-  ...controllerCommands,
 };
 
 export const pendingEvents = {};
 
 export type * from "./catalog";
 export type * from "./compat";
-export type * from "./controllers";
 export type * from "./core";
 export type * from "./settings";

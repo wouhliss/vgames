@@ -228,19 +228,14 @@ export const commands = {
 	publishRelease: (serverId: string, versionId: string) => typedError<PublishVersion, PublishCommandError>(__TAURI_INVOKE("publish_release", { serverId, versionId })),
 	/**  Withdraws a published version (`reason`: 3–500 characters, kept by the server). */
 	versionYank: (serverId: string, versionId: string, reason: string) => typedError<PublishVersion, PublishCommandError>(__TAURI_INVOKE("version_yank", { serverId, versionId, reason })),
-	controllersList: () => typedError<ControllerList, AppError>(__TAURI_INVOKE("controllers_list")),
-	controllersTesterStart: (instanceId: number) => typedError<Tester, AppError>(__TAURI_INVOKE("controllers_tester_start", { instanceId })),
-	controllersTesterStop: (subscriptionId: string) => typedError<null, AppError>(__TAURI_INVOKE("controllers_tester_stop", { subscriptionId })),
 };
 
 /** Events */
 export const events = {
-	activeControllerChanged: makeEvent<ActiveControllerChanged>("active-controller-changed"),
 	authFinished: makeEvent<AuthFinished>("auth-finished"),
 	collectionsChanged: makeEvent<CollectionsChanged>("collections-changed"),
 	connectivityChanged: makeEvent<ConnectivityChanged>("connectivity-changed"),
 	controllerEvent: makeEvent<ControllerEvent>("controller-event"),
-	controllerTesterState: makeEvent<ControllerTesterState>("controller-tester-state"),
 	conversationsChanged: makeEvent<ConversationsChanged>("conversations-changed"),
 	deviceNotice: makeEvent<DeviceNoticeEvent>("device-notice"),
 	downloadsChanged: makeEvent<DownloadsChanged>("downloads-changed"),
@@ -259,7 +254,6 @@ export const events = {
 	messageStatusChanged: makeEvent<MessageStatusChanged>("message-status-changed"),
 	overlayPackageDisabled: makeEvent<OverlayPackageDisabled>("overlay-package-disabled"),
 	overlayView: makeEvent<OverlayViewChanged>("overlay-view"),
-	padsChanged: makeEvent<PadsChanged>("pads-changed"),
 	presenceChanged: makeEvent<PresenceChanged>("presence-changed"),
 	publishProgress: makeEvent<PublishProgress>("publish-progress"),
 	serverAddRequested: makeEvent<ServerAddRequested>("server-add-requested"),
@@ -268,7 +262,6 @@ export const events = {
 	socialConnectionChanged: makeEvent<SocialConnectionChanged>("social-connection-changed"),
 	trustProblem: makeEvent<TrustProblem>("trust-problem"),
 	typing: makeEvent<Typing>("typing"),
-	uiNav: makeEvent<UiNav>("ui-nav"),
 	updaterStatus: makeEvent<UpdaterStatus>("updater-status"),
 };
 
@@ -295,10 +288,6 @@ export type AccountSession = {
 	last_used_at: string,
 	/**  This launcher's own session. */
 	current: boolean,
-};
-
-export type ActiveControllerChanged = {
-	controller: ControllerKind | null,
 };
 
 /**
@@ -353,13 +342,6 @@ export type AvailableUpdate = {
 	/**  The installed version was withdrawn: offered even with a lower sequence. */
 	installed_yanked: boolean,
 };
-
-export type Battery = {
-	percent: number | null,
-	state: BatteryState,
-};
-
-export type BatteryState = "charging" | "on_battery" | "wired" | "unknown";
 
 /**  Why an update check or install must wait. */
 export type Blocked = "game_running" | "downloads_active";
@@ -478,17 +460,6 @@ export type CompatRunner = "proton" | "wine";
 
 export type CompatStatus = "verified" | "playable" | "unsupported" | "untested";
 
-export type ConnectedPad = {
-	instance_id: number,
-	kind: ControllerKind,
-	name: string,
-	connection: Connection,
-	battery: Battery,
-	player_index: number | null,
-};
-
-export type Connection = "usb" | "bluetooth" | "unknown";
-
 /**  Whether the launcher could reach a server on its last attempt. */
 export type ConnectivityChanged = {
 	server_id: string,
@@ -514,8 +485,6 @@ export type ContactSecurity = {
 	devices: ContactDevice[],
 };
 
-export type ControllerAvailability = { kind: "ready" } | { kind: "unavailable"; detail: string };
-
 /**  What happened to a controller. */
 export type ControllerChange = { kind: "connected"; controller: ControllerKind; name: string } | { kind: "disconnected" } | 
 /**  Guide/PS held for 1 s (opens the in-game overlay, 05-social §6). */
@@ -530,11 +499,6 @@ export type ControllerEvent = {
 
 /**  Controller family, as classified by the input thread (07-controllers §2). */
 export type ControllerKind = "xinput" | "dualshock4" | "dualsense" | "switch_pro" | "generic";
-
-export type ControllerList = {
-	state: ControllerAvailability,
-	pads: ConnectedPad[],
-};
 
 export type ControllerMapping = {
 	nintendo_labels: boolean,
@@ -556,16 +520,6 @@ export type ControllerStickSettings = {
 	deadzone: number,
 	anti_deadzone: number,
 	invert_y: boolean,
-};
-
-export type ControllerTesterState = {
-	subscription_id: string,
-	instance_id: number,
-	buttons: Button[],
-	left: [number, number],
-	right: [number, number],
-	left_trigger: number,
-	right_trigger: number,
 };
 
 export type Conversation = {
@@ -986,8 +940,6 @@ export type MyDevice = {
 	last_seen_at: string | null,
 };
 
-export type NavAction = "up" | "down" | "left" | "right" | "accept" | "back" | "menu" | "options" | "tab_prev" | "tab_next";
-
 /**  What the overlay (window or in-game renderer) asks the launcher to do. */
 export type OverlayAction = { kind: "accept_invite"; invite_id: string } | { kind: "decline_invite"; invite_id: string } | { kind: "quick_reply"; conversation_id: string; text: string } | { kind: "open_launcher" } | { kind: "close_panel" };
 
@@ -1096,8 +1048,6 @@ export type PackageRef = {
 };
 
 export type PackageStatus = "draft" | "published" | "hidden" | "archived";
-
-export type PadsChanged = Record<string, never>;
 
 /**  Why a job waits (02 §7.10). Every reason except `user` clears by itself. */
 export type PauseReason = 
@@ -1365,11 +1315,6 @@ export type SocialSettings = {
 	overlay_hotkey: string,
 };
 
-export type Tester = {
-	subscription_id: string,
-	instance_id: number,
-};
-
 /**  Where session tokens are stored. */
 export type TokenStorage = {
 	/**
@@ -1397,13 +1342,6 @@ export type TrustProblemKind = "fingerprint_mismatch";
 export type Typing = {
 	conversation_id: string,
 	user_id: string,
-};
-
-/**  Debounced controller navigation intent. */
-export type UiNav = {
-	action: NavAction,
-	controller: ControllerKind,
-	repeat: boolean,
 };
 
 /**  What uninstalling removes, and what the player decides about (02 §9). */

@@ -9,6 +9,7 @@ mod app;
 mod catalog;
 mod collections;
 mod controller_runtime;
+mod controller_drivers;
 mod controllers;
 mod downloads;
 mod games;
@@ -149,7 +150,8 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             publishing::version_yank,
             controller_runtime::controllers_list,
             controller_runtime::controllers_tester_start,
-            controller_runtime::controllers_tester_stop
+            controller_runtime::controllers_tester_stop,
+            controller_drivers::controllers_driver_status
         ])
         .events(tauri_specta::collect_events![
             GameStarted,

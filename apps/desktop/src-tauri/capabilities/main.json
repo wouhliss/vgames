@@ -109,6 +109,7 @@
     "allow-publish-dismiss",
     "allow-publish-release",
     "allow-version-yank",
+    "allow-controllers-driver-status",
     "allow-controllers-settings-get",
     "allow-controllers-settings-set",
     "allow-controllers-profile-get",

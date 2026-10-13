@@ -13,3 +13,5 @@ export type * from "./contract";
 export type FolderPick = NonNullable<
   Extract<Awaited<ReturnType<typeof generatedCommands.libraryPickFolder>>, { status: "ok" }>["data"]
 >;
+
+export type { Battery as ControllerBattery, Connection as ControllerConnection, Button as ControllerButton, XButton as XboxButton, Tester as ControllerTester } from "../bindings";

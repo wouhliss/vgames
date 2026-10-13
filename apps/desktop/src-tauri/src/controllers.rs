@@ -2,8 +2,10 @@
 //! emulation decision. The SDL input thread and the virtual-pad backends
 //! build on these.
 
+pub mod backends;
 pub mod decision;
 pub mod handle;
+pub mod drivers;
 pub mod idle;
 pub mod input;
 pub mod mapping;
@@ -21,3 +23,5 @@ mod linkage_tests {
         assert_eq!(sdl3::version::version().major, 3);
     }
 }
+
+pub mod sessions;

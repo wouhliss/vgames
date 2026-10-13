@@ -11,6 +11,9 @@
 - PLAY-04 native controller startup/list/tester integration implemented. Initialization and worker joining use the blocking pool; unavailable input is reported to the screen, Guide remains active in the background, and navigation follows main-window focus.
 - PLAY-04 SDL routing adapter implemented: physical handles stay on their owner, cached metadata and scoped testers are exposed through Service, and releasing inputs cancels scheduled wakeups. Native startup/command integration follows separately.
 - PLAY-04 typed controller event bridge implemented: navigation, active family, pad-list changes and scoped tester states are registered for generated bindings; Guide holds reuse the overlay bus event.
+- PLAY-05 Windows Xbox output implemented through ViGEm with assigned XInput slots, request/stop serialization and CancelIoEx before feedback joining. Fake-driver report and failed-preparation cleanup regressions cross-compile with Clippy; native hosted proof, other target kinds and launch-session integration remain required.
+- PLAY-05 Linux virtual output implemented behind VirtualPadBackend: Xbox reports use a fixed event array, feedback waits on uinput/cancellation and only active effects arm deadlines. Rumble mixing, erase/stop, bounded uploads and cancellation regressions pass; hosted kernel latency/hot-plug/soak and launch-session integration remain required.
+- PLAY-04/05 driver availability command implemented with native probes on the blocking pool and the scoped uaccess resource; virtual report forwarding and runtime entitlement verification remain separate PLAY-05 work.
 
 
 ## Interfaces delivered (other agents may now rely on these)
@@ -101,3 +104,8 @@ fn register_launch_services<T: vgames_desktop_lib::launch::orchestrate::TrustSou
 - Games start in their own process group. The tracker blocks in `kevent` with no timeout; `EVFILT_PROC` watches exit/fork notifications, libproc discovers children and group members, and `EVFILT_USER` wakes cancellation. Cancelling or dropping launcher handles leaves games alive.
 - The stored identity includes PID and BSD creation time. Re-attach validates the leader when present and can recover an orphan group; stop sends SIGTERM or SIGKILL to the verified group. Descendants that deliberately leave that group are outside tracking, matching Linux's scope.
 - Missing/reused identities return no attachment. Permission, enumeration and registration errors fail closed and retain session records. Exit is confirmed only after every live group member disappears; native tests cover forked/orphan children, restart, stop, cancellation, escaped children and a one-second interval without periodic queue wakeups.
+
+- PLAY-05 DS4 output uses pinned public ViGEm bus ABI byte buffers, retained per-report event/storage, neutral hat/axis and explicit XInput-to-DS4 conversion; blocking notification cancellation drains before join. Preserves the requested logical player order for DS4. Real-driver hardware proof remains checklist B; hosted ABI/conversion and no-driver checks are required.
+
+- PLAY-05 ViGEm preparation has a single two-second deadline; timeout cancels and drains pending readiness I/O. DS4 control/report requests also cancel/drain before releasing stable request storage; feedback remains an indefinite driver wait with explicit stop cancellation. These deadlines exist only around submitted operations.
+- PLAY-05 session resource core: decision/profile snapshot, held-state initial report, assigned player order, driver-failure passthrough, cancellation, and unique-UUID reservation/install/take. Teardown resources leave the registry before driver joins. Production launch-hook/SDL owner wiring and hiding remain follow-up work.
