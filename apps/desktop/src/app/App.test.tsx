@@ -137,6 +137,7 @@ it("uses only the active StrictMode subscription to signal readiness", async () 
 
 it("consumes a pinned startup server link emitted immediately when native readiness is released", async () => {
   const backend = installMockBackend();
+  const warnings = vi.spyOn(console, "warn");
   const link = { url: "https://startup.example/", fingerprint: OTHER_FINGERPRINT };
   let released = false;
   backend.on("app_ready", async () => {
@@ -160,4 +161,5 @@ it("consumes a pinned startup server link emitted immediately when native readin
   );
   expect(await screen.findByText(link.fingerprint)).toBeInTheDocument();
   expect(backend.callsTo("app_ready")).toHaveLength(1);
+  expect(warnings).not.toHaveBeenCalled();
 });
