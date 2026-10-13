@@ -17,6 +17,7 @@ path = "src/main.rs"
 tauri-build.workspace = true
 
 [dependencies]
+tempfile.workspace = true
 vgames-core.workspace = true
 vgames-proto.workspace = true
 vgames-pack.workspace = true
