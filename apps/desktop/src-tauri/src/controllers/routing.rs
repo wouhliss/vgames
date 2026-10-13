@@ -120,6 +120,20 @@ impl Router {
         pads.sort_by_key(|pad| (pad.player_index, pad.instance_id));
         pads
     }
+    pub fn physical_pads(&self) -> Vec<super::sessions::PhysicalPad> {
+        self.pads
+            .values()
+            .map(|pad| super::sessions::PhysicalPad {
+                instance_id: pad.info.instance_id,
+                kind: pad.info.kind,
+                player_index: pad.info.player_index,
+                state: pad.state,
+            })
+            .collect()
+    }
+    pub fn pad_state(&self, id: u32) -> Option<PadState> {
+        self.pads.get(&id).map(|pad| pad.state)
+    }
     pub fn navigation_enabled(&mut self, enabled: bool) {
         self.navigation_enabled = enabled;
     }

@@ -29,12 +29,14 @@ enum State {
 }
 #[derive(Clone)]
 pub struct Controllers {
+    pub(super) sessions: Arc<super::launch::Bridge>,
     state: Arc<Mutex<State>>,
     focused: Arc<AtomicBool>,
 }
 impl Default for Controllers {
     fn default() -> Self {
         Self {
+            sessions: Arc::default(),
             focused: Arc::new(AtomicBool::new(false)),
             state: Arc::new(Mutex::new(State::Unavailable(
                 "Controller input is starting.".into(),
@@ -49,6 +51,9 @@ impl Controllers {
         emit: Arc<dyn Fn(Output) + Send + Sync>,
         shutdown: CancellationToken,
     ) {
+        let sessions = self.sessions.clone();
+        let cleanup_sessions = self.sessions.clone();
+        let cleanup_runtime = runtime.clone();
         let state = self.state.clone();
         let focused = self.focused.clone();
         let worker_runtime = runtime.clone();
@@ -57,7 +62,7 @@ impl Controllers {
             let startup_emit = emit.clone();
             let startup_state = state.clone();
             let initialized = tokio::task::spawn_blocking(move || {
-                let service = Service::start(worker_runtime, startup_emit);
+                let service = Service::start_with_sessions(worker_runtime, startup_emit, sessions);
                 if startup_shutdown.is_cancelled() {
                     // Dropping a successful initialization joins its worker here,
                     // on the blocking pool, even if shutdown won the startup race.
@@ -80,6 +85,7 @@ impl Controllers {
             }
             emit(Output::PadsChanged);
             shutdown.cancelled().await;
+            cleanup_sessions.shutdown(&cleanup_runtime);
             let stopped = tokio::task::spawn_blocking(move || {
                 let service = state.lock().ok().map(|mut state| {
                     std::mem::replace(
@@ -95,6 +101,15 @@ impl Controllers {
                 tracing::error!(%error, "controller shutdown task failed");
             }
         });
+    }
+    pub fn physical_pads(&self) -> Vec<super::sessions::PhysicalPad> {
+        match self.state.lock() {
+            Ok(state) => match &*state {
+                State::Ready(service) => service.physical_pads().unwrap_or_default(),
+                State::Unavailable(_) => Vec::new(),
+            },
+            Err(_) => Vec::new(),
+        }
     }
     pub fn list(&self) -> ControllerList {
         match self.state.lock() {
