@@ -90,6 +90,18 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Build the launcher UI (embedded by tauri::generate_context!)
         run: pnpm --filter @vgames/desktop build
+      - name: Diagnose the unsigned macOS controller gate
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          cargo test --locked --target "$TARGET" -p vgames-desktop --lib --no-run --message-format=json > "$RUNNER_TEMP/controller-gate-build.json"
+          gate_binary="$(python3 -c 'import json,sys; rows=(json.loads(line) for line in open(sys.argv[1])); paths=[row["executable"] for row in rows if row.get("reason") == "compiler-artifact" and row.get("target", {}).get("name") == "vgames_desktop_lib" and row.get("executable")]; assert len(paths) == 1; print(paths[0])' "$RUNNER_TEMP/controller-gate-build.json")"
+          # Keep the full Rust test step below unchanged. On a native crash,
+          # LLDB records the failing frames without dumping process memory.
+          lldb --batch -o 'run controllers::backends::macos::tests::the_unsigned_process_cannot_create_a_corehid_device --exact --nocapture' \
+            -k 'thread backtrace all' -- "$gate_binary"
+        env:
+          TARGET: ${{ matrix.target }}
       - name: Rust tests (launcher and the crates it ships)
         run: >-
           cargo test --locked --target ${{ matrix.target }}

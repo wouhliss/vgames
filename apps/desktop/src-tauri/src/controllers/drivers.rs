@@ -73,10 +73,15 @@ pub fn probe() -> ControllerDriverStatus {
 }
 #[cfg(target_os = "macos")]
 pub fn probe() -> ControllerDriverStatus {
-    // Our unsigned distribution has no restricted entitlement or Swift bridge.
-    // The virtual backend independently refuses creation; input stays native.
+    let emulation = if super::backends::macos::has_entitlement() {
+        ControllerDriverState::ProbeError {
+            detail: "Virtual controller support is not included in this build.".into(),
+        }
+    } else {
+        ControllerDriverState::MacosEntitlementMissing
+    };
     ControllerDriverStatus {
-        emulation: ControllerDriverState::MacosEntitlementMissing,
+        emulation,
         hiding: ControllerDriverState::NotRequired,
     }
 }
