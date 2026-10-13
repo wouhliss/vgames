@@ -223,6 +223,35 @@ impl Api {
     /// A new package, published from `source` (launch target `bin/game.sh` when present) and
     /// made visible to players.
     pub async fn publish_package(&self, title: &str, source: &Path) -> Published {
+        let package_id = self.create_package(title).await;
+        let published = self.publish_version(package_id, source, "1.0").await;
+
+        // Visible to players: `published` (JSON merge patch, with the current ETag).
+        let current = self
+            .request(
+                reqwest::Method::GET,
+                &format!("/v1/admin/packages/{package_id}"),
+            )
+            .send()
+            .await
+            .unwrap();
+        let etag = current.headers()["etag"].to_str().unwrap().to_owned();
+        let resp = self
+            .request(
+                reqwest::Method::PATCH,
+                &format!("/v1/admin/packages/{package_id}"),
+            )
+            .header("if-match", etag)
+            .header("content-type", "application/merge-patch+json")
+            .body(json!({ "status": "published" }).to_string())
+            .send()
+            .await
+            .unwrap();
+        assert!(resp.status().is_success(), "{}", resp.text().await.unwrap());
+        published
+    }
+
+    async fn create_package(&self, title: &str) -> Uuid {
         let created: Value = self
             .request(reqwest::Method::POST, "/v1/admin/packages")
             .json(&json!({ "title": title, "fetch_metadata": false }))
@@ -234,8 +263,12 @@ impl Api {
             .json()
             .await
             .unwrap();
-        let package_id: Uuid = created["id"].as_str().unwrap().parse().unwrap();
+        created["id"].as_str().unwrap().parse().unwrap()
+    }
 
+    /// Publishes `source` as a new version of `package_id`, labelled `label` (launch target
+    /// `bin/game.sh` when present).
+    pub async fn publish_version(&self, package_id: Uuid, source: &Path, label: &str) -> Published {
         let scanned = scan::scan(source).unwrap();
         assert!(
             scanned.rejected.is_empty(),
@@ -268,7 +301,7 @@ impl Api {
         );
         let create: VersionCreate = serde_json::from_value(json!({
             "platform": "linux-x86_64",
-            "version_label": "1.0",
+            "version_label": label,
         }))
         .unwrap();
         let api = Arc::new(PublishClient {
@@ -303,29 +336,6 @@ impl Api {
         let version = publish::run(request, api, &options, &control)
             .await
             .unwrap();
-
-        // Visible to players: `published` (JSON merge patch, with the current ETag).
-        let current = self
-            .request(
-                reqwest::Method::GET,
-                &format!("/v1/admin/packages/{package_id}"),
-            )
-            .send()
-            .await
-            .unwrap();
-        let etag = current.headers()["etag"].to_str().unwrap().to_owned();
-        let resp = self
-            .request(
-                reqwest::Method::PATCH,
-                &format!("/v1/admin/packages/{package_id}"),
-            )
-            .header("if-match", etag)
-            .header("content-type", "application/merge-patch+json")
-            .body(json!({ "status": "published" }).to_string())
-            .send()
-            .await
-            .unwrap();
-        assert!(resp.status().is_success(), "{}", resp.text().await.unwrap());
         Published {
             package_id,
             version_id: version.id,

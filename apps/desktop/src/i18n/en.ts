@@ -710,6 +710,12 @@ export const en = {
     progress: "{name}'s install",
     joinSecret: "Join details will be sent",
     installPrompt: "{name} invited you. Install it to play together.",
+    update: {
+      title: "Update {title} to play together?",
+      description: "Your version is out of date. The invite is ready once the update finishes.",
+      confirm: "Update",
+      busy: "{title} is busy being updated, repaired or moved. The invite is ready once it finishes.",
+    },
     failedToAccept: "Couldn't accept the invite: {detail}",
     gone: "This invite isn't active anymore.",
   },

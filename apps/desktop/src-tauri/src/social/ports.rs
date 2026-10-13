@@ -189,8 +189,8 @@ pub trait Games: Send + Sync + 'static {
     ) -> BoxFuture<'_, Result<(), LaunchError>>;
 }
 
-/// Install state from the local `installs` table (an installed row counts as current: update
-/// detection needs A2-T08's platform choice). Cannot launch; [`LauncherGames`] can.
+/// Install state from the local `installs` table (an installed row counts as current;
+/// [`LauncherGames`] also checks for updates). Cannot launch; [`LauncherGames`] can.
 pub struct LocalLibrary {
     pub db: crate::db::Db,
 }
@@ -234,16 +234,113 @@ impl Games for LocalLibrary {
     }
 }
 
-/// The real port: [`LocalLibrary`] install state, launches through Agent 2's launcher (rate
-/// limit, pre-launch checks, `multiplayer.join` target with the secret as a whole argument).
+/// Whether an installed package is behind the release its server offers (INS-04), so that an
+/// invite updates it before reporting ready.
+pub trait Updates: Send + Sync + 'static {
+    fn behind(&self, package: crate::events::PackageRef) -> BoxFuture<'_, bool>;
+}
+
+/// How long an invite waits for the server's release information before using what update
+/// detection last found: the check runs inside the social event loop.
+pub const UPDATE_CHECK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// [`Updates`] from the server's release descriptor, compared with the installed row as INS-04's
+/// detection does, so the answer does not depend on when detection last ran. Slow or offline, it
+/// falls back to what detection last found. A changed answer is stored for the library (unless
+/// the install changed meanwhile) and announced with `InstallsChanged`.
+pub struct CatalogUpdates<C: crate::catalog::Connections> {
+    pub catalog: Arc<crate::catalog::Catalog<C>>,
+    pub db: crate::db::Db,
+    pub installs: Arc<crate::installs::Installs>,
+    pub bus: crate::events::EventBus,
+}
+
+impl<C: crate::catalog::Connections> Updates for CatalogUpdates<C> {
+    fn behind(&self, package: crate::events::PackageRef) -> BoxFuture<'_, bool> {
+        Box::pin(async move {
+            let row = match crate::db::installs::row(&self.db, package).await {
+                Ok(Some(row)) if row.state == "installed" => row,
+                Ok(_) => return false,
+                Err(error) => {
+                    tracing::warn!(%error, "cannot read the install for an update check");
+                    return false;
+                }
+            };
+            let (Some(platform), Ok(version)) = (
+                vgames_proto::packages::Platform::parse(&row.platform),
+                Uuid::parse_str(&row.version_id),
+            ) else {
+                return false;
+            };
+            let descriptor = tokio::time::timeout(
+                UPDATE_CHECK_TIMEOUT,
+                self.catalog.descriptor(package, platform),
+            )
+            .await;
+            let descriptor = match descriptor {
+                Ok(Ok(descriptor)) => descriptor,
+                Ok(Err(error)) => {
+                    tracing::debug!(%error, "no release information for an invite");
+                    return self.installs.update(package).is_some();
+                }
+                Err(_) => {
+                    tracing::debug!("release information too slow for an invite");
+                    return self.installs.update(package).is_some();
+                }
+            };
+            let update = crate::installs::updates::compare(version, row.sequence, &descriptor);
+            let behind = update.is_some();
+            // Store it only for the version it was computed for: an update may have finished
+            // while the server answered.
+            let unchanged = matches!(
+                crate::db::installs::row(&self.db, package).await,
+                Ok(Some(now)) if now.state == "installed" && now.version_id == row.version_id
+            );
+            if unchanged && self.installs.update(package) != update {
+                self.installs.set_update(package, update);
+                self.bus.publish(crate::events::AppEvent::InstallsChanged(
+                    crate::events::InstallsChanged {},
+                ));
+            }
+            behind
+        })
+    }
+}
+
+/// A current install that is behind its server is outdated; anything else is left as it is
+/// (and the server is not asked).
+async fn outdated_when_behind(
+    check: GameCheck,
+    updates: Option<&dyn Updates>,
+    package: crate::events::PackageRef,
+) -> GameCheck {
+    match updates {
+        Some(updates) if check == GameCheck::Current && updates.behind(package).await => {
+            GameCheck::Outdated
+        }
+        _ => check,
+    }
+}
+
+/// The real port: [`LocalLibrary`] install state, an installed game that is behind its server
+/// counts as outdated ([`Updates`]), launches through Agent 2's launcher (rate limit, pre-launch
+/// checks, `multiplayer.join` target with the secret as a whole argument).
 pub struct LauncherGames<T> {
     pub library: LocalLibrary,
+    pub updates: Option<Arc<dyn Updates>>,
     pub launcher: Arc<crate::launch::orchestrate::Launcher<T>>,
 }
 
 impl<T: crate::launch::orchestrate::TrustSource> Games for LauncherGames<T> {
     fn check(&self, server: Uuid, package: Uuid) -> BoxFuture<'_, GameCheck> {
-        self.library.check(server, package)
+        Box::pin(async move {
+            let check = self.library.check(server, package).await;
+            let package = crate::events::PackageRef {
+                server_id: server,
+                package_id: package,
+            };
+            outdated_when_behind(check, self.updates.as_deref(), package).await
+        })
     }
 
     fn launch_join(
@@ -328,5 +425,50 @@ mod tests {
         slot.on_unauthorized(|_| {});
         slot.set(Some(stale.clone()));
         assert!(slot.refreshed(&stale).await.is_none());
+    }
+
+    /// Answers `behind` from a fixed value and counts the questions.
+    struct FixedUpdates(bool, std::sync::atomic::AtomicUsize);
+
+    impl Updates for FixedUpdates {
+        fn behind(&self, _package: crate::events::PackageRef) -> BoxFuture<'_, bool> {
+            self.1.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Box::pin(std::future::ready(self.0))
+        }
+    }
+
+    #[tokio::test]
+    async fn an_installed_game_behind_its_server_is_outdated() {
+        let package = crate::events::PackageRef {
+            server_id: Uuid::from_u128(1),
+            package_id: Uuid::from_u128(2),
+        };
+        let behind = FixedUpdates(true, 0.into());
+        let current = FixedUpdates(false, 0.into());
+        assert_eq!(
+            outdated_when_behind(GameCheck::Current, Some(&behind), package).await,
+            GameCheck::Outdated
+        );
+        assert_eq!(
+            outdated_when_behind(GameCheck::Current, Some(&current), package).await,
+            GameCheck::Current
+        );
+        assert_eq!(
+            outdated_when_behind(GameCheck::Current, None, package).await,
+            GameCheck::Current
+        );
+        // Only a current install asks the server.
+        let asked = FixedUpdates(true, 0.into());
+        for check in [
+            GameCheck::Missing,
+            GameCheck::Outdated,
+            GameCheck::NoBuildForPlatform,
+        ] {
+            assert_eq!(
+                outdated_when_behind(check, Some(&asked), package).await,
+                check
+            );
+        }
+        assert_eq!(asked.1.load(std::sync::atomic::Ordering::SeqCst), 0);
     }
 }

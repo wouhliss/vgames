@@ -583,22 +583,30 @@ export function socialHandlers(
       const found = invite(String(args.inviteId));
       if (found.state !== "pending")
         fail({ kind: "conflict", code: "invalid_state_transition", message: "Not pending." });
-      const installed = state.installs.some(
-        (i) => i.package.package_id === found.package.id && i.state === "installed",
-      );
+      const install = state.installs.find((i) => i.package.package_id === found.package.id);
+      // Like the core: current when installed with no update; outdated when an update is
+      // available or a job is running; missing otherwise.
+      const current = install?.state === "installed" && install.update === null;
       const accepted = setInvite({
         ...found,
-        state: installed ? "ready" : "accepted",
+        state: current ? "ready" : "accepted",
         updated_at: new Date().toISOString(),
       });
-      if (!installed) {
+      if (!current) {
         void events.inviteInstallRequested.emit({
           invite_id: found.id,
           package: {
             server_id: "01920000-0000-7000-8000-000000000001",
             package_id: found.package.id,
           },
-          reason: "missing",
+          reason:
+            install &&
+            (install.state === "installed" ||
+              install.state === "updating" ||
+              install.state === "repairing" ||
+              install.state === "moving")
+              ? "outdated"
+              : "missing",
         });
       }
       return accepted;

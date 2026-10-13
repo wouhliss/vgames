@@ -1,15 +1,24 @@
 // Game invites (05-social §5, 05-social-notes §6): the incoming invite cards in the main window
 // (stacked, dismissible, focusable; accepting opens the install dialog at once when the game is
-// missing), and the lists of invites you sent (with the invitee's progress) and received.
+// missing, or offers the update when it is out of date), and the lists of invites you sent (with
+// the invitee's progress) and received.
 import { useQueryClient } from "@tanstack/react-query";
 import { lazy, type ReactNode, Suspense, useState } from "react";
 import { Button, IconButton } from "../../components/Button";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ProgressBar } from "../../components/ProgressBar";
 import { useToast } from "../../components/Toast";
 import { formatPercent, formatRelativeTime, t } from "../../i18n";
-import { commands, events, type Invite, type InviteInstallRequested } from "../../ipc";
+import {
+  commands,
+  events,
+  type InstalledPackage,
+  type Invite,
+  type InviteInstallRequested,
+} from "../../ipc";
 import { useTauriEvent } from "../../ipc/events";
 import { queryKeys } from "../../ipc/query";
+import { actionErrorMessage } from "../library/messages";
 import { Avatar } from "./Avatar";
 import styles from "./Friends.module.css";
 import { displayName, socialErrorText } from "./model";
@@ -235,8 +244,9 @@ function InviteCard({
 }
 
 /**
- * Mounted once in the shell: the incoming invite cards (newest on top) and the install dialog that an
- * accepted invite opens at once (`invite-install-requested`).
+ * Mounted once in the shell: the incoming invite cards (newest on top) and what an accepted invite
+ * opens at once (`invite-install-requested`): the install dialog for a missing game, the update
+ * offer for an outdated one.
  */
 export function InviteHost() {
   const client = useQueryClient();
@@ -245,6 +255,13 @@ export function InviteHost() {
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(() => new Set());
   const [shown, setShown] = useState<ReadonlySet<string>>(() => new Set());
   const [install, setInstall] = useState<(InviteInstallRequested & { title: string }) | null>(null);
+  // Outdated games waiting for their update offer, oldest first (one dialog at a time).
+  const [updates, setUpdates] = useState<readonly (InviteInstallRequested & { title: string })[]>(
+    [],
+  );
+  const update = updates[0] ?? null;
+  const done = (inviteId: string) =>
+    setUpdates((list) => list.filter((u) => u.invite_id !== inviteId));
 
   useTauriEvent(events.inviteReceived, (invite) => {
     client.setQueryData<Invite[]>(queryKeys.invites, (list) =>
@@ -254,8 +271,44 @@ export function InviteHost() {
   });
   useTauriEvent(events.inviteInstallRequested, (request) => {
     const title = invites.data?.find((i) => i.id === request.invite_id)?.package.title ?? "";
-    setInstall({ ...request, title });
+    if (request.reason === "missing") {
+      setInstall({ ...request, title });
+      return;
+    }
+    // Outdated also covers an install that is already updating, repairing or moving: the
+    // invite gets ready when that finishes, so there is nothing to offer.
+    const installed = client
+      .getQueryData<InstalledPackage[]>(queryKeys.installs)
+      ?.find((i) => i.package.package_id === request.package.package_id);
+    if (installed && installed.state !== "installed") {
+      toast({ tone: "info", title: t("invite.update.busy", { title }) });
+      return;
+    }
+    setUpdates((list) => [
+      ...list.filter((u) => u.invite_id !== request.invite_id),
+      { ...request, title },
+    ]);
   });
+
+  const startUpdate = async (request: InviteInstallRequested & { title: string }) => {
+    try {
+      const result = await commands.installUpdate(request.package);
+      if (result.status === "error") {
+        if (result.error.kind === "busy") {
+          toast({ tone: "info", title: t("invite.update.busy", { title: request.title }) });
+          done(request.invite_id);
+        } else {
+          toast({ tone: "danger", title: actionErrorMessage(result.error, request.title) });
+        }
+        return;
+      }
+      await client.invalidateQueries({ queryKey: queryKeys.installs });
+      toast({ tone: "info", title: t("library.toasts.updateQueued", { title: request.title }) });
+      done(request.invite_id);
+    } catch {
+      toast({ tone: "danger", title: t("error.generic") });
+    }
+  };
 
   // Cards: incoming invites that were pending when they arrived (or at start), until dismissed.
   const cards = (invites.data ?? []).filter(
@@ -280,6 +333,14 @@ export function InviteHost() {
           ))}
         </section>
       ) : null}
+      <ConfirmDialog
+        open={update !== null}
+        title={t("invite.update.title", { title: update?.title ?? "" })}
+        description={t("invite.update.description")}
+        confirmLabel={t("invite.update.confirm")}
+        onConfirm={() => (update ? startUpdate(update) : undefined)}
+        onCancel={() => (update ? done(update.invite_id) : undefined)}
+      />
       {install ? (
         <Suspense fallback={null}>
           <InstallDialog
