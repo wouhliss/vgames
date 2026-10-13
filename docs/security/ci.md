@@ -32,7 +32,7 @@ whole workspace, so the ignore rules apply across it.
 | `Admin UI end-to-end (mock mode)` | Playwright suite of `apps/admin-web` against the mock build (Chromium), including the admin-versus-owner authorization matrix; the nightly `e2e.yml` runs the same specs against the real API |
 | `Desktop build check (Linux, WebKitGTK)` | Builds the launcher UI, runs clippy with warnings denied, the whole launcher suite under Xvfb, then the named database scenarios against Postgres 18 (soak excluded) |
 | `Desktop matrix gate` | Always reports; passes for docs-only scope skips and a successful three-OS matrix, fails for a failed/cancelled matrix or failed scope detection |
-| `Supply chain (cargo-deny, cargo-audit, pnpm audit)` | [`deny.toml`](../../deny.toml): RustSec advisories, license allowlist (no GPL/AGPL), crates.io only, duplicate versions reported; `cargo audit`; `pnpm audit --prod` |
+| `Supply chain (cargo-deny, cargo-audit, pnpm audit)` | [`deny.toml`](../../deny.toml): RustSec advisories, license allowlist (no GPL/AGPL), crates.io only, duplicate versions reported; `cargo audit`; `pnpm audit` covers production and development dependencies |
 | `Secret scan (gitleaks)` | Full history with [`.gitleaks.toml`](../../.gitleaks.toml): default rules plus `vga_`/`vgr_`/`vgs_` tokens, `vgames.key/1` key files, `.vgkey` files, minisign secret keys |
 | `Workflows (actionlint)` | Every workflow in `.github/workflows/` passes actionlint (expression and permission checks, shellcheck of `run:` scripts); the release workflows are otherwise only exercised at release time |
 | `Dependency review` | PRs only: new dependencies with moderate+ advisories or GPL/AGPL licenses. Needs GitHub Advanced Security on a private repository (see below) |
