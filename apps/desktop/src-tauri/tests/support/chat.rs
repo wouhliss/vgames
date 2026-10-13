@@ -162,6 +162,9 @@ impl Api {
     }
 
     /// A desktop session (what signing in on a launcher creates); returns its access token.
+    /// The access token outlives the longest soak (5 h 30 min idle): these launchers have no
+    /// session bridge to refresh it, so an expiring token would turn every call after it into a
+    /// 401 (the refresh path has its own tests in `social::session_bridge`).
     async fn session(&self, user: Uuid) -> String {
         use sha2::{Digest, Sha256};
         let mut raw = [0u8; 32];
@@ -174,7 +177,7 @@ impl Api {
         getrandom::fill(&mut refresh).unwrap();
         sqlx::query(
             "INSERT INTO sessions (user_id, kind, access_token_hash, access_expires_at, refresh_token_hash, refresh_expires_at)
-             VALUES ($1, 'desktop', $2, now() + interval '1 hour', $3, now() + interval '30 days')",
+             VALUES ($1, 'desktop', $2, now() + interval '7 days', $3, now() + interval '30 days')",
         )
         .bind(user)
         .bind(Sha256::digest(token.as_bytes()).to_vec())
