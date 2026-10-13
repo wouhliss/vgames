@@ -231,6 +231,23 @@ export const commands = {
 	appearanceGet: () => __TAURI_INVOKE<AppearanceSettings>("appearance_get"),
 	appearanceSet: (settings: AppearanceSettings) => typedError<AppearanceSettings, AppError>(__TAURI_INVOKE("appearance_set", { settings })),
 	appDiagnostics: () => __TAURI_INVOKE<string>("app_diagnostics"),
+	compatOverview: () => typedError<CompatOverview, AppError>(__TAURI_INVOKE("compat_overview")),
+	/**  `None` = automatic. A runner that isn't installed yet downloads at the next launch. */
+	compatDefaultSet: (runner: {
+	runtime: RuntimeId,
+	version: string,
+} | null) => typedError<null, CompatSettingsError>(__TAURI_INVOKE("compat_default_set", { runner })),
+	/**  Deletes an unused runtime version from disk. */
+	runtimeRemove: (runtime: RuntimeId, version: string) => typedError<null, RuntimeRemoveError>(__TAURI_INVOKE("runtime_remove", { runtime, version })),
+	/**  Installed packages that launch through Proton or Wine, with their overrides. */
+	compatPackages: () => typedError<PackageCompat[], AppError>(__TAURI_INVOKE("compat_packages")),
+	compatOverrideSet: (pkg: PackageRef, settings: CompatOverride) => typedError<null, CompatSettingsError>(__TAURI_INVOKE("compat_override_set", { pkg, settings })),
+	/**  Back to the defaults. */
+	compatOverrideReset: (pkg: PackageRef) => typedError<null, AppError>(__TAURI_INVOKE("compat_override_reset", { pkg })),
+	/**  The license texts shipped with each installed runtime (plain text). */
+	compatLicenses: () => typedError<RuntimeLicense[], AppError>(__TAURI_INVOKE("compat_licenses")),
+	/**  Installs Rosetta 2. The UI calls this only after the player confirmed. */
+	rosettaInstall: () => typedError<null, AppError>(__TAURI_INVOKE("rosetta_install")),
 };
 
 /** Events */
@@ -451,6 +468,15 @@ export type CompatBlocker =
 /**  x86_64-only path that Apple's Rosetta policy may end. Not blocking. */
 { kind: "rosetta_sunset"; last_macos: string };
 
+/**  How Windows games run on this computer. */
+export type CompatHost = 
+/**  Windows: Windows games run natively. */
+{ kind: "native" } | { kind: "proton" } | { kind: "wine"; apple_silicon: boolean; 
+/**  `None` on Intel Macs, which don't need it. */
+rosetta: RosettaState | null; 
+/**  Last macOS release with full Rosetta 2, from the catalog; `None` without one. */
+rosetta_last_macos: string | null };
+
 export type CompatInfo = { kind: "native" } | 
 /**  An Intel macOS build on Apple silicon, through Rosetta 2. */
 { kind: "rosetta"; blockers: CompatBlocker[] } | { kind: "compat"; layer: CompatRunner; 
@@ -464,7 +490,31 @@ protondb_tier: ProtonDbTier | null; blockers: CompatBlocker[] } | { kind: "unava
 /**  How the package runs on this machine (09 §1). */
 export type CompatLayer = "native" | "proton" | "wine";
 
+/**  A player's local override for one package. */
+export type CompatOverride = {
+	/**  `None` = the default runner. */
+	runner: RunnerVersion | null,
+	/**  macOS only; `None` = the compat profile's order. */
+	graphics: GraphicsBackend | null,
+	/**  Extra environment variables, added after the compat profile's. */
+	env: { [key in string]: string },
+};
+
+export type CompatOverview = {
+	host: CompatHost,
+	runtimes: InstalledRuntime[],
+	/**  Runner versions from the catalog that run here, newest first. */
+	runners: RunnerVersion[],
+	/**  Backends this Mac can use; empty elsewhere. Never `d3dmetal` in v1. */
+	graphics: GraphicsBackend[],
+	/**  `None` = automatic (the compat profile's choice). */
+	default_runner: RunnerVersion | null,
+};
+
 export type CompatRunner = "proton" | "wine";
+
+/**  What saving compatibility settings can report. */
+export type CompatSettingsError = { kind: "not_found" } | { kind: "unknown_runner" } | { kind: "graphics_unavailable"; backend: GraphicsBackend } | { kind: "invalid_env"; key: string; reason: EnvRefusal } | { kind: "io"; detail: string };
 
 export type CompatStatus = "verified" | "playable" | "unsupported" | "untested";
 
@@ -630,6 +680,13 @@ export type DownloadsChanged = Record<string, never>;
 /**  The player's per-package choice (`controller_profiles.mode`). */
 export type EmulationMode = "auto" | "always" | "never";
 
+/**  Why an environment entry was refused. */
+export type EnvRefusal = 
+/**  The key isn't `^[A-Z_][A-Z0-9_]{0,63}$` or the value isn't one short line. */
+"format" | 
+/**  The key is reserved (manifest denylist or launcher-owned). */
+"denied";
+
 /**  Stable, closed set of error codes for the UI. */
 export type ErrorCode = 
 /**  An argument failed validation (bad id, path outside a library, …). */
@@ -708,6 +765,9 @@ export type GenreCount = {
 	genre: string,
 	count: number,
 };
+
+/**  macOS graphics backends (09 §3). */
+export type GraphicsBackend = "d3dmetal" | "dxmt" | "dxvk" | "wined3d";
 
 /**  The release this machine would install (native first, then a compatibility layer). */
 export type HostRelease = {
@@ -802,6 +862,15 @@ export type InstalledPackage = {
 	targets: LaunchTarget[],
 	compat: CompatLayer,
 	cloud_saves: CloudSaveState,
+};
+
+/**  A runtime version on disk. */
+export type InstalledRuntime = {
+	runtime: RuntimeId,
+	version: string,
+	size_bytes: number,
+	/**  Installed packages that launch with it; it is kept while this is above 0. */
+	used_by: number,
 };
 
 /**
@@ -1012,6 +1081,16 @@ export type PackProgress = {
 
 export type PackState = "waiting" | "uploading" | "done";
 
+/**  An installed package that launches through Proton or Wine. */
+export type PackageCompat = {
+	package: PackageRef,
+	title: string,
+	/**  `proton` or `wine` (INS's `CompatLayer`; never `native` here). */
+	layer: CompatLayer,
+	/**  `None` when the package uses the defaults. */
+	override: CompatOverride | null,
+};
+
 export type PackageCreate = {
 	title: string,
 	/**  Derived from the title by the server when null. */
@@ -1213,6 +1292,32 @@ export type Remap = {
 };
 
 export type Role = "user" | "admin" | "owner";
+
+/**  Whether Rosetta 2 is there (Apple silicon only). */
+export type RosettaState = "installed" | "missing";
+
+/**  A Proton (Linux) or Wine (macOS) build from the runtime catalog. */
+export type RunnerVersion = {
+	runtime: RuntimeId,
+	version: string,
+};
+
+/**  A runtime of the runtime catalog (09 §5), as the UI names it. */
+export type RuntimeId = "umu-proton" | "ge-proton" | "umu-launcher" | "wine-macos" | "d3dmetal" | "dxmt" | "dxvk-macos" | "moltenvk";
+
+/**  A runtime's license, shipped with it. */
+export type RuntimeLicense = {
+	runtime: RuntimeId,
+	name: string,
+	/**  SPDX expression from the catalog. */
+	spdx: string,
+	/**  Plain text, rendered as text. */
+	text: string,
+};
+
+export type RuntimeRemoveError = { kind: "not_found" } | 
+/**  Installed packages still launch with it. */
+{ kind: "in_use"; used_by: number } | { kind: "io"; detail: string };
 
 export type Screenshot = {
 	url: string,
