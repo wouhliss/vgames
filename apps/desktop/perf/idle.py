@@ -8,12 +8,16 @@ event-driven process sits in blocking waits and switches only when the OS or the
 compositor pokes it.
 
 Usage: idle.py <pid> [seconds=60] [--thread vgames-sdl]
+
+Thread mode reports CPU and the separate voluntary/involuntary switch totals for
+exactly matching Linux thread names. An exited or replaced thread fails the probe.
 """
 
 import argparse
 import math
+import argparse
+import math
 import os
-import sys
 import time
 
 CLK_TCK = os.sysconf("SC_CLK_TCK")
@@ -137,24 +141,77 @@ def measure_thread(pid, thread_name, seconds, require_zero):
         raise RuntimeError("idle thread had voluntary context switches")
 
 
+def duration(value):
+    seconds = float(value)
+    if not math.isfinite(seconds) or seconds <= 0:
+        raise argparse.ArgumentTypeError("seconds must be finite and positive")
+    return seconds
+
+
+def thread_sample(pid, tid):
+    base = f"/proc/{pid}/task/{tid}"
+    with open(f"{base}/stat") as source:
+        fields = source.read().rsplit(")", 1)[1].split()
+    with open(f"{base}/status") as source:
+        status = {key: value.strip() for key, value in
+                  (line.split(":", 1) for line in source if ":" in line)}
+    return (int(fields[19]), int(fields[11]) + int(fields[12]),
+            int(status["voluntary_ctxt_switches"]), int(status["nonvoluntary_ctxt_switches"]))
+
+
+def named_threads(root, selected):
+    matched = []
+    for pid in tree(root):
+        for tid in os.listdir(f"/proc/{pid}/task"):
+            try:
+                with open(f"/proc/{pid}/task/{tid}/comm") as source:
+                    if source.read().strip() == selected:
+                        matched.append((pid, int(tid)))
+            except OSError:
+                pass
+    if not matched:
+        raise ValueError(f"No live thread named {selected!r} in the process tree.")
+    return matched
+
+
+def measure_thread(root, seconds, selected):
+    threads = named_threads(root, selected)
+    before = {thread: thread_sample(*thread) for thread in threads}
+    start = time.monotonic()
+    time.sleep(seconds)
+    elapsed = time.monotonic() - start
+    after = {thread: thread_sample(*thread) for thread in threads}
+    if any(before[thread][0] != after[thread][0] for thread in threads):
+        raise ValueError("A selected thread was replaced during measurement.")
+    total_cpu = total_voluntary = total_involuntary = 0
+    print(f"{'pid':>8} {'tid':>8} {'thread':<16} {'cpu s':>7} {'cpu %':>6} {'voluntary':>12} {'involuntary':>12}")
+    for thread in threads:
+        cpu = (after[thread][1] - before[thread][1]) / CLK_TCK
+        voluntary = after[thread][2] - before[thread][2]
+        involuntary = after[thread][3] - before[thread][3]
+        if min(cpu, voluntary, involuntary) < 0:
+            raise ValueError("A selected thread's counters moved backwards.")
+        total_cpu += cpu
+        total_voluntary += voluntary
+        total_involuntary += involuntary
+        pid, tid = thread
+        print(f"{pid:>8} {tid:>8} {selected:<16} {cpu:>7.2f} {100 * cpu / elapsed:>6.2f} {voluntary:>12} {involuntary:>12}")
+    print(f"{'':>8} {'':>8} {'total':<16} {total_cpu:>7.2f} {100 * total_cpu / elapsed:>6.2f} {total_voluntary:>12} {total_involuntary:>12}")
+    print(f"window: {elapsed:.1f} s")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("pid", type=int)
-    parser.add_argument("seconds", nargs="?", type=float, default=60.0)
-    parser.add_argument("--thread", help="Measure one named thread instead of the process tree.")
-    parser.add_argument("--require-zero-voluntary", action="store_true")
+    parser.add_argument("seconds", nargs="?", type=duration, default=60.0)
+    parser.add_argument("--thread", help="Exact Linux thread name; sample only matching threads.")
     args = parser.parse_args()
-    if args.pid <= 0 or not math.isfinite(args.seconds) or args.seconds <= 0:
-        parser.error("pid and seconds must be positive; seconds must be finite")
-    if args.require_zero_voluntary and not args.thread:
-        parser.error("--require-zero-voluntary needs --thread")
     root, seconds = args.pid, args.seconds
     if args.thread:
         try:
-            measure_thread(root, args.thread, seconds, args.require_zero_voluntary)
-        except (OSError, RuntimeError, ValueError) as error:
-            print(f"measurement failed: {error}", file=sys.stderr)
-            sys.exit(1)
+            measure_thread(root, seconds, args.thread)
+        except (OSError, ValueError, KeyError, IndexError) as error:
+            parser.error(f"Thread measurement failed: {error}")
         return
     pids = tree(root)
     before = sample(pids)
