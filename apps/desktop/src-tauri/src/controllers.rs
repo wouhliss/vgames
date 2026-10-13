@@ -4,8 +4,8 @@
 
 pub mod backends;
 pub mod decision;
-pub mod handle;
 pub mod drivers;
+pub mod handle;
 pub mod idle;
 pub mod input;
 pub mod mapping;

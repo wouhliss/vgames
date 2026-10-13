@@ -9,10 +9,10 @@ pub use vgames_core::manifest::EmulatedController;
 pub mod linux;
 #[cfg(target_os = "linux")]
 mod linux_feedback;
-#[cfg(windows)]
-pub mod windows;
 #[cfg(target_os = "macos")]
 pub mod macos;
+#[cfg(windows)]
+pub mod windows;
 
 #[derive(Debug, thiserror::Error)]
 pub enum BackendError {
