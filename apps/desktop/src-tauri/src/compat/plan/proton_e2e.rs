@@ -208,7 +208,13 @@ async fn the_d3d11_test_game_runs_through_proton() {
     let launcher = Launcher::new(
         db.clone(),
         Arc::new(Trust(Arc::new(package.trust.clone()))),
-        GameSessions::new(db.clone(), bus.clone()),
+        // Like `AppState`: the data directory gives every compat launch its prefix.
+        GameSessions::with_runtime(
+            db.clone(),
+            bus.clone(),
+            Some(data.clone()),
+            tokio_util::sync::CancellationToken::new(),
+        ),
     );
     assert!(launcher.hooks().register_plan_source(Arc::new(planner)));
     let package_ref = PackageRef {
