@@ -1,6 +1,6 @@
 // Last line of defense: a render error shows a calm screen with "copy diagnostics" instead of a
 // blank window. Diagnostics come from Rust, already redacted (no tokens, ids or home paths); the UI
-// adds only the error name and message, never the component state.
+// adds a known error class and route category.
 import { Component, type ErrorInfo, type ReactNode, useState } from "react";
 import { isRouteErrorResponse, useRouteError } from "react-router";
 import { Button } from "../components/Button";
@@ -10,8 +10,23 @@ import { commands } from "../ipc";
 import styles from "./ErrorBoundary.module.css";
 
 export function describeError(error: unknown): string {
-  if (isRouteErrorResponse(error)) return `route ${error.status}`;
-  if (error instanceof Error) return `${error.name}: ${error.message}`.slice(0, 500);
+  if (isRouteErrorResponse(error))
+    return Number.isInteger(error.status) && error.status >= 100 && error.status <= 599
+      ? `route ${error.status}`
+      : "route error";
+  if (error instanceof Error) {
+    return [
+      "Error",
+      "TypeError",
+      "RangeError",
+      "SyntaxError",
+      "ReferenceError",
+      "URIError",
+      "EvalError",
+    ].includes(error.name)
+      ? error.name
+      : "Error";
+  }
   return "unknown error";
 }
 
@@ -22,7 +37,11 @@ export async function buildDiagnostics(error: unknown): Promise<string> {
   } catch {
     core = "(core diagnostics unavailable)";
   }
-  return `${core}\nui error: ${describeError(error)}\nui route: ${window.location.pathname}`;
+  const category =
+    window.location.pathname.match(
+      /^\/(library|settings|servers|friends|downloads|publishing)(?:\/|$)/,
+    )?.[1] ?? "other";
+  return `${core}\nui error: ${describeError(error)}\nui route: ${category}`;
 }
 
 export function CrashScreen({ error }: { error: unknown }) {

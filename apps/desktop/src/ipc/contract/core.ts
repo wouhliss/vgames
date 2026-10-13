@@ -56,10 +56,6 @@ export type ActiveControllerChanged = { controller: ControllerKind | null };
 // Commands
 
 export const coreCommands = {
-  /** Redacted diagnostics text for bug reports (no tokens, ids or paths under the home directory). */
-  async appDiagnostics(): Promise<string> {
-    return await get("app_diagnostics");
-  },
   /** Opens an http(s) URL in the system browser. Rust rejects every other scheme. */
   async openExternalUrl(url: string): Promise<Result<null, AppError>> {
     return call("open_external_url", { url });
