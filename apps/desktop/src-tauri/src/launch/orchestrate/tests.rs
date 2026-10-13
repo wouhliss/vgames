@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use tempfile::TempDir;
 use tokio::sync::broadcast;
+use tracing::instrument::WithSubscriber;
 use vgames_pack::manifest::{Execution, Launch, LaunchTarget};
 use vgames_pack::{Compression, PACK_SIZE};
 use vgames_transfer::install::{
@@ -244,6 +245,12 @@ async fn launch_hooks_add_variables_and_invalid_keys_are_skipped() {
         .register(HookStage::Overlay, Arc::new(ExitHook));
     launcher
         .launch(f.package_ref(), TargetChoice::Default)
+        .with_subscriber(
+            tracing_subscriber::fmt()
+                .with_max_level(tracing::Level::ERROR)
+                .with_test_writer()
+                .finish(),
+        )
         .await
         .unwrap();
     assert_eq!(stopped(&mut events).await.exit.code, Some(9));
