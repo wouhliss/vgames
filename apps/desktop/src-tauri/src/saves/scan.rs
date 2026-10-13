@@ -2,7 +2,7 @@
 //! Run on a blocking pool. Metadata caches avoid hashing unchanged files.
 use std::collections::BTreeMap;
 use std::io::{self, Read};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use cap_fs_ext::{DirExt, FollowSymlinks, OpenOptionsFollowExt, OpenOptionsSyncExt};
@@ -40,7 +40,7 @@ pub struct Location {
 }
 impl Location {
     /// `base` is supplied by the native known-folder/compatibility resolver,
-    /// never by IPC. A missing declared folder represents an empty location.
+    /// never by IPC. A missing base or declared folder is an empty location.
     pub fn open(config: &SaveLocation, base: &Path) -> Result<Self, Error> {
         if config.id.is_empty()
             || config.id.len() > 32
@@ -54,7 +54,7 @@ impl Location {
         paths::validate_path(&config.path).map_err(|_| Error::Invalid)?;
         let include = globs(&config.include)?;
         let exclude = globs(&config.exclude)?;
-        let base = std::fs::canonicalize(base)?;
+        let base = canonical_base(base)?;
         let path_key = paths::fold(
             &base
                 .join(&config.path)
@@ -62,7 +62,11 @@ impl Location {
                 .ok_or(Error::Invalid)?
                 .replace('\\', "/"),
         );
-        let mut dir = Some(Dir::open_ambient_dir(base, cap_std::ambient_authority())?);
+        let mut dir = match Dir::open_ambient_dir(base, cap_std::ambient_authority()) {
+            Ok(dir) => Some(dir),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+            Err(error) => return Err(error.into()),
+        };
         for component in config.path.split('/') {
             let Some(parent) = dir else {
                 break;
@@ -87,6 +91,36 @@ impl Location {
             include,
             exclude,
         })
+    }
+}
+// Canonicalize the existing ancestor so absent known folders retain the same
+// overlap identity as existing ones. Never create a folder during discovery.
+fn canonical_base(base: &Path) -> Result<PathBuf, Error> {
+    if !base.is_absolute() {
+        return Err(Error::Invalid);
+    }
+    let mut ancestor = base;
+    let mut missing = Vec::new();
+    loop {
+        match std::fs::canonicalize(ancestor) {
+            Ok(mut path) => {
+                for component in missing.into_iter().rev() {
+                    path.push(component);
+                }
+                return Ok(path);
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                // A dangling link is not an absent save directory.
+                match std::fs::symlink_metadata(ancestor) {
+                    Ok(_) => return Err(Error::Link),
+                    Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                    Err(error) => return Err(error.into()),
+                }
+                missing.push(ancestor.file_name().ok_or(Error::Invalid)?);
+                ancestor = ancestor.parent().ok_or(Error::Invalid)?;
+            }
+            Err(error) => return Err(error.into()),
+        }
     }
 }
 fn globs(patterns: &[String]) -> Result<GlobSet, Error> {
