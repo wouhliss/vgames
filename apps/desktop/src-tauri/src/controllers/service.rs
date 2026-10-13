@@ -40,6 +40,13 @@ impl Service {
         runtime: Handle,
         emit: Arc<dyn Fn(Output) + Send + Sync>,
     ) -> Result<Self, ServiceError> {
+        Self::start_with_sessions(runtime, emit, Arc::default())
+    }
+    pub fn start_with_sessions(
+        runtime: Handle,
+        emit: Arc<dyn Fn(Output) + Send + Sync>,
+        sessions: Arc<super::launch::Bridge>,
+    ) -> Result<Self, ServiceError> {
         let running = Arc::new(AtomicBool::new(true));
         let stopped = Stopped {
             running: running.clone(),
@@ -50,7 +57,7 @@ impl Service {
         let router = Arc::new(Mutex::new(routing));
         let routed = router.clone();
         let input = InputThread::start_with_wake(move |subsystem, wake| {
-            let mut route = sdl_handler(subsystem, routed, runtime, wake);
+            let mut route = sdl_handler(subsystem, routed, runtime, wake, sessions);
             move |event: InputEvent, subsystem: &GamepadSubsystem| {
                 let _ = &stopped;
                 route(event, subsystem);
@@ -70,6 +77,9 @@ impl Service {
             ));
         }
         self.router.lock().map_err(|_| ServiceError::State)
+    }
+    pub fn physical_pads(&self) -> Result<Vec<super::sessions::PhysicalPad>, ServiceError> {
+        Ok(self.state()?.physical_pads())
     }
     pub fn list(&self) -> Result<Vec<ConnectedPad>, ServiceError> {
         Ok(self.state()?.list())
@@ -111,9 +121,11 @@ fn sdl_handler(
     routed: Arc<Mutex<Router>>,
     runtime: Handle,
     wake: InputWake,
+    sessions: Arc<super::launch::Bridge>,
 ) -> impl FnMut(InputEvent, &GamepadSubsystem) + use<> {
     let mut pads = BTreeMap::<u32, Gamepad>::new();
-    let mut deadline = Deadline::new(runtime, wake);
+    sessions.attach(wake.clone());
+    let mut deadline = Deadline::new(runtime.clone(), wake);
     if let Ok(ids) = subsystem.gamepads() {
         for id in ids {
             open(subsystem, &mut pads, &routed, id);
@@ -121,12 +133,22 @@ fn sdl_handler(
     }
     move |event: InputEvent, subsystem: &GamepadSubsystem| {
         let now = Instant::now();
+        let changed = match &event {
+            InputEvent::Native(
+                Event::GamepadButtonDown { which, .. }
+                | Event::GamepadButtonUp { which, .. }
+                | Event::GamepadAxisMotion { which, .. },
+            ) => Some(which.raw()),
+            _ => None,
+        };
+        let refresh = matches!(&event, InputEvent::Wake);
         match event {
             InputEvent::Native(Event::GamepadAdded { which, .. }) => {
                 open(subsystem, &mut pads, &routed, which);
             }
             InputEvent::Native(Event::GamepadRemoved { which, .. }) => {
                 pads.remove(&which.raw());
+                sessions.disconnected(which.raw(), &runtime);
                 if let Ok(mut router) = routed.lock() {
                     router.disconnected(which.raw());
                 }
@@ -153,6 +175,32 @@ fn sdl_handler(
                 }
             }
             _ => {}
+        }
+        if let Some(id) = changed {
+            let state = routed.lock().ok().and_then(|router| router.pad_state(id));
+            if let Some(state) = state {
+                sessions.report(id, &state);
+            }
+        } else if refresh {
+            let snapshot = routed
+                .lock()
+                .ok()
+                .map(|router| router.physical_pads())
+                .unwrap_or_default();
+            for pad in snapshot {
+                sessions.report(pad.instance_id, &pad.state);
+            }
+        }
+        for (id, rumble) in sessions.feedback() {
+            if let Some(pad) = pads.get_mut(&id)
+                && let Err(error) = pad.set_rumble(
+                    rumble.large,
+                    rumble.small,
+                    rumble.duration_ms.min(i32::MAX as u32),
+                )
+            {
+                tracing::debug!(%error, "physical controller rumble is unavailable");
+            }
         }
         if let Ok(mut router) = routed.lock() {
             router.tick(now);
@@ -332,7 +380,7 @@ mod tests {
         let (ready, wake) = mpsc::channel();
         let handle = runtime.handle().clone();
         let mut input = InputThread::start_with_wake(move |subsystem, wake| {
-            let mut route = sdl_handler(subsystem, routed, handle, wake.clone());
+            let mut route = sdl_handler(subsystem, routed, handle, wake.clone(), Arc::default());
             let sdl = sdl3::init().unwrap();
             let joystick = sdl.joystick().unwrap();
             let mut connection = None;
