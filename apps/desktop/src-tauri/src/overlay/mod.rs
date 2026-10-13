@@ -51,9 +51,13 @@ impl LaunchHooks for OverlayService {
         Result<crate::launch::hooks::HookEnv, crate::launch::hooks::LaunchVeto>,
     > {
         Box::pin(async move {
-            Ok(crate::launch::hooks::HookEnv(
-                self.prepare_launch(ctx.package, "").await,
-            ))
+            let mut env = self.prepare_launch(ctx.package, "").await;
+            if !env.is_empty()
+                && let Some(preload) = gl_preload(ctx, self.library().as_deref())
+            {
+                env.push(preload);
+            }
+            Ok(crate::launch::hooks::HookEnv(env))
         })
     }
 
@@ -72,6 +76,28 @@ impl LaunchHooks for OverlayService {
     fn aborted(&self, ctx: &crate::launch::hooks::LaunchContext) {
         self.end_session(ctx.package);
     }
+}
+
+/// `LD_PRELOAD` for the GL hooks (GAME-08): native 64-bit Linux games only (Proton and Wine
+/// games present through Vulkan, which the implicit layer covers; a 32-bit game could not load
+/// the library), and only for a path `LD_PRELOAD` can carry (no space or colon).
+fn gl_preload(
+    ctx: &crate::launch::hooks::LaunchContext,
+    library: Option<&std::path::Path>,
+) -> Option<(String, String)> {
+    use vgames_core::manifest::Platform;
+    if !cfg!(all(target_os = "linux", target_arch = "x86_64"))
+        || ctx.layer != crate::launch::hooks::LaunchLayer::Native
+        || ctx.platform != Platform::LinuxX86_64
+    {
+        return None;
+    }
+    let path = library?.to_str()?;
+    if !std::path::Path::new(path).is_absolute() || path.contains([' ', ':', '\t', '\n']) {
+        tracing::warn!("the overlay library path cannot be preloaded; GL games get the fallback");
+        return None;
+    }
+    Some(("LD_PRELOAD".to_owned(), path.to_owned()))
 }
 
 /// How the overlay shows when it is not drawn inside the game (05-social §6.2–§6.3).
@@ -131,6 +157,8 @@ struct Inner {
     sessions: Mutex<HashMap<PackageRef, Session>>,
     shutdown: CancellationToken,
     open_launcher: Mutex<Option<Callback>>,
+    /// The renderer library this install ships (`None`: not bundled; games run without it).
+    library: Mutex<Option<std::path::PathBuf>>,
     valve_tripped: Mutex<Option<PackageCallback>>,
     hotkeys: Mutex<hotkey::HotkeyState>,
     /// Shows (`Some`) or hides (`None`) the fallback.
@@ -171,6 +199,7 @@ impl OverlayService {
                 sessions: Mutex::new(HashMap::new()),
                 shutdown: shutdown.clone(),
                 open_launcher: Mutex::new(None),
+                library: Mutex::new(None),
                 valve_tripped: Mutex::new(None),
                 hotkeys: Mutex::new(hotkey::HotkeyState::new()),
                 fallback: Mutex::new(None),
@@ -229,6 +258,15 @@ impl OverlayService {
     }
 
     /// What "Open vgames" does (show the main window).
+    /// The renderer library found in the bundle's resources (see `vulkan_layer::installed_library`).
+    pub fn set_library(&self, library: Option<std::path::PathBuf>) {
+        *lock(&self.inner.library) = library;
+    }
+
+    fn library(&self) -> Option<std::path::PathBuf> {
+        lock(&self.inner.library).clone()
+    }
+
     pub fn on_open_launcher(&self, f: impl Fn() + Send + Sync + 'static) {
         *lock(&self.inner.open_launcher) = Some(Box::new(f));
     }
@@ -659,6 +697,93 @@ mod tests {
         assert_eq!(overlay.prepare_launch(game, "Arena").await.len(), 3);
     }
 
+    /// The in-game renderer's side of the link: reads until a `Panel` message.
+    fn panel_message(s: &mut std::net::TcpStream) -> bool {
+        loop {
+            match protocol::read_frame::<ToRenderer>(s).expect("a frame in time") {
+                ToRenderer::Panel { open } => return open,
+                _ => continue,
+            }
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn guide_hold_opens_the_panel_in_game_and_reply_opens_the_launcher() {
+        let (overlay, bus, _fallback, _tripped) = service().await;
+        if cfg!(target_os = "macos") {
+            return;
+        }
+        let (otx, mut orx) = mpsc::unbounded_channel();
+        overlay.on_open_launcher(move || {
+            let _ = otx.send(());
+        });
+        let game = PackageRef {
+            server_id: Uuid::from_u128(1),
+            package_id: Uuid::from_u128(4),
+        };
+        let env = overlay.prepare_launch(game, "Arena").await;
+        let addr: std::net::SocketAddr = env[1].1.parse().unwrap();
+        let token = protocol::parse_token(&env[2].1).unwrap();
+        let mut renderer = tokio::task::spawn_blocking(move || {
+            let mut s = std::net::TcpStream::connect(addr).unwrap();
+            s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+            protocol::write_frame(
+                &mut s,
+                &ToBroker::Hello {
+                    version: PROTOCOL_VERSION,
+                    token,
+                    renderer: RendererKind::OpenGl,
+                },
+            )
+            .unwrap();
+            assert!(matches!(
+                protocol::read_frame::<ToRenderer>(&mut s).unwrap(),
+                ToRenderer::Welcome { .. }
+            ));
+            s
+        })
+        .await
+        .unwrap();
+
+        // Guide/PS held (PLAY-04's event on the bus): the game's renderer opens the panel.
+        bus.publish(AppEvent::Controller(crate::events::ControllerEvent {
+            instance_id: 0,
+            change: ControllerChange::GuideHeld,
+        }));
+        renderer = tokio::task::spawn_blocking(move || {
+            assert!(panel_message(&mut renderer), "the panel opens in game");
+            renderer
+        })
+        .await
+        .unwrap();
+
+        // "Reply" in the panel: the renderer asks for the launcher; the panel closes.
+        renderer = tokio::task::spawn_blocking(move || {
+            protocol::write_frame(
+                &mut renderer,
+                &ToBroker::Action(protocol::Action::OpenLauncher),
+            )
+            .unwrap();
+            assert!(!panel_message(&mut renderer), "the panel closes");
+            renderer
+        })
+        .await
+        .unwrap();
+        next(&mut orx).await;
+        assert!(!overlay.hub().current().visible_panel);
+
+        // The hotkey takes the same path.
+        overlay.toggle_panel();
+        let renderer = tokio::task::spawn_blocking(move || {
+            let mut r = renderer;
+            assert!(panel_message(&mut r), "the hotkey opens the panel in game");
+            r
+        })
+        .await
+        .unwrap();
+        drop(renderer);
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn a_launch_that_fails_drops_the_broker() {
         let (overlay, _bus, mut fallback, _tripped) = service().await;
@@ -693,6 +818,53 @@ mod tests {
                 "the broker still listens"
             );
             tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    }
+
+    #[test]
+    fn only_native_64_bit_linux_games_get_the_gl_preload() {
+        use crate::launch::hooks::{LaunchContext, LaunchLayer};
+        use vgames_core::manifest::Platform;
+        let ctx = |layer, platform| LaunchContext {
+            package: PackageRef {
+                server_id: Uuid::from_u128(1),
+                package_id: Uuid::from_u128(2),
+            },
+            root: std::path::PathBuf::new(),
+            platform,
+            layer,
+            prefix_dir: None,
+            cancellation: CancellationToken::new(),
+        };
+        let lib = std::path::Path::new("/opt/vgames/libvgames_overlay.so");
+        let native = ctx(LaunchLayer::Native, Platform::LinuxX86_64);
+        let expected = cfg!(all(target_os = "linux", target_arch = "x86_64"))
+            .then(|| ("LD_PRELOAD".to_owned(), lib.to_str().unwrap().to_owned()));
+        assert_eq!(gl_preload(&native, Some(lib)), expected);
+        // Vulkan covers Proton and Wine; other builds cannot load the library.
+        assert_eq!(
+            gl_preload(
+                &ctx(LaunchLayer::Proton, Platform::WindowsX86_64),
+                Some(lib)
+            ),
+            None
+        );
+        assert_eq!(
+            gl_preload(&ctx(LaunchLayer::Native, Platform::LinuxAarch64), Some(lib)),
+            None
+        );
+        // Nothing to preload, or a path LD_PRELOAD would split.
+        assert_eq!(gl_preload(&native, None), None);
+        for bad in [
+            "/opt/v games/libvgames_overlay.so",
+            "/opt/a:b/libvgames_overlay.so",
+            "lib.so",
+        ] {
+            assert_eq!(
+                gl_preload(&native, Some(std::path::Path::new(bad))),
+                None,
+                "{bad}"
+            );
         }
     }
 

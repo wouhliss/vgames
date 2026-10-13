@@ -68,6 +68,16 @@ export const en = {
   },
   shell: {
     skipToContent: "Skip to content",
+    overlayOff: {
+      label: "In-game overlay turned off",
+      title: "The in-game overlay is off for {title}.",
+      titleUnknown: "The in-game overlay is off for a game.",
+      text: "It closed unexpectedly twice right after starting, so vgames stopped showing the overlay in it.",
+      turnOn: "Turn it back on",
+      dismiss: "Dismiss",
+      restored: "The overlay is back on for this game",
+      failed: "Couldn't turn the overlay back on. Try again in Settings.",
+    },
     serverMenu: "Servers",
     serverSwitcher: "Server: {name}",
     addServer: "Add a server…",

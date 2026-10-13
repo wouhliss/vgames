@@ -67,6 +67,19 @@ pub unsafe extern "C" fn vgames_overlay_draw_stats(frames: *mut u64, nanos: *mut
     }
 }
 
+/// Armed by [`vgames_overlay_fault_device_lost`] (tests only).
+#[cfg(feature = "fault-injection")]
+static FAULT_DEVICE_LOST: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Makes the layer's next copy fail with `VK_ERROR_DEVICE_LOST` (feature `fault-injection`,
+/// for tests; never built into a release).
+#[cfg(feature = "fault-injection")]
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub extern "C" fn vgames_overlay_fault_device_lost() {
+    FAULT_DEVICE_LOST.store(true, Ordering::Relaxed);
+}
+
 /// How long a present waits for our previous copy into the same image before skipping.
 const SLOT_WAIT_NS: u64 = 20_000_000;
 
@@ -801,7 +814,16 @@ impl DeviceData {
         // SAFETY: the present info's arrays have `swapchain_count` elements.
         let (swapchain, index) = unsafe { (*info.p_swapchains, *info.p_image_indices) };
         let family = self.family_of(queue)?;
+        #[cfg(feature = "fault-injection")]
+        let result = if FAULT_DEVICE_LOST.swap(false, Ordering::Relaxed) {
+            Err(vk::Result::ERROR_DEVICE_LOST)
+        } else {
+            self.copy_cards(&mut st, link, queue, family, swapchain, index, info)
+        };
+        #[cfg(not(feature = "fault-injection"))]
         let result = self.copy_cards(&mut st, link, queue, family, swapchain, index, info);
+        // Any failure (device lost included): this device presents untouched from now on; a
+        // device the game creates again starts clean.
         let result = match result {
             Ok(r) => r,
             Err(_) => {

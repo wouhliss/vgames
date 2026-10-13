@@ -30,6 +30,7 @@
 - GAME-08 — GL preload hooks in `libvgames_overlay.so` (`game/p2-gl-preload`). Frame cost on llvmpipe, release, 640×480,
   one toast visible: 0.28 ms (EGL) / 0.32 ms (GLX) per frame, upload included (05-social §6.1: ≤ 1 ms open); hidden: one
   atomic load per swap. Launcher preload for native Linux launches next.
+- GAME-04 (social part) — social REST on the API client's transport, caps kept (`game/p2-social-apiclient`).
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_proto::realtime::MAX_FRAME` (64 KiB, GAME-01): the server re-exports it from `apps/api/src/realtime/mod.rs`;

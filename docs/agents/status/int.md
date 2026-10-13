@@ -46,6 +46,13 @@
 - INT-08: no file-sending tool has been discovered. No release keys generated; follow the prescribed no-generation fallback if still unavailable when reached.
 
 ## Built for you
+- From GAME (GAME-12): `scripts/ci/desktop-db-tests.sh` also runs `tests/invite_install_e2e.rs` (an invite on the real
+  install path, ~5 s). `tests/support/install.rs` now starts the API's realtime service and has `player`/`befriend`
+  helpers; `install_e2e` still passes with it.
+- From GAME (GAME-11): `release-desktop.yml` already stages into `OVERLAY_DIR`; that directory is now bundled
+  (`bundle.resources` → `overlay/`), and the launcher looks for `overlay/libvgames_overlay.so` /
+  `overlay/vgames_overlay64.dll` in its resource directory. The desktop matrix stages the renderer and checks it lands
+  where the launcher looks; the installer listing (`dpkg -c`, `.app` tree, NSIS directory) belongs in INT-06's dry run.
 - From INS (INS-08, INT-03 fallback): `e2e.yml` has a nightly `install` job running `tests/install_e2e.rs` at full scale
   (8 GiB, frees runner disk first). The small scale needs nothing new: `scripts/ci/desktop-db-tests.sh` already picks
   the test up in the `desktop` job.

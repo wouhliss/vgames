@@ -82,8 +82,8 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends mesa-vulkan-drivers libvulkan1 vulkan-validationlayers \
             libegl1 libegl-mesa0 libgl1 libglx-mesa0 libgl1-mesa-dri libx11-6 xvfb
-          cargo clippy -p vgames-overlay --all-targets --features renderer --locked -- -D warnings
-          cargo test -p vgames-overlay --features renderer --locked
+          cargo clippy -p vgames-overlay --all-targets --features renderer,fault-injection --locked -- -D warnings
+          cargo test -p vgames-overlay --features renderer,fault-injection --locked
 
   sqlx:
     name: SQLx offline data and migrations
