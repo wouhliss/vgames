@@ -790,6 +790,7 @@ mod overrides {
         assert_eq!(plan.env.get("OK").map(String::as_str), Some("1"));
     }
 
+    #[cfg(unix)] // the fake `wine` is a shell script
     #[tokio::test]
     async fn the_players_graphics_backend_goes_first_on_a_mac() {
         let r = rig_for(Platform::MacosAarch64).await;
