@@ -2,6 +2,7 @@
 //! emulation decision. The SDL input thread and the virtual-pad backends
 //! build on these.
 
+pub mod backends;
 pub mod decision;
 pub mod drivers;
 pub mod idle;
