@@ -27,6 +27,7 @@ pub struct Bridge {
     pub(super) book: Mutex<Book>,
     feedback: Mutex<Feedback>,
     wake: OnceLock<InputWake>,
+    backend: OnceLock<Arc<dyn VirtualPadBackend>>,
 }
 impl Bridge {
     pub fn attach(&self, wake: InputWake) {
@@ -42,6 +43,39 @@ impl Bridge {
     pub fn report(&self, id: u32, state: &PadState) {
         if let Ok(mut book) = self.book.lock() {
             book.report(id, state);
+        }
+    }
+    pub fn hotplug(self: &Arc<Self>, pad: &PhysicalPad, runtime: &Handle) {
+        let Some(backend) = self.backend.get() else {
+            return;
+        };
+        let requests = self
+            .book
+            .lock()
+            .ok()
+            .map(|mut book| book.hotplug(pad))
+            .unwrap_or_default();
+        for request in requests {
+            let bridge = self.clone();
+            let backend = backend.clone();
+            runtime.spawn_blocking(move || {
+                let prepared = prepare(
+                    request.id,
+                    request.policy,
+                    &[request.pad],
+                    backend.as_ref(),
+                    &|pad| bridge.sink(request.id, pad),
+                    &request.cancel,
+                );
+                if let Ok(prepared) = prepared {
+                    let leftovers = match bridge.book.lock() {
+                        Ok(mut book) => book.install_hotplug(prepared),
+                        Err(_) => Box::new(prepared),
+                    };
+                    drop(leftovers);
+                    bridge.wake();
+                }
+            });
         }
     }
     pub fn disconnected(&self, id: u32, runtime: &Handle) {
@@ -78,7 +112,7 @@ impl Bridge {
             // Serialize acceptance with session removal; a driver notification
             // arriving after cancellation cannot restart physical rumble.
             if let Ok(book) = bridge.book.lock()
-                && book.contains(session)
+                && book.accepts_feedback(session, pad)
                 && let Ok(mut feedback) = bridge.feedback.lock()
             {
                 let key = (session, pad);
@@ -153,6 +187,7 @@ impl LaunchHooks for Hooks {
         ctx: &'a LaunchContext,
     ) -> HookFuture<'a, Result<HookEnv, LaunchVeto>> {
         Box::pin(async move {
+            let _ = self.bridge.backend.set(self.backend.clone());
             let cancel = self
                 .bridge
                 .book
@@ -246,21 +281,21 @@ mod tests {
         feedback: Vec<RumbleSink>,
     }
     struct Fake(Arc<Mutex<Trace>>);
-    struct Pad(Arc<Mutex<Trace>>);
+    struct Pad(Arc<Mutex<Trace>>, u16);
     impl VirtualPadBackend for Fake {
         fn create(
             &self,
             _: EmulatedController,
-            _: u16,
+            index: u16,
             feedback: RumbleSink,
         ) -> Result<Box<dyn VirtualPad>, BackendError> {
             self.0.lock().unwrap().feedback.push(feedback);
-            Ok(Box::new(Pad(self.0.clone())))
+            Ok(Box::new(Pad(self.0.clone(), index)))
         }
     }
     impl VirtualPad for Pad {
         fn player_index(&self) -> u16 {
-            0
+            self.1
         }
         fn update(&mut self, report: &XReport) -> Result<(), BackendError> {
             self.0.lock().unwrap().reports.push(*report);
@@ -445,5 +480,63 @@ mod tests {
         drops(&trace, 1).await;
         assert!(pending.is_cancelled());
         assert!(!hooks.bridge.book.lock().unwrap().contains(ctx.session_id));
+    }
+    #[tokio::test]
+    async fn owner_hotplug_dispatch_builds_once_routes_new_input_and_drops_off_thread() {
+        let (hooks, ctx, trace) = setup();
+        hooks.before_spawn(&ctx).await.unwrap();
+        let mut state = PadState::default();
+        state.set(Button::East, true);
+        let pad = PhysicalPad {
+            instance_id: 9,
+            kind: ControllerKind::Dualsense,
+            player_index: None,
+            state,
+        };
+        hooks.bridge.hotplug(&pad, &hooks.runtime);
+        hooks.bridge.hotplug(&pad, &hooks.runtime);
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                let ready = hooks
+                    .bridge
+                    .book
+                    .lock()
+                    .unwrap()
+                    .session_mut(ctx.session_id)
+                    .unwrap()
+                    .emulated()
+                    .count()
+                    == 2;
+                if ready {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(trace.lock().unwrap().feedback.len(), 2);
+        assert_eq!(
+            trace.lock().unwrap().reports.last().unwrap().buttons,
+            0x2000
+        );
+        assert_eq!(
+            hooks
+                .bridge
+                .book
+                .lock()
+                .unwrap()
+                .session_mut(ctx.session_id)
+                .unwrap()
+                .emulated()
+                .collect::<Vec<_>>(),
+            [(7, 0), (9, 1)]
+        );
+        hooks.bridge.report(9, &PadState::default());
+        assert_eq!(trace.lock().unwrap().reports.last().unwrap().buttons, 0);
+        hooks.bridge.disconnected(9, &hooks.runtime);
+        drops(&trace, 1).await;
+        hooks.aborted(&ctx);
+        drops(&trace, 2).await;
     }
 }

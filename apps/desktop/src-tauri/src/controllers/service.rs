@@ -123,7 +123,7 @@ fn sdl_handler(
     wake: InputWake,
     sessions: Arc<super::launch::Bridge>,
 ) -> impl FnMut(InputEvent, &GamepadSubsystem) + use<> {
-    let mut pads = BTreeMap::<u32, Gamepad>::new();
+    let mut pads = OwnerPads(BTreeMap::<u32, Gamepad>::new());
     sessions.attach(wake.clone());
     let mut deadline = Deadline::new(runtime.clone(), wake);
     if let Ok(ids) = subsystem.gamepads() {
@@ -141,7 +141,11 @@ fn sdl_handler(
             ) => Some(which.raw()),
             _ => None,
         };
-        let refresh = matches!(&event, InputEvent::Wake);
+        let added = match &event {
+            InputEvent::Native(Event::GamepadAdded { which, .. }) => Some(which.raw()),
+            _ => None,
+        };
+        let refresh = matches!(&event, InputEvent::Wake) || added.is_some();
         match event {
             InputEvent::Native(Event::GamepadAdded { which, .. }) => {
                 open(subsystem, &mut pads, &routed, &sessions, which);
@@ -200,6 +204,7 @@ fn sdl_handler(
                 .unwrap_or_default();
             for pad in snapshot {
                 sessions.report(pad.instance_id, &pad.state);
+                sessions.hotplug(&pad, &runtime);
             }
         }
         for (id, rumble) in sessions.feedback() {
@@ -216,6 +221,26 @@ fn sdl_handler(
         if let Ok(mut router) = routed.lock() {
             router.tick(now);
             deadline.arm(router.next_deadline());
+        }
+    }
+}
+
+struct OwnerPads(BTreeMap<u32, Gamepad>);
+impl std::ops::Deref for OwnerPads {
+    type Target = BTreeMap<u32, Gamepad>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl std::ops::DerefMut for OwnerPads {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+impl Drop for OwnerPads {
+    fn drop(&mut self) {
+        for pad in self.0.values_mut() {
+            let _ = pad.set_rumble(0, 0, 0);
         }
     }
 }
