@@ -35,6 +35,22 @@ Agents append each item with exact steps and the build to use. Expected list:
 | B7 | 24 h launcher idle soak and 8 h controller soak with two emulated pads | Hosted jobs stop at 6 h |
 | B8 | Two physical controllers of different brands (e.g. DualSense, Switch Pro) mapped by position and by label in a real game | Needs real pads |
 
+**B7, social idle soak for 24 h (GAME-13).** Hosted jobs stop at 6 h, so `soak.yml` runs 5 h 30 min. On a Linux
+machine that stays awake for a day, from a checkout of `main`:
+
+1. `docker compose up -d postgres` (the repository's `docker-compose.yml`).
+2. Install the Tauri 2 Linux libraries listed in `.github/workflows/soak.yml` (step "System libraries").
+3. Run the soak (about 24 h 10 min with the build):
+   ```sh
+   VGAMES_TEST_DATABASE_URL=postgres://vgames:vgames-dev-only@127.0.0.1:5432/postgres \
+   VGAMES_SOAK_IDLE_SECS=86400 \
+   cargo test --locked -p vgames-desktop --test social_soak -- --ignored --nocapture --exact idle_sockets_stay_up \
+     2>&1 | tee idle-24h.log
+   ```
+4. Pass: the test prints `test idle_sockets_stay_up ... ok`, `idle soak: 86400s, 0 connection drops`, and an
+   "at the end" RSS within 8 MiB of the "after warm-up" figure. Open an issue titled "B7: social idle soak 24 h"
+   with the last 50 lines of `idle-24h.log`; GAME records them in `docs/agents/status/game.md`.
+
 ## C. For each vgames server you run (operations, not part of finishing the project)
 
 Root key ceremony and first trust bundle (`docs/security/runbooks.md` §1), one publisher key per admin (§2), a

@@ -61,7 +61,8 @@
   `overlay/vgames_overlay64.dll` in its resource directory. The desktop matrix stages the renderer and checks it lands
   where the launcher looks; the installer listing (`dpkg -c`, `.app` tree, NSIS directory) belongs in INT-06's dry run.
 - From GAME (GAME-13): `soak.yml` has a hosted `social` job matrix (chat 1 h, idle 5 h 30 min) next to the
-  self-hosted launcher soak; it runs on the weekly schedule and on dispatch (`chat_secs`, `idle_secs` inputs).
+  self-hosted launcher soak; it runs on the weekly schedule and on dispatch (`chat_secs`, `idle_secs` inputs, both
+  up to 19800 s). The 24 h social idle run's steps are under `human-checklist.md` §B7.
 - From INS (INS-08, INT-03 fallback): `e2e.yml` has a nightly `install` job running `tests/install_e2e.rs` at full scale
   (8 GiB, frees runner disk first). The small scale needs nothing new: `scripts/ci/desktop-db-tests.sh` already picks
   the test up in the `desktop` job.
