@@ -8,7 +8,9 @@
 //! - `VGAMES_PROTON_E2E_DATA` (optional): a launcher data directory kept between runs,
 //!   so the D3D12 run reuses the runtimes the D3D11 run installed;
 //! - `VGAMES_PROTON_E2E_EXPECT` (optional): `ok` (default) or `refused-before-extraction`
-//!   (the job flips one pinned hash to prove a tampered archive never runs).
+//!   (the job flips one pinned hash to prove a tampered archive never runs);
+//! - `VGAMES_PROTON_E2E_LOG_DIR` (optional): the game's target sets `PROTON_LOG=1`
+//!   and `PROTON_LOG_DIR` there, so a failed run leaves Proton's log for the job.
 //!
 //! The catalog is signed here with a key generated for the run and served locally;
 //! the runtimes themselves come from GitHub, verified by size and SHA-256.
@@ -71,6 +73,9 @@ async fn the_d3d11_test_game_runs_through_proton() {
     )
     .unwrap();
     let game = std::fs::read(std::env::var("VGAMES_PROTON_E2E_GAME").unwrap()).unwrap();
+    if let Ok(dir) = std::env::var("VGAMES_PROTON_E2E_LOG_DIR") {
+        std::fs::create_dir_all(dir).unwrap();
+    }
     let expect = std::env::var("VGAMES_PROTON_E2E_EXPECT").unwrap_or_else(|_| "ok".into());
 
     // The install: a windows-x86_64 package whose target is the test game.
@@ -90,7 +95,15 @@ async fn the_d3d11_test_game_runs_through_proton() {
                 executable: "Game/game.exe".into(),
                 args: vec!["--frames".into(), "120".into()],
                 working_dir: None,
-                env: BTreeMap::new(),
+                // Package env, like any manifest's: `PROTON_LOG*` is not launcher-owned.
+                env: std::env::var("VGAMES_PROTON_E2E_LOG_DIR")
+                    .map(|dir| {
+                        BTreeMap::from([
+                            ("PROTON_LOG".to_owned(), "1".to_owned()),
+                            ("PROTON_LOG_DIR".to_owned(), dir),
+                        ])
+                    })
+                    .unwrap_or_default(),
             }],
         }),
         ..Execution::default()

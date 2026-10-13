@@ -94,6 +94,7 @@ jobs:
         env:
           VGAMES_PROTON_E2E_RUNTIMES: ${{ runner.temp }}/runtimes.json
           VGAMES_PROTON_E2E_DATA: ${{ runner.temp }}/launcher-data
+          VGAMES_PROTON_E2E_LOG_DIR: ${{ runner.temp }}/proton-logs
           VGAMES_PROTON_E2E_GAME: ${{ github.workspace }}/target/x86_64-pc-windows-gnu/release/vgames-testapp-d3d11.exe
           VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.json
         run: >-
@@ -105,11 +106,22 @@ jobs:
         env:
           VGAMES_PROTON_E2E_RUNTIMES: ${{ runner.temp }}/runtimes.json
           VGAMES_PROTON_E2E_DATA: ${{ runner.temp }}/launcher-data
+          VGAMES_PROTON_E2E_LOG_DIR: ${{ runner.temp }}/proton-logs
           VGAMES_PROTON_E2E_GAME: ${{ github.workspace }}/target/x86_64-pc-windows-gnu/release/vgames-testapp-d3d12.exe
           VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.json
         run: >-
           xvfb-run -a -s "-screen 0 1280x1024x24" cargo test --locked -p vgames-desktop --lib
           compat::plan::proton_e2e -- --ignored --nocapture
+      - name: Proton's log of a failed run
+        if: failure() || steps.d3d12.outcome == 'failure'
+        run: tail -n 200 "$RUNNER_TEMP"/proton-logs/*.log || echo "no Proton log was written"
+      - name: Keep Proton's logs
+        if: failure() || steps.d3d12.outcome == 'failure'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: proton-logs
+          path: ${{ runner.temp }}/proton-logs
+          if-no-files-found: ignore
       - name: Record the D3D12 result
         if: always()
         env:
