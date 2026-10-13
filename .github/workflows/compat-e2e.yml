@@ -114,7 +114,15 @@ jobs:
           compat::plan::proton_e2e -- --ignored --nocapture
       - name: Proton's log of a failed run
         if: failure() || steps.d3d12.outcome == 'failure'
-        run: tail -n 200 "$RUNNER_TEMP"/proton-logs/*.log || echo "no Proton log was written"
+        run: |
+          for log in "$RUNNER_TEMP"/proton-logs/*.log; do
+            [ -f "$log" ] || { echo "no Proton log was written"; continue; }
+            echo "== $log ($(wc -l < "$log") lines)"
+            head -n 40 "$log"
+            echo "== errors, exceptions, process exits and the game's own output"
+            grep -E -i 'vgames test app|err:|exception|code=c0|status_|exitprocess|terminateprocess|dxvk|d3d11|dxgi|vulkan|game\.exe' "$log" \
+              | grep -v -E 'trace:unwind|RtlGrowFunctionTable' | head -n 400 || true
+          done
       - name: Keep Proton's logs
         if: failure() || steps.d3d12.outcome == 'failure'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
