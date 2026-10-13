@@ -285,16 +285,20 @@ async fn exit_hooks_wait_for_children_and_run_once_after_reattach() {
         LaunchLayer::Native,
     ));
     hooks.before_spawn().await.unwrap();
+    // The child lives until the test releases it, so a slow runner cannot let
+    // it exit before the check below.
+    let script = "(while [ ! -e release ]; do sleep 0.02; done) &\nexit 4";
     f.sessions
-        .start_with_hooks(PACKAGE, f.root(), f.launch("sleep 0.4 &\nexit 4"), hooks)
+        .start_with_hooks(PACKAGE, f.root(), f.launch(script), hooks)
         .await
         .unwrap();
     assert!(
-        tokio::time::timeout(Duration::from_millis(50), rx.recv())
+        tokio::time::timeout(Duration::from_millis(200), rx.recv())
             .await
             .is_err(),
         "leader exit must not run after_exit while its child lives"
     );
+    std::fs::write(f.root().join("release"), b"").unwrap();
     assert_eq!(f.stopped().await.exit.code, Some(4));
     assert_eq!(rx.recv().await.unwrap(), (PACKAGE, LaunchLayer::Native));
     assert!(rx.try_recv().is_err());
