@@ -26,7 +26,7 @@ struct SourceContext {
 unsafe extern "C" {
     static kCFRunLoopDefaultMode: Ref;
     fn CFRetain(value: Ref) -> Ref;
-    fn CFRelease(value: Ref);
+    fn CFRelease(value: *const c_void);
     fn CFRunLoopGetCurrent() -> Ref;
     fn CFRunLoopRun();
     fn CFRunLoopStop(run_loop: Ref);
