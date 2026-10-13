@@ -166,6 +166,9 @@ pub struct Book {
     slots: BTreeMap<Uuid, Slot>,
 }
 impl Book {
+    pub fn contains(&self, id: Uuid) -> bool {
+        self.slots.contains_key(&id)
+    }
     pub fn begin(&mut self, id: Uuid) -> Option<CancellationToken> {
         let std::collections::btree_map::Entry::Vacant(entry) = self.slots.entry(id) else {
             return None;
@@ -200,6 +203,21 @@ impl Book {
                 slot.cancel.cancel();
                 slot.prepared
             })
+            .collect()
+    }
+    pub fn report(&mut self, id: u32, state: &PadState) {
+        for slot in self.slots.values_mut() {
+            if let Some(session) = &mut slot.prepared
+                && let Err(error) = session.report(id, state)
+            {
+                tracing::warn!(instance_id = id, %error, "virtual report failed");
+            }
+        }
+    }
+    pub fn disconnect(&mut self, id: u32) -> Vec<Box<dyn VirtualPad>> {
+        self.slots
+            .values_mut()
+            .filter_map(|slot| slot.prepared.as_mut()?.disconnect(id))
             .collect()
     }
     pub fn session_mut(&mut self, id: Uuid) -> Option<&mut Prepared> {
