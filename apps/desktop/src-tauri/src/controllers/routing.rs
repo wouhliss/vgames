@@ -276,7 +276,7 @@ impl Router {
         if self.testers.len() >= MAX_TESTERS {
             return Err(TesterError::TooMany);
         }
-        let subscription_id = Uuid::new_v4();
+        let subscription_id = Uuid::now_v7();
         self.testers.insert(subscription_id, id);
         pad.tester_sent = Some(now);
         (self.emit)(Output::Tester(snapshot(subscription_id, id, pad.state)));
