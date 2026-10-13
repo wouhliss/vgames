@@ -17,6 +17,7 @@ pub mod download_jobs;
 pub mod installs;
 pub mod libraries;
 pub mod migrations;
+pub mod saves;
 pub mod settings;
 pub mod shortcuts;
 
