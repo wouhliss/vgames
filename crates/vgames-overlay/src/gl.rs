@@ -14,7 +14,8 @@
 //!   the game's own return address (`RTLD_NEXT` keeps meaning "after the caller").
 //!
 //! Rules: one atomic load per swap while hidden; no allocation unless visible; a panic or a
-//! frame over [`FRAME_BUDGET`] on average turns the overlay off; the GL hooks stand down for
+//! frame over [`FRAME_BUDGET`] on average turns the overlay off (a frame that creates our GL
+//! objects counts all but [`WARM_UP_ALLOWANCE`] of its time); the GL hooks stand down for
 //! good once the Vulkan layer draws in this process ([`guard::vulkan_draws`]). Only GL 3.0+
 //! and OpenGL ES 3.0+ contexts are drawn into; older ones are left alone.
 //!
@@ -35,6 +36,11 @@ use crate::protocol::RendererKind;
 /// Drawing may take this long per frame on average before the overlay turns itself off.
 pub const FRAME_BUDGET: Duration = Duration::from_millis(1);
 const BUDGET_WINDOW: u32 = 120;
+/// Taken off the time of a frame that creates our textures and framebuffers before it counts
+/// against the budget: drivers build their blit path on first use (llvmpipe compiles it,
+/// 20-140 ms measured with object creation, cold caches included), and that one-off alone
+/// would average a window over budget. A longer stall is no warm-up: the rest counts.
+const WARM_UP_ALLOWANCE: Duration = Duration::from_millis(250);
 static DRAWN_FRAMES: AtomicU64 = AtomicU64::new(0);
 static DRAW_NANOS: AtomicU64 = AtomicU64::new(0);
 
@@ -581,8 +587,34 @@ struct Key {
 #[derive(Default)]
 struct State {
     contexts: HashMap<usize, Context>,
+    budget: Budget,
+}
+
+/// The safety valve: the average draw time over windows of [`BUDGET_WINDOW`] drawn frames.
+#[derive(Default)]
+struct Budget {
     frames: u32,
     spent: Duration,
+}
+
+impl Budget {
+    /// Adds one drawn frame (`built`: it created our GL objects); `false` once a window
+    /// averaged over [`FRAME_BUDGET`].
+    fn record(&mut self, took: Duration, built: bool) -> bool {
+        let took = if built {
+            took.saturating_sub(WARM_UP_ALLOWANCE)
+        } else {
+            took
+        };
+        self.frames += 1;
+        self.spent += took;
+        if self.frames < BUDGET_WINDOW {
+            return true;
+        }
+        let ok = self.spent / self.frames <= FRAME_BUDGET;
+        *self = Self::default();
+        ok
+    }
 }
 
 fn state() -> &'static Mutex<State> {
@@ -621,6 +653,11 @@ fn draw_before_swap(api: Api, dpy: *mut c_void, target: usize) {
     };
     let mut st = state().lock().unwrap_or_else(PoisonError::into_inner);
     let c = st.contexts.entry(ctx).or_default();
+    // A context destroyed and another created at the same address: none of our names are
+    // valid in it, and it may be another GL version. Start over.
+    if stale(gl, c) {
+        *c = Context::default();
+    }
     if !c.checked {
         (c.usable, c.es) = gl.version();
         c.checked = true;
@@ -628,29 +665,30 @@ fn draw_before_swap(api: Api, dpy: *mut c_void, target: usize) {
     if !c.usable {
         return;
     }
-    let drawn = draw_cards(gl, link, c, width, height);
-    if drawn {
+    if let Some(built) = draw_cards(gl, link, c, width, height) {
         let took = started.elapsed();
         DRAWN_FRAMES.fetch_add(1, Ordering::Relaxed);
         DRAW_NANOS.fetch_add(
             u64::try_from(took.as_nanos()).unwrap_or(u64::MAX),
             Ordering::Relaxed,
         );
-        st.frames += 1;
-        st.spent += took;
-        if st.frames >= BUDGET_WINDOW {
-            let over = st.spent / st.frames > FRAME_BUDGET;
-            st.frames = 0;
-            st.spent = Duration::ZERO;
-            if over {
-                guard::disable();
-            }
+        if !st.budget.record(took, built) {
+            guard::disable();
         }
     }
 }
 
-/// Recomposes when needed, uploads changed cards and blits them; `true` if anything was drawn.
-fn draw_cards(gl: &Gl, link: &Link, c: &mut Context, width: u32, height: u32) -> bool {
+/// Whether `c` holds names that are not textures and framebuffers in the current context.
+fn stale(gl: &Gl, c: &Context) -> bool {
+    // SAFETY: name queries on the current context (any name may be passed).
+    c.targets
+        .iter()
+        .any(|&(t, f)| unsafe { (gl.is_texture)(t) == 0 || (gl.is_framebuffer)(f) == 0 })
+}
+
+/// Recomposes when needed, uploads changed cards and blits them. `Some(built)` if anything
+/// was drawn, `built` when this frame created textures and framebuffers.
+fn draw_cards(gl: &Gl, link: &Link, c: &mut Context, width: u32, height: u32) -> Option<bool> {
     let (view, alive) = link.view();
     let key = Key {
         view: std::sync::Arc::as_ptr(&view) as usize,
@@ -665,11 +703,9 @@ fn draw_cards(gl: &Gl, link: &Link, c: &mut Context, width: u32, height: u32) ->
         c.uploaded = false;
     }
     if c.regions.is_empty() {
-        return false;
+        return None;
     }
-    let Ok(frame_h) = c_int::try_from(height) else {
-        return false;
-    };
+    let frame_h = c_int::try_from(height).ok()?;
 
     // Save what we touch.
     let read_fb = gl.int(GL_READ_FRAMEBUFFER_BINDING);
@@ -682,21 +718,14 @@ fn draw_cards(gl: &Gl, link: &Link, c: &mut Context, width: u32, height: u32) ->
         (GL_UNPACK_SKIP_ROWS, gl.int(GL_UNPACK_SKIP_ROWS)),
         (GL_UNPACK_SKIP_PIXELS, gl.int(GL_UNPACK_SKIP_PIXELS)),
     ];
+    let built = c.targets.len() < c.regions.len();
     // SAFETY (this block and the restore below): GL calls on the current context with
     // names this module created in it or values just read from it.
     unsafe {
         let scissor = (gl.is_enabled)(GL_SCISSOR_TEST) != 0;
         let srgb = !c.es && (gl.is_enabled)(GL_FRAMEBUFFER_SRGB) != 0;
 
-        // Names from another (destroyed) context with the same address are not ours.
-        let stale = c
-            .targets
-            .iter()
-            .any(|&(t, f)| (gl.is_texture)(t) == 0 || (gl.is_framebuffer)(f) == 0);
-        if stale || c.targets.len() < c.regions.len() {
-            if stale {
-                c.targets.clear();
-            }
+        if built {
             while c.targets.len() < c.regions.len() {
                 let (mut t, mut f) = (0, 0);
                 (gl.gen_textures)(1, &mut t);
@@ -781,7 +810,7 @@ fn draw_cards(gl: &Gl, link: &Link, c: &mut Context, width: u32, height: u32) ->
             (gl.enable)(GL_SCISSOR_TEST);
         }
     }
-    true
+    Some(built)
 }
 
 /// `0xAARRGGBB` pixels as RGBA bytes, rows top first.
@@ -841,6 +870,46 @@ mod tests {
                 String::from_utf8_lossy(other)
             );
         }
+    }
+
+    const MS: Duration = Duration::from_millis(1);
+
+    /// Records `first` (built or not) then cheap frames to the end of the window.
+    fn window(first: Duration, built: bool) -> bool {
+        let mut b = Budget::default();
+        let mut ok = b.record(first, built);
+        for _ in 1..BUDGET_WINDOW {
+            ok = b.record(MS / 5, false);
+        }
+        ok
+    }
+
+    #[test]
+    fn a_window_over_budget_turns_the_overlay_off() {
+        let mut b = Budget::default();
+        let ends: Vec<bool> = (0..BUDGET_WINDOW)
+            .map(|_| b.record(2 * MS, false))
+            .collect();
+        assert!(ends[..ends.len() - 1].iter().all(|ok| *ok));
+        assert_eq!(ends.last(), Some(&false));
+        // A new window starts clean.
+        assert!(b.record(2 * MS, false));
+    }
+
+    #[test]
+    fn building_our_objects_is_a_warm_up_up_to_the_allowance() {
+        // 200 ms then 119 × 0.2 ms: 1.86 ms on average if it all counted.
+        assert!(window(200 * MS, true));
+        // The same stall in a frame that built nothing counts in full.
+        assert!(!window(200 * MS, false));
+    }
+
+    #[test]
+    fn a_warm_up_stall_past_the_allowance_still_counts() {
+        // 450 ms: 200 ms past the allowance, (200 + 23.8) / 120 = 1.87 ms on average.
+        assert!(!window(WARM_UP_ALLOWANCE + 200 * MS, true));
+        // Just past it: still within budget.
+        assert!(window(WARM_UP_ALLOWANCE + 50 * MS, true));
     }
 
     #[test]

@@ -1,11 +1,24 @@
 //! A native Linux GL "game" for `tests/gl_preload.rs` (GAME-08): clears a 640×480 surface to
-//! red and swaps until the pixel under the first toast is not red (the overlay drew), then
-//! checks a corner far from the cards is still red. It loads GL like most engines do, with
-//! `dlopen` and lookups by handle, so the preloaded overlay is reached through its `dlsym`
-//! (EGL) and `glXGetProcAddressARB` (GLX) hooks. It never links the overlay itself.
+//! red every frame and swaps. It loads GL like most engines do, with `dlopen` and lookups by
+//! handle, so the preloaded overlay is reached through its `dlsym` (EGL) and
+//! `glXGetProcAddressARB` (GLX) hooks. It never links the overlay itself.
 //!
-//! `vgames-gl-testapp egl|glx`. Exit codes: 0 drawn, 2 no GL here (skip), 3 never drawn,
-//! 4 drew outside the cards.
+//! Phases, each ending with a `cost …` line on stdout that the test's broker acts on:
+//! 1. `toast`: swaps until the pixel under the first toast is not red (the overlay drew),
+//!    checks a corner far from the cards is still red, then the overlay's own draw time
+//!    (`vgames_overlay_gl_draw_stats`) over [`FRAMES`] more frames.
+//! 2. `hidden`: once the broker emptied the view and the toast is gone, times the swap call
+//!    alone over [`HIDDEN_SWAPS`] frames (median) and checks the overlay drew none of them.
+//!    It also times the swap with a `glFinish` (the frame's raster work), for the open phase.
+//! 3. `opening` / `open`: once the broker opened the panel, the frames until it shows
+//!    (compose and upload), then its draw time over [`FRAMES`] more frames, each timed like
+//!    the hidden ones with `glFinish`, and checks the panel is still drawn.
+//!
+//! `vgames-gl-testapp egl|glx [baseline]`: `baseline` runs phase 2 only, for a run without
+//! the overlay to compare with. Exit codes: 0 every phase passed, 2 no GL here (skip),
+//! 3 never drawn, 4 drew outside the cards, 5 the toast stayed after the view emptied,
+//! 6 drew while nothing was visible, 7 the panel never drawn, 8 the overlay stopped drawing
+//! during a phase (its safety valve turned it off).
 #![allow(unsafe_code, clippy::print_stdout, clippy::print_stderr)]
 
 use std::ffi::{CStr, c_int, c_uint, c_void};
@@ -14,14 +27,20 @@ use std::time::{Duration, Instant};
 const W: c_int = 640;
 const H: c_int = 480;
 
+/// Frames over which a visible phase's draw time is averaged.
+const FRAMES: usize = 120;
+/// Swaps timed while hidden.
+const HIDDEN_SWAPS: usize = 600;
+
 fn main() {
+    let baseline = std::env::args().nth(2).as_deref() == Some("baseline");
     let code = match std::env::args().nth(1).as_deref() {
         #[cfg(target_os = "linux")]
-        Some("egl") => linux::run(linux::Api::Egl),
+        Some("egl") => linux::run(linux::Api::Egl, baseline),
         #[cfg(target_os = "linux")]
-        Some("glx") => linux::run(linux::Api::Glx),
+        Some("glx") => linux::run(linux::Api::Glx, baseline),
         _ => {
-            eprintln!("usage: vgames-gl-testapp egl|glx (Linux only)");
+            eprintln!("usage: vgames-gl-testapp egl|glx [baseline] (Linux only)");
             2
         }
     };
@@ -112,59 +131,163 @@ mod linux {
 
     const RED: [u8; 4] = [255, 0, 0, 255];
 
-    /// The preloaded overlay's draw counters (`vgames_overlay_gl_draw_stats`).
-    fn stats() {
+    /// The preloaded overlay's draw counters (`vgames_overlay_gl_draw_stats`): frames drawn
+    /// and nanoseconds spent; zeros without the overlay.
+    fn stats() -> (u64, u64) {
         type Stats = unsafe extern "C" fn(*mut u64, *mut u64);
         // SAFETY: a global lookup of the overlay's exported counter function.
         let p =
             unsafe { libc::dlsym(libc::RTLD_DEFAULT, c"vgames_overlay_gl_draw_stats".as_ptr()) };
-        if p.is_null() {
-            return;
-        }
         let (mut frames, mut nanos) = (0u64, 0u64);
-        // SAFETY: the function has this signature and writes two u64s.
-        unsafe { std::mem::transmute::<*mut c_void, Stats>(p)(&mut frames, &mut nanos) };
-        if let Some(avg) = nanos.checked_div(frames) {
-            println!("drawn={frames} avg_us={}", avg / 1000);
+        if !p.is_null() {
+            // SAFETY: the function has this signature and writes two u64s.
+            unsafe { std::mem::transmute::<*mut c_void, Stats>(p)(&mut frames, &mut nanos) };
+        }
+        (frames, nanos)
+    }
+
+    /// Prints the overlay's draw time between two [`stats`] readings.
+    /// `more` is appended to the line. Returns the frames drawn.
+    fn cost(phase: &str, before: (u64, u64), after: (u64, u64), more: &str) -> u64 {
+        let frames = after.0.saturating_sub(before.0);
+        let nanos = after.1.saturating_sub(before.1);
+        let avg = nanos.checked_div(frames).unwrap_or(0);
+        println!("cost {phase} frames={frames} avg_ns={avg}{more}");
+        frames
+    }
+
+    /// The game's drawing: the whole frame red.
+    fn clear(gl: &Gl) {
+        // SAFETY: GL calls on the current context.
+        unsafe {
+            (gl.clear_color)(1.0, 0.0, 0.0, 1.0);
+            (gl.clear)(0x4000);
         }
     }
 
-    /// Swaps until the toast shows; checks a corner stays untouched.
-    fn frames(gl: &Gl, mut swap: impl FnMut()) -> i32 {
+    /// One game frame.
+    fn frame(gl: &Gl, swap: &mut impl FnMut()) {
+        clear(gl);
+        swap();
+    }
+
+    /// Swaps until the pixel at (`x`, `y` from the top) is red (`red`) or not; that pixel,
+    /// or `None` after 15 s.
+    fn until(gl: &Gl, swap: &mut impl FnMut(), x: c_int, y: c_int, red: bool) -> Option<[u8; 4]> {
         let deadline = Instant::now() + Duration::from_secs(15);
         while Instant::now() < deadline {
-            // SAFETY: GL calls on the current context.
-            unsafe {
-                (gl.clear_color)(1.0, 0.0, 0.0, 1.0);
-                (gl.clear)(0x4000);
-            }
-            swap();
-            // The first toast: top right, inside its card.
-            let toast = gl.pixel(W - 40, 20);
-            if toast != RED {
-                let corner = gl.pixel(10, H - 10);
-                println!("toast={toast:?} corner={corner:?}");
-                // Keep drawing a while for the cost figures, then print them.
-                for _ in 0..120 {
-                    swap();
-                }
-                stats();
-                return if corner == RED { 0 } else { 4 };
+            frame(gl, swap);
+            let px = gl.pixel(x, y);
+            if (px == RED) == red {
+                return Some(px);
             }
             std::thread::sleep(Duration::from_millis(20));
         }
-        println!("the overlay never drew");
-        3
+        None
     }
 
-    pub fn run(api: Api) -> i32 {
+    /// The median time over `n` cleared frames of the swap call alone, or (`finish`) of the
+    /// swap and a `glFinish`: the frame's raster work, the overlay's blits included, lands
+    /// there (an EGL pbuffer swap does none of it).
+    fn timed(gl: &Gl, swap: &mut impl FnMut(), n: usize, finish: bool) -> u128 {
+        let mut took: Vec<u128> = (0..n)
+            .map(|_| {
+                clear(gl);
+                let started = Instant::now();
+                swap();
+                if finish {
+                    // SAFETY: a GL call on the current context.
+                    unsafe { (gl.finish)() };
+                }
+                started.elapsed().as_nanos()
+            })
+            .collect();
+        took.sort_unstable();
+        took.get(took.len() / 2).copied().unwrap_or(0)
+    }
+
+    /// The hidden figures over [`HIDDEN_SWAPS`] frames each (after a few to warm up), as the
+    /// `median_ns=… frame_ns=…` of a `cost hidden` line.
+    fn hidden(gl: &Gl, swap: &mut impl FnMut()) -> String {
+        for _ in 0..30 {
+            frame(gl, swap);
+        }
+        let alone = timed(gl, swap, HIDDEN_SWAPS, false);
+        let whole = timed(gl, swap, HIDDEN_SWAPS, true);
+        format!("median_ns={alone} frame_ns={whole}")
+    }
+
+    /// The three phases (module docs); the exit code.
+    fn frames(gl: &Gl, mut swap: impl FnMut(), baseline: bool) -> i32 {
+        let swap = &mut swap;
+        if baseline {
+            println!("cost hidden swaps={HIDDEN_SWAPS} {}", hidden(gl, swap));
+            return 0;
+        }
+        // The first toast: top right, inside its card.
+        let (toast_x, toast_y) = (W - 40, 20);
+        let Some(toast) = until(gl, swap, toast_x, toast_y, false) else {
+            println!("the overlay never drew");
+            return 3;
+        };
+        let corner = gl.pixel(10, H - 10);
+        println!("toast={toast:?} corner={corner:?}");
+        if corner != RED {
+            return 4;
+        }
+        let shown = stats();
+        for _ in 0..FRAMES {
+            frame(gl, swap);
+        }
+        if cost("toast", shown, stats(), "") != FRAMES as u64 {
+            println!("the overlay stopped drawing");
+            return 8;
+        }
+
+        // The broker empties the view on that line.
+        if until(gl, swap, toast_x, toast_y, true).is_none() {
+            println!("the toast stayed");
+            return 5;
+        }
+        let before = stats();
+        let figures = hidden(gl, swap);
+        let drawn = stats().0.saturating_sub(before.0);
+        println!("cost hidden swaps={HIDDEN_SWAPS} {figures} drawn={drawn}");
+        if drawn != 0 {
+            return 6;
+        }
+
+        // The broker opens the panel on that line: a full-height column on the right.
+        let before = stats();
+        let Some(panel) = until(gl, swap, W - 40, H - 20, false) else {
+            println!("the panel never drew");
+            return 7;
+        };
+        let corner = gl.pixel(10, H - 10);
+        println!("panel={panel:?} corner={corner:?}");
+        if corner != RED {
+            return 4;
+        }
+        let opened = stats();
+        cost("opening", before, opened, "");
+        let whole = timed(gl, swap, FRAMES, true);
+        let drawn = cost("open", opened, stats(), &format!(" frame_ns={whole}"));
+        let panel = gl.pixel(W - 40, H - 20);
+        if drawn != FRAMES as u64 || panel == RED {
+            println!("the overlay stopped drawing (panel={panel:?})");
+            return 8;
+        }
+        0
+    }
+
+    pub fn run(api: Api, baseline: bool) -> i32 {
         match api {
-            Api::Egl => egl().unwrap_or(2),
-            Api::Glx => glx().unwrap_or(2),
+            Api::Egl => egl(baseline).unwrap_or(2),
+            Api::Glx => glx(baseline).unwrap_or(2),
         }
     }
 
-    fn egl() -> Option<i32> {
+    fn egl(baseline: bool) -> Option<i32> {
         type GetDisplay = unsafe extern "C" fn(*mut c_void) -> *mut c_void;
         type Initialize = unsafe extern "C" fn(*mut c_void, *mut c_int, *mut c_int) -> c_uint;
         type ChooseConfig = unsafe extern "C" fn(
@@ -219,13 +342,17 @@ mod linux {
                 return None;
             }
             let gl = Gl::load(gpa)?;
-            Some(frames(&gl, || {
-                swap(dpy, surface);
-            }))
+            Some(frames(
+                &gl,
+                || {
+                    swap(dpy, surface);
+                },
+                baseline,
+            ))
         }
     }
 
-    fn glx() -> Option<i32> {
+    fn glx(baseline: bool) -> Option<i32> {
         type OpenDisplay = unsafe extern "C" fn(*const i8) -> *mut c_void;
         type DefaultScreen = unsafe extern "C" fn(*mut c_void) -> c_int;
         type ChooseFbConfig =
@@ -284,7 +411,7 @@ mod linux {
                 return None;
             }
             let gl = Gl::load(gpa)?;
-            Some(frames(&gl, || swap(dpy, surface)))
+            Some(frames(&gl, || swap(dpy, surface), baseline))
         }
     }
 }
