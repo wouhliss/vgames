@@ -46,10 +46,6 @@ export const coreCommands = {
   async appDiagnostics(): Promise<string> {
     return await get("app_diagnostics");
   },
-  /** Opens an http(s) URL in the system browser. Rust rejects every other scheme. */
-  async openExternalUrl(url: string): Promise<Result<null, AppError>> {
-    return call("open_external_url", { url });
-  },
   async appearanceGet(): Promise<AppearanceSettings> {
     return await get("appearance_get");
   },

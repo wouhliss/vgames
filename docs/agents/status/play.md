@@ -15,6 +15,7 @@
 - PLAY-05 macOS virtual output now checks the running process restricted entitlement through Security.framework, releases retained objects and fails closed. Unsigned builds cannot create CoreHID devices; native hosted proof remains required.
 - PLAY-05 Linux virtual output implemented behind VirtualPadBackend: Xbox reports use a fixed event array, feedback waits on uinput/cancellation and only active effects arm deadlines. Rumble mixing, erase/stop, bounded uploads and cancellation regressions pass; hosted kernel latency/hot-plug/soak and launch-session integration remain required.
 - PLAY-04/05 driver availability command implemented with native probes on the blocking pool and the scoped uaccess resource; virtual report forwarding and runtime entitlement verification remain separate PLAY-05 work.
+- PLAY-08 external-link command implemented early for controller driver help: native validation restricts links to http(s), refuses credentials and IDN homographs, and never echoes rejected URLs. SafeMarkdown retains its existing confirmation flow; the pending function is replaced by generated bindings.
 
 
 ## Interfaces delivered (other agents may now rely on these)

@@ -228,6 +228,7 @@ export const commands = {
 	publishRelease: (serverId: string, versionId: string) => typedError<PublishVersion, PublishCommandError>(__TAURI_INVOKE("publish_release", { serverId, versionId })),
 	/**  Withdraws a published version (`reason`: 3–500 characters, kept by the server). */
 	versionYank: (serverId: string, versionId: string, reason: string) => typedError<PublishVersion, PublishCommandError>(__TAURI_INVOKE("version_yank", { serverId, versionId, reason })),
+	openExternalUrl: (url: string) => typedError<null, AppError>(__TAURI_INVOKE("open_external_url", { url })),
 };
 
 /** Events */

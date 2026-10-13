@@ -6,6 +6,7 @@
 
 pub(crate) mod account;
 mod app;
+mod app_external;
 mod catalog;
 mod collections;
 mod controller_runtime;
@@ -151,7 +152,8 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             controller_runtime::controllers_list,
             controller_runtime::controllers_tester_start,
             controller_runtime::controllers_tester_stop,
-            controller_drivers::controllers_driver_status
+            controller_drivers::controllers_driver_status,
+            app_external::open_external_url
         ])
         .events(tauri_specta::collect_events![
             GameStarted,

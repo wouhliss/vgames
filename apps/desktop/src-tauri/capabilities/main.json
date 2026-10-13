@@ -117,5 +117,6 @@
     "allow-controllers-list",
     "allow-controllers-tester-start",
     "allow-controllers-tester-stop"
+    "allow-open-external-url"
   ]
 }

@@ -123,6 +123,7 @@ pub const MAIN_WINDOW_COMMANDS: &[&str] = &[
     "controllers_tester_start",
     "controllers_tester_stop",
     "controllers_driver_status",
+    "open_external_url",
 ];
 
 /// Commands the in-game overlay window may call. Only `overlay_*` commands
