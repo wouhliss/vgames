@@ -27,7 +27,30 @@ impl Driver for Native {
         self.target.plugin().map_err(driver_error)
     }
     fn ready(&mut self) -> Result<(), BackendError> {
-        self.target.wait_ready().map_err(driver_error)
+        let client = self.target.client().try_clone().map_err(driver_error)?;
+        let (finished, waiting) = std::sync::mpsc::sync_channel(1);
+        // This one deadline exists only during device preparation, never while idle.
+        let watchdog = thread::Builder::new()
+            .name("vgames-pad-ready".into())
+            .spawn(move || {
+                if waiting
+                    .recv_timeout(std::time::Duration::from_secs(2))
+                    .is_err()
+                {
+                    #[allow(unsafe_code)]
+                    // SAFETY: the duplicate owns the same live file object as the SDK's
+                    // readiness request; cancelling makes the SDK drain its completion.
+                    unsafe {
+                        CancelIoEx(client.as_raw_handle(), std::ptr::null_mut());
+                    }
+                }
+            })?;
+        let result = self.target.wait_ready().map_err(driver_error);
+        let _ = finished.send(());
+        if watchdog.join().is_err() {
+            return Err(BackendError::Stopped);
+        }
+        result
     }
     fn index(&mut self) -> Result<u16, BackendError> {
         u16::try_from(self.target.get_user_index().map_err(driver_error)?)
@@ -118,8 +141,8 @@ impl VirtualPadBackend for Windows {
         _player_index: u16,
         sink: RumbleSink,
     ) -> Result<Box<dyn VirtualPad>, BackendError> {
-        if target != EmulatedController::Xbox360 {
-            return Err(BackendError::UnsupportedTarget);
+        if target == EmulatedController::Dualshock4 {
+            return super::windows_ds4::create(_player_index, sink);
         }
         let client = Client::connect().map_err(driver_error)?;
         let driver = Native {
@@ -164,7 +187,7 @@ impl<D: Driver> Drop for Pad<D> {
         }
     }
 }
-fn driver_error(error: vigem_client::Error) -> BackendError {
+pub(super) fn driver_error(error: vigem_client::Error) -> BackendError {
     BackendError::Driver(error.to_string())
 }
 
@@ -175,6 +198,7 @@ unsafe extern "system" {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
