@@ -128,7 +128,7 @@ fn sdl_handler(
     let mut deadline = Deadline::new(runtime.clone(), wake);
     if let Ok(ids) = subsystem.gamepads() {
         for id in ids {
-            open(subsystem, &mut pads, &routed, id);
+            open(subsystem, &mut pads, &routed, &sessions, id);
         }
     }
     move |event: InputEvent, subsystem: &GamepadSubsystem| {
@@ -144,7 +144,7 @@ fn sdl_handler(
         let refresh = matches!(&event, InputEvent::Wake);
         match event {
             InputEvent::Native(Event::GamepadAdded { which, .. }) => {
-                open(subsystem, &mut pads, &routed, which);
+                open(subsystem, &mut pads, &routed, &sessions, which);
             }
             InputEvent::Native(Event::GamepadRemoved { which, .. }) => {
                 pads.remove(&which.raw());
@@ -182,6 +182,17 @@ fn sdl_handler(
                 sessions.report(id, &state);
             }
         } else if refresh {
+            pads.retain(|id, _| {
+                let keep = !super::virtual_filter::is_virtual(
+                    subsystem,
+                    sdl3::joystick::JoystickId::new(*id),
+                    &sessions,
+                );
+                if !keep && let Ok(mut router) = routed.lock() {
+                    router.disconnected(*id);
+                }
+                keep
+            });
             let snapshot = routed
                 .lock()
                 .ok()
@@ -255,9 +266,10 @@ fn open(
     subsystem: &GamepadSubsystem,
     pads: &mut BTreeMap<u32, Gamepad>,
     router: &Mutex<Router>,
+    sessions: &super::launch::Bridge,
     id: sdl3::joystick::JoystickId,
 ) {
-    if pads.contains_key(&id.raw()) {
+    if super::virtual_filter::is_virtual(subsystem, id, sessions) || pads.contains_key(&id.raw()) {
         return;
     }
     match subsystem.open(id) {

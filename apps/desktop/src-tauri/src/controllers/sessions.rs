@@ -29,6 +29,7 @@ pub struct PhysicalPad {
     pub state: PadState,
 }
 struct Output {
+    target: super::backends::EmulatedController,
     mapper: Mapper,
     pad: Box<dyn VirtualPad>,
 }
@@ -134,6 +135,7 @@ pub fn prepare(
                         session.outputs.insert(
                             pad.instance_id,
                             Output {
+                                target,
                                 mapper,
                                 pad: output,
                             },
@@ -166,6 +168,17 @@ pub struct Book {
     slots: BTreeMap<Uuid, Slot>,
 }
 impl Book {
+    pub fn owns_xinput_index(&self, index: u16) -> bool {
+        self.slots
+            .values()
+            .filter_map(|slot| slot.prepared.as_ref())
+            .any(|session| {
+                session.outputs.values().any(|output| {
+                    output.target == super::backends::EmulatedController::Xbox360
+                        && output.pad.player_index() == index
+                })
+            })
+    }
     pub fn contains(&self, id: Uuid) -> bool {
         self.slots.contains_key(&id)
     }
