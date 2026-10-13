@@ -2,6 +2,8 @@
 //! INS under README §1 ("need it, build it") with exactly the shared signature.
 
 pub mod catalog;
+mod save_paths;
+pub use save_paths::save_base;
 
 use std::path::{Path, PathBuf};
 

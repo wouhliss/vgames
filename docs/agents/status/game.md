@@ -55,3 +55,5 @@
   on every OS), with a per-OS test. INS uses it for `has_prefix` and prefix removal on uninstall; `save_base` is yours.
 
 - From INT (INT-06 restart proof): initialize the process TLS provider before service startup, matching the updater's ring provider. The real signed update diagnostic exposed a Rustls panic on realtime reconnect in the restarted process; HTTP and SQL features enable two providers. This startup repair changes no trust policy.
+
+- Built for you (PLAY-06, GAME-05 fallback): `compat::save_base(&prefix, RunnerKind::Proton, SaveBase::Documents)` returns the Windows-relative Documents base inside the package prefix. Wine uses the native macOS account name; install returns None for the caller's verified install root. Shared resolver tests cover all bases and refused account-name escapes, with native macOS lookup checked by the matrix. Use this resolver from compatibility/cloud-save services rather than a second path mapping.
