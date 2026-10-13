@@ -61,7 +61,7 @@ or a finding filed in the owning agent's status file.
 
 ## Supply chain and CI
 
-- [ ] New dependencies pass `cargo deny` (license allowlist, crates.io only) and `pnpm audit --prod`; lockfiles are committed.
+- [ ] New dependencies pass `cargo deny` (license allowlist, crates.io only) and `pnpm audit` (production and development dependencies); lockfiles are committed.
 - [ ] Workflows keep actions pinned by commit SHA, `permissions: {}` at the top, no secrets in PR workflows.
 - [ ] Release jobs still require the `release` environment (human approval).
 - [ ] `gitleaks` is green and no fixture contains a real token, key file or signed URL.
