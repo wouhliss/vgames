@@ -29,7 +29,14 @@
 - GAME-06 — PE scan, D3D check on INS's priority-files hook, Rosetta, Wine plan (`game/p2-wine-macos`, not pushed yet).
 - GAME-08 — GL preload hooks in `libvgames_overlay.so` (`game/p2-gl-preload`). Frame cost on llvmpipe, release, 640×480,
   one toast visible: 0.28 ms (EGL) / 0.32 ms (GLX) per frame, upload included (05-social §6.1: ≤ 1 ms open); hidden: one
-  atomic load per swap. Launcher preload for native Linux launches next.
+  atomic load per swap. Launcher preload for native Linux launches next. Cost now asserted and in the `ci` job summary
+  (`game/p2-overlay-frame-cost`; debug build, llvmpipe/lavapipe, 640×480, local). Hidden (≤ 0.3 ms): +0.000 ms (EGL),
+  within ±0.05 ms noise (GLX), +0.01 ms (Vulkan) per swap/present against the same app without the preload or an
+  instance without the layer. Panel open (≤ 1 ms): in the hooks 0.08–0.10 (EGL) / 0.17–0.20 (GLX) / 0.05–0.06
+  (Vulkan) ms per frame; whole frame with the driver's raster work +0.23–0.32 (EGL) / +0.44–0.51 (GLX) / +0.13–0.24
+  (Vulkan) ms. Opening the panel (bound 100 ms in all, a hitch bound, not §6.1): 14–21 ms GL (one frame), 5–6 ms
+  Vulkan (7–15 ms under synchronization validation). The GL safety valve now counts a frame that creates our GL
+  objects minus a 250 ms warm-up allowance.
 - GAME-04 (social part) — social REST on the API client's transport, caps kept (`game/p2-social-apiclient`).
 - GAME-06 — PE scan, D3D check on INS's priority-files hook, Rosetta, Wine plan, hosted macos-15 job (`game/p2-wine-macos`).
 - GAME-06 — PE scan, D3D check on INS's priority-files hook, Rosetta, Wine plan, hosted macos-15 job ([#220](https://github.com/wouhliss/vgames/pull/220)).

@@ -72,6 +72,8 @@ jobs:
       # The in-game overlay renderer (feature `renderer`): its Vulkan layer end to end on
       # Mesa's software driver with the Khronos validation layer (A4-T11), and its GL hooks
       # preloaded into a GL app on llvmpipe, EGL surfaceless and GLX under Xvfb (GAME-08).
+      # The Vulkan test runs again without validation for its panel-open cost; every
+      # `overlay frame cost:` line (05-social §6.1 budgets) goes to the job summary.
       - name: overlay renderer
         env:
           VGAMES_REQUIRE_VULKAN: "1"
@@ -79,11 +81,23 @@ jobs:
           VGAMES_VK_VALIDATION: "1"
           VK_LAYER_ENABLES: VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT
         run: |
+          set -o pipefail
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends mesa-vulkan-drivers libvulkan1 vulkan-validationlayers \
             libegl1 libegl-mesa0 libgl1 libglx-mesa0 libgl1-mesa-dri libx11-6 xvfb
           cargo clippy -p vgames-overlay --all-targets --features renderer,fault-injection --locked -- -D warnings
-          cargo test -p vgames-overlay --features renderer,fault-injection --locked
+          log="$RUNNER_TEMP/overlay-tests.log"
+          status=0
+          { cargo test -p vgames-overlay --features renderer,fault-injection --locked -- --nocapture &&
+            env -u VGAMES_VK_VALIDATION -u VK_LAYER_ENABLES \
+              cargo test -p vgames-overlay --features renderer,fault-injection --locked --test vulkan_layer -- --nocapture
+          } 2>&1 | tee "$log" || status=$?
+          {
+            echo "### Overlay frame cost (05-social §6.1: ≤ 0.3 ms hidden, ≤ 1 ms open)"
+            echo
+            grep -h '^overlay frame cost: ' "$log" | sed 's/^overlay frame cost: /- /' || echo "- no figures (see the log)"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
 
   sqlx:
     name: SQLx offline data and migrations
