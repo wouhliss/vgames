@@ -103,6 +103,17 @@ fn receive_button(device: &mut Device, down: bool) {
 #[test]
 #[ignore = "Requires modprobe uinput and root; required desktop-matrix Linux step runs it."]
 fn kernel_hotplug_reports_and_rumble_are_event_driven_with_p99_under_two_ms() {
+    run_kernel_fixture(false);
+}
+
+#[test]
+#[ignore = "Four-hour hosted kernel soak; controller-soak workflow runs this test explicitly."]
+fn two_emulated_pads_keep_rss_threads_and_descriptors_flat_for_four_hours() {
+    run_kernel_fixture(true);
+}
+
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
+fn run_kernel_fixture(soak: bool) {
     let (rumble, feedback) = mpsc::channel();
     let mut outputs = Vec::<Option<Box<dyn VirtualPad>>>::new();
     let mut observers = Vec::new();
@@ -216,6 +227,9 @@ fn kernel_hotplug_reports_and_rumble_are_event_driven_with_p99_under_two_ms() {
         .emit(&[InputEvent::new(EventType::KEY.0, KeyCode::BTN_SOUTH.0, 1)])
         .unwrap();
     receive_button(&mut observers[1], true);
+    if soak {
+        soak_two_pads(&mut first, &mut second, &mut observers);
+    }
     let mut effect = observers[0]
         .upload_ff_effect(evdev::FFEffectData {
             direction: 0,
@@ -248,4 +262,87 @@ fn kernel_hotplug_reports_and_rumble_are_event_driven_with_p99_under_two_ms() {
         0
     );
     input.stop();
+}
+
+#[allow(clippy::unwrap_used)]
+fn process_resources() -> (u64, usize, usize) {
+    let status = std::fs::read_to_string("/proc/self/status").unwrap();
+    let rss = status
+        .lines()
+        .find_map(|line| line.strip_prefix("VmRSS:"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let threads = std::fs::read_dir("/proc/self/task").unwrap().count();
+    let descriptors = std::fs::read_dir("/proc/self/fd").unwrap().count();
+    (rss, threads, descriptors)
+}
+
+#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
+fn soak_two_pads(first: &mut VirtualDevice, second: &mut VirtualDevice, observers: &mut [Device]) {
+    first
+        .emit(&[InputEvent::new(EventType::KEY.0, KeyCode::BTN_SOUTH.0, 1)])
+        .unwrap();
+    receive_button(&mut observers[0], true);
+    let start = Instant::now();
+    let duration = Duration::from_secs(4 * 60 * 60);
+    let mut baseline = None;
+    let mut maximum_rss = 0;
+    let mut next_sample = Duration::from_secs(30);
+    let mut reports = 0_u64;
+    let mut down = true;
+    while start.elapsed() < duration {
+        down = !down;
+        for (pad, output) in [&mut *first, &mut *second]
+            .into_iter()
+            .zip(observers.iter_mut())
+        {
+            pad.emit(&[InputEvent::new(
+                EventType::KEY.0,
+                KeyCode::BTN_SOUTH.0,
+                i32::from(down),
+            )])
+            .unwrap();
+            receive_button(output, down);
+            reports += 1;
+        }
+        if start.elapsed() >= next_sample {
+            let current = process_resources();
+            let initial = *baseline.get_or_insert(current);
+            maximum_rss = maximum_rss.max(current.0);
+            assert!(
+                current.0 <= initial.0 + 8 * 1024,
+                "RSS grew beyond 8 MiB: initial={initial:?} current={current:?}"
+            );
+            assert!(
+                current.1 <= initial.1,
+                "thread count grew: initial={initial:?} current={current:?}"
+            );
+            assert!(
+                current.2 <= initial.2,
+                "descriptor count grew: initial={initial:?} current={current:?}"
+            );
+            println!(
+                "{{\"elapsed_s\":{},\"rss_kib\":{},\"threads\":{},\"descriptors\":{},\"reports\":{reports}}}",
+                start.elapsed().as_secs(),
+                current.0,
+                current.1,
+                current.2
+            );
+            next_sample += Duration::from_secs(60);
+        }
+        // Synthetic physical-pad cadence; the production worker still blocks on input.
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(
+        reports > 100_000,
+        "the soak must exercise both pads continuously"
+    );
+    println!(
+        "{{\"duration_s\":{},\"max_rss_kib\":{maximum_rss},\"reports\":{reports}}}",
+        start.elapsed().as_secs()
+    );
 }
