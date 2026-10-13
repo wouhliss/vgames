@@ -222,9 +222,10 @@ Server → client events:
 | type | data | Consumer action |
 |---|---|---|
 | `hello` | `{user_id, device_id, server_time}` | Resync state via REST |
-| `presence.changed` | `{user_id, status, package_id?}` | Update friend list |
+| `presence.changed` | `{user_id, status, package_id?, package_title?}` | Update friend list |
 | `friend.request` / `friend.accepted` / `friend.removed` | `{user_id}` | Refetch `/v1/friends` |
 | `inbox.new` | `{conversation_id, count}` | `GET /v1/inbox` |
+| `typing` | `{conversation_id, user_id}` | Show "… is typing" |
 | `invite.created` / `invite.updated` | `{invite}` (full object) | Update invite UI / overlay card |
 | `device.added` / `device.revoked` | `{user_id, device_id}` | Refresh device list; warn on new contact device |
 | `version.state` (admins only) | `{version_id, state, failure_reason?}` | Admin upload progress |
@@ -232,6 +233,14 @@ Server → client events:
 
 Client → server events: `presence.set {status, package_id?}`, `typing {conversation_id}`
 (fire-and-forget, rate-limited), `pong`.
+
+`presence.changed` goes to accepted friends only. `package_id` and `package_title` are present
+together, and only for a published, not deleted package; the server reads the title from its own
+catalog.
+
+The server sends `typing` to the conversation's other current members when the sender is a member,
+never across a block in either direction, and throttles it to one per user and conversation every
+3 s on each API instance (a best-effort limit, not a guarantee across instances). Nothing is stored.
 
 Fan-out across API instances: after committing a change, the handler calls
 `pg_notify('vgames_events', json)` with `{recipients: [user_id…], event}` (≤ 7.5 KB; larger events
