@@ -110,6 +110,13 @@ jobs:
           fi
         env:
           TARGET: ${{ matrix.target }}
+      - name: Kernel controller latency, hot-plug and force feedback
+        if: matrix.os == 'ubuntu-24.04'
+        run: |
+          sudo modprobe uinput
+          cargo test --locked --target ${{ matrix.target }} -p vgames-desktop --test controllers_uinput --no-run --message-format=json > "$RUNNER_TEMP/controllers-uinput-build.json"
+          controller_test_binary="$(python3 -c 'import json,sys; rows=(json.loads(line) for line in open(sys.argv[1])); paths=[row["executable"] for row in rows if row.get("reason") == "compiler-artifact" and row.get("target", {}).get("name") == "controllers_uinput" and row.get("executable")]; assert len(paths) == 1; print(paths[0])' "$RUNNER_TEMP/controllers-uinput-build.json")"
+          sudo "$controller_test_binary" --ignored --nocapture
       - name: Release build (unsigned, no bundle)
         run: cargo build --locked --release --target ${{ matrix.target }} -p vgames-desktop
       - name: Release-only rules (debug overrides ignored)

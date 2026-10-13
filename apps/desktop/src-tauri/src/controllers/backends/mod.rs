@@ -38,6 +38,10 @@ pub type RumbleSink = Arc<dyn Fn(Rumble) + Send + Sync>;
 pub trait VirtualPad: Send {
     fn update(&mut self, report: &XReport) -> Result<(), BackendError>;
     fn player_index(&self) -> u16;
+    #[cfg(target_os = "linux")]
+    fn node_path(&mut self) -> Result<Option<std::path::PathBuf>, BackendError> {
+        Ok(None)
+    }
 }
 pub trait VirtualPadBackend: Send + Sync {
     fn create(
