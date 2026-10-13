@@ -14,6 +14,7 @@ pub mod navigation;
 pub mod profiles;
 pub mod routing;
 pub mod service;
+mod virtual_filter;
 
 #[cfg(test)]
 mod linkage_tests {
