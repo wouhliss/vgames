@@ -38,6 +38,8 @@ pub struct Prepared {
     cancel: CancellationToken,
     policy: Policy,
     outputs: BTreeMap<u32, Output>,
+    attempted: BTreeSet<u32>,
+    reserved: BTreeMap<u32, u16>,
     notices: Vec<u32>,
 }
 #[derive(Debug, thiserror::Error)]
@@ -69,6 +71,9 @@ impl Prepared {
     }
     /// Return ownership so driver teardown runs on a blocking worker.
     pub fn disconnect(&mut self, id: u32) -> Option<Box<dyn VirtualPad>> {
+        self.attempted.remove(&id);
+        self.reserved.remove(&id);
+        self.notices.retain(|notice| *notice != id);
         self.outputs.remove(&id).map(|output| output.pad)
     }
 }
@@ -89,6 +94,8 @@ pub fn prepare(
         cancel: cancel.clone(),
         policy,
         outputs: BTreeMap::new(),
+        attempted: BTreeSet::new(),
+        reserved: BTreeMap::new(),
         notices: Vec::new(),
     };
     let mut ordered = pads.to_vec();
@@ -102,6 +109,7 @@ pub fn prepare(
         if !seen.insert(pad.instance_id) {
             continue;
         }
+        session.attempted.insert(pad.instance_id);
         let decision = |available| {
             decide(
                 &LaunchControllers {
@@ -159,7 +167,15 @@ pub fn prepare(
     Ok(session)
 }
 
+pub struct Hotplug {
+    pub id: Uuid,
+    pub policy: Policy,
+    pub pad: PhysicalPad,
+    pub cancel: CancellationToken,
+}
+
 struct Slot {
+    removed_during_prepare: BTreeSet<u32>,
     cancel: CancellationToken,
     prepared: Option<Prepared>,
 }
@@ -168,6 +184,64 @@ pub struct Book {
     slots: BTreeMap<Uuid, Slot>,
 }
 impl Book {
+    pub fn hotplug(&mut self, pad: &PhysicalPad) -> Vec<Hotplug> {
+        self.slots
+            .values_mut()
+            .filter_map(|slot| {
+                let session = slot.prepared.as_mut()?;
+                if slot.cancel.is_cancelled() || !session.attempted.insert(pad.instance_id) {
+                    return None;
+                }
+                let indexes: BTreeSet<_> = session
+                    .outputs
+                    .values()
+                    .map(|output| output.pad.player_index())
+                    .chain(session.reserved.values().copied())
+                    .collect();
+                let mut pad = pad.clone();
+                pad.player_index = pad
+                    .player_index
+                    .filter(|index| !indexes.contains(index))
+                    .or_else(|| (0..=u16::MAX).find(|index| !indexes.contains(index)));
+                if let Some(index) = pad.player_index {
+                    session.reserved.insert(pad.instance_id, index);
+                }
+                Some(Hotplug {
+                    id: session.id,
+                    policy: session.policy.clone(),
+                    pad,
+                    cancel: slot.cancel.clone(),
+                })
+            })
+            .collect()
+    }
+    /// Merge only outputs whose physical device is still connected. Return the
+    /// leftovers to the blocking caller so rejecting/removing never joins here.
+    pub fn install_hotplug(&mut self, mut prepared: Prepared) -> Box<Prepared> {
+        if !prepared.cancel.is_cancelled()
+            && let Some(session) = self.session_mut(prepared.id)
+        {
+            for id in &prepared.attempted {
+                session.reserved.remove(id);
+            }
+            let outputs = std::mem::take(&mut prepared.outputs);
+            for (id, output) in outputs {
+                if session.attempted.contains(&id) && !session.outputs.contains_key(&id) {
+                    session.outputs.insert(id, output);
+                } else {
+                    prepared.outputs.insert(id, output);
+                }
+            }
+            session.notices.extend(
+                prepared
+                    .notices
+                    .iter()
+                    .filter(|id| session.attempted.contains(id))
+                    .copied(),
+            );
+        }
+        Box::new(prepared)
+    }
     pub fn owns_xinput_index(&self, index: u16) -> bool {
         self.slots
             .values()
@@ -179,6 +253,16 @@ impl Book {
                 })
             })
     }
+    pub fn accepts_feedback(&self, id: Uuid, pad: u32) -> bool {
+        self.slots.get(&id).is_some_and(|slot| {
+            !slot.cancel.is_cancelled()
+                && !slot.removed_during_prepare.contains(&pad)
+                && slot
+                    .prepared
+                    .as_ref()
+                    .is_none_or(|session| session.attempted.contains(&pad))
+        })
+    }
     pub fn contains(&self, id: Uuid) -> bool {
         self.slots.contains_key(&id)
     }
@@ -188,6 +272,7 @@ impl Book {
         };
         let cancel = CancellationToken::new();
         entry.insert(Slot {
+            removed_during_prepare: BTreeSet::new(),
             cancel: cancel.clone(),
             prepared: None,
         });
@@ -195,15 +280,22 @@ impl Book {
     }
     /// A timed-out/aborted preparation must not install late. Rejected resources
     /// return to the blocking caller; never drop/join them under the book's lock.
-    pub fn install(&mut self, prepared: Prepared) -> Result<(), Box<Prepared>> {
+    pub fn install(
+        &mut self,
+        mut prepared: Prepared,
+    ) -> Result<Vec<Box<dyn VirtualPad>>, Box<Prepared>> {
         match self.slots.get_mut(&prepared.id) {
             Some(slot)
                 if !slot.cancel.is_cancelled()
                     && !prepared.cancel.is_cancelled()
                     && slot.prepared.is_none() =>
             {
+                let removed: Vec<_> = std::mem::take(&mut slot.removed_during_prepare)
+                    .into_iter()
+                    .filter_map(|id| prepared.disconnect(id))
+                    .collect();
                 slot.prepared = Some(prepared);
-                Ok(())
+                Ok(removed)
             }
             _ => Err(Box::new(prepared)),
         }
@@ -230,7 +322,13 @@ impl Book {
     pub fn disconnect(&mut self, id: u32) -> Vec<Box<dyn VirtualPad>> {
         self.slots
             .values_mut()
-            .filter_map(|slot| slot.prepared.as_mut()?.disconnect(id))
+            .filter_map(|slot| match slot.prepared.as_mut() {
+                Some(session) => session.disconnect(id),
+                None => {
+                    slot.removed_during_prepare.insert(id);
+                    None
+                }
+            })
             .collect()
     }
     pub fn session_mut(&mut self, id: Uuid) -> Option<&mut Prepared> {
@@ -465,5 +563,191 @@ mod tests {
         assert_eq!(trace.lock().unwrap().drops, 1);
         drop(removed);
         assert_eq!(trace.lock().unwrap().drops, 2);
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod hotplug_tests {
+    use super::super::backends::{EmulatedController, VirtualPad};
+    use super::super::mapping::XReport;
+    use super::*;
+    use std::sync::{Arc, Mutex};
+    struct Fake(Arc<Mutex<Vec<u16>>>);
+    struct Pad(u16);
+    impl VirtualPad for Pad {
+        fn update(&mut self, _: &XReport) -> Result<(), BackendError> {
+            Ok(())
+        }
+        fn player_index(&self) -> u16 {
+            self.0
+        }
+    }
+    impl VirtualPadBackend for Fake {
+        fn create(
+            &self,
+            _: EmulatedController,
+            index: u16,
+            _: RumbleSink,
+        ) -> Result<Box<dyn VirtualPad>, BackendError> {
+            self.0.lock().unwrap().push(index);
+            Ok(Box::new(Pad(index)))
+        }
+    }
+    fn policy() -> Policy {
+        Policy {
+            manifest: Some(Controllers {
+                supported: vec![vgames_core::manifest::ControllerKind::Xinput],
+                emulate_as: Some(EmulatedController::Xbox360),
+            }),
+            compat_layer: false,
+            mode: EmulationMode::Auto,
+            mapping: Profile::default(),
+        }
+    }
+    fn pad(id: u32) -> PhysicalPad {
+        PhysicalPad {
+            instance_id: id,
+            kind: ControllerKind::Dualsense,
+            player_index: None,
+            state: PadState::default(),
+        }
+    }
+    #[test]
+    fn mid_session_hotplug_preserves_existing_reports_order_and_deduplicates_builds() {
+        let trace = Arc::new(Mutex::new(Vec::new()));
+        let backend = Fake(trace.clone());
+        let id = Uuid::new_v4();
+        let mut book = Book::default();
+        let cancel = book.begin(id).unwrap();
+        assert!(
+            book.install(
+                prepare(
+                    id,
+                    policy(),
+                    &[pad(1)],
+                    &backend,
+                    &|_| Arc::new(|_| {}),
+                    &cancel
+                )
+                .unwrap()
+            )
+            .is_ok()
+        );
+        let request = book.hotplug(&pad(2)).pop().unwrap();
+        assert!(book.hotplug(&pad(2)).is_empty());
+        let prepared = prepare(
+            id,
+            request.policy,
+            &[request.pad],
+            &backend,
+            &|_| Arc::new(|_| {}),
+            &request.cancel,
+        )
+        .unwrap();
+        drop(book.install_hotplug(prepared));
+        assert_eq!(*trace.lock().unwrap(), [0, 1]);
+        assert_eq!(
+            book.session_mut(id).unwrap().emulated().collect::<Vec<_>>(),
+            [(1, 0), (2, 1)]
+        );
+        drop(book.disconnect(2));
+        assert_eq!(book.hotplug(&pad(2)).len(), 1);
+    }
+    #[test]
+    fn disconnect_or_exit_during_hotplug_rejects_late_outputs() {
+        let backend = Fake(Arc::default());
+        let mut book = Book::default();
+        let id = Uuid::new_v4();
+        let cancel = book.begin(id).unwrap();
+        assert!(
+            book.install(
+                prepare(id, policy(), &[], &backend, &|_| Arc::new(|_| {}), &cancel).unwrap()
+            )
+            .is_ok()
+        );
+        let request = book.hotplug(&pad(2)).pop().unwrap();
+        let late = prepare(
+            id,
+            request.policy,
+            &[request.pad],
+            &backend,
+            &|_| Arc::new(|_| {}),
+            &request.cancel,
+        )
+        .unwrap();
+        drop(book.disconnect(2));
+        let rejected = book.install_hotplug(late);
+        assert_eq!(rejected.emulated().count(), 1);
+        assert_eq!(book.session_mut(id).unwrap().emulated().count(), 0);
+        drop(rejected);
+        let request = book.hotplug(&pad(3)).pop().unwrap();
+        let late = prepare(
+            id,
+            request.policy,
+            &[request.pad],
+            &backend,
+            &|_| Arc::new(|_| {}),
+            &request.cancel,
+        )
+        .unwrap();
+        drop(book.take(id));
+        let rejected = book.install_hotplug(late);
+        assert_eq!(rejected.emulated().count(), 1);
+    }
+    #[test]
+    fn disconnect_during_initial_preparation_returns_resources_for_off_lock_teardown() {
+        let backend = Fake(Arc::default());
+        let mut book = Book::default();
+        let id = Uuid::new_v4();
+        let cancel = book.begin(id).unwrap();
+        let ready = prepare(
+            id,
+            policy(),
+            &[pad(2)],
+            &backend,
+            &|_| Arc::new(|_| {}),
+            &cancel,
+        )
+        .unwrap();
+        assert!(book.accepts_feedback(id, 2));
+        assert!(book.disconnect(2).is_empty());
+        assert!(!book.accepts_feedback(id, 2));
+        let removed = match book.install(ready) {
+            Ok(removed) => removed,
+            Err(_) => panic!("Initial session rejected"),
+        };
+        assert_eq!(removed.len(), 1);
+        assert_eq!(book.session_mut(id).unwrap().emulated().count(), 0);
+        assert!(!book.accepts_feedback(id, 2));
+        drop(removed);
+    }
+    #[test]
+    fn concurrent_hotplug_builders_reserve_distinct_player_indexes() {
+        let backend = Fake(Arc::default());
+        let mut book = Book::default();
+        let id = Uuid::new_v4();
+        let cancel = book.begin(id).unwrap();
+        assert!(
+            book.install(
+                prepare(
+                    id,
+                    policy(),
+                    &[pad(1)],
+                    &backend,
+                    &|_| Arc::new(|_| {}),
+                    &cancel
+                )
+                .unwrap()
+            )
+            .is_ok()
+        );
+        let first = book.hotplug(&pad(2)).pop().unwrap();
+        let second = book.hotplug(&pad(3)).pop().unwrap();
+        assert_eq!(first.pad.player_index, Some(1));
+        assert_eq!(second.pad.player_index, Some(2));
+        drop(book.disconnect(2));
+        let third = book.hotplug(&pad(4)).pop().unwrap();
+        assert_eq!(third.pad.player_index, Some(1));
     }
 }
