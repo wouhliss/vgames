@@ -10,7 +10,8 @@
 //! - `VGAMES_PROTON_E2E_EXPECT` (optional): `ok` (default) or `refused-before-extraction`
 //!   (the job flips one pinned hash to prove a tampered archive never runs);
 //! - `VGAMES_PROTON_E2E_LOG_DIR` (optional): the game's target sets `PROTON_LOG=1`
-//!   and `PROTON_LOG_DIR` there, so a failed run leaves Proton's log for the job.
+//!   and `PROTON_LOG_DIR` (and DXVK's log) there, so a failed run leaves the logs
+//!   for the job.
 //!
 //! The catalog is signed here with a key generated for the run and served locally;
 //! the runtimes themselves come from GitHub, verified by size and SHA-256.
@@ -100,7 +101,9 @@ async fn the_d3d11_test_game_runs_through_proton() {
                     .map(|dir| {
                         BTreeMap::from([
                             ("PROTON_LOG".to_owned(), "1".to_owned()),
-                            ("PROTON_LOG_DIR".to_owned(), dir),
+                            ("PROTON_LOG_DIR".to_owned(), dir.clone()),
+                            ("DXVK_LOG_LEVEL".to_owned(), "info".to_owned()),
+                            ("DXVK_LOG_PATH".to_owned(), dir),
                         ])
                     })
                     .unwrap_or_default(),
