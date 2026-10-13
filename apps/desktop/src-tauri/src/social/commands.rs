@@ -191,6 +191,12 @@ pub fn init(app: &AppHandle, state: &AppState) -> Result<(), SocialError> {
         library: super::ports::LocalLibrary {
             db: state.db.clone(),
         },
+        updates: Some(Arc::new(super::ports::CatalogUpdates {
+            catalog: Arc::clone(&state.catalog),
+            db: state.db.clone(),
+            installs: Arc::clone(&state.installs),
+            bus: state.bus.clone(),
+        })),
         launcher: Arc::clone(&state.launcher),
     }));
     // Refused calls wait up to 10 s for the bridge's refreshed token, then retry once.

@@ -414,6 +414,65 @@ describe("invites", () => {
     ).not.toBeInTheDocument();
   });
 
+  const outdated = (state: "installed" | "updating") => {
+    const first = INSTALLS[0];
+    if (!first) throw new Error("fixture");
+    const installed = {
+      ...first,
+      state,
+      update: {
+        version_label: "2.0.0",
+        sequence: 2,
+        download_bytes: 1024,
+        installed_yanked: false,
+      },
+    };
+    return { installed, installs: [installed, ...INSTALLS.slice(1)] };
+  };
+
+  it("offers the update when the invited game is out of date", async () => {
+    const { installed, installs } = outdated("installed");
+    const { user, backend } = start("/library", { installs });
+    await screen.findByRole("heading", { level: 1, name: "Library" });
+    await receive(
+      backend,
+      makeInvite({
+        package: { id: installed.package.package_id, title: installed.title, cover_url: null },
+      }),
+    );
+    const card = screen.getByRole("region", { name: "Alex invites you to play" });
+    await user.click(within(card).getByRole("button", { name: "Accept" }));
+    const dialog = await screen.findByRole("alertdialog", {
+      name: `Update ${installed.title} to play together?`,
+    });
+    expect(screen.queryByRole("dialog", { name: `Install ${installed.title}` })).toBeNull();
+    await user.click(within(dialog).getByRole("button", { name: "Update" }));
+    await waitFor(() => expect(backend.callsTo("install_update")).toHaveLength(1));
+    expect(backend.callsTo("install_update")[0]?.args).toEqual({ pkg: installed.package });
+    await waitFor(() => expect(dialog).not.toBeInTheDocument());
+  });
+
+  it("offers no update for a game that is already updating", async () => {
+    const { installed, installs } = outdated("updating");
+    const { user, backend } = start("/library", { installs });
+    await screen.findByRole("heading", { level: 1, name: "Library" });
+    await receive(
+      backend,
+      makeInvite({
+        package: { id: installed.package.package_id, title: installed.title, cover_url: null },
+      }),
+    );
+    const card = screen.getByRole("region", { name: "Alex invites you to play" });
+    await user.click(within(card).getByRole("button", { name: "Accept" }));
+    expect(
+      await screen.findByText(
+        `${installed.title} is busy being updated, repaired or moved. The invite is ready once it finishes.`,
+      ),
+    ).toBeVisible();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(backend.callsTo("install_update")).toHaveLength(0);
+  });
+
   it("declines, or keeps the invite for later", async () => {
     const { user, backend } = start("/library");
     await screen.findByRole("heading", { level: 1, name: "Library" });
