@@ -118,8 +118,8 @@ impl VirtualPadBackend for Windows {
         _player_index: u16,
         sink: RumbleSink,
     ) -> Result<Box<dyn VirtualPad>, BackendError> {
-        if target != EmulatedController::Xbox360 {
-            return Err(BackendError::UnsupportedTarget);
+        if target == EmulatedController::Dualshock4 {
+            return super::windows_ds4::create(_player_index, sink);
         }
         let client = Client::connect().map_err(driver_error)?;
         let driver = Native {
@@ -164,7 +164,7 @@ impl<D: Driver> Drop for Pad<D> {
         }
     }
 }
-fn driver_error(error: vigem_client::Error) -> BackendError {
+pub(super) fn driver_error(error: vigem_client::Error) -> BackendError {
     BackendError::Driver(error.to_string())
 }
 
@@ -175,6 +175,7 @@ unsafe extern "system" {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};

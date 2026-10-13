@@ -49,3 +49,9 @@ pub trait VirtualPadBackend: Send + Sync {
         rumble: RumbleSink,
     ) -> Result<Box<dyn VirtualPad>, BackendError>;
 }
+
+#[cfg(windows)]
+mod windows_ds4;
+
+#[cfg(any(windows, test))]
+mod windows_ds4_report;
