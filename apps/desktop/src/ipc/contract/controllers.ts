@@ -59,18 +59,7 @@ export type XboxButton =
   | "dpad_down"
   | "dpad_left"
   | "dpad_right";
-export type ControllerDriverState =
-  | { kind: "available" }
-  | { kind: "not_required" }
-  | { kind: "vigembus_missing" }
-  | { kind: "uinput_denied"; udev_rule: string }
-  | { kind: "hidhide_missing" }
-  | { kind: "macos_entitlement_missing" }
-  | { kind: "probe_error"; detail: string };
-export type ControllerDriverStatus = {
-  emulation: ControllerDriverState;
-  hiding: ControllerDriverState;
-};
+export type { ControllerDriverState, ControllerDriverStatus } from "../../bindings";
 export type ControllerTester = { subscription_id: string; instance_id: number };
 export type ControllerTesterState = ControllerTester & {
   buttons: ControllerButton[];
@@ -83,9 +72,6 @@ export type ControllerTesterState = ControllerTester & {
 export const controllerCommands = {
   controllersList(): Promise<Result<ControllerList, AppError>> {
     return call("controllers_list");
-  },
-  controllersDriverStatus(): Promise<Result<ControllerDriverStatus, AppError>> {
-    return call("controllers_driver_status");
   },
   controllersTesterStart(instanceId: number): Promise<Result<ControllerTester, AppError>> {
     return call("controllers_tester_start", { instanceId });

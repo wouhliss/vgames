@@ -114,6 +114,7 @@
     "allow-controllers-profile-get",
     "allow-controllers-profile-set",
     "allow-appearance-get",
-    "allow-appearance-set"
+    "allow-appearance-set",
+    "allow-controllers-driver-status"
   ]
 }

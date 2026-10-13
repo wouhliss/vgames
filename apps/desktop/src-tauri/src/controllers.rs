@@ -3,6 +3,7 @@
 //! build on these.
 
 pub mod decision;
+pub mod drivers;
 pub mod idle;
 pub mod input;
 pub mod mapping;
