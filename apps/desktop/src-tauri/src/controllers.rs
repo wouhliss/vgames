@@ -19,3 +19,5 @@ mod linkage_tests {
         assert_eq!(sdl3::version::version().major, 3);
     }
 }
+
+pub mod sessions;
