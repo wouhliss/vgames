@@ -25,13 +25,7 @@ export type { Result } from "./runtime";
 
 export type Os = "windows" | "linux" | "macos";
 export type Arch = "x86_64" | "aarch64";
-export type Theme = "system" | "dark" | "light" | "high_contrast";
-
-export type AppearanceSettings = {
-  theme: Theme;
-  /** Forces reduced motion regardless of the OS setting. */
-  reduce_motion: boolean;
-};
+export type { AppearanceSettings, Theme } from "../../bindings";
 
 // ------------------------------------------------------------------------------------------------
 // Events
@@ -69,12 +63,6 @@ export const coreCommands = {
   /** Opens an http(s) URL in the system browser. Rust rejects every other scheme. */
   async openExternalUrl(url: string): Promise<Result<null, AppError>> {
     return call("open_external_url", { url });
-  },
-  async appearanceGet(): Promise<AppearanceSettings> {
-    return await get("appearance_get");
-  },
-  async appearanceSet(settings: AppearanceSettings): Promise<Result<AppearanceSettings, AppError>> {
-    return call("appearance_set", { settings });
   },
 };
 

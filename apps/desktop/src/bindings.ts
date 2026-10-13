@@ -228,6 +228,8 @@ export const commands = {
 	publishRelease: (serverId: string, versionId: string) => typedError<PublishVersion, PublishCommandError>(__TAURI_INVOKE("publish_release", { serverId, versionId })),
 	/**  Withdraws a published version (`reason`: 3–500 characters, kept by the server). */
 	versionYank: (serverId: string, versionId: string, reason: string) => typedError<PublishVersion, PublishCommandError>(__TAURI_INVOKE("version_yank", { serverId, versionId, reason })),
+	appearanceGet: () => __TAURI_INVOKE<AppearanceSettings>("appearance_get"),
+	appearanceSet: (settings: AppearanceSettings) => typedError<AppearanceSettings, AppError>(__TAURI_INVOKE("appearance_set", { settings })),
 };
 
 /** Events */
@@ -306,6 +308,11 @@ export type AppInfo = {
 	os: string,
 	/**  `x86_64` or `aarch64`. */
 	arch: string,
+};
+
+export type AppearanceSettings = {
+	theme: Theme,
+	reduce_motion: boolean,
 };
 
 export type AuthError = { kind: "registration_closed" } | { kind: "not_allowlisted" } | { kind: "user_disabled" } | { kind: "expired" } | { kind: "invalid_code" } | { kind: "cancelled" } | { kind: "browser_unavailable" } | { kind: "network"; detail: string } | { kind: "server"; code: string; message: string };
@@ -1314,6 +1321,8 @@ export type SocialSettings = {
 	overlay_enabled: boolean,
 	overlay_hotkey: string,
 };
+
+export type Theme = "system" | "dark" | "light" | "high_contrast";
 
 /**  Where session tokens are stored. */
 export type TokenStorage = {

@@ -112,6 +112,8 @@
     "allow-controllers-settings-get",
     "allow-controllers-settings-set",
     "allow-controllers-profile-get",
-    "allow-controllers-profile-set"
+    "allow-controllers-profile-set",
+    "allow-appearance-get",
+    "allow-appearance-set"
   ]
 }
