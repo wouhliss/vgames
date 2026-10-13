@@ -130,52 +130,76 @@ fn kernel_hotplug_reports_and_rumble_are_event_driven_with_p99_under_two_ms() {
     let (disconnected, disconnection) = mpsc::channel();
     let mut input = InputThread::start(move |_| {
         let mut pads = BTreeMap::new();
+        let mut diagnostics = 0;
         let joysticks = sdl3::init().unwrap().joystick().unwrap();
         let mapper = Mapper::new(ControllerKind::Dualsense, &Profile::default());
-        move |event: SdlInput, subsystem: &sdl3::GamepadSubsystem| match event {
-            SdlInput::Native(Event::GamepadAdded { which, .. }) => {
-                let pad = subsystem.open(which).unwrap();
-                // Use the kernel name: mapping databases may replace the gamepad name.
-                let name = joysticks.open(which).unwrap().name();
-                if name == DEVICE_NAME {
-                    return;
+        move |event: SdlInput, subsystem: &sdl3::GamepadSubsystem| {
+            if diagnostics < 4
+                && matches!(
+                    event,
+                    SdlInput::Native(
+                        Event::JoyButtonDown { .. }
+                            | Event::JoyButtonUp { .. }
+                            | Event::GamepadButtonDown { .. }
+                            | Event::GamepadButtonUp { .. }
+                    )
+                )
+            {
+                if let SdlInput::Native(ref native) = event {
+                    println!("kernel input diagnostic: {native:?}");
                 }
-                if let Some(index) = name
-                    .strip_prefix(PREFIX)
-                    .and_then(|index| index.parse::<usize>().ok())
-                    && let Some(output) = outputs.get_mut(index).and_then(Option::take)
-                {
-                    pads.insert(which, (pad, PadState::default(), output, index));
-                    connected.send(index).unwrap();
-                }
+                diagnostics += 1;
             }
-            SdlInput::Native(Event::GamepadButtonDown {
-                which,
-                button: sdl3::gamepad::Button::South,
-                ..
-            }) => {
-                if let Some((_, state, output, _)) = pads.get_mut(&which) {
-                    state.set(Button::South, true);
-                    output.update(&mapper.map(state)).unwrap();
+            match event {
+                SdlInput::Native(Event::GamepadAdded { which, .. }) => {
+                    let pad = subsystem.open(which).unwrap();
+                    // Use the kernel name: mapping databases may replace the gamepad name.
+                    let name = joysticks.open(which).unwrap().name();
+                    if name == DEVICE_NAME {
+                        return;
+                    }
+                    if let Some(index) = name
+                        .strip_prefix(PREFIX)
+                        .and_then(|index| index.parse::<usize>().ok())
+                        && let Some(output) = outputs.get_mut(index).and_then(Option::take)
+                    {
+                        println!(
+                            "kernel mapping index={index} mapping={:?} south={}",
+                            pad.mapping(),
+                            pad.button(sdl3::gamepad::Button::South)
+                        );
+                        pads.insert(which, (pad, PadState::default(), output, index));
+                        connected.send(index).unwrap();
+                    }
                 }
-            }
-            SdlInput::Native(Event::GamepadButtonUp {
-                which,
-                button: sdl3::gamepad::Button::South,
-                ..
-            }) => {
-                if let Some((_, state, output, _)) = pads.get_mut(&which) {
-                    state.set(Button::South, false);
-                    output.update(&mapper.map(state)).unwrap();
+                SdlInput::Native(Event::GamepadButtonDown {
+                    which,
+                    button: sdl3::gamepad::Button::South,
+                    ..
+                }) => {
+                    if let Some((_, state, output, _)) = pads.get_mut(&which) {
+                        state.set(Button::South, true);
+                        output.update(&mapper.map(state)).unwrap();
+                    }
                 }
-            }
-            SdlInput::Native(Event::GamepadRemoved { which, .. }) => {
-                if let Some((_, _, output, index)) = pads.remove(&which) {
-                    drop(output);
-                    disconnected.send(index).unwrap();
+                SdlInput::Native(Event::GamepadButtonUp {
+                    which,
+                    button: sdl3::gamepad::Button::South,
+                    ..
+                }) => {
+                    if let Some((_, state, output, _)) = pads.get_mut(&which) {
+                        state.set(Button::South, false);
+                        output.update(&mapper.map(state)).unwrap();
+                    }
                 }
+                SdlInput::Native(Event::GamepadRemoved { which, .. }) => {
+                    if let Some((_, _, output, index)) = pads.remove(&which) {
+                        drop(output);
+                        disconnected.send(index).unwrap();
+                    }
+                }
+                _ => {}
             }
-            _ => {}
         }
     })
     .unwrap();
