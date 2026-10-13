@@ -172,18 +172,29 @@ mod tests {
     use std::thread;
     use std::time::Duration;
 
+    /// Starts a blocking wait on a worker thread once it is idle. The kernel can deliver an
+    /// event of the previous step late (removing a watched directory queues `IN_IGNORED` only
+    /// when its inode is evicted), which wakes a wait before this step's action: such a wake is
+    /// drained and the wait started again. It must then block within a few tries.
+    fn blocked(mut wait: IdleWait) -> (thread::JoinHandle<IdleWait>, mpsc::Receiver<()>) {
+        for _ in 0..5 {
+            let (ready, receive) = mpsc::channel();
+            let worker = thread::spawn(move || {
+                wait.wait().unwrap();
+                ready.send(()).unwrap();
+                wait
+            });
+            if receive.recv_timeout(Duration::from_millis(50)).is_err() {
+                return (worker, receive);
+            }
+            wait = worker.join().unwrap();
+        }
+        panic!("wait did not block");
+    }
+
     fn notification(wait: IdleWait, action: impl FnOnce()) -> IdleWait {
         let cancel = wait.sender();
-        let (ready, receive) = mpsc::channel();
-        let worker = thread::spawn(move || {
-            wait.wait().unwrap();
-            ready.send(()).unwrap();
-            wait
-        });
-        assert!(
-            receive.recv_timeout(Duration::from_millis(50)).is_err(),
-            "wait did not block"
-        );
+        let (worker, receive) = blocked(wait);
         action();
         let detected = receive.recv_timeout(Duration::from_secs(2)).is_ok();
         if !detected {

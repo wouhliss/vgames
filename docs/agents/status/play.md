@@ -42,6 +42,10 @@
 - From GAME (GAME-11): `bundle.resources` in `tauri.conf.json` now maps `src-tauri/resources/overlay/` to `overlay/`
   (the PLAY-09 slot). The renderers are staged there by CI and git-ignored; a committed `README.md` keeps the directory
   present for `tauri-build`. The launcher resolves them with `app.path().resource_dir()` and runs without them.
+- From GAME (test fix, no product change): the Linux idle-wait test helper in `controllers/input_linux.rs` now drains
+  a late event of the previous step (removing a watched directory queues `IN_IGNORED` only at inode eviction) and
+  starts the wait again, failing if it never blocks within 5 tries. It reddened #181, #187, #221 and #227; under CPU
+  load the old helper failed 1/60 runs, the new one 0/60.
 - INT-01 prepares #103's reduced-motion setting for launcher mock accessibility scans, leaving the perf project unchanged. Updated Vitest imports use explicit `.ts` extensions with the matching no-emit compiler option to satisfy the newer loader. Adopt this note when the dependency triage PR merges.
 - From INS (INS-04): appended to `events.rs` (append-only, README §5): the bus variants and UI events
   `InstallsChanged` (`installs-changed`) and `CollectionsChanged` (`collections-changed`). INS-03 appends
