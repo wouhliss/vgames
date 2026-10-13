@@ -7,6 +7,7 @@
 - PLAY-01: ordered launch hooks, cancellable compatibility plans and session-owned exit callbacks merged in [#193](https://github.com/wouhliss/vgames/pull/193). Every hosted check passed on Windows, Linux and macOS, including the launcher browser performance test.
 
 ## In progress
+- PLAY-05 Windows Xbox output implemented through ViGEm with assigned XInput slots, request/stop serialization and CancelIoEx before feedback joining. Fake-driver report and failed-preparation cleanup regressions cross-compile with Clippy; native hosted proof, other target kinds and launch-session integration remain required.
 - PLAY-05 Linux virtual output implemented behind VirtualPadBackend: Xbox reports use a fixed event array, feedback waits on uinput/cancellation and only active effects arm deadlines. Rumble mixing, erase/stop, bounded uploads and cancellation regressions pass; hosted kernel latency/hot-plug/soak and launch-session integration remain required.
 - PLAY-04/05 driver availability command implemented with native probes on the blocking pool and the scoped uaccess resource; virtual report forwarding and runtime entitlement verification remain separate PLAY-05 work.
 
