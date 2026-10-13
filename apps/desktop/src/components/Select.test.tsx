@@ -1,8 +1,8 @@
-import { screen } from "@testing-library/react";
+import { fireEvent, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { renderWithProviders } from "../test/render";
+import { renderWithProviders, setRect } from "../test/render";
 import { Dialog } from "./Dialog";
 import { Select } from "./Select";
 
@@ -29,6 +29,20 @@ describe("Select", () => {
     const combo = screen.getByRole("combobox", { name: /Theme/ });
     expect(combo).toHaveTextContent("Dark");
     expect(combo).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("ignores queued scroll events but closes when its anchor moves", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<Harness />);
+    const combo = screen.getByRole("combobox", { name: /Theme/ });
+    setRect(combo, 10, 50, 200, 36);
+    await user.click(combo);
+    expect(screen.getByRole("listbox", { name: "Theme" })).toBeVisible();
+    fireEvent.scroll(window);
+    expect(screen.getByRole("listbox", { name: "Theme" })).toBeVisible();
+    setRect(combo, 10, 20, 200, 36);
+    fireEvent.scroll(window);
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
   });
 
   it("opens with ArrowDown, skips disabled options, selects with Enter", async () => {
