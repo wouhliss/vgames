@@ -108,6 +108,26 @@ impl VirtualPad for Pad {
     fn player_index(&self) -> u16 {
         self.index
     }
+    fn node_path(&mut self) -> Result<Option<std::path::PathBuf>, BackendError> {
+        let path = self
+            .device
+            .lock()
+            .map_err(|_| BackendError::State)?
+            .get_syspath()?;
+        for entry in std::fs::read_dir(path)? {
+            let name = entry?.file_name();
+            if name
+                .to_str()
+                .and_then(|name| name.strip_prefix("event"))
+                .is_some_and(|index| {
+                    !index.is_empty() && index.bytes().all(|byte| byte.is_ascii_digit())
+                })
+            {
+                return Ok(Some(std::path::Path::new("/dev/input").join(name)));
+            }
+        }
+        Ok(None)
+    }
 }
 impl Drop for Pad {
     fn drop(&mut self) {

@@ -7,6 +7,7 @@
 - PLAY-01: ordered launch hooks, cancellable compatibility plans and session-owned exit callbacks merged in [#193](https://github.com/wouhliss/vgames/pull/193). Every hosted check passed on Windows, Linux and macOS, including the launcher browser performance test.
 
 ## In progress
+- PLAY-05 kernel fixture added for the required Linux matrix: software physical pads feed SDL and the production mapper/uinput backend, p99 must stay below 2 ms, a second pad hot-plugs mid-stream, and kernel FF upload/play/stop plus disconnect teardown are asserted. Local compilation is separate from hosted kernel execution proof.
 - PLAY-05 Linux virtual output implemented behind VirtualPadBackend: Xbox reports use a fixed event array, feedback waits on uinput/cancellation and only active effects arm deadlines. Rumble mixing, erase/stop, bounded uploads and cancellation regressions pass; hosted kernel latency/hot-plug/soak and launch-session integration remain required.
 - PLAY-04/05 driver availability command implemented with native probes on the blocking pool and the scoped uaccess resource; virtual report forwarding and runtime entitlement verification remain separate PLAY-05 work.
 
@@ -96,3 +97,5 @@ fn register_launch_services<T: vgames_desktop_lib::launch::orchestrate::TrustSou
 - Games start in their own process group. The tracker blocks in `kevent` with no timeout; `EVFILT_PROC` watches exit/fork notifications, libproc discovers children and group members, and `EVFILT_USER` wakes cancellation. Cancelling or dropping launcher handles leaves games alive.
 - The stored identity includes PID and BSD creation time. Re-attach validates the leader when present and can recover an orphan group; stop sends SIGTERM or SIGKILL to the verified group. Descendants that deliberately leave that group are outside tracking, matching Linux's scope.
 - Missing/reused identities return no attachment. Permission, enumeration and registration errors fail closed and retain session records. Exit is confirmed only after every live group member disappears; native tests cover forked/orphan children, restart, stop, cancellation, escaped children and a one-second interval without periodic queue wakeups.
+
+- PLAY-05 hosted kernel timeout diagnosed: the fake uinput device advertised DualSense while using Linux button numbering; SDL mapped b0 to West. The fixture now advertises a generic test device and uses the generic mapper, matching BTN_SOUTH. Report and latency assertions are unchanged.

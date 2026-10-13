@@ -53,6 +53,7 @@
   (`bundle.resources` → `overlay/`), and the launcher looks for `overlay/libvgames_overlay.so` /
   `overlay/vgames_overlay64.dll` in its resource directory. The desktop matrix stages the renderer and checks it lands
   where the launcher looks; the installer listing (`dpkg -c`, `.app` tree, NSIS directory) belongs in INT-06's dry run.
+- PLAY-05: appended a required Linux desktop-matrix uinput step. It loads the kernel module, compiles the fixture as the runner, then executes that test binary with sudo; Cargo outputs retain runner ownership. It measures SDL-to-uinput p99 and verifies hot-plug/rumble; no existing test or gate is skipped.
 - From INS (INS-08, INT-03 fallback): `e2e.yml` has a nightly `install` job running `tests/install_e2e.rs` at full scale
   (8 GiB, frees runner disk first). The small scale needs nothing new: `scripts/ci/desktop-db-tests.sh` already picks
   the test up in the `desktop` job.
