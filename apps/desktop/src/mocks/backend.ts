@@ -3,6 +3,7 @@
 //
 // Payloads must match `src/ipc` types exactly: every fixture is typed against them, so a contract
 // change breaks the mocks at compile time.
+import type { InvokeArgs, InvokeOptions, invoke } from "@tauri-apps/api/core";
 import { clearMocks, mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import type {
   Account,
@@ -542,6 +543,18 @@ export function installMockBackend(overrides: Partial<MockState> = {}): MockBack
     },
     { shouldMockEvents: true },
   );
+
+  // SDK 2.12.1 sends eventId for unlisten, while its event mock reads id. Keep both so
+  // cancelled subscriptions are removed instead of leaving stale callback identifiers.
+  const internals = (window as unknown as { __TAURI_INTERNALS__: { invoke: typeof invoke } })
+    .__TAURI_INTERNALS__;
+  const sdkInvoke = internals.invoke;
+  internals.invoke = <T>(command: string, args?: InvokeArgs, options?: InvokeOptions) => {
+    if (command === "plugin:event|unlisten" && args && "eventId" in args) {
+      return sdkInvoke<T>(command, { ...args, id: args.eventId }, options);
+    }
+    return sdkInvoke<T>(command, args, options);
+  };
 
   return {
     state,
