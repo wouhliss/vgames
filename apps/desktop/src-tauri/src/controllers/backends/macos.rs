@@ -24,7 +24,11 @@ impl VirtualPadBackend for Macos {
 struct Owned(*const c_void);
 impl Owned {
     fn new(value: *const c_void) -> Option<Self> {
-        (!value.is_null()).then_some(Self(value))
+        if value.is_null() {
+            None
+        } else {
+            Some(Self(value))
+        }
     }
 }
 impl Drop for Owned {
@@ -94,6 +98,10 @@ unsafe extern "C" {
 mod tests {
     use super::*;
     use std::sync::Arc;
+    #[test]
+    fn null_core_foundation_results_are_never_owned_or_released() {
+        assert!(Owned::new(std::ptr::null()).is_none());
+    }
     #[test]
     fn the_unsigned_process_cannot_create_a_corehid_device() {
         assert!(!has_entitlement());
