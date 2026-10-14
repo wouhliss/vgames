@@ -15,6 +15,8 @@ use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 use url::Url;
 
+pub mod registration;
+
 use crate::events::{AppEvent, EventBus, PackageRef, ServerAddRequested};
 use crate::launch::TargetChoice;
 use crate::launch::orchestrate::Launcher;
