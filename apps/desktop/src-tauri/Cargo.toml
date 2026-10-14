@@ -56,7 +56,6 @@ tracing-appender.workspace = true
 uuid.workspace = true
 time.workspace = true
 url.workspace = true
-cap-std.workspace = true
 cap-fs-ext.workspace = true
 globset.workspace = true
 blake3.workspace = true
