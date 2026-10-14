@@ -223,6 +223,9 @@ impl<S: ProfileSource, P: Probes + Send + Sync + 'static> PlanSource for CompatP
         };
         Box::pin(async move {
             tokio::select! {
+                // Cancellation first: a plan that is ready on its first poll must not win over
+                // a launch that was already cancelled.
+                biased;
                 () = ctx.cancellation.cancelled() => Err(unavailable("The launch was cancelled.")),
                 plan = self.plan_for(ctx.package, &release) => plan,
             }
