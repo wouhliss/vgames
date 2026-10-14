@@ -265,6 +265,7 @@ export const commands = {
 	 */
 	savesRestore: (pkg: PackageRef, source: SaveSource) => typedError<SaveStatus, AppError>(__TAURI_INVOKE("saves_restore", { pkg, source })),
 	openExternalUrl: (url: string) => typedError<null, AppError>(__TAURI_INVOKE("open_external_url", { url })),
+	appLicenses: () => typedError<string, AppError>(__TAURI_INVOKE("app_licenses")),
 };
 
 /** Events */

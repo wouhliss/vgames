@@ -8,6 +8,7 @@ pub(crate) mod account;
 mod app;
 mod app_diagnostics;
 mod app_external;
+mod app_licenses;
 mod appearance;
 mod catalog;
 mod collections;
@@ -169,6 +170,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             saves::saves_history,
             saves::saves_restore,
             app_external::open_external_url,
+            app_licenses::app_licenses,
         ])
         .events(tauri_specta::collect_events![
             DeeplinkRefused,

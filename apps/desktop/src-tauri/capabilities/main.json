@@ -129,6 +129,7 @@
     "allow-save-conflict-resolve",
     "allow-saves-history",
     "allow-saves-restore",
-    "allow-open-external-url"
+    "allow-open-external-url",
+    "allow-app-licenses"
   ]
 }

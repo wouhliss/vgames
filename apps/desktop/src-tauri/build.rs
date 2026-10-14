@@ -31,6 +31,7 @@ fn main() {
     let commands: &'static [&'static str] = Box::leak(commands.into_boxed_slice());
 
     embed_runtime_catalog_key();
+    embed_third_party_notices();
 
     let mut attributes = tauri_build::Attributes::new()
         .app_manifest(tauri_build::AppManifest::new().commands(commands));
@@ -41,6 +42,40 @@ fn main() {
     if let Err(error) = tauri_build::try_build(attributes) {
         // Build scripts report failures by exiting non-zero with a message.
         eprintln!("tauri-build failed: {error:#}");
+        std::process::exit(1);
+    }
+}
+
+/// Build tooling reads installed package notices; the app only serves the
+/// embedded result. A generation failure fails the build rather than shipping
+/// empty or stale notices.
+fn embed_third_party_notices() {
+    let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    for input in [
+        "scripts/third-party-notices.mjs",
+        "Cargo.lock",
+        "Cargo.toml",
+        "pnpm-lock.yaml",
+        "apps/desktop/package.json",
+        "apps/desktop/src-tauri/Cargo.toml",
+    ] {
+        println!("cargo:rerun-if-changed={}", repo.join(input).display());
+    }
+    let out = std::env::var_os("OUT_DIR").map(std::path::PathBuf::from);
+    let target = std::env::var("TARGET");
+    let (Some(out), Ok(target)) = (out, target) else {
+        eprintln!("notice generation requires Cargo's OUT_DIR and TARGET");
+        std::process::exit(1);
+    };
+    let result = std::process::Command::new("node")
+        .arg(repo.join("scripts/third-party-notices.mjs"))
+        .arg("--out")
+        .arg(out.join("third-party-notices.txt"))
+        .arg("--target")
+        .arg(target)
+        .status();
+    if !result.is_ok_and(|status| status.success()) {
+        eprintln!("cannot generate third-party notices; install the locked npm dependencies first");
         std::process::exit(1);
     }
 }
