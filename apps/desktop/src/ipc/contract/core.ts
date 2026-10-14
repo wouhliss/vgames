@@ -16,7 +16,7 @@ import type { AppError, ControllerKind } from "../../bindings";
 // Now generated (Platform: INS-02); re-exported so contract files can keep importing them from here.
 export type { AppError, Platform } from "../../bindings";
 
-import { call, get, makeEvents, type Result } from "./runtime";
+import { call, makeEvents, type Result } from "./runtime";
 
 export type { Result } from "./runtime";
 
