@@ -131,6 +131,7 @@ tokio-tungstenite = { version = "0.30", features = ["rustls-tls-native-roots"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 
 # --- desktop ---------------------------------------------------------------
+plist = "1.10"
 tauri = { version = "2.11", features = [] }
 tauri-build = { version = "2.6", features = [] }
 tauri-plugin-deep-link = "2.4"

@@ -73,6 +73,7 @@ zstd.workspace = true
 sdl3.workspace = true
 
 [dev-dependencies]
+plist.workspace = true
 tempfile.workspace = true
 # Signed test packages for the pre-launch checks.
 vgames-transfer = { workspace = true, features = ["testkit"] }
@@ -95,6 +96,7 @@ vigem-client = "0.1"
 windows-sys = { workspace = true, features = ["Win32_UI_Input_KeyboardAndMouse", "Win32_System_SystemInformation", "Win32_System_Threading", "Win32_System_JobObjects", "Win32_System_IO", "Win32_System_SystemServices", "Win32_System_Diagnostics_ToolHelp", "Win32_Security", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
+plist.workspace = true
 libc.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
