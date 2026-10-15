@@ -368,11 +368,21 @@ pub fn exact<'a>(
 }
 
 /// The profile's environment, then the player's (checked again; the player's wins).
+/// Keys reserved from both ([`super::overrides::is_compat_reserved_env_key`]) are
+/// dropped from the profile's: a verified profile may predate the rule, and
+/// ignoring one variable is better than refusing the launch.
 pub fn merged_env(
     profile: Option<&CompatProfile>,
     local: &super::overrides::CompatOverride,
 ) -> std::collections::BTreeMap<String, String> {
-    let mut env = profile.map(|p| p.runner.env.clone()).unwrap_or_default();
+    let mut env = std::collections::BTreeMap::new();
+    for (key, value) in profile.map(|p| &p.runner.env).into_iter().flatten() {
+        if super::overrides::is_compat_reserved_env_key(key) {
+            tracing::warn!(key, "compat profile env variable ignored (reserved)");
+        } else {
+            env.insert(key.clone(), value.clone());
+        }
+    }
     for (key, value) in &local.env {
         if super::overrides::check_env(key, value).is_ok() {
             env.insert(key.clone(), value.clone());
