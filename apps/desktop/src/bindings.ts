@@ -257,6 +257,7 @@ export const events = {
 	connectivityChanged: makeEvent<ConnectivityChanged>("connectivity-changed"),
 	controllerEvent: makeEvent<ControllerEvent>("controller-event"),
 	conversationsChanged: makeEvent<ConversationsChanged>("conversations-changed"),
+	deeplinkRefused: makeEvent<DeeplinkRefused>("deeplink-refused"),
 	deviceNotice: makeEvent<DeviceNoticeEvent>("device-notice"),
 	downloadsChanged: makeEvent<DownloadsChanged>("downloads-changed"),
 	friendRequestReceived: makeEvent<FriendRequestReceived>("friend-request-received"),
@@ -593,6 +594,13 @@ export type ConversationKind = "direct" | "party";
 
 /**  `conversations-changed`: membership, ordering or unread counts changed. */
 export type ConversationsChanged = Conversation[];
+
+/**  Fixed reasons for refusing a shortcut launch (PLAY-07). */
+export type DeeplinkRefusalReason = "rate_limited" | "not_installed" | "not_verified" | "unknown_package";
+
+export type DeeplinkRefused = {
+	reason: DeeplinkRefusalReason,
+};
 
 export type DeviceNotice = { kind: "new_device"; user_id: string; device_id: string; device_name: string } | { kind: "key_changed"; user_id: string; device_id: string } | { kind: "device_revoked"; user_id: string; device_id: string };
 
