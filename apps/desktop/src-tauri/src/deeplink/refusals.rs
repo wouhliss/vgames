@@ -17,6 +17,7 @@ use crate::{
 pub(super) struct Refusals {
     bus: EventBus,
     last: Mutex<Option<Instant>>,
+    pending: tokio::sync::Semaphore,
     ready: CancellationToken,
     shutdown: CancellationToken,
 }
@@ -25,12 +26,23 @@ impl Refusals {
         Self {
             bus,
             last: Mutex::new(None),
+            pending: tokio::sync::Semaphore::new(1),
             ready,
             shutdown,
         }
     }
     pub async fn notify(&self, reason: Reason) {
-        // The guard is dropped before waiting; UI readiness never holds a lock.
+        // Retain at most one waiting notice, even during a slow startup. The
+        // permit releases on shutdown or future cancellation without a timer.
+        let Ok(_permit) = self.pending.try_acquire() else {
+            return;
+        };
+        tokio::select! {
+            biased;
+            () = self.shutdown.cancelled() => return,
+            () = self.ready.cancelled() => {},
+        }
+        // Rate limit actual publication, not arrival before UI readiness.
         {
             let Ok(mut last) = self.last.lock() else {
                 return;
@@ -41,11 +53,8 @@ impl Refusals {
             }
             *last = Some(now);
         }
-        tokio::select! {
-            biased;
-            () = self.shutdown.cancelled() => {},
-            () = self.ready.cancelled() => self.bus.publish(AppEvent::DeeplinkRefused(DeeplinkRefused { reason })),
-        }
+        self.bus
+            .publish(AppEvent::DeeplinkRefused(DeeplinkRefused { reason }));
     }
 }
 
