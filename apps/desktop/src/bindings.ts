@@ -248,6 +248,7 @@ export const commands = {
 	compatLicenses: () => typedError<RuntimeLicense[], AppError>(__TAURI_INVOKE("compat_licenses")),
 	/**  Installs Rosetta 2. The UI calls this only after the player confirmed. */
 	rosettaInstall: () => typedError<null, AppError>(__TAURI_INVOKE("rosetta_install")),
+	appLicenses: () => typedError<string, AppError>(__TAURI_INVOKE("app_licenses")),
 };
 
 /** Events */
