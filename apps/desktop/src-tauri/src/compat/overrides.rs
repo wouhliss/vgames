@@ -160,6 +160,14 @@ impl From<DbError> for CompatSettingsError {
     }
 }
 
+/// Keys neither a compat profile nor a player override may set: the launcher-owned
+/// ones (09 §2, §3) plus Proton's logging switches, which would turn on verbose
+/// logs and choose where they are written (GAME-14 threat review C3). A package's
+/// own manifest `env` may still set the logging switches.
+pub fn is_compat_reserved_env_key(key: &str) -> bool {
+    is_launcher_owned_env_key(key) || matches!(key, "PROTON_LOG" | "PROTON_LOG_DIR")
+}
+
 /// Checks one environment entry.
 pub fn check_env(key: &str, value: &str) -> Result<(), CompatSettingsError> {
     let refusal = if !is_valid_env_key(key)
@@ -167,7 +175,7 @@ pub fn check_env(key: &str, value: &str) -> Result<(), CompatSettingsError> {
         || value.contains(['\n', '\r', '\0'])
     {
         Some(EnvRefusal::Format)
-    } else if is_denied_env_key(key) || is_launcher_owned_env_key(key) {
+    } else if is_denied_env_key(key) || is_compat_reserved_env_key(key) {
         Some(EnvRefusal::Denied)
     } else {
         None
@@ -329,6 +337,8 @@ mod tests {
             ("WINEPREFIX", "/x", EnvRefusal::Denied),
             ("PROTONPATH", "/x", EnvRefusal::Denied),
             ("STEAM_COMPAT_DATA_PATH", "/x", EnvRefusal::Denied),
+            ("PROTON_LOG", "1", EnvRefusal::Denied),
+            ("PROTON_LOG_DIR", "/x", EnvRefusal::Denied),
         ] {
             assert_eq!(
                 check_env(key, value),
