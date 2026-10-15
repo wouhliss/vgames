@@ -30,6 +30,11 @@ use crate::events::PackageRef;
 
 /// A body chunk must arrive within this.
 pub const READ_TIMEOUT: Duration = Duration::from_secs(60);
+/// The response headers must arrive within this after the request is sent (the
+/// client only bounds connecting). The store's busy lock is held meanwhile, so a
+/// host that accepts the connection and then stalls would otherwise block GC,
+/// `runtime_remove` and compat launches indefinitely (GAME-14 threat review C5).
+pub const HEADERS_TIMEOUT: Duration = Duration::from_secs(60);
 pub const MAX_REDIRECTS: usize = 5;
 
 #[derive(Debug, thiserror::Error)]
@@ -66,6 +71,8 @@ pub struct RuntimeStore {
     http: reqwest::Client,
     /// One install or collection at a time: GC never races an install.
     busy: tokio::sync::Mutex<()>,
+    /// [`HEADERS_TIMEOUT`], shortened by tests.
+    headers_timeout: Duration,
 }
 
 impl RuntimeStore {
@@ -76,7 +83,13 @@ impl RuntimeStore {
             db,
             http,
             busy: tokio::sync::Mutex::new(()),
+            headers_timeout: HEADERS_TIMEOUT,
         }
+    }
+
+    #[cfg(test)]
+    fn set_headers_timeout(&mut self, timeout: Duration) {
+        self.headers_timeout = timeout;
     }
 
     /// The transfer stack's client: HTTP/1.1, no transparent decoding, no redirects
@@ -168,9 +181,9 @@ impl RuntimeStore {
             if have > 0 {
                 request = request.header(reqwest::header::RANGE, format!("bytes={have}-"));
             }
-            let response = request
-                .send()
+            let response = tokio::time::timeout(self.headers_timeout, request.send())
                 .await
+                .map_err(|_| RuntimeError::Network("the download stalled".into()))?
                 .map_err(|e| RuntimeError::Network(e.without_url().to_string()))?;
             if !response.status().is_redirection() {
                 break response;
