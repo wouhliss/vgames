@@ -13,6 +13,7 @@ a person before the first release. The rules themselves are in [01-security](../
 | [test-matrix.md](test-matrix.md) | Each invariant and threat, and the tests that fail if it breaks |
 | [review-checklist.md](review-checklist.md) | The review for every security-critical PR and every release |
 | [review-2026-09-30.md](review-2026-09-30.md) | The last full review, its findings and the release gate G1 |
+| [threat-review-game-2026-10-15.md](threat-review-game-2026-10-15.md) | Social, overlay and compatibility (phase 2), its findings and the release gate C1 |
 
 Open findings and requests to other agents are in [Agent 5's status file](../agents/status/agent-5.md), under
 "Needs from others".

@@ -67,8 +67,12 @@
   (today OS notifications) with a `weston --backend=headless` test.
 - GAME-12 — left: the M3 two-instance scenario in `apps/desktop/e2e-real/`.
 - GAME-14 — the 03-api §6 contract is [#252](https://github.com/wouhliss/vgames/pull/252) (reviewed by INT, green,
-  waiting for INT's merge); left: the threat review, the `apps/desktop/README.md` compatibility section,
-  `05-social-notes.md` final.
+  waiting for INT's merge). The `apps/desktop/README.md` compatibility section is
+  [#276](https://github.com/wouhliss/vgames/pull/276). The threat review
+  `docs/security/threat-review-game-2026-10-15.md` is in this PR and waits for INT's co-signature; its fix for O1
+  (the game acting as the player through the overlay) is [#279](https://github.com/wouhliss/vgames/pull/279). Its
+  open findings O2–O4, C2–C5 and S1–S5 are GAME's; C2, O2 and S3 need `contract:` PRs. Left: `05-social-notes.md`
+  final.
 - Not started: GAME-09 (Windows DLL and injector), GAME-10 (macOS panel; needs the `macOSPrivateApi` contract),
   the rest of GAME-11 (32-bit DLL, helper and manifests in the matrix; installer contents).
 
@@ -77,6 +81,8 @@
   the launcher accepts at most `social::realtime::MAX_INBOUND_FRAME` (4 × `MAX_FRAME`).
 
 ## Needs from others
+- From INT: co-sign `docs/security/threat-review-game-2026-10-15.md` (GAME-14); C1 there (runtime catalog key and
+  signing workflow not on `main`) is a release gate outside GAME's code.
 
 ## Blockers / contract questions
 
