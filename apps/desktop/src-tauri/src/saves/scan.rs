@@ -32,11 +32,11 @@ pub enum Error {
     Cancelled,
 }
 pub struct Location {
-    id: String,
-    path_key: String,
+    pub(super) id: String,
+    pub(super) path_key: String,
     dir: Option<Dir>,
-    include: GlobSet,
-    exclude: GlobSet,
+    pub(super) include: GlobSet,
+    pub(super) exclude: GlobSet,
 }
 impl Location {
     /// `base` is supplied by the native known-folder/compatibility resolver,
@@ -95,7 +95,7 @@ impl Location {
 }
 // Canonicalize the existing ancestor so absent known folders retain the same
 // overlap identity as existing ones. Never create a folder during discovery.
-fn canonical_base(base: &Path) -> Result<PathBuf, Error> {
+pub(super) fn canonical_base(base: &Path) -> Result<PathBuf, Error> {
     if !base.is_absolute() {
         return Err(Error::Invalid);
     }
@@ -311,7 +311,7 @@ fn walk(
     }
     Ok(())
 }
-fn valid_hash(hash: &str) -> bool {
+pub(super) fn valid_hash(hash: &str) -> bool {
     hash.len() == 64
         && hash
             .bytes()
