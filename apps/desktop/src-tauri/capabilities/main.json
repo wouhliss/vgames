@@ -123,6 +123,7 @@
     "allow-compat-override-set",
     "allow-compat-override-reset",
     "allow-compat-licenses",
-    "allow-rosetta-install"
+    "allow-rosetta-install",
+    "allow-open-external-url"
   ]
 }
