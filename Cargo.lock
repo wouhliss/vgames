@@ -8217,6 +8217,7 @@ dependencies = [
  "liblzma",
  "minisign",
  "open",
+ "plist",
  "proptest",
  "reqwest",
  "rusqlite",
