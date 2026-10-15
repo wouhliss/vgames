@@ -143,6 +143,11 @@ release, so they live in a separate small document instead of the manifest:
   `WINEPREFIX`, `WINEDLLOVERRIDES`, `WINEDLLPATH`, `WINEPATH`, `WINELOADER`, `WINESERVER`, `PROTONPATH`, `GAMEID`,
   `STORE`, and every key starting with `STEAM_COMPAT_`, `UMU_` or `PRESSURE_VESSEL_`. DLL overrides reach Wine
   only through the validated `dll_overrides` map.
+- **Proton's logging switches** `PROTON_LOG` and `PROTON_LOG_DIR` never come from a profile or a local override
+  (`compat::overrides::is_compat_reserved_env_key` in the launcher): they would turn on verbose logs and choose
+  where they are written. A package's own manifest `env` may still set them (the hosted Proton run does). A profile
+  that sets them still applies, without those keys (they are dropped with a warning); an override that sets them
+  is refused.
 - No profile → defaults (`status: untested`; UMU-Proton on Linux; DXMT → DXVK-macOS + MoltenVK → wined3d on
   every Mac).
 - **Hints for admins:** when a package has a Steam app id, the metadata job also fetches the ProtonDB
