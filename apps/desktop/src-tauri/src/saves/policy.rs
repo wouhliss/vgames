@@ -5,10 +5,17 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use tokio_util::sync::CancellationToken;
+use unicode_normalization::UnicodeNormalization;
 use vgames_core::paths;
 use vgames_proto::saves::SaveFile;
 
 use super::scan::{self, Error, Location};
+
+// Native paths may be decomposed on APFS, while signed relative paths must
+// be NFC. Compare their canonical Unicode identities before case folding.
+fn identity(path: &str) -> String {
+    paths::fold(&path.nfc().collect::<String>())
+}
 
 /// Native installed-directory inventory, never a list supplied by the server
 /// or WebView. Refuse all writes into installs under security invariant 1;
@@ -22,7 +29,7 @@ impl ProtectedInstalls {
             .into_iter()
             .map(|root| {
                 let root = scan::canonical_base(root)?;
-                Ok(paths::fold(
+                Ok(identity(
                     &root.to_str().ok_or(Error::Invalid)?.replace('\\', "/"),
                 ))
             })
@@ -69,10 +76,11 @@ pub fn preflight(
         let previous = ProtectedInstalls {
             roots: roots.clone(),
         };
-        if previous.overlaps(&location.path_key) {
+        let key = identity(&location.path_key);
+        if previous.overlaps(&key) {
             return Err(Error::Invalid);
         }
-        roots.insert(location.path_key.clone());
+        roots.insert(key);
     }
     if files.len() > scan::MAX_FILES {
         return Err(Error::Limit);
@@ -105,7 +113,7 @@ pub fn preflight(
                 return Err(Error::Invalid);
             }
         }
-        let target = format!("{}/{}", location.path_key, paths::fold(&file.path));
+        let target = identity(&format!("{}/{}", location.path_key, file.path));
         if protected.overlaps(&target) {
             return Err(Error::Invalid);
         }
