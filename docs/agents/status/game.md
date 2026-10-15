@@ -73,8 +73,11 @@
   (the game acting as the player through the overlay) is [#279](https://github.com/wouhliss/vgames/pull/279);
   fixes in review: O4 [#281](https://github.com/wouhliss/vgames/pull/281), C5
   [#282](https://github.com/wouhliss/vgames/pull/282), S1/S2 [#283](https://github.com/wouhliss/vgames/pull/283), C3
-  [#285](https://github.com/wouhliss/vgames/pull/285) after its contract [#284](https://github.com/wouhliss/vgames/pull/284).
-  Still open, GAME's: O2, O3, C2, C4, S3–S5 (C2, O2 and S3 need `contract:` PRs). Left: `05-social-notes.md` final.
+  [#285](https://github.com/wouhliss/vgames/pull/285) after its contract [#284](https://github.com/wouhliss/vgames/pull/284),
+  S4 [#288](https://github.com/wouhliss/vgames/pull/288), S5 [#287](https://github.com/wouhliss/vgames/pull/287).
+  Still open, GAME's: O2, O3, C2, C4, S3 (C2, O2 and S3 need `contract:` PRs). Left: `05-social-notes.md` final.
+- GAME-11 — the GL safety valve leaves a window's first build out of the average (a hosted runner's first EGL build
+  took over 1.1 s and tripped it): [#286](https://github.com/wouhliss/vgames/pull/286).
 - Not started: GAME-09 (Windows DLL and injector), GAME-10 (macOS panel; needs the `macOSPrivateApi` contract),
   the rest of GAME-11 (32-bit DLL, helper and manifests in the matrix; installer contents).
 
