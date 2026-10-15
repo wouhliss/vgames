@@ -34,31 +34,43 @@
     end 62804 (limit warm-up + 8192), last 62804. Slope after warm-up +3 KiB/h, 0 over the last quarter.
   - The 24 h idle run is in human-checklist §B7 with its steps.
 
+- GAME-03 — runtime manager: signed catalog per key ([#180](https://github.com/wouhliss/vgames/pull/180), `372f34a`,
+  `77d79b2`), safe install, references and GC ([#181](https://github.com/wouhliss/vgames/pull/181), `252ab0d`,
+  `d44b18d`), with INT's review fixes (no older catalog published over a newer one; the 6 h rule under the refresh
+  lock; link-graph resolution and directory-handle confinement for extraction).
+- GAME-04 — signed compat profiles per target ([#184](https://github.com/wouhliss/vgames/pull/184), `33d35a8`); social
+  REST on the API client's transport with its caps (`1a69706`).
+- GAME-05 — `CompatPlanner` as PLAY-01's `PlanSource`, pre-flight, `save_base` ([#185](https://github.com/wouhliss/vgames/pull/185),
+  `07e72ff`; `b696871` makes an already-cancelled launch never get a plan); a D3D11 test game through real Proton on
+  hosted `ubuntu-24.04` with lavapipe ([#187](https://github.com/wouhliss/vgames/pull/187), `ffb99ae`…`a4bf5be`,
+  workflow `compat-e2e.yml` job `Proton`).
+- GAME-06 — PE scan, D3D check on INS's priority-files hook, Rosetta, the Wine plan without D3DMetal, D3D12 refused
+  before the download, hosted `macos-15` Wine job ([#220](https://github.com/wouhliss/vgames/pull/220), `8a37c26`).
+- GAME-07 — the eight compat commands, per-package overrides (`0009_compat_overrides`), settings UI on the generated
+  bindings, D3D12-on-every-Mac text ([#221](https://github.com/wouhliss/vgames/pull/221), `f4d8f0b`); the planner as
+  INS's catalog `CompatProvider` ([#222](https://github.com/wouhliss/vgames/pull/222), `265d368`).
+- GAME-12 (in-process part) — a game invite on the real install path (`64b46e3`); an outdated install updates before
+  the invite is ready ([#255](https://github.com/wouhliss/vgames/pull/255), `e242c9c`).
+- GAME-08 (most of it) — GL preload hooks for native Linux launches (`gl.rs`, `overlay::gl_preload`), Vulkan layer
+  resize and device loss, Guide hold and hotkey panel input with "reply" opening the launcher, frame cost asserted and in
+  the `ci` job summary ([#256](https://github.com/wouhliss/vgames/pull/256), `5d51ba9`). Local figures (debug,
+  llvmpipe/lavapipe, 640×480): hidden +0.000 ms (EGL), within ±0.05 ms noise (GLX), +0.01 ms (Vulkan) per swap/present
+  (≤ 0.3 ms); panel open in the hooks 0.08–0.10 / 0.17–0.20 / 0.05–0.06 ms, whole frame +0.23–0.32 / +0.44–0.51 /
+  +0.13–0.24 ms (≤ 1 ms); opening the panel 14–21 ms GL, 5–6 ms Vulkan (bound 100 ms). The GL safety valve gives the
+  first build in each window 1 s of warm-up and counts further builds in full
+  ([#271](https://github.com/wouhliss/vgames/pull/271), `46d319d`; a loaded hosted runner took over 370 ms).
+- GAME-11 (part) — `bundle.resources` overlay entries, the launcher resolving the renderers from the resource
+  directory, and the `overlay-package-disabled` notice with "Turn it back on" (`OverlayDisabledNotice.tsx`).
+
 ## In progress
-- GAME-03 — runtime manager: signed catalog per key ([#180](https://github.com/wouhliss/vgames/pull/180)), safe
-  install, references and GC ([#181](https://github.com/wouhliss/vgames/pull/181)); both carry INT's review fixes
-  (no older catalog published over a newer one; due check under the refresh lock; link-graph resolution and
-  directory-handle confinement for extraction).
-- GAME-04 — compat profiles ([#184](https://github.com/wouhliss/vgames/pull/184)); social REST onto `ApiClient` next.
-- GAME-05 — `CompatPlanner` as PLAY-01's `PlanSource`, pre-flight, `save_base` ([#185](https://github.com/wouhliss/vgames/pull/185));
-  test apps and the hosted Proton run ([#187](https://github.com/wouhliss/vgames/pull/187)).
-- GAME-06 — PE scan, D3D check on INS's priority-files hook, Rosetta, Wine plan (`game/p2-wine-macos`, not pushed yet).
-- GAME-08 — GL preload hooks in `libvgames_overlay.so` (`game/p2-gl-preload`). Frame cost on llvmpipe, release, 640×480,
-  one toast visible: 0.28 ms (EGL) / 0.32 ms (GLX) per frame, upload included (05-social §6.1: ≤ 1 ms open); hidden: one
-  atomic load per swap. Launcher preload for native Linux launches next. Cost now asserted and in the `ci` job summary
-  (`game/p2-overlay-frame-cost`; debug build, llvmpipe/lavapipe, 640×480, local). Hidden (≤ 0.3 ms): +0.000 ms (EGL),
-  within ±0.05 ms noise (GLX), +0.01 ms (Vulkan) per swap/present against the same app without the preload or an
-  instance without the layer. Panel open (≤ 1 ms): in the hooks 0.08–0.10 (EGL) / 0.17–0.20 (GLX) / 0.05–0.06
-  (Vulkan) ms per frame; whole frame with the driver's raster work +0.23–0.32 (EGL) / +0.44–0.51 (GLX) / +0.13–0.24
-  (Vulkan) ms. Opening the panel (bound 100 ms in all, a hitch bound, not §6.1): 14–21 ms GL (one frame), 5–6 ms
-  Vulkan (7–15 ms under synchronization validation). The GL safety valve now counts a frame that creates our GL
-  objects minus a 250 ms warm-up allowance.
-- GAME-04 (social part) — social REST on the API client's transport, caps kept (`game/p2-social-apiclient`).
-- GAME-06 — PE scan, D3D check on INS's priority-files hook, Rosetta, Wine plan, hosted macos-15 job (`game/p2-wine-macos`).
-- GAME-06 — PE scan, D3D check on INS's priority-files hook, Rosetta, Wine plan, hosted macos-15 job ([#220](https://github.com/wouhliss/vgames/pull/220)).
-- GAME-07 — compat commands, per-package overrides (`0009_compat_overrides`), settings UI on the generated bindings,
-  D3D12-on-every-Mac text ([#221](https://github.com/wouhliss/vgames/pull/221)); the planner as the catalog
-  `CompatProvider`, blocker text tests in the install dialog and Downloads (`game/p2-compat-provider`).
+- GAME-08 — left: the Vulkan layer shown active in GAME-05's hosted Proton run; the fallback window on Wayland
+  (today OS notifications) with a `weston --backend=headless` test.
+- GAME-12 — left: the M3 two-instance scenario in `apps/desktop/e2e-real/`.
+- GAME-14 — the 03-api §6 contract is [#252](https://github.com/wouhliss/vgames/pull/252) (reviewed by INT, green,
+  waiting for INT's merge); left: the threat review, the `apps/desktop/README.md` compatibility section,
+  `05-social-notes.md` final.
+- Not started: GAME-09 (Windows DLL and injector), GAME-10 (macOS panel; needs the `macOSPrivateApi` contract),
+  the rest of GAME-11 (32-bit DLL, helper and manifests in the matrix; installer contents).
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_proto::realtime::MAX_FRAME` (64 KiB, GAME-01): the server re-exports it from `apps/api/src/realtime/mod.rs`;
@@ -67,7 +79,6 @@
 ## Needs from others
 
 ## Blockers / contract questions
-- INT reviews of #180/#181 are answered on each PR (fixes in `8b552ab`/`dc88e09` and their rebases); re-review requested.
 
 ## Built for you
 - INT adopted [#178](https://github.com/wouhliss/vgames/pull/178) on current main `54ce554` in `int/p2-game-compat-contract`, retaining GAME's contribution and its fragment. The contract matches the owner decisions and existing prefix/environment helpers; the priority-file wording accounts for shared chunks. Fresh current-base checks precede the replacement merge. No force-push or phase-1 status edit.
