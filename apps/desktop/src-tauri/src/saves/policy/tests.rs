@@ -94,6 +94,25 @@ fn install_overlap_is_refused_even_for_other_base_or_case() {
         b"signed"
     );
 }
+
+#[test]
+fn canonically_equivalent_native_install_names_are_protected() {
+    let base = tempfile::tempdir().unwrap();
+    // APFS may return decomposed native names while manifest paths are NFC.
+    let install = base.path().join("saves/Cafe\u{301}");
+    std::fs::create_dir_all(&install).unwrap();
+    let locations = [Location::open(&config(), base.path()).unwrap()];
+    let protected = ProtectedInstalls::open([install.as_path()]).unwrap();
+    assert!(
+        preflight(
+            &locations,
+            &[file("Caf\u{e9}/slot.sav")],
+            &protected,
+            &CancellationToken::new()
+        )
+        .is_err()
+    );
+}
 #[test]
 fn bounds_cancellation_and_root_aliases_fail_closed() {
     let base = tempfile::tempdir().unwrap();
@@ -145,5 +164,13 @@ fn native_inventory_canonicalizes_install_aliases() {
         .is_err()
     );
     let all = ProtectedInstalls::open([Path::new("/")]).unwrap();
-    assert!(preflight(&locations, &[file("slot.sav")], &all, &CancellationToken::new()).is_err());
+    assert!(
+        preflight(
+            &locations,
+            &[file("slot.sav")],
+            &all,
+            &CancellationToken::new()
+        )
+        .is_err()
+    );
 }
