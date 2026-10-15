@@ -5,6 +5,7 @@ import { ToastProvider } from "../components/Toast";
 import { createQueryClient, useIpcInvalidation } from "../ipc/query";
 import { NavProvider } from "../nav/NavProvider";
 import { AppearanceSync } from "./appearance";
+import { DeeplinkNotices } from "./DeeplinkNotices";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { createAppRouter } from "./router";
 
@@ -22,6 +23,7 @@ export function App() {
         <NavProvider>
           <ToastProvider>
             <AppearanceSync />
+            <DeeplinkNotices />
             <IpcInvalidation />
             <RouterProvider router={router} />
           </ToastProvider>
