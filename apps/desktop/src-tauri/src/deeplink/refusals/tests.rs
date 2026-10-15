@@ -1,6 +1,32 @@
 use super::*;
 
 #[tokio::test]
+async fn slow_startup_keeps_only_one_notice_pending_and_does_not_release_a_burst() {
+    let bus = EventBus::new();
+    let mut receiver = bus.subscribe();
+    let ready = CancellationToken::new();
+    let pending = std::sync::Arc::new(Refusals::new(bus, ready.clone(), CancellationToken::new()));
+    let first = std::sync::Arc::clone(&pending);
+    let first = tokio::spawn(async move { first.notify(Reason::NotInstalled).await });
+    tokio::task::yield_now().await;
+    tokio::time::sleep(Duration::from_millis(1100)).await;
+    let second = std::sync::Arc::clone(&pending);
+    let second = tokio::spawn(async move { second.notify(Reason::RateLimited).await });
+    tokio::task::yield_now().await;
+    assert!(receiver.try_recv().is_err());
+    ready.cancel();
+    first.await.unwrap();
+    second.await.unwrap();
+    assert!(receiver.try_recv().is_ok());
+    assert!(
+        receiver.try_recv().is_err(),
+        "UI readiness must not release queued notices together"
+    );
+    pending.notify(Reason::UnknownPackage).await;
+    assert!(receiver.try_recv().is_err());
+}
+
+#[tokio::test]
 async fn each_reason_emits_only_its_fixed_wire_value() {
     for (reason, wire) in [
         (Reason::RateLimited, "rate_limited"),
