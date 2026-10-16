@@ -116,7 +116,7 @@ Rules:
 - Expiry: `pending` 10 min; `accepted`/`installing`/`ready` 24 h. The sweeper marks `expired` and emits `invite.updated`.
 - The **server never sees join secrets**. A's launcher sends them over Olm. The secret is either
   typed by A ("Server address / lobby code", optional) or empty, meaning "start the game and join in-game".
-  B's launcher validates it against `^[A-Za-z0-9._:\-\[\]]{1,256}$` and substitutes it only as a whole
+  B's launcher validates it against `^[A-Za-z0-9_\[][A-Za-z0-9._:\-\[\]]{0,255}$` and substitutes it only as a whole
   argument into the manifest's `multiplayer.join.args`. Invalid or absent → normal launch.
 - If B has no access to a platform build of the package → `failed` with reason `no_build_for_platform`.
 - Install prompted by an invite uses the normal install path (signature checks etc.). Nothing is
