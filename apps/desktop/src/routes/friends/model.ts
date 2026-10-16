@@ -83,8 +83,8 @@ export function clock(totalSeconds: number): string {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-/** The launcher's own join-secret rule (05-social §5). */
-export const JOIN_SECRET = /^[A-Za-z0-9._:\-[\]]{1,256}$/;
+/** The launcher's own join-secret rule (01-security §7): never option-shaped. */
+export const JOIN_SECRET = /^[A-Za-z0-9_[][A-Za-z0-9._:\-[\]]{0,255}$/;
 
 /** A plain sentence for every `SocialError`. */
 export function socialErrorText(error: SocialError | null): string {
