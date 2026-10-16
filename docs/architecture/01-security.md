@@ -294,8 +294,8 @@ notices and per-contact safety-number verification.
 - **Process launch:** `std::process::Command` with explicit argv (never a shell),
   executable path resolved inside the install dir with no symlink escape,
   environment built from an allowlist plus manifest `env` (validated keys).
-- **Join secrets** from invites must match `^[A-Za-z0-9._:\-\[\]]{1,256}$` before
-  substitution into manifest-declared `join_args` templates.
+- **Join secrets** from invites must match `^[A-Za-z0-9_\[][A-Za-z0-9._:\-\[\]]{0,255}$` before
+  substitution into manifest-declared `join_args` templates (never a leading `-`, so never option-shaped).
 - **At rest:** tokens, Olm pickle key and chat-DB key in the OS keychain. If no
   keychain is available (headless Linux), use a `0600` file in the app data dir and
   show a persistent warning in Settings.

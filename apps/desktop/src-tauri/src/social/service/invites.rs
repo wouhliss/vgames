@@ -122,7 +122,7 @@ impl SocialService {
         {
             return Err(SocialError::invalid(
                 "join_secret",
-                "Letters, digits and . _ : - [ ] only, up to 256",
+                "Letters, digits and . _ : - [ ] only, up to 256, not starting with - . : ]",
             ));
         }
         let api = self.api()?;
