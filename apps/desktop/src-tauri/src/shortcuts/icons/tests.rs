@@ -46,7 +46,13 @@ fn cached_cover_becomes_a_persistent_png_or_windows_ico_with_valid_pixels() {
         assert_eq!(decoded.dimensions(), (256, 256));
         assert_eq!(decoded.get_pixel(128, 128).0, [240, 20, 30, 255]);
         let text = super::super::render(format, "A game", package.package_id, Some(&path)).unwrap();
-        assert!(text.contains(&path.to_string_lossy().to_string()));
+        let raw_path = path.to_str().unwrap();
+        let icon_line = match format {
+            ShortcutFormat::Desktop => format!("Icon={}", raw_path.replace('\\', "\\\\")),
+            ShortcutFormat::Url => format!("IconFile={raw_path}"),
+            ShortcutFormat::Webloc => unreachable!(),
+        };
+        assert!(text.lines().any(|line| line == icon_line));
         assert_eq!(
             prepare(data.path(), package, format, Some(&cached.bytes))
                 .unwrap()
@@ -63,6 +69,25 @@ fn cached_cover_becomes_a_persistent_png_or_windows_ico_with_valid_pixels() {
             .count(),
         2
     );
+}
+
+#[test]
+fn windows_icon_paths_follow_each_shortcut_formats_escaping_rules() {
+    let path = Path::new(r"C:\Users\player\Game Icons\cover.png");
+    let package = package_ref();
+    for (format, expected) in [
+        (
+            ShortcutFormat::Desktop,
+            r"Icon=C:\\Users\\player\\Game Icons\\cover.png",
+        ),
+        (
+            ShortcutFormat::Url,
+            r"IconFile=C:\Users\player\Game Icons\cover.png",
+        ),
+    ] {
+        let text = super::super::render(format, "Game", package.package_id, Some(path)).unwrap();
+        assert!(text.lines().any(|line| line == expected));
+    }
 }
 
 #[test]
