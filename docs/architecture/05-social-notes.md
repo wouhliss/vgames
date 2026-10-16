@@ -74,7 +74,7 @@ As 05-social §4.1, JSON, ≤ 60 KiB before encryption. `type` values the launch
 | type | fields besides `v`, `type`, `conversation_id`, `client_message_id`, `sent_at` |
 |---|---|
 | `text` | `body` (1–4,000 chars after trimming trailing whitespace) |
-| `invite.join` | `invite_id`, `join_secret` (optional; `^[A-Za-z0-9._:\-\[\]]{1,256}$`) |
+| `invite.join` | `invite_id`, `join_secret` (optional; `^[A-Za-z0-9_\[][A-Za-z0-9._:\-\[\]]{0,255}$`) |
 | `receipt.read` | `up_to` (a `client_message_id`) |
 
 Anything else, or a payload whose `conversation_id` differs from the envelope's, is stored as
@@ -142,9 +142,16 @@ The server stores every `installing` report but publishes `invite.updated` for p
 ### 3.2 Invite client behaviour (A4-T09)
 
 - **Join secret.** `invite_send` trims it; empty means none. It must match
-  `^[A-Za-z0-9._:\-\[\]]{1,256}$` (else `invalid_input` on `join_secret`, nothing sent). It is kept only on
+  `^[A-Za-z0-9_\[][A-Za-z0-9._:\-\[\]]{0,255}$` (else `invalid_input` on `join_secret`, nothing
+  sent). It never starts with `-`, `.`, `:` or `]`, so a lenient game argument parser cannot read it as an
+  option. It is kept only on
   the sending install, sealed with the keychain chat key, and travels only inside the Olm `invite.join`
   payload. The UI sees `has_join_secret`, never the secret.
+- **Secrets stored under the older grammar** (a leading `-`, `.`, `:` or `]`) fail closed at every step and
+  are never logged: the sender checks the stored secret again before sealing `invite.join` and sends the
+  invite without one when it no longer matches; a receiver drops a non-matching `join_secret` (the payload
+  stays valid, without a secret); launch substitution (`TargetChoice::for_invite`) checks it once more and
+  falls back to the package's default target. Nothing is migrated: the invite simply has no join secret.
 - **Invitee.** `invite_accept` accepts, remembers that *this install* accepted, and checks the package:
   current → reports `ready`; missing / outdated → `invite-install-requested {reason}` so the UI opens its
   install or update dialog and installs through the normal commands (nothing is installed or verified
