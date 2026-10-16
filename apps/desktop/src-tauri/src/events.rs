@@ -192,9 +192,25 @@ pub struct LibrariesChanged {}
 #[derive(Debug, Clone, Default, Serialize, Deserialize, Type, tauri_specta::Event)]
 pub struct CollectionsChanged {}
 
+/// Fixed reasons for refusing a shortcut launch (PLAY-07).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum DeeplinkRefusalReason {
+    RateLimited,
+    NotInstalled,
+    NotVerified,
+    UnknownPackage,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type, tauri_specta::Event)]
+pub struct DeeplinkRefused {
+    pub reason: DeeplinkRefusalReason,
+}
+
 /// Everything published on the internal bus.
 #[derive(Debug, Clone)]
 pub enum AppEvent {
+    DeeplinkRefused(DeeplinkRefused),
     GameStarted(GameStarted),
     GameStopped(GameStopped),
     InstallProgress(InstallProgress),
@@ -259,6 +275,7 @@ pub fn spawn_ui_bridge<R: Runtime>(app: AppHandle<R>, bus: &EventBus, shutdown: 
                 event = receiver.recv() => event,
             };
             let result = match event {
+                Ok(AppEvent::DeeplinkRefused(e)) => e.emit(&app),
                 Ok(AppEvent::GameStarted(e)) => e.emit(&app),
                 Ok(AppEvent::GameStopped(e)) => e.emit(&app),
                 Ok(AppEvent::InstallProgress(e)) => e.emit(&app),

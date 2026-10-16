@@ -22,6 +22,8 @@ use crate::servers::Servers;
 use crate::servers::auth::{parse_callback_error_link, parse_callback_link};
 use crate::servers::discovery::normalize_url;
 
+mod refusals;
+
 const MAX_LINK_CHARS: usize = 4096;
 
 /// A recognized deep link.
@@ -102,6 +104,11 @@ pub fn spawn_router(
     shutdown: CancellationToken,
 ) {
     let mut receiver = bus.subscribe();
+    let refusals = Arc::new(refusals::Refusals::new(
+        bus.clone(),
+        ui_ready.clone(),
+        shutdown.clone(),
+    ));
     tauri::async_runtime::spawn(async move {
         loop {
             let event = tokio::select! {
@@ -138,8 +145,11 @@ pub fn spawn_router(
                 Some(DeepLink::Launch { package_id }) => {
                     let servers = Arc::clone(&servers);
                     let launcher = Arc::clone(&launcher);
+                    let refusals = Arc::clone(&refusals);
+                    let shutdown = shutdown.clone();
                     tauri::async_runtime::spawn(async move {
-                        launch_from_link(&servers, &launcher, package_id).await;
+                        launch_from_link(&servers, &launcher, package_id, &refusals, &shutdown)
+                            .await;
                     });
                 }
                 Some(DeepLink::AuthRefused {
@@ -160,11 +170,19 @@ pub fn spawn_router(
 
 /// Launches a package of the active server; failures are logged (the
 /// launcher applies every check, including the rate limit).
-async fn launch_from_link(servers: &Servers, launcher: &Launcher<Servers>, package_id: uuid::Uuid) {
+async fn launch_from_link(
+    servers: &Servers,
+    launcher: &Launcher<Servers>,
+    package_id: uuid::Uuid,
+    refusals: &refusals::Refusals,
+    shutdown: &CancellationToken,
+) {
     let server_id = match servers.active_id().await {
         Ok(Some(id)) => id,
         Ok(None) => {
-            tracing::info!("launch link without an active server; ignored");
+            refusals
+                .notify(crate::events::DeeplinkRefusalReason::UnknownPackage)
+                .await;
             return;
         }
         Err(error) => {
@@ -178,7 +196,15 @@ async fn launch_from_link(servers: &Servers, launcher: &Launcher<Servers>, packa
     };
     match launcher.launch(package, TargetChoice::Default).await {
         Ok(pid) => tracing::info!(pid, "launched from a link"),
-        Err(error) => tracing::info!(%error, "launch link refused"),
+        Err(error) => {
+            if let Some(mut reason) = refusals::local_reason(&error) {
+                if reason == crate::events::DeeplinkRefusalReason::NotInstalled {
+                    reason = refusals::missing_reason(servers, package, shutdown).await;
+                }
+                refusals.notify(reason).await;
+            }
+            tracing::info!("launch link refused");
+        }
     }
 }
 
