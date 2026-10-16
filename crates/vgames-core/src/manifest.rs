@@ -500,12 +500,28 @@ fn args_ok(args: &[String]) -> bool {
     total.is_some_and(|t| t <= MAX_ARGS_BYTES) && !args.iter().any(|a| a.contains('\0'))
 }
 
-/// Environment variables a package (or compat profile) may never set.
+/// Environment variables a package (or compat profile, or local override) may
+/// never set (02 §5): each makes a process load a library or run code it
+/// names, including the host-side helpers of a compat launch.
 pub fn is_denied_env_key(key: &str) -> bool {
     matches!(
         key,
-        "PATH" | "LD_PRELOAD" | "LD_LIBRARY_PATH" | "PYTHONPATH" | "COMSPEC"
-    ) || key.starts_with("DYLD_")
+        "PATH"
+            | "COMSPEC"
+            | "PYTHONPATH"
+            | "PYTHONHOME"
+            | "GCONV_PATH"
+            | "BASH_ENV"
+            | "ENV"
+            | "VK_ICD_FILENAMES"
+            | "VK_DRIVER_FILES"
+            | "VK_ADD_DRIVER_FILES"
+            | "VK_LAYER_PATH"
+            | "VK_ADD_LAYER_PATH"
+            | "VK_INSTANCE_LAYERS"
+            | "VK_LOADER_LAYERS_ENABLE"
+    ) || key.starts_with("LD_")
+        || key.starts_with("DYLD_")
 }
 
 /// `^[A-Z_][A-Z0-9_]{0,63}$`.
