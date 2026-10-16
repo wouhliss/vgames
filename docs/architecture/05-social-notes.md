@@ -147,6 +147,11 @@ The server stores every `installing` report but publishes `invite.updated` for p
   option. It is kept only on
   the sending install, sealed with the keychain chat key, and travels only inside the Olm `invite.join`
   payload. The UI sees `has_join_secret`, never the secret.
+- **Secrets stored under the older grammar** (a leading `-`, `.`, `:` or `]`) fail closed at every step and
+  are never logged: the sender checks the stored secret again before sealing `invite.join` and sends the
+  invite without one when it no longer matches; a receiver drops a non-matching `join_secret` (the payload
+  stays valid, without a secret); launch substitution (`TargetChoice::for_invite`) checks it once more and
+  falls back to the package's default target. Nothing is migrated: the invite simply has no join secret.
 - **Invitee.** `invite_accept` accepts, remembers that *this install* accepted, and checks the package:
   current → reports `ready`; missing / outdated → `invite-install-requested {reason}` so the UI opens its
   install or update dialog and installs through the normal commands (nothing is installed or verified
