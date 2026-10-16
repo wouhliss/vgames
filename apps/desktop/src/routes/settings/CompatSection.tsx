@@ -64,8 +64,11 @@ function Rosetta({ host }: { host: Extract<CompatHost, { kind: "wine" }> }) {
           const result = await commands.rosettaInstall().catch(() => null);
           setConfirming(false);
           if (result?.status === "ok") {
-            toast({ tone: "success", title: t("compat.rosettaInstalled") });
-            await client.invalidateQueries({ queryKey: COMPAT_OVERVIEW });
+            // "cancelled": the player said no in the native dialog, nothing to report.
+            if (result.data === "installed") {
+              toast({ tone: "success", title: t("compat.rosettaInstalled") });
+              await client.invalidateQueries({ queryKey: COMPAT_OVERVIEW });
+            }
           } else {
             const detail =
               result?.status === "error" && "detail" in result.error

@@ -63,8 +63,11 @@ function BlockerNotice({ blocker, packageId }: { blocker: CompatBlocker; package
               const result = await commands.rosettaInstall().catch(() => null);
               setConfirming(false);
               if (result?.status === "ok") {
-                toast({ tone: "success", title: t("compat.rosettaInstalled") });
-                await client.invalidateQueries({ queryKey: queryKeys.details(packageId) });
+                // "cancelled": the player said no in the native dialog, nothing to report.
+                if (result.data === "installed") {
+                  toast({ tone: "success", title: t("compat.rosettaInstalled") });
+                  await client.invalidateQueries({ queryKey: queryKeys.details(packageId) });
+                }
               } else {
                 const detail =
                   result?.status === "error" && "detail" in result.error

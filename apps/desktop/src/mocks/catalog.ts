@@ -406,7 +406,7 @@ export function catalogHandlers(
     },
     rosetta_install: () => {
       state.rosettaInstalled = true;
-      return null;
+      return "installed";
     },
   };
 }

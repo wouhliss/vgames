@@ -246,8 +246,11 @@ export const commands = {
 	compatOverrideReset: (pkg: PackageRef) => typedError<null, AppError>(__TAURI_INVOKE("compat_override_reset", { pkg })),
 	/**  The license texts shipped with each installed runtime (plain text). */
 	compatLicenses: () => typedError<RuntimeLicense[], AppError>(__TAURI_INVOKE("compat_licenses")),
-	/**  Installs Rosetta 2. The UI calls this only after the player confirmed. */
-	rosettaInstall: () => typedError<null, AppError>(__TAURI_INVOKE("rosetta_install")),
+	/**
+	 *  Installs Rosetta 2 after the player said yes in a native dialog (GAME-14 C4). The UI
+	 *  asks first too, but a compromised WebView could skip that, so Rust asks again itself.
+	 */
+	rosettaInstall: () => typedError<RosettaInstallOutcome, AppError>(__TAURI_INVOKE("rosetta_install")),
 };
 
 /** Events */
@@ -1292,6 +1295,11 @@ export type Remap = {
 };
 
 export type Role = "user" | "admin" | "owner";
+
+/**  What `rosetta_install` did. */
+export type RosettaInstallOutcome = "installed" | 
+/**  The player said no in the native dialog; nothing was run. */
+"cancelled";
 
 /**  Whether Rosetta 2 is there (Apple silicon only). */
 export type RosettaState = "installed" | "missing";
