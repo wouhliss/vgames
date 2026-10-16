@@ -196,7 +196,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             crate::events::UiNav,
             crate::events::ActiveControllerChanged,
             crate::events::PadsChanged,
-            crate::events::ControllerTesterState
+            crate::events::ControllerTesterState,
         ])
         .error_handling(tauri_specta::ErrorHandlingMode::Result)
         // Byte counts and ids that are u64 in Rust stay below 2^53.
