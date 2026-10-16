@@ -79,6 +79,11 @@
 ## Needs from others
 
 ## Blockers / contract questions
+- contract ack: #284 (Proton logging switches not profile or override keys; GAME implements it in #285).
+- contract ack: #289 (wider env denylist; GAME's compat inputs are profiles and overrides, which share the list).
+- contract ack: #290 (join secrets never option-shaped; GAME owns invites and the `invite.join` payload).
+- Acks asked of the other slices: INS for #284 and #289 (publish, install and verify validate manifests and
+  profiles), PLAY for #289 and #290 (native launch env; `TargetChoice::for_invite` and `join_args`).
 
 ## Built for you
 - INT adopted [#178](https://github.com/wouhliss/vgames/pull/178) on current main `54ce554` in `int/p2-game-compat-contract`, retaining GAME's contribution and its fragment. The contract matches the owner decisions and existing prefix/environment helpers; the priority-file wording accounts for shared chunks. Fresh current-base checks precede the replacement merge. No force-push or phase-1 status edit.
