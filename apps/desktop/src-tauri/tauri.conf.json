@@ -84,7 +84,10 @@
     },
     "linux": {
       "deb": {
-        "depends": []
+        "depends": ["desktop-file-utils", "xdg-utils"]
+      },
+      "rpm": {
+        "depends": ["desktop-file-utils", "xdg-utils"]
       }
     },
     "macOS": {

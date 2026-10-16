@@ -60,6 +60,7 @@ vgames-overlay = { path = "crates/vgames-overlay" }
 tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "sync", "time", "fs", "io-util", "signal", "net"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 futures-util = "0.3"
+gio = "0.18.4"
 bytes = "1.12"
 
 # --- serialization ---------------------------------------------------------
