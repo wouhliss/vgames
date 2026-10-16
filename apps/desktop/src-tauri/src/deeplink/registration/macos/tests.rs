@@ -52,12 +52,49 @@ fn missing_url_type_is_repaired_without_removing_other_bundle_properties() {
         .as_array()
         .unwrap();
     assert_eq!(types.len(), 2);
+    for entry in types {
+        assert_eq!(
+            entry.as_dictionary().unwrap()["CFBundleTypeRole"].as_string(),
+            Some("Editor")
+        );
+    }
     let entries = std::fs::read_dir(path.parent().unwrap()).unwrap();
     assert!(
         !entries
             .map(Result::unwrap)
             .any(|entry| entry.file_name().to_string_lossy().ends_with(".tmp"))
     );
+}
+
+#[test]
+fn an_existing_scheme_missing_its_required_role_is_repaired_without_duplication() {
+    let (_root, executable) = fixture();
+    let bundle = ensure_types(&executable, "app.vgames.fixture", "vgames").unwrap();
+    let path = bundle.join("Contents/Info.plist");
+    let mut value = Value::from_file(&path).unwrap();
+    let entry = value.as_dictionary_mut().unwrap()["CFBundleURLTypes"]
+        .as_array_mut()
+        .unwrap()[0]
+        .as_dictionary_mut()
+        .unwrap();
+    entry.remove("CFBundleTypeRole");
+    entry.insert("CFBundleURLIconFile".into(), Value::String("KeepMe".into()));
+    value.to_file_xml(&path).unwrap();
+    let incomplete = std::fs::read(&path).unwrap();
+    let signature = bundle.join("Contents/_CodeSignature");
+    std::fs::create_dir(&signature).unwrap();
+    assert!(ensure_types(&executable, "app.vgames.fixture", "vgames").is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), incomplete);
+    std::fs::remove_dir(signature).unwrap();
+    ensure_types(&executable, "app.vgames.fixture", "vgames").unwrap();
+    let value = Value::from_file(&path).unwrap();
+    let types = value.as_dictionary().unwrap()["CFBundleURLTypes"]
+        .as_array()
+        .unwrap();
+    assert_eq!(types.len(), 1);
+    let entry = types[0].as_dictionary().unwrap();
+    assert_eq!(entry["CFBundleTypeRole"].as_string(), Some("Editor"));
+    assert_eq!(entry["CFBundleURLIconFile"].as_string(), Some("KeepMe"));
 }
 
 #[test]

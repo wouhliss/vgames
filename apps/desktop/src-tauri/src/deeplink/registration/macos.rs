@@ -63,13 +63,13 @@ fn ensure_types(executable: &Path, identifier: &str, scheme: &str) -> Result<Pat
         .and_then(Value::as_array)
         .is_some_and(|types| {
             types.iter().any(|entry| {
-                entry
-                    .as_dictionary()
-                    .and_then(|entry| entry.get("CFBundleURLSchemes"))
-                    .and_then(Value::as_array)
-                    .is_some_and(|schemes| {
-                        schemes.iter().any(|item| item.as_string() == Some(scheme))
-                    })
+                entry.as_dictionary().is_some_and(|entry| {
+                    handles_scheme(entry, scheme)
+                        && matches!(
+                            entry.get("CFBundleTypeRole").and_then(Value::as_string),
+                            Some("Editor" | "Viewer" | "Shell")
+                        )
+                })
             })
         });
     if found {
@@ -92,13 +92,24 @@ fn ensure_types(executable: &Path, identifier: &str, scheme: &str) -> Result<Pat
         .ok_or(())?
         .as_array_mut()
         .ok_or(())?;
-    let mut entry = Dictionary::new();
-    entry.insert("CFBundleURLName".into(), Value::String(identifier.into()));
-    entry.insert(
-        "CFBundleURLSchemes".into(),
-        Value::Array(vec![Value::String(scheme.into())]),
-    );
-    types.push(Value::Dictionary(entry));
+    if let Some(entry) = types
+        .iter_mut()
+        .filter_map(Value::as_dictionary_mut)
+        .find(|entry| handles_scheme(entry, scheme))
+    {
+        entry.insert("CFBundleTypeRole".into(), Value::String("Editor".into()));
+    } else {
+        let mut entry = Dictionary::new();
+        entry.insert("CFBundleURLName".into(), Value::String(identifier.into()));
+        // Required by Apple's CFBundleURLTypes dictionary specification; match
+        // the bundler's default role rather than creating an incomplete entry.
+        entry.insert("CFBundleTypeRole".into(), Value::String("Editor".into()));
+        entry.insert(
+            "CFBundleURLSchemes".into(),
+            Value::Array(vec![Value::String(scheme.into())]),
+        );
+        types.push(Value::Dictionary(entry));
+    }
     let temporary = contents.join(format!(".vgames-links-{}.tmp", uuid::Uuid::now_v7()));
     let result = (|| {
         let mut file = std::fs::OpenOptions::new()
@@ -123,6 +134,13 @@ fn ensure_types(executable: &Path, identifier: &str, scheme: &str) -> Result<Pat
         let _ = std::fs::remove_file(&temporary);
     }
     result
+}
+
+fn handles_scheme(entry: &Dictionary, scheme: &str) -> bool {
+    entry
+        .get("CFBundleURLSchemes")
+        .and_then(Value::as_array)
+        .is_some_and(|schemes| schemes.iter().any(|item| item.as_string() == Some(scheme)))
 }
 
 pub(super) async fn repair(
