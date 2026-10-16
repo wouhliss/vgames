@@ -11,7 +11,10 @@
 //!   (the job flips one pinned hash to prove a tampered archive never runs);
 //! - `VGAMES_PROTON_E2E_LOG_DIR` (optional): the game's target sets `PROTON_LOG=1`
 //!   and `PROTON_LOG_DIR` (and DXVK's log) there, so a failed run leaves the logs
-//!   for the job.
+//!   for the job;
+//! - `VGAMES_PROTON_E2E_OVERLAY` (optional): the built `libvgames_overlay.so`. The run then
+//!   registers the Vulkan layer and starts a real overlay broker, like a launch with the
+//!   overlay on, and asserts the layer connected from inside the Proton game (GAME-08).
 //!
 //! The catalog is signed here with a key generated for the run and served locally;
 //! the runtimes themselves come from GitHub, verified by size and SHA-256.
@@ -64,6 +67,24 @@ impl ProfileSource for NoProfiles {
     async fn trust(&self, _: uuid::Uuid) -> Option<Arc<vgames_core::trust::TrustState>> {
         None
     }
+}
+
+/// The overlay's part of a launch: the broker's endpoint in the game's environment.
+struct OverlayEnv(Vec<(String, String)>);
+
+impl crate::launch::orchestrate::LaunchHooks for OverlayEnv {
+    fn before_spawn<'a>(
+        &'a self,
+        _: &'a crate::launch::hooks::LaunchContext,
+    ) -> crate::launch::hooks::HookFuture<
+        'a,
+        Result<crate::launch::hooks::HookEnv, crate::launch::hooks::LaunchVeto>,
+    > {
+        let env = self.0.clone();
+        Box::pin(async move { Ok(crate::launch::hooks::HookEnv(env)) })
+    }
+
+    fn aborted(&self, _: &crate::launch::hooks::LaunchContext) {}
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -234,6 +255,39 @@ async fn the_d3d11_test_game_runs_through_proton() {
         ),
     );
     assert!(launcher.hooks().register_plan_source(Arc::new(planner)));
+    // The overlay, as `OverlayService::prepare_launch` sets it up: the layer manifest for
+    // this user and a broker whose endpoint the game gets.
+    let overlay = std::env::var_os("VGAMES_PROTON_E2E_OVERLAY").map(|library| {
+        let dir = crate::overlay::vulkan_layer::manifest_dir(
+            std::env::var_os("XDG_DATA_HOME"),
+            std::env::var_os("HOME"),
+        )
+        .expect("a data directory for the layer manifest");
+        let registered =
+            crate::overlay::vulkan_layer::sync(&dir, Some(std::path::Path::new(&library))).unwrap();
+        println!("overlay layer: {registered:?} in {}", dir.display());
+        dir
+    });
+    let (_views, views) =
+        tokio::sync::watch::channel(crate::overlay::model::OverlayView::default());
+    let (_panel, panel) = tokio::sync::watch::channel(false);
+    let (actions, _actions) = tokio::sync::mpsc::channel(8);
+    let (broker_events, mut broker_seen) = tokio::sync::mpsc::channel(16);
+    let stop = tokio_util::sync::CancellationToken::new();
+    let _broker = match overlay {
+        Some(_) => {
+            let broker =
+                crate::overlay::broker::Broker::start(views, panel, actions, broker_events, &stop)
+                    .await
+                    .unwrap();
+            assert!(launcher.hooks().register(
+                crate::launch::hooks::HookStage::Overlay,
+                Arc::new(OverlayEnv(broker.endpoint.env())),
+            ));
+            Some(broker)
+        }
+        None => None,
+    };
     let package_ref = PackageRef {
         server_id: package.expected.server_id,
         package_id: package.expected.package_id,
@@ -288,4 +342,18 @@ async fn the_d3d11_test_game_runs_through_proton() {
         prefix.join("drive_c").is_dir(),
         "Proton created the prefix where prefix_dir says"
     );
+    if let Some(dir) = overlay {
+        let mut seen = Vec::new();
+        while let Ok(event) = broker_seen.try_recv() {
+            seen.push(event);
+        }
+        println!("overlay broker: {seen:?}");
+        crate::overlay::vulkan_layer::sync(&dir, None).unwrap();
+        assert!(
+            seen.contains(&crate::overlay::broker::BrokerEvent::Connected(
+                vgames_overlay::protocol::RendererKind::Vulkan
+            )),
+            "the Vulkan layer did not connect from inside the Proton game: {seen:?}"
+        );
+    }
 }
