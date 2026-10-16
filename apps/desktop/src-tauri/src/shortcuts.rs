@@ -9,6 +9,8 @@ use std::path::{Path, PathBuf};
 
 use uuid::Uuid;
 
+pub mod icons;
+
 /// Longest shortcut name, in characters (before the extension).
 const MAX_NAME_CHARS: usize = 80;
 /// Shortcuts are tiny; anything larger at our path is not ours.

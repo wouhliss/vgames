@@ -23,17 +23,38 @@ pub async fn shortcut_create(
         .map_err(|e| AppError::internal("read the install", &e))?
         .ok_or(AppError::NotFound)?;
     let desktop = shortcuts::desktop_dir().ok_or(AppError::NotFound)?;
+    let metadata = db::installs::catalog_info(&state.db, package)
+        .await
+        .map_err(|error| AppError::internal("read shortcut metadata", &error))?;
+    let images = std::sync::Arc::clone(&state.images);
+    let data = state.paths.data_dir.clone();
     let package_id = package.package_id;
     let created = tokio::task::spawn_blocking(move || {
-        // The install folder is named after the title (a slug); the catalog
-        // title replaces it once the catalog cache is available (A2-T08).
-        shortcuts::create(
-            &desktop,
-            ShortcutFormat::native(),
-            &dir_name,
-            package_id,
-            None,
+        let cover = metadata
+            .as_ref()
+            .and_then(|metadata| metadata.cover_asset_id)
+            .and_then(|asset| {
+                crate::images::ImageKey::for_asset(package.server_id, &asset.to_string()).ok()
+            })
+            .and_then(|key| images.get(&key).ok().flatten());
+        let format = ShortcutFormat::native();
+        let icon = shortcuts::icons::prepare(
+            &data,
+            package,
+            format,
+            cover.as_ref().map(|image| image.bytes.as_slice()),
         )
+        .map_err(|source| shortcuts::ShortcutError::Io {
+            action: "write icon",
+            path: data,
+            source,
+        })?;
+        let title = metadata
+            .as_ref()
+            .map(|metadata| metadata.title.as_str())
+            .filter(|title| !title.trim().is_empty())
+            .unwrap_or(&dir_name);
+        shortcuts::create(&desktop, format, title, package_id, icon.as_deref())
     })
     .await
     .map_err(|e| AppError::internal("create the shortcut", &e))?;
