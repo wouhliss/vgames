@@ -6,24 +6,21 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use vgames_core::manifest::{LaunchTarget, Manifest};
+use vgames_proto::social::is_valid_join_secret;
 
 use super::TargetError;
 
 /// The placeholder a manifest's `multiplayer.join.args` may contain as a whole argument.
 const JOIN_PLACEHOLDER: &str = "{join_secret}";
-const MAX_JOIN_SECRET: usize = 256;
 
-/// An invite join secret matching `^[A-Za-z0-9._:\-\[\]]{1,256}$` (05-social §5).
+/// An invite join secret matching `^[A-Za-z0-9_\[][A-Za-z0-9._:\-\[\]]{0,255}$`
+/// (01-security §7): never option-shaped.
 #[derive(Clone, PartialEq, Eq)]
 pub struct JoinSecret(String);
 
 impl JoinSecret {
     pub fn parse(raw: &str) -> Option<Self> {
-        let valid = (1..=MAX_JOIN_SECRET).contains(&raw.len())
-            && raw.bytes().all(|c| {
-                c.is_ascii_alphanumeric() || matches!(c, b'.' | b'_' | b':' | b'-' | b'[' | b']')
-            });
-        valid.then(|| Self(raw.to_owned()))
+        is_valid_join_secret(raw).then(|| Self(raw.to_owned()))
     }
 }
 
@@ -46,8 +43,9 @@ pub enum TargetChoice {
 }
 
 impl TargetChoice {
-    /// Choice for an accepted invite: an absent, empty or invalid secret means
-    /// a normal launch (05-social §5).
+    /// Choice for an accepted invite: an absent, empty or invalid secret (including one
+    /// stored under the older grammar) means a normal launch (05-social §5,
+    /// 05-social-notes §3.2).
     pub fn for_invite(secret: Option<&str>) -> Self {
         secret
             .and_then(JoinSecret::parse)
