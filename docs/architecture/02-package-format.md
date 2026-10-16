@@ -208,7 +208,12 @@ Validation (`vgames_core::manifest::parse_and_validate` and `Manifest::validate`
 - Paths valid (§3); `directories` valid and not files.
 - `launch.targets[*].executable` refers to a listed file; `working_dir` is a listed
   directory prefix; `args` ≤ 64 × 1024 bytes; `env` keys `^[A-Z_][A-Z0-9_]{0,63}$` and not
-  in a denylist (`PATH`, `LD_PRELOAD`, `LD_LIBRARY_PATH`, `DYLD_*`, `PYTHONPATH`, `COMSPEC`).
+  in a denylist: `PATH`, `COMSPEC`, every key starting with `LD_` (`LD_PRELOAD`, `LD_LIBRARY_PATH`,
+  `LD_AUDIT`, …) or `DYLD_`, `PYTHONPATH`, `PYTHONHOME`, `GCONV_PATH`, `BASH_ENV`, `ENV`, and the Vulkan
+  loader's driver and layer keys `VK_ICD_FILENAMES`, `VK_DRIVER_FILES`, `VK_ADD_DRIVER_FILES`, `VK_LAYER_PATH`,
+  `VK_ADD_LAYER_PATH`, `VK_INSTANCE_LAYERS`, `VK_LOADER_LAYERS_ENABLE`. Each makes a process load a library or
+  run code it names, including the host-side helpers of a compat launch (`umu-run` is Python, pressure-vessel
+  a shell wrapper); the same list applies to compat profiles and local overrides (09 §4).
 - `saves.locations[*].base` ∈ {`install`, `home`, `documents`, `saved_games`, `appdata`,
   `localappdata`, `xdg_data`, `xdg_config`}; `path` passes §3 rules.
 - `controllers.supported` ⊆ {`xinput`, `dualshock4`, `dualsense`, `switch_pro`, `generic`};
