@@ -168,7 +168,7 @@ tracing-appender = "0.2"
 tar = "0.4.46"
 flate2 = "1.1"
 liblzma = { version = "0.4", features = ["static"] }
-zip = { version = "8.6", default-features = false, features = ["deflate-flate2"] }
+zip = { version = "9.0", default-features = false, features = ["deflate-flate2"] }
 
 # --- WASM (vgames-pack browser build) --------------------------------------
 wasm-bindgen = "0.2"
