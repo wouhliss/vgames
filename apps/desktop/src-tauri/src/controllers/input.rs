@@ -12,11 +12,23 @@ use sdl3::event::{Event, EventSender};
 
 use super::idle;
 
+#[cfg(test)]
+pub(crate) static SDL_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 const DATABASE: &str = include_str!("../../resources/gamecontrollerdb.txt");
 
 pub enum InputEvent {
     Native(Event),
     Wake,
+}
+
+#[derive(Clone)]
+pub struct InputWake(Arc<Wake>);
+
+impl InputWake {
+    pub fn wake(&self) -> Result<(), String> {
+        self.0.push()
+    }
 }
 
 struct Wake {
@@ -61,6 +73,14 @@ impl InputThread {
         F: FnOnce(&sdl3::GamepadSubsystem) -> H + Send + 'static,
         H: FnMut(InputEvent, &sdl3::GamepadSubsystem) + 'static,
     {
+        Self::start_with_wake(move |gamepads, _| factory(gamepads))
+    }
+
+    pub fn start_with_wake<F, H>(factory: F) -> Result<Self, String>
+    where
+        F: FnOnce(&sdl3::GamepadSubsystem, InputWake) -> H + Send + 'static,
+        H: FnMut(InputEvent, &sdl3::GamepadSubsystem) + 'static,
+    {
         let stopped = Arc::new(AtomicBool::new(false));
         let iterations = Arc::new(AtomicUsize::new(0));
         let stop = stopped.clone();
@@ -100,7 +120,7 @@ impl InputThread {
                     let mut pump = sdl.event_pump().map_err(|error| error.to_string())?;
                     // Construct the handler here so it can own non-Send gamepad
                     // handles and is dropped before the SDL context, even on unwind.
-                    let mut on_event = factory(&gamepads);
+                    let mut on_event = factory(&gamepads, InputWake(wake.clone()));
                     // Initial device notifications are dispatched before ready;
                     // the measured steady-state counter starts at zero.
                     for event in pump.poll_iter() {
@@ -238,6 +258,7 @@ mod tests {
 
     #[test]
     fn input_thread_starts_blocks_when_idle_and_wakes_for_shutdown() {
+        let _serial = SDL_TEST_LOCK.lock().unwrap();
         let mut input = InputThread::start(|_| |_: InputEvent, _: &sdl3::GamepadSubsystem| {})
             .expect("SDL input starts");
         let before = input.iterations();
