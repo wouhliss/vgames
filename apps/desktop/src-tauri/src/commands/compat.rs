@@ -7,7 +7,7 @@ use std::path::Path;
 
 use serde::Serialize;
 use specta::Type;
-use tauri::State;
+use tauri::{AppHandle, State};
 use vgames_core::manifest::Platform;
 use vgames_core::runtimes::{Arch, Catalog, Os, RuntimeId as CoreRuntimeId};
 
@@ -15,6 +15,7 @@ use crate::compat::overrides::{
     self, CompatOverride, CompatSettingsError, GraphicsBackend, RunnerVersion, RuntimeId,
 };
 use crate::compat::plan::{natural_cmp, rosetta_last_macos};
+use crate::compat::rosetta::{self, RosettaInstallOutcome};
 use crate::compat::runtimes::RuntimeError;
 use crate::error::AppError;
 use crate::events::PackageRef;
@@ -456,13 +457,36 @@ pub async fn compat_licenses(state: State<'_, AppState>) -> Result<Vec<RuntimeLi
     Ok(out)
 }
 
-/// Installs Rosetta 2. The UI calls this only after the player confirmed.
+/// Installs Rosetta 2 after the player said yes in a native dialog (GAME-14 C4). The UI
+/// asks first too, but a compromised WebView could skip that, so Rust asks again itself.
 #[tauri::command]
 #[specta::specta]
-pub async fn rosetta_install() -> Result<(), AppError> {
-    crate::compat::rosetta::install()
-        .await
-        .map_err(|e| AppError::internal("install Rosetta 2", &e))
+pub async fn rosetta_install(app: AppHandle) -> Result<RosettaInstallOutcome, AppError> {
+    rosetta::install_after_confirmation(
+        rosetta::installable(),
+        async || ask_native(&app).await,
+        rosetta::install,
+    )
+    .await
+    .map_err(|e| AppError::internal("install Rosetta 2", &e))
+}
+
+/// The native OK/Cancel dialog; a dialog that cannot be shown counts as a no.
+async fn ask_native(app: &AppHandle) -> bool {
+    use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+    let (reply, answer) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .message(rosetta::CONFIRM_TEXT)
+        .title(rosetta::CONFIRM_TITLE)
+        .kind(MessageDialogKind::Warning)
+        .buttons(MessageDialogButtons::OkCancelCustom(
+            rosetta::CONFIRM_OK.to_owned(),
+            rosetta::CONFIRM_CANCEL.to_owned(),
+        ))
+        .show(move |yes| {
+            let _ = reply.send(yes);
+        });
+    answer.await.unwrap_or(false)
 }
 
 pub fn display_name(runtime: RuntimeId) -> &'static str {
