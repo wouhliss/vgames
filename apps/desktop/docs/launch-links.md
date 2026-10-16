@@ -13,4 +13,4 @@ the launcher path as data, including spaces and desktop-entry reserved character
 
 ## macOS bundles
 
-At startup the launcher validates its native `.app/Contents/Info.plist` identity and URL types, then refreshes Launch Services registration. A missing scheme declaration is added atomically only in an unsigned bundle; other properties and schemes remain intact. Malformed, oversized or linked metadata is refused. A signed bundle with a missing declaration needs reinstallation, since editing it would invalidate its signature. Running the development executable outside an app bundle cannot register a macOS URL handler.
+At startup the launcher validates its native `.app/Contents/Info.plist` identity and URL types, then refreshes Launch Services registration. A missing scheme declaration or required handler role is repaired atomically only in an unsigned bundle; other properties and schemes remain intact. Malformed, oversized or linked metadata is refused. A signed bundle with an incomplete declaration needs reinstallation, since editing it would invalidate its signature. Running the development executable outside an app bundle cannot register a macOS URL handler.
