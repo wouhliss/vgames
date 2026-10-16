@@ -66,7 +66,7 @@ impl Db {
     /// Opens (creating if needed) and migrates the database file.
     pub fn open(path: &Path) -> Result<Self, DbError> {
         let path = path.to_owned();
-        Self::start(move || Connection::open(path))
+        Self::start(move || Connection::open(&path))
     }
 
     /// A private in-memory database, for tests.
@@ -76,18 +76,14 @@ impl Db {
 
     fn start<F>(open: F) -> Result<Self, DbError>
     where
-        F: FnOnce() -> rusqlite::Result<Connection> + Send + 'static,
+        F: FnMut() -> rusqlite::Result<Connection> + Send + 'static,
     {
         let (jobs, inbox) = mpsc::channel::<Job>();
         let (ready_tx, ready_rx) = mpsc::sync_channel::<Result<(), DbError>>(1);
         std::thread::Builder::new()
             .name("vgames-db".into())
             .spawn(move || {
-                let mut conn = match open().map_err(DbError::from).and_then(|mut c| {
-                    configure(&c)?;
-                    migrations::run(&mut c)?;
-                    Ok(c)
-                }) {
+                let mut conn = match open_ready(open, OPEN_BUSY_FOR) {
                     Ok(conn) => {
                         let _ = ready_tx.send(Ok(()));
                         conn
@@ -123,6 +119,39 @@ impl Db {
     }
 }
 
+/// How long opening keeps retrying while the file is busy ([`open_ready`]).
+const OPEN_BUSY_FOR: Duration = BUSY_TIMEOUT;
+const OPEN_BUSY_PAUSE: Duration = Duration::from_millis(50);
+
+/// Opens, configures and migrates a connection. While the file is busy, it starts over until
+/// `busy_for` has passed: a connection that was just dropped (a restart, or a test reopening
+/// the file) closes on its own thread and may still hold the file while it checkpoints the
+/// WAL, and some of the opening steps report that as `SQLITE_BUSY` without waiting on the
+/// busy handler (Windows hosted runners, PLAY-04's profile restart test). Opening is
+/// idempotent: every migration runs in its own transaction.
+fn open_ready(
+    mut open: impl FnMut() -> rusqlite::Result<Connection>,
+    busy_for: Duration,
+) -> Result<Connection, DbError> {
+    let deadline = std::time::Instant::now() + busy_for;
+    loop {
+        let attempt = open().map_err(DbError::from).and_then(|mut c| {
+            configure(&c)?;
+            migrations::run(&mut c)?;
+            Ok(c)
+        });
+        match attempt {
+            Err(DbError::Sqlite(e))
+                if e.sqlite_error_code() == Some(rusqlite::ErrorCode::DatabaseBusy)
+                    && std::time::Instant::now() < deadline =>
+            {
+                std::thread::sleep(OPEN_BUSY_PAUSE);
+            }
+            other => return other,
+        }
+    }
+}
+
 /// `PRAGMA cache_size` (negative: KiB).
 const CACHE_SIZE_KIB: i64 = -2048;
 
@@ -150,6 +179,87 @@ mod tests {
     fn count(conn: &Connection, table: &str) -> i64 {
         conn.query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0))
             .unwrap()
+    }
+
+    fn busy() -> rusqlite::Error {
+        rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),
+            Some("database is locked".into()),
+        )
+    }
+
+    #[test]
+    fn opening_retries_while_the_file_is_busy() {
+        // A connection still closing on its thread: the first attempts see a busy file.
+        let mut attempts = 0;
+        let conn = open_ready(
+            || {
+                attempts += 1;
+                if attempts < 3 {
+                    Err(busy())
+                } else {
+                    Connection::open_in_memory()
+                }
+            },
+            Duration::from_secs(5),
+        )
+        .expect("opens once the file is free");
+        assert_eq!(attempts, 3);
+        // Configured and migrated like any other.
+        assert_eq!(count(&conn, "servers"), 0);
+    }
+
+    #[test]
+    fn opening_gives_up_after_the_busy_window_and_never_retries_other_errors() {
+        let started = std::time::Instant::now();
+        let busy_for = Duration::from_millis(200);
+        let result = open_ready(|| Err(busy()), busy_for);
+        assert!(matches!(result, Err(DbError::Sqlite(_))));
+        assert!(started.elapsed() >= busy_for);
+        assert!(started.elapsed() < busy_for + Duration::from_secs(2));
+
+        let mut attempts = 0;
+        let result = open_ready(
+            || {
+                attempts += 1;
+                Err(rusqlite::Error::InvalidPath("x".into()))
+            },
+            Duration::from_secs(5),
+        );
+        assert!(matches!(result, Err(DbError::Sqlite(_))));
+        assert_eq!(attempts, 1);
+    }
+
+    #[tokio::test]
+    async fn reopening_right_after_the_last_handle_drops_succeeds() {
+        // The shape of every restart test: drop, then open the same file at once.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("t.sqlite3");
+        for round in 0..20 {
+            let db = Db::open(&path).unwrap();
+            db.call(move |c| {
+                c.execute(
+                    "INSERT INTO settings (key, value, updated_at) VALUES (?1, '1', 0)",
+                    [format!("k{round}")],
+                )?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+            drop(db);
+        }
+        let db = Db::open(&path).unwrap();
+        let n: i64 = db
+            .call(|c| {
+                Ok(c.query_row(
+                    "SELECT count(*) FROM settings WHERE key LIKE 'k%'",
+                    [],
+                    |r| r.get(0),
+                )?)
+            })
+            .await
+            .unwrap();
+        assert_eq!(n, 20);
     }
 
     #[tokio::test]
