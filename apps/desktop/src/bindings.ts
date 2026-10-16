@@ -252,10 +252,12 @@ export const commands = {
 
 /** Events */
 export const events = {
+	activeControllerChanged: makeEvent<ActiveControllerChanged>("active-controller-changed"),
 	authFinished: makeEvent<AuthFinished>("auth-finished"),
 	collectionsChanged: makeEvent<CollectionsChanged>("collections-changed"),
 	connectivityChanged: makeEvent<ConnectivityChanged>("connectivity-changed"),
 	controllerEvent: makeEvent<ControllerEvent>("controller-event"),
+	controllerTesterState: makeEvent<ControllerTesterState>("controller-tester-state"),
 	conversationsChanged: makeEvent<ConversationsChanged>("conversations-changed"),
 	deviceNotice: makeEvent<DeviceNoticeEvent>("device-notice"),
 	downloadsChanged: makeEvent<DownloadsChanged>("downloads-changed"),
@@ -274,6 +276,7 @@ export const events = {
 	messageStatusChanged: makeEvent<MessageStatusChanged>("message-status-changed"),
 	overlayPackageDisabled: makeEvent<OverlayPackageDisabled>("overlay-package-disabled"),
 	overlayView: makeEvent<OverlayViewChanged>("overlay-view"),
+	padsChanged: makeEvent<PadsChanged>("pads-changed"),
 	presenceChanged: makeEvent<PresenceChanged>("presence-changed"),
 	publishProgress: makeEvent<PublishProgress>("publish-progress"),
 	serverAddRequested: makeEvent<ServerAddRequested>("server-add-requested"),
@@ -282,6 +285,7 @@ export const events = {
 	socialConnectionChanged: makeEvent<SocialConnectionChanged>("social-connection-changed"),
 	trustProblem: makeEvent<TrustProblem>("trust-problem"),
 	typing: makeEvent<Typing>("typing"),
+	uiNav: makeEvent<UiNav>("ui-nav"),
 	updaterStatus: makeEvent<UpdaterStatus>("updater-status"),
 };
 
@@ -308,6 +312,10 @@ export type AccountSession = {
 	last_used_at: string,
 	/**  This launcher's own session. */
 	current: boolean,
+};
+
+export type ActiveControllerChanged = {
+	controller: ControllerKind | null,
 };
 
 /**
@@ -578,6 +586,16 @@ export type ControllerStickSettings = {
 	deadzone: number,
 	anti_deadzone: number,
 	invert_y: boolean,
+};
+
+export type ControllerTesterState = {
+	subscription_id: string,
+	instance_id: number,
+	buttons: Button[],
+	left: [number, number],
+	right: [number, number],
+	left_trigger: number,
+	right_trigger: number,
 };
 
 export type Conversation = {
@@ -1017,6 +1035,8 @@ export type MyDevice = {
 	last_seen_at: string | null,
 };
 
+export type NavAction = "up" | "down" | "left" | "right" | "accept" | "back" | "menu" | "options" | "tab_prev" | "tab_next";
+
 /**  What the overlay (window or in-game renderer) asks the launcher to do. */
 export type OverlayAction = { kind: "accept_invite"; invite_id: string } | { kind: "decline_invite"; invite_id: string } | { kind: "quick_reply"; conversation_id: string; text: string } | { kind: "open_launcher" } | { kind: "close_panel" };
 
@@ -1135,6 +1155,8 @@ export type PackageRef = {
 };
 
 export type PackageStatus = "draft" | "published" | "hidden" | "archived";
+
+export type PadsChanged = Record<string, never>;
 
 /**  Why a job waits (02 §7.10). Every reason except `user` clears by itself. */
 export type PauseReason = 
@@ -1457,6 +1479,13 @@ export type TrustProblemKind = "fingerprint_mismatch";
 export type Typing = {
 	conversation_id: string,
 	user_id: string,
+};
+
+/**  Debounced controller navigation intent. */
+export type UiNav = {
+	action: NavAction,
+	controller: ControllerKind,
+	repeat: boolean,
 };
 
 /**  What uninstalling removes, and what the player decides about (02 §9). */
