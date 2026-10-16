@@ -91,6 +91,7 @@ fn join_secret_is_one_whole_argument() {
 #[test]
 fn invalid_or_absent_secrets_launch_normally() {
     let long = "a".repeat(257);
+    let dir_for_old = install();
     for raw in [
         None,
         Some(""),
@@ -107,6 +108,31 @@ fn invalid_or_absent_secrets_launch_normally() {
         );
     }
     assert!(JoinSecret::parse(&"a".repeat(256)).is_some());
+    // Secrets valid under the older grammar but option-shaped fall back to the
+    // default target (05-social-notes §3.2); the message never names the secret.
+    for (i, raw) in ["--windowed", "-console", ".hidden", ":x", "]x"]
+        .into_iter()
+        .enumerate()
+    {
+        assert_eq!(
+            TargetChoice::for_invite(Some(raw)),
+            TargetChoice::Default,
+            "old-grammar case {i}"
+        );
+        let target = resolve(
+            dir_for_old.path(),
+            &manifest(true),
+            &TargetChoice::for_invite(Some(raw)),
+        )
+        .unwrap();
+        assert_eq!(target.args, ["-windowed"], "old-grammar case {i}");
+    }
+    for raw in ["_x", "[::1]:7777", "abc-def", "a"] {
+        assert!(matches!(
+            TargetChoice::for_invite(Some(raw)),
+            TargetChoice::Join(_)
+        ));
+    }
     // A valid secret for a package without `multiplayer.join` is a normal launch too.
     let dir = install();
     let choice = TargetChoice::for_invite(Some("lobby-42"));

@@ -78,6 +78,16 @@ describe("join secret", () => {
     expect(JOIN_SECRET.test("a;rm -rf")).toBe(false);
     expect(JOIN_SECRET.test("x".repeat(257))).toBe(false);
   });
+
+  it("is never option-shaped", () => {
+    for (const s of ["--windowed", "-console", ".hidden", ":x", "]x", ""]) {
+      expect(JOIN_SECRET.test(s)).toBe(false);
+    }
+    for (const s of ["_x", "[x]", "abc-def", "a", "a".repeat(256), `[${"a".repeat(255)}`]) {
+      expect(JOIN_SECRET.test(s)).toBe(true);
+    }
+    expect(JOIN_SECRET.test("a".repeat(257))).toBe(false);
+  });
 });
 
 describe("socialErrorText", () => {

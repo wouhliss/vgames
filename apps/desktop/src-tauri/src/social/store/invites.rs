@@ -13,7 +13,7 @@ use crate::social::payload::Payload;
 /// `(nonce, ciphertext)` of a stored join secret; both absent without a secret.
 type SealedSecret = (Option<Vec<u8>>, Option<Vec<u8>>);
 
-fn secret_aad(server: Uuid, invite: Uuid) -> Vec<u8> {
+pub(super) fn secret_aad(server: Uuid, invite: Uuid) -> Vec<u8> {
     let mut aad = b"vgames invite join secret v1\0".to_vec();
     aad.extend_from_slice(server.as_bytes());
     aad.extend_from_slice(invite.as_bytes());
@@ -127,7 +127,10 @@ pub fn queue_invite_join(
             let bytes = keys
                 .body
                 .open(&secret_aad(server, invite), &nonce, &sealed)?;
-            Some(String::from_utf8(bytes).map_err(|_| StoreError::Corrupt)?)
+            let secret = String::from_utf8(bytes).map_err(|_| StoreError::Corrupt)?;
+            // Stored under an older grammar (a leading `-`, `.`, `:` or `]`): the invite
+            // goes out without a secret (05-social-notes §3.2). Never logged.
+            is_valid_join_secret(&secret).then_some(secret)
         }
         _ => None,
     };
