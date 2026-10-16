@@ -10,3 +10,7 @@ with your distribution's package manager before starting the launcher. They prov
 
 Links continue through the launcher's installed-package, signature and launch checks. Registration accepts
 the launcher path as data, including spaces and desktop-entry reserved characters; it does not add game arguments.
+
+## macOS bundles
+
+At startup the launcher validates its native `.app/Contents/Info.plist` identity and URL types, then refreshes Launch Services registration. A missing scheme declaration or required handler role is repaired atomically only in an unsigned bundle; other properties and schemes remain intact. Malformed, oversized or linked metadata is refused. A signed bundle with an incomplete declaration needs reinstallation, since editing it would invalidate its signature. Running the development executable outside an app bundle cannot register a macOS URL handler.

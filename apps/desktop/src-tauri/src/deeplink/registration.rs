@@ -39,9 +39,25 @@ pub fn spawn(app: tauri::AppHandle, shutdown: CancellationToken) {
             tracing::warn!("cannot repair launch-link registration");
         }
     });
-    // macOS's bundled URL types/Launch Services registration are handled in
-    // PLAY-09's bundle validation; the desktop plugin cannot register on macOS.
-    #[cfg(not(any(windows, target_os = "linux")))]
+    #[cfg(target_os = "macos")]
+    tauri::async_runtime::spawn(async move {
+        let Ok(executable) = tauri::utils::platform::current_exe() else {
+            return;
+        };
+        if macos::repair(
+            executable,
+            app.config().identifier.clone(),
+            "vgames".into(),
+            &shutdown,
+        )
+        .await
+        .is_err()
+            && !shutdown.is_cancelled()
+        {
+            tracing::warn!("cannot repair launch-link registration");
+        }
+    });
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     let _ = (app, shutdown);
 }
 
@@ -247,3 +263,6 @@ mod tests {
         drop(cleanup);
     }
 }
+
+#[cfg(any(test, target_os = "macos"))]
+mod macos;
