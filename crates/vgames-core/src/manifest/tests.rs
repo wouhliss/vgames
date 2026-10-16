@@ -660,6 +660,70 @@ fn rule_launch_args_limit() {
     }
 }
 
+/// Every key 02 §5 denies, plus prefix members the list names only by prefix.
+const DENIED_ENV_KEYS: &[&str] = &[
+    "PATH",
+    "COMSPEC",
+    "LD_PRELOAD",
+    "LD_LIBRARY_PATH",
+    "LD_AUDIT",
+    "LD_BIND_NOW",
+    "LD_DEBUG",
+    "LD_",
+    "DYLD_INSERT_LIBRARIES",
+    "DYLD_LIBRARY_PATH",
+    "DYLD_",
+    "PYTHONPATH",
+    "PYTHONHOME",
+    "GCONV_PATH",
+    "BASH_ENV",
+    "ENV",
+    "VK_ICD_FILENAMES",
+    "VK_DRIVER_FILES",
+    "VK_ADD_DRIVER_FILES",
+    "VK_LAYER_PATH",
+    "VK_ADD_LAYER_PATH",
+    "VK_INSTANCE_LAYERS",
+    "VK_LOADER_LAYERS_ENABLE",
+];
+
+/// Keys close to a denied one that packages may still set.
+const ALLOWED_NEAR_MISS_ENV_KEYS: &[&str] = &[
+    "LD",
+    "OLD_LD_PRELOAD",
+    "DYLD",
+    "PATHS",
+    "MY_PATH",
+    "PATH_",
+    "ENVIRONMENT",
+    "MY_ENV",
+    "PYTHONIOENCODING",
+    "VK_ICD",
+    "VK_LOADER_DEBUG",
+    "DXVK_HUD",
+    "VKD3D_CONFIG",
+    "PROTON_ENABLE_NVAPI",
+    "SDL_VIDEODRIVER",
+    "GAME_LANG",
+];
+
+#[test]
+fn rule_env_common_game_keys_still_validate() {
+    let r = with(|m| {
+        target(m).env = [
+            ("DXVK_HUD", "fps"),
+            ("SDL_VIDEODRIVER", "wayland"),
+            ("PROTON_ENABLE_NVAPI", "1"),
+            ("VKD3D_CONFIG", "dxr"),
+            ("GAME_LANG", "en"),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+    });
+    assert!(r.is_ok(), "{r:?}");
+}
+
 #[test]
 fn rule_env_keys_and_values() {
     for (key, ok) in [
@@ -685,15 +749,8 @@ fn rule_env_keys_and_values() {
             ));
         }
     }
-    for key in [
-        "PATH",
-        "LD_PRELOAD",
-        "LD_LIBRARY_PATH",
-        "DYLD_INSERT_LIBRARIES",
-        "DYLD_",
-        "PYTHONPATH",
-        "COMSPEC",
-    ] {
+    for key in DENIED_ENV_KEYS {
+        assert!(is_denied_env_key(key), "{key}");
         let r = with(|m| target(m).env = [(key.to_string(), "v".to_string())].into());
         assert!(
             matches!(
@@ -703,8 +760,13 @@ fn rule_env_keys_and_values() {
                     ..
                 })
             ),
-            "{key}"
+            "{key}: {r:?}"
         );
+    }
+    for key in ALLOWED_NEAR_MISS_ENV_KEYS {
+        assert!(!is_denied_env_key(key), "{key}");
+        let r = with(|m| target(m).env = [(key.to_string(), "v".to_string())].into());
+        assert!(r.is_ok(), "{key}: {r:?}");
     }
     let r = with(|m| target(m).env = [("A".to_string(), "x\0y".to_string())].into());
     assert!(matches!(
