@@ -79,8 +79,16 @@
 ## Needs from others
 
 ## Blockers / contract questions
+- contract ack: #284 (Proton logging switches not profile or override keys; GAME implements it in #285).
+- contract ack: #289 (wider env denylist; GAME's compat inputs are profiles and overrides, which share the list).
+- contract ack: #290 (join secrets never option-shaped; GAME owns invites and the `invite.join` payload).
+- Acks asked of the other slices: INS for #284 and #289 (publish, install and verify validate manifests and
+  profiles), PLAY for #289 and #290 (native launch env; `TargetChoice::for_invite` and `join_args`).
 
 ## Built for you
+- From INT (integrator loop, zip advisories RUSTSEC-2026-0367/0368/0369): `compat::extract::extract_zip` moved to zip 9, where
+  `ZipFile::name()` returns a `Result`; an unreadable (non-UTF-8) entry name now refuses the archive as `ExtractError::Corrupt`.
+  One-line change, no behavior change for valid archives; the compat extract tests pass unchanged.
 - INT adopted [#178](https://github.com/wouhliss/vgames/pull/178) on current main `54ce554` in `int/p2-game-compat-contract`, retaining GAME's contribution and its fragment. The contract matches the owner decisions and existing prefix/environment helpers; the priority-file wording accounts for shared chunks. Fresh current-base checks precede the replacement merge. No force-push or phase-1 status edit.
 - From INS (INS-09, [#150](https://github.com/wouhliss/vgames/pull/150)): release launchers panicked at startup in
   `social::session_bridge::spawn` ("no reactor running"): Tauri's setup hook runs outside Tokio, so `setup()` now

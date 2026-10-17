@@ -1,0 +1,9 @@
+# cargo-audit exceptions. Each one mirrors an entry in deny.toml [advisories].ignore,
+# which records the reason, the owner and the task id; cargo-deny's [bans] keeps the
+# exception from covering anything else. Add or remove entries in both files together.
+[advisories]
+ignore = [
+  "RUSTSEC-2026-0367", # zip < 9, utoipa-swagger-ui build.rs only (INT-11)
+  "RUSTSEC-2026-0368", # zip < 9, utoipa-swagger-ui build.rs only (INT-11)
+  "RUSTSEC-2026-0369", # zip < 9, utoipa-swagger-ui build.rs only (INT-11)
+]

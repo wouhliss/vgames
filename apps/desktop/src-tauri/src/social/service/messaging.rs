@@ -390,8 +390,21 @@ impl SocialService {
                 let Ok(t) = serde_json::from_value::<Typing>(data) else {
                     return;
                 };
-                if t.user_id != api.session.user_id {
-                    self.inner.events.typing(t.conversation_id, t.user_id);
+                if t.user_id == api.session.user_id {
+                    return;
+                }
+                // Only members of a cached conversation type in it (GAME-14 S2).
+                let (conversation, user) = (t.conversation_id, t.user_id);
+                let member = self
+                    .with_store("reading members", move |c, _| {
+                        store::conversation_members(c, server_id, conversation)
+                    })
+                    .await
+                    .is_ok_and(|m| {
+                        m.is_some_and(|(_, members)| members.iter().any(|u| u.id == user))
+                    });
+                if member {
+                    self.inner.events.typing(conversation, user);
                 }
             }
             _ => {}

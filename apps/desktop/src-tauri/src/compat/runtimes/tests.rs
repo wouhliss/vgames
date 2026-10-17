@@ -288,3 +288,36 @@ async fn an_escaping_link_leaves_no_runtime_behind() {
     assert_eq!(tree(&r.root), [".work"], "no runtime, no staging");
     assert!(r.store.list().await.unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn stalled_headers_time_out_and_release_the_store() {
+    // GAME-14 C5: a host that accepts the request but never answers must not hold
+    // the busy lock (GC, `runtime_remove`, compat launches) indefinitely.
+    let server = MockServer::start().await;
+    let mut r = rig();
+    r.store.set_headers_timeout(Duration::from_millis(200));
+    let archive = vector("test-runtime.tar.gz");
+    let rt = runtime(&server, RuntimeId::UmuLauncher, "0.0.0-test", &archive);
+    Mock::given(method("GET"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_bytes(archive)
+                .set_delay(Duration::from_secs(30)),
+        )
+        .mount(&server)
+        .await;
+    let err = tokio::time::timeout(Duration::from_secs(10), r.store.ensure(&rt, package(2)))
+        .await
+        .expect("the header stall is bounded by the store, not the test")
+        .unwrap_err();
+    assert!(matches!(err, RuntimeError::Network(_)), "{err}");
+    // The busy lock is free again: an operation that needs it completes.
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        r.store.collect_garbage(&HashSet::new()),
+    )
+    .await
+    .expect("the busy lock was released")
+    .unwrap();
+    assert!(r.store.list().await.unwrap().is_empty());
+}

@@ -215,6 +215,43 @@ async fn ping_unknown_events_and_shutdown(pool: PgPool) {
     }
 }
 
+/// GAME-14 S5: a frame flood gets at most a burst of replies; the socket then recovers.
+#[sqlx::test(migrations = "./migrations")]
+async fn inbound_frame_floods_are_dropped_without_replies(pool: PgPool) {
+    let a = instance(&pool).await;
+    let (_, _, token) = seed_session(&pool, "user").await;
+    let mut ws = connect(&a, &ticket(&a, &token).await).await.unwrap();
+    assert_eq!(next_event(&mut ws).await["type"], "hello");
+
+    let flood = realtime::FRAME_BURST * 4;
+    for i in 0..flood {
+        let raw = if i % 2 == 0 {
+            r#"{"v":1,"type":"ping","data":null}"#
+        } else {
+            r#"{"v":1,"type":"nope","data":{}}"#
+        };
+        ws.send(Message::Text(raw.into())).await.unwrap();
+    }
+    let mut replies = 0u32;
+    while let Ok(Some(Ok(msg))) = tokio::time::timeout(Duration::from_millis(500), ws.next()).await
+    {
+        if matches!(msg, Message::Text(_)) {
+            replies += 1;
+        }
+    }
+    // The refill during the send loop may add a frame or two, never the whole flood.
+    assert!(
+        (realtime::FRAME_BURST..=realtime::FRAME_BURST + 5).contains(&replies),
+        "{replies} replies to {flood} frames"
+    );
+
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    ws.send(Message::Text(r#"{"v":1,"type":"ping","data":null}"#.into()))
+        .await
+        .unwrap();
+    assert_eq!(next_event(&mut ws).await["type"], "pong");
+}
+
 #[sqlx::test(migrations = "./migrations")]
 async fn plain_http_requests_to_the_socket_are_rejected(pool: PgPool) {
     let resp = send(&app(pool), get_req("/v1/realtime?ticket=abc")).await;
