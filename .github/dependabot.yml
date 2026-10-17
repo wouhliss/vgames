@@ -41,6 +41,13 @@ updates:
       - dependency-name: tauri-specta
       - dependency-name: specta
       - dependency-name: specta-typescript
+      # deep-link 2.6.2 builds only against the yanked rust-ini 0.21.2 (0.21.3 dropped the
+      # ParseOption fields it sets), so it fails to compile on Linux; single-instance 2.5.4
+      # requires it. Drop both entries once deep-link ships a release that builds (INT-01).
+      - dependency-name: tauri-plugin-deep-link
+        versions: ["2.6.2"]
+      - dependency-name: tauri-plugin-single-instance
+        versions: ["2.5.4"]
   - package-ecosystem: npm
     directory: /
     schedule: { interval: weekly, day: monday, time: "05:00", timezone: Etc/UTC }

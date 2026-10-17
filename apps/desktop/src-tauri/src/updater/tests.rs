@@ -73,10 +73,15 @@ fn launcher(pubkey: &str, version: &str) -> tauri::App<MockRuntime> {
         .unwrap()
 }
 
+/// Starts with the ELF magic: the updater refuses an AppImage update that is not an ELF executable.
 fn artifact(version: &str) -> Vec<u8> {
-    format!("vgames {version} test build\n")
-        .repeat(64)
-        .into_bytes()
+    let mut bytes = b"\x7fELF".to_vec();
+    bytes.extend(
+        format!("vgames {version} test build\n")
+            .repeat(64)
+            .into_bytes(),
+    );
+    bytes
 }
 
 struct Server {

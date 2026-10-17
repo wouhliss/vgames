@@ -160,6 +160,22 @@ INS asks for the G1 re-review of the install chain (checklist items 1.1, 1.2 and
 
 - INT-03 current-base validation: with INS’s install worker, 295 normal launcher tests and all four chat/chaos database scenarios pass under Xvfb; desktop 1m28s, changelog/security 2s, secrets 2s and workflow lint pass. Existing prelaunch benchmark and soak stay in their separate purposes.
 
+## Security review: Rust dependency group from #301 (2026-10-17)
+Dependabot's #301 bundled crates that `.github/dependabot.yml` routes to the crypto group; INT reviewed them here instead.
+- `tauri-plugin-updater` 2.13.1 → 2.14.0 (source diff of 2.13.3 and 2.14.0): `install()` now verifies the signature itself;
+  restoring a cached update forces a version-bound signature; plain-HTTP downloads are logged; the macOS install swaps
+  bundles atomically and the privileged path quotes every path for `sh` and AppleScript (2.13.1 interpolated them
+  unescaped); the Linux AppImage path checks the payload before touching the installed app and, without the `zip`
+  feature (ours), accepts only a raw ELF AppImage, which is what `release-desktop.yml` publishes. `requireSignedVersion`
+  and `verify_signature` are unchanged.
+- `minisign-verify` 0.2.5 → 0.3.0: only `crypto/cryptoutil.rs` changes (unsafe pointer copies → safe slice copies);
+  `lib.rs`, including `verify()` and its legacy-signature handling, is byte-identical.
+- `sha2` 0.11.0 → 0.11.1: byte-chunk refactor. `zeroize` 1.9.0 → 1.9.1: zeroes `Vec` spare capacity before clearing,
+  `Zeroizing`'s `Debug` no longer prints contents, drops redundant barrier calls; volatile writes are unchanged.
+- Held back: `tauri-plugin-deep-link` 2.6.2 builds only against the yanked `rust-ini` 0.21.2 and fails on Linux, and
+  `tauri-plugin-single-instance` 2.5.4 requires it; both stay at 2.6.1 / 2.5.3 and are ignored in `dependabot.yml`.
+- Updater test fixture: artifacts now start with the ELF magic (2.14.0 refuses a non-ELF AppImage); every assertion is unchanged.
+
 ## Updater checkpoint security review (INS-03 / #138)
 - Adopted #138 on current main, retaining its signed-artifact verification, game-running checks and serialized install lock. Downloads stop at journaled checkpoints before installation; release signing configuration is unchanged.
 - Replaced manual release calls with a scoped checkpoint guard: shutdown, missing updates, failed verification/install and cancellation of the install future all release the queue. Tests cover checkpoint ordering, shutdown, aborted futures and failed/missing-update exits. Successful installation keeps the guard through restart.
