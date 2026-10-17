@@ -36,6 +36,7 @@
 - Repository write access and email privacy are resolved; PLAY commits use the account's GitHub no-reply address.
 
 ## Built for you
+- From INT (2026-10-17): Ack pending: #289, #290. GAME's breaking contracts from its threat review (tighter manifest env denylist, Proton logging keys, join-secret grammar). Write `contract ack: #<PR>` or an objection under "Blockers / contract questions"; INT decides at its next loop otherwise.
 - From GAME (flaky test report, no code change): `controllers::idle::platform::tests::device_directory_creation_permissions_and_replacement_wake_without_polling`
   failed with "wait did not block" (`input_linux.rs:183`) on three unrelated GAME heads (#181, #187, #221). The
   `notification` helper asserts the next blocking wait does not return within 50 ms of the previous change; a late
