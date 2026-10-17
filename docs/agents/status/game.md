@@ -63,14 +63,44 @@
   directory, and the `overlay-package-disabled` notice with "Turn it back on" (`OverlayDisabledNotice.tsx`).
 
 ## In progress
-- GAME-08 — left: the Vulkan layer shown active in GAME-05's hosted Proton run; the fallback window on Wayland
-  (today OS notifications) with a `weston --backend=headless` test.
-- GAME-12 — left: the M3 two-instance scenario in `apps/desktop/e2e-real/`.
-- GAME-14 — the 03-api §6 contract is [#252](https://github.com/wouhliss/vgames/pull/252) (reviewed by INT, green,
-  waiting for INT's merge); left: the threat review, the `apps/desktop/README.md` compatibility section,
-  `05-social-notes.md` final.
+Handoff 2026-10-17 (main `957aabe`). Everything is pushed; each open PR below is GAME's, rebased on `957aabe`.
+
+**Red on every head, `main` included: `Supply chain`.** RUSTSEC-2026-0368 and RUSTSEC-2026-0369 (zip 8.6
+`extract()` follows symlinks and applies permissions through them).
+[#296](https://github.com/wouhliss/vgames/pull/296) moves the workspace to zip 9 (`compat/extract.rs`: `name()` is
+fallible). zip 8.6 still comes in as a **build** dependency of `utoipa-swagger-ui` 10.0.1 (latest release, pins
+`^8.6`). Its `build.rs` uses `by_index` + `enclosed_name`, never `extract()`, on the Swagger UI zip it ships.
+Waiting on the owner's choice between three options:
+- a justified `deny.toml` ignore plus `.cargo/audit.toml` for both ids;
+- replacing `utoipa-swagger-ui`;
+- waiting for an upstream release.
+
+Then merge in this order, rebasing the rest after each merge:
+
+| PR | What | Waits on |
+|---|---|---|
+| [#296](https://github.com/wouhliss/vgames/pull/296) | zip 9 | the decision above |
+| [#293](https://github.com/wouhliss/vgames/pull/293) | `db::open_ready` retries `SQLITE_BUSY` (Windows reopen flake) | green CI |
+| [#275](https://github.com/wouhliss/vgames/pull/275) | Proton E2E with the overlay layer (GAME-08) | green CI |
+| [#281](https://github.com/wouhliss/vgames/pull/281) | O4: broker writes time out | green CI |
+| [#292](https://github.com/wouhliss/vgames/pull/292) | C4: native Rosetta confirmation | green CI |
+| [#285](https://github.com/wouhliss/vgames/pull/285) | C3: PROTON_LOG reserved | contract #284; carries #293's commit |
+| [#294](https://github.com/wouhliss/vgames/pull/294) | C2: wider env denylist | contract #289 |
+| [#295](https://github.com/wouhliss/vgames/pull/295) | S3: join-secret grammar | contract #290 |
+
+INT's to merge:
+- contracts #252, #284, #289 and #290 (INS and PLAY acks asked; see Blockers);
+- threat review [#280](https://github.com/wouhliss/vgames/pull/280), which needs INT's co-signature. When updating
+  it, mark these findings fixed: S1/S2 (#283), S4 (#288), S5 (#287), O1 (#279) and C5 (#282). C1 (runtime catalog
+  key) is a release gate owned by INT.
+
+Remaining GAME work:
+- GAME-14: O2/O3 (broker contract and handshakes), `05-social-notes.md` final, the `apps/desktop/README.md`
+  compatibility section.
+- GAME-08: the Wayland fallback window with a `weston --backend=headless` test.
+- GAME-12: the M3 two-instance scenario in `apps/desktop/e2e-real/`.
 - Not started: GAME-09 (Windows DLL and injector), GAME-10 (macOS panel; needs the `macOSPrivateApi` contract),
-  the rest of GAME-11 (32-bit DLL, helper and manifests in the matrix; installer contents).
+  and the rest of GAME-11 (32-bit DLL, helper and manifests in the matrix; installer contents).
 
 ## Interfaces delivered (other agents may now rely on these)
 - `vgames_proto::realtime::MAX_FRAME` (64 KiB, GAME-01): the server re-exports it from `apps/api/src/realtime/mod.rs`;
