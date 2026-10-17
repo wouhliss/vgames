@@ -27,8 +27,9 @@ use zeroize::Zeroizing;
 
 use super::*;
 use crate::events::{GameExit, GameStarted, GameStopped, PackageRef};
-use crate::social::model::{PresenceStatus, SocialConnectionState};
+use crate::social::model::{ConversationKind, PresenceStatus, SocialConnectionState};
 use crate::social::ports::{ServerSession, SessionSlot};
+use crate::social::store;
 
 // ---- fake gateway ---------------------------------------------------------------------------
 
@@ -274,6 +275,7 @@ enum Seen {
     Friends(FriendList),
     Presence(Uuid, Presence),
     Request(UserSummary),
+    Typing(Uuid, Uuid),
 }
 
 struct Recorder(mpsc::UnboundedSender<Seen>);
@@ -294,7 +296,9 @@ impl SocialEvents for Recorder {
     fn conversations_changed(&self, _: &[Conversation]) {}
     fn message_received(&self, _: &Message) {}
     fn message_status_changed(&self, _: Uuid, _: Uuid, _: MessageStatus) {}
-    fn typing(&self, _: Uuid, _: Uuid) {}
+    fn typing(&self, c: Uuid, u: Uuid) {
+        let _ = self.0.send(Seen::Typing(c, u));
+    }
     fn device_notice(&self, _: Option<Uuid>, _: &DeviceNotice) {}
     fn invite_received(&self, _: &Invite) {}
     fn invite_changed(&self, _: &Invite) {}
@@ -472,6 +476,92 @@ async fn connects_resyncs_and_follows_events() {
         "inbox.new",
         json!({"conversation_id": Uuid::nil(), "count": 1}),
     );
+    h.shutdown.cancel();
+}
+
+#[tokio::test]
+async fn presence_from_non_friends_and_oversized_titles_is_dropped() {
+    let mut server = Server::start("token-a", 0).await;
+    *server.gw.friends.lock().unwrap() =
+        json!({"friends": [friend_json(5, "ana")], "incoming": [], "outgoing": []});
+    let mut h = harness().await;
+    h.service
+        .sessions()
+        .set(Some(server.session(Uuid::from_u128(100))));
+    h.next(|s| matches!(s, Seen::Friends(_))).await;
+    server.next_presence().await;
+
+    let cases = [
+        ("x".repeat(201), None),
+        ("é".repeat(200), Some("é".repeat(200))),
+        ("Co\u{1b}[2Jop".to_owned(), None),
+        ("Line\nbreak".to_owned(), None),
+        (" \t ".to_owned(), None),
+        ("Coop".to_owned(), Some("Coop".to_owned())),
+    ];
+    for (title, want) in cases {
+        // A stranger's presence never reaches the UI; the friend's next one does.
+        server.push(
+            "presence.changed",
+            json!({"user_id": Uuid::from_u128(9), "status": "in_game", "package_title": "Spy"}),
+        );
+        server.push(
+            "presence.changed",
+            json!({"user_id": Uuid::from_u128(5), "status": "in_game", "package_title": title}),
+        );
+        let Seen::Presence(user, p) = h.next(|s| matches!(s, Seen::Presence(..))).await else {
+            unreachable!()
+        };
+        assert_eq!((user, p.package_title), (Uuid::from_u128(5), want));
+    }
+    h.shutdown.cancel();
+}
+
+#[tokio::test]
+async fn typing_from_non_members_is_dropped() {
+    let server = Server::start("token-a", 0).await;
+    let mut h = harness().await;
+    let server_id = Uuid::from_u128(100);
+    let (chat, other) = (Uuid::from_u128(50), Uuid::from_u128(51));
+    h.add_server_row(server_id, &format!("http://{}/", server.addr))
+        .await;
+    h.service
+        .with_store("test", move |c, _| {
+            let member = |id: u128| UserSummary {
+                id: Uuid::from_u128(id),
+                username: format!("u{id}"),
+                display_name: None,
+                avatar_url: None,
+            };
+            store::upsert_conversation(
+                c,
+                server_id,
+                &store::CachedConversation {
+                    id: chat,
+                    kind: ConversationKind::Direct,
+                    members: vec![member(1), member(5)],
+                    created_at: 0,
+                    last_activity_at: 0,
+                },
+            )
+        })
+        .await
+        .unwrap();
+    h.service.sessions().set(Some(server.session(server_id)));
+    h.state(SocialConnectionState::Connected).await;
+
+    // A stranger in a cached chat and a member in an unknown chat are ignored; the member's
+    // typing in their chat comes through.
+    for (conversation, user) in [(chat, 9), (other, 5), (chat, 5)] {
+        server.push(
+            "typing",
+            json!({"conversation_id": conversation, "user_id": Uuid::from_u128(user)}),
+        );
+    }
+    let Seen::Typing(c, u) = h.next(|s| matches!(s, Seen::Typing(..))).await else {
+        unreachable!()
+    };
+    assert_eq!((c, u), (chat, Uuid::from_u128(5)));
     h.shutdown.cancel();
 }
 

@@ -346,7 +346,10 @@ fn extract_zip(file: File, sink: &mut Sink) -> Result<(), ExtractError> {
             .map_err(|e| ExtractError::Corrupt(e.to_string()))?;
         // The raw name, not `enclosed_name`: an unsafe name refuses the archive
         // instead of being skipped.
-        let raw = PathBuf::from(entry.name().replace('\\', "/"));
+        let name = entry
+            .name()
+            .map_err(|e| ExtractError::Corrupt(e.to_string()))?;
+        let raw = PathBuf::from(name.replace('\\', "/"));
         let Some(rel) = sink.admit(&raw)? else {
             continue;
         };
