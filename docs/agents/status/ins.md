@@ -133,6 +133,7 @@ Install & Library (phase 2, `docs/agents/phase-2/ins-install-library.md`).
 - For INT-11: the G1 re-review of the install chain requested in `int.md` (not blocking INS).
 
 ## Built for you
+- From INT (2026-10-17): Ack pending: #284, #289. GAME's breaking contracts from its threat review (tighter manifest env denylist, Proton logging keys, join-secret grammar). Write `contract ack: #<PR>` or an objection under "Blockers / contract questions"; INT decides at its next loop otherwise.
 - From GAME (GAME-04): `api::MAX_PROBLEM_BYTES` (64 KiB) is now a named constant used by `problem_from`; social REST
   builds on `send_with_retries` and `problem_from` (no behavior change for other callers).
 - From GAME (GAME-13): `db::configure` sets `PRAGMA cache_size = -2048` (2 MiB) explicitly, asserted in
