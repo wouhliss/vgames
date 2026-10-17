@@ -23,7 +23,18 @@ feature-depth = 1
 # advisory id, the reason it does not apply, and an owner + task id.
 yanked = "deny"
 unmaintained = "workspace"
-ignore = []
+ignore = [
+  # zip < 9: ZipArchive::extract / ZipStreamReader::extract mishandle symlinks and
+  # SUID/SGID bits. The only zip < 9 left is utoipa-swagger-ui's build dependency
+  # (no utoipa-swagger-ui release on zip 9 yet). Its build.rs never calls extract():
+  # it walks entries with enclosed_name() over the vendored Swagger UI archive, whose
+  # bytes Cargo.lock checksums, at build time only. Shipped code uses zip 9, and
+  # [bans] below confines zip < 9 to that wrapper. Owner: INT; remove when
+  # utoipa-swagger-ui moves to zip >= 9 (INT-11).
+  { id = "RUSTSEC-2026-0367", reason = "zip < 9 only in utoipa-swagger-ui build.rs, which never calls extract()" },
+  { id = "RUSTSEC-2026-0368", reason = "zip < 9 only in utoipa-swagger-ui build.rs, which never calls extract()" },
+  { id = "RUSTSEC-2026-0369", reason = "zip < 9 only in utoipa-swagger-ui build.rs, which never calls extract()" },
+]
 
 [licenses]
 # Permissive licenses only. GPL/AGPL (and LGPL) are not allowed in anything we
@@ -64,6 +75,11 @@ multiple-versions = "warn"
 wildcards = "deny"
 allow-wildcard-paths = true
 highlight = "all"
+deny = [
+  # The RUSTSEC-2026-0367/0368/0369 exceptions above hold only while zip < 9 stays
+  # a build dependency of utoipa-swagger-ui.
+  { crate = "zip:<9", wrappers = ["utoipa-swagger-ui"], reason = "zip < 9 extract() is unsafe on untrusted archives" },
+]
 
 [sources]
 # crates.io only: no git dependencies, no other registries.

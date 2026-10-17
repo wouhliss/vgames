@@ -112,6 +112,20 @@ impl settings::Setting for SocialSettingsKey {
     }
 }
 
+/// Longest `presence.changed` package title kept, in characters. An honest server never sends
+/// more: package titles are limited to 200 characters (`check_text(.., 1, 200)` in the API's
+/// `packages.rs`).
+const MAX_PACKAGE_TITLE_CHARS: usize = 200;
+
+/// A pushed package title, or `None` when no honest server would send it (GAME-14 S1).
+fn package_title(title: Option<String>) -> Option<String> {
+    title.filter(|t| {
+        !t.trim().is_empty()
+            && t.chars().count() <= MAX_PACKAGE_TITLE_CHARS
+            && !t.chars().any(char::is_control)
+    })
+}
+
 fn rfc3339(t: OffsetDateTime) -> Option<String> {
     t.format(&time::format_description::well_known::Rfc3339)
         .ok()
@@ -587,14 +601,17 @@ impl SocialService {
                     let presence = Presence {
                         status: p.status.into(),
                         package_id: p.package_id,
-                        package_title: p.package_title,
+                        package_title: package_title(p.package_title),
                         updated_at: rfc3339(OffsetDateTime::now_utc()),
                     };
+                    // Only friends' presence reaches the UI (GAME-14 S2).
                     if let Some((s, list)) = lock(&self.inner.friends).as_mut()
                         && *s == server_id
                         && let Some(f) = list.friends.iter_mut().find(|f| f.user.id == p.user_id)
                     {
                         f.presence = Some(presence.clone());
+                    } else {
+                        return;
                     }
                     self.inner.events.presence_changed(p.user_id, &presence);
                 }

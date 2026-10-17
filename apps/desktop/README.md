@@ -112,6 +112,43 @@ The queue (`downloads_list`, Downloads page) runs one to three installs at a tim
   connection; a second mismatch fails the install with "A file on the server is damaged"
   (`damaged_file`) and sends an **integrity report** (below).
 
+## Compatibility (Proton and Wine)
+
+Windows games run through Proton on Linux and through Wine on macOS (09-compatibility). Everything
+below lives in the launcher's data directory: `~/.local/share/app.vgames.launcher` on Linux,
+`~/Library/Application Support/app.vgames.launcher` on macOS (`%APPDATA%\app.vgames.launcher` on
+Windows, where games run as they are).
+
+- **Runtimes** live in `<data dir>/runtimes/<id>/<version>/` (for example `umu-proton` and
+  `umu-launcher`). One downloads the first time a game needs it, only from a runtime catalog whose
+  signature verified. The archive's size is enforced while it downloads and its SHA-256 checked
+  **before** anything is extracted; an interrupted download resumes from its `.part` file.
+  Settings → Compatibility → Downloaded runtimes lists them with the games using each one;
+  **Remove** (`runtime_remove`) refuses a version still in use. Versions no installed game uses are
+  deleted when the launcher starts.
+- **Prefixes** (the Windows side of a game: its `C:` drive, registry, and often its local saves)
+  live in `<data dir>/prefixes/<server id>/<package id>/`, one per package (`compat::prefix_dir`).
+- **Resetting a prefix**: quit the game, then delete that folder; the next launch creates a fresh
+  one. Copy out any local saves first (they are often under `drive_c/users/`). Uninstalling with
+  "Also delete this package's Windows compatibility files" ticked does the same.
+- **Per-game settings**: Settings → Compatibility → Per game → **Customize** changes one game's
+  Proton or Wine version, graphics backend (macOS) and extra environment variables; **Reset**
+  (`compat_override_reset`) goes back to the defaults. These stay on this computer. Names are
+  `A-Z`, `0-9` and `_`, at most 64 characters. Refused: the keys the launcher sets itself
+  (`WINEPREFIX`, `WINEDLLOVERRIDES`, `WINEDLLPATH`, `WINEPATH`, `WINELOADER`, `WINESERVER`,
+  `PROTONPATH`, `GAMEID`, `STORE`, and anything starting with `STEAM_COMPAT_`, `UMU_` or
+  `PRESSURE_VESSEL_`) and the keys no package may set (`PATH`, `LD_PRELOAD`, `LD_LIBRARY_PATH`,
+  `PYTHONPATH`, `COMSPEC`, `DYLD_*`).
+
+**Logs.** The launcher logs the runtime catalog, runtime downloads and launch plans under
+`vgames_desktop_lib::compat`, and the in-game overlay's broker and fallback window under
+`vgames_desktop_lib::overlay` (in `vgames.log`, see [Logs and crash reports](#logs-and-crash-reports)).
+The overlay renderer inside the game writes no log of its own: a renderer that never connects shows
+up there as the fallback window opening after 20 s. For Proton's or Wine's own log, add environment
+variables to the game under Per game → Customize: `PROTON_LOG=1` (Proton writes
+`steam-<id>.log` in your home folder, or in `PROTON_LOG_DIR`), `DXVK_LOG_LEVEL=info` with
+`DXVK_LOG_PATH`, or `WINEDEBUG` for Wine. Remove them afterwards: they slow the game down.
+
 ## Publishing (admins)
 
 Admins and owners of the active server see **Publish** in the sidebar (`src/routes/publish/`, commands

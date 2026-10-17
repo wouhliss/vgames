@@ -15,7 +15,7 @@
 //!
 //! Rules: one atomic load per swap while hidden; no allocation unless visible; a panic or a
 //! frame over [`FRAME_BUDGET`] on average turns the overlay off (the first frame in a window
-//! that creates our GL objects counts all but [`WARM_UP_ALLOWANCE`] of its time); the GL hooks stand down for
+//! that creates our GL objects is a warm-up, left out of the average); the GL hooks stand down for
 //! good once the Vulkan layer draws in this process ([`guard::vulkan_draws`]). Only GL 3.0+
 //! and OpenGL ES 3.0+ contexts are drawn into; older ones are left alone.
 //!
@@ -36,13 +36,6 @@ use crate::protocol::RendererKind;
 /// Drawing may take this long per frame on average before the overlay turns itself off.
 pub const FRAME_BUDGET: Duration = Duration::from_millis(1);
 const BUDGET_WINDOW: u32 = 120;
-/// Taken off the time of the first frame in a window that creates our textures and
-/// framebuffers before it counts against the budget: drivers build their blit path on first
-/// use (llvmpipe compiles it, 20-140 ms measured locally and over 370 ms on a loaded hosted
-/// runner), and that one-off alone would average a window over budget. A longer stall is no
-/// warm-up: the rest counts. Further builds in the same window count in full, so a context
-/// rebuilt every frame still reaches the guard.
-const WARM_UP_ALLOWANCE: Duration = Duration::from_secs(1);
 static DRAWN_FRAMES: AtomicU64 = AtomicU64::new(0);
 static DRAW_NANOS: AtomicU64 = AtomicU64::new(0);
 
@@ -593,6 +586,15 @@ struct State {
 }
 
 /// The safety valve: the average draw time over windows of [`BUDGET_WINDOW`] drawn frames.
+///
+/// The first frame in a window that creates our textures and framebuffers is a warm-up and
+/// is left out (neither a frame nor time): drivers build their blit path on first use
+/// (llvmpipe compiles it, 20-140 ms measured locally, over 370 ms and then over 1.1 s on
+/// loaded hosted runners), and that one-off alone would average a window over budget and
+/// turn the overlay off for the whole process. By the time it is measured the stall has
+/// happened; turning the overlay off would not undo it, and the valve is for the steady cost.
+/// Further builds in the same window count in full, so a context rebuilt every frame still
+/// reaches the guard.
 #[derive(Default)]
 struct Budget {
     frames: u32,
@@ -604,12 +606,10 @@ impl Budget {
     /// Adds one drawn frame (`built`: it created our GL objects); `false` once a window
     /// averaged over [`FRAME_BUDGET`].
     fn record(&mut self, took: Duration, built: bool) -> bool {
-        let took = if built && !self.warmed_up {
+        if built && !self.warmed_up {
             self.warmed_up = true;
-            took.saturating_sub(WARM_UP_ALLOWANCE)
-        } else {
-            took
-        };
+            return true;
+        }
         self.frames += 1;
         self.spent += took;
         if self.frames < BUDGET_WINDOW {
@@ -878,11 +878,17 @@ mod tests {
 
     const MS: Duration = Duration::from_millis(1);
 
-    /// Records `first` (built or not) then cheap frames to the end of the window.
+    /// Records `first` (built or not) then cheap frames to the end of the window (a warm-up
+    /// build is not one of its frames).
     fn window(first: Duration, built: bool) -> bool {
         let mut b = Budget::default();
         let mut ok = b.record(first, built);
-        for _ in 1..BUDGET_WINDOW {
+        let rest = if built {
+            BUDGET_WINDOW
+        } else {
+            BUDGET_WINDOW - 1
+        };
+        for _ in 0..rest {
             ok = b.record(MS / 5, false);
         }
         ok
@@ -901,7 +907,7 @@ mod tests {
     }
 
     #[test]
-    fn building_our_objects_is_a_warm_up_up_to_the_allowance() {
+    fn building_our_objects_is_a_warm_up() {
         // 200 ms then 119 × 0.2 ms: 1.86 ms on average if it all counted.
         assert!(window(200 * MS, true));
         // The same stall in a frame that built nothing counts in full.
@@ -909,11 +915,19 @@ mod tests {
     }
 
     #[test]
-    fn a_warm_up_stall_past_the_allowance_still_counts() {
-        // 450 ms: 200 ms past the allowance, (200 + 23.8) / 120 = 1.87 ms on average.
-        assert!(!window(WARM_UP_ALLOWANCE + 200 * MS, true));
-        // Just past it: still within budget.
-        assert!(window(WARM_UP_ALLOWANCE + 50 * MS, true));
+    fn a_warm_up_of_any_length_is_left_out_and_the_window_still_closes() {
+        // A hosted runner took over 1.1 s for the first build: it used to count all but 1 s,
+        // which alone averaged that window over budget and turned the overlay off.
+        assert!(window(1_200 * MS, true));
+        assert!(window(10_000 * MS, true));
+        // The warm-up is not one of the window's frames: 120 slow frames after it still trip.
+        let mut b = Budget::default();
+        assert!(b.record(10 * MS, true));
+        let ends: Vec<bool> = (0..BUDGET_WINDOW)
+            .map(|_| b.record(2 * MS, false))
+            .collect();
+        assert!(ends[..ends.len() - 1].iter().all(|ok| *ok));
+        assert_eq!(ends.last(), Some(&false));
     }
 
     #[test]
@@ -925,10 +939,10 @@ mod tests {
 
     #[test]
     fn only_the_first_build_in_a_window_is_a_warm_up() {
-        // Two 200 ms builds: the second counts in full, (200 + 23.6) / 120 = 1.86 ms.
+        // Two 200 ms builds: the second counts in full, (200 + 23.8) / 120 = 1.86 ms.
         let mut b = Budget::default();
         let mut ok = b.record(200 * MS, true) && b.record(200 * MS, true);
-        for _ in 2..BUDGET_WINDOW {
+        for _ in 1..BUDGET_WINDOW {
             ok = b.record(MS / 5, false);
         }
         assert!(!ok);

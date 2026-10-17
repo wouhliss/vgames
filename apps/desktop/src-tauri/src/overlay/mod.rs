@@ -366,6 +366,12 @@ impl OverlayService {
     }
 
     async fn run(&self, action: Action) {
+        if !acts_on_shown_item(&action, &self.inner.hub.current()) {
+            // The game holds the broker token, so a renderer's action is only taken as the
+            // player's when the panel is open and shows what it names.
+            tracing::info!("overlay action refused: not shown in the open panel");
+            return;
+        }
         let s = &self.inner.social;
         let result = match action {
             Action::AcceptInvite { invite_id } => s.invite_accept(invite_id).await.map(drop),
@@ -537,6 +543,27 @@ impl OverlayService {
     }
 }
 
+/// Whether `action` may run as the player's: actions that act for them (accept, decline, reply)
+/// need the open panel showing that invite or conversation. Opening the launcher and closing the
+/// panel are always allowed.
+fn acts_on_shown_item(action: &Action, view: &model::OverlayView) -> bool {
+    match action {
+        Action::AcceptInvite { invite_id } | Action::DeclineInvite { invite_id } => {
+            view.visible_panel && view.invites.iter().any(|i| i.invite_id == *invite_id)
+        }
+        Action::QuickReply {
+            conversation_id, ..
+        } => {
+            view.visible_panel
+                && view
+                    .recent_messages
+                    .iter()
+                    .any(|m| m.conversation_id == *conversation_id)
+        }
+        Action::OpenLauncher | Action::ClosePanel => true,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(
@@ -624,6 +651,58 @@ mod tests {
                 session_seconds: 4,
             },
         })
+    }
+
+    #[test]
+    fn only_the_open_panel_lets_actions_act_for_the_player() {
+        use crate::social::model::InviteState;
+        let invite = Uuid::from_u128(10);
+        let conversation = Uuid::from_u128(11);
+        let mut view = model::OverlayView {
+            visible_panel: true,
+            invites: vec![model::OverlayInvite {
+                invite_id: invite,
+                from: "Sam".into(),
+                package_title: "Arena".into(),
+                state: InviteState::Pending,
+            }],
+            recent_messages: vec![model::OverlayMessage {
+                conversation_id: conversation,
+                from: "Sam".into(),
+                text: "hi".into(),
+                sent_at: "2026-10-15T00:00:00Z".into(),
+            }],
+            ..model::OverlayView::default()
+        };
+        let accept = |id| Action::AcceptInvite { invite_id: id };
+        let decline = |id| Action::DeclineInvite { invite_id: id };
+        let reply = |id| Action::QuickReply {
+            conversation_id: id,
+            text: "on my way".into(),
+        };
+        let other = Uuid::from_u128(12);
+        for (action, shown) in [
+            (accept(invite), true),
+            (decline(invite), true),
+            (reply(conversation), true),
+            // Ids the panel does not show: a game guessing or replaying them is refused.
+            (accept(other), false),
+            (decline(conversation), false),
+            (reply(invite), false),
+            (reply(other), false),
+        ] {
+            assert_eq!(acts_on_shown_item(&action, &view), shown, "{action:?}");
+        }
+        assert!(acts_on_shown_item(&Action::OpenLauncher, &view));
+        assert!(acts_on_shown_item(&Action::ClosePanel, &view));
+
+        // Panel closed (toasts only): nothing acts for the player, even on shown items.
+        view.visible_panel = false;
+        assert!(!acts_on_shown_item(&accept(invite), &view));
+        assert!(!acts_on_shown_item(&decline(invite), &view));
+        assert!(!acts_on_shown_item(&reply(conversation), &view));
+        assert!(acts_on_shown_item(&Action::OpenLauncher, &view));
+        assert!(acts_on_shown_item(&Action::ClosePanel, &view));
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
