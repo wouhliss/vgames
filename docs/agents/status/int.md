@@ -337,3 +337,7 @@ INT approves GAME's breaking contracts #284, #289 and #290 under phase-2 README 
 ## Controller contract review (INT integrator loop, 2026-10-23)
 
 Reviewed additive #196: controller commands/settings/tester scope, driver availability, measured native blocking without an idle polling timer, and session-owned verified controller configuration. The contract preserves manifest kinds and mapping defaults, requires profile validation before transactional writes, and keeps emulation failures from vetoing native launch. Native no-pad measurements are explicitly narrower than device recognition and whole-launcher performance; no hardware result is claimed. A current-base replacement preserves PLAY's commits, fragment and status notes. No application or capability changes belong in this contract PR.
+
+## Hosted soak contract review (INT-07)
+
+This additive contract records the owner's hosted-runner decision, builds before measurement, and keeps the 24-hour target as non-blocking confirmation rather than claiming a short observation proves it. The strict 5% warmed end-growth and fitted-growth gates are explicit; profiles and launcher output are excluded from uploads. Social test durations/budgets remain unchanged, and diagnostics cannot qualify as full acceptance. No wire format, signing policy, secret handling or application behavior changes. Implementation is prepared separately in `int/p2-hosted-soak-current`.

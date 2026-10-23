@@ -123,7 +123,7 @@ cargo xtask runtimes verify --last-version <published version> runtimes.json
 |---|---|---|
 | [`e2e.yml`](../../.github/workflows/e2e.yml) | nightly, manual | The `vgames` CLI key pipeline against a real API (`scripts/e2e/key-pipeline.sh`), and the admin Playwright suite against the API serving the built admin web |
 | [`desktop-matrix.yml`](../../.github/workflows/desktop-matrix.yml) | nightly, PRs touching the launcher crates | Unsigned builds and Rust tests on Windows, Linux and macOS |
-| [`soak.yml`](../../.github/workflows/soak.yml) | weekly, manual | 24 h launcher leak test on a dedicated self-hosted runner (labels `self-hosted, linux, vgames-soak`); skipped until the repository variable `VGAMES_SOAK_RUNNER=true` |
+| [`soak.yml`](../../.github/workflows/soak.yml) | weekly, manual | One build supplies separate hosted launcher idle (5.5 h), social chat (1 h) and idle-socket (5.5 h) jobs. RSS samples and summaries are artifacts; short diagnostics do not meet full acceptance. Optional legacy 24 h self-hosted job remains behind `VGAMES_SOAK_RUNNER` |
 | [Dependabot](../../.github/dependabot.yml) | weekly | Grouped updates; cryptography crates in their own PR; nothing is auto-merged |
 
 ## Automated release dry run
