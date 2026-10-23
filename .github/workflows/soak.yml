@@ -123,9 +123,9 @@ jobs:
           tar -xzf "$RUNNER_TEMP/soak-binaries/soak-binaries.tar.gz" -C "$RUNNER_TEMP/soak-binaries"
       - name: Observe the whole release process tree
         run: |
-          dbus-run-session -- xvfb-run -a -s '-screen 0 1280x800x24' \
+          xvfb-run -a -s '-screen 0 1280x800x24' \
             python3 apps/desktop/perf/soak.py --binary "$RUNNER_TEMP/soak-binaries/vgames-desktop" \
-            --hours "$HOSTED_HOURS" --out "$RUNNER_TEMP/soak" --require-ui-ready
+            --hours "$HOSTED_HOURS" --out "$RUNNER_TEMP/soak" --require-ui-ready --dbus-session
       - name: RSS summary
         if: always()
         run: |

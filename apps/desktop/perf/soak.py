@@ -128,7 +128,7 @@ def wait_for_ui(process, profile, timeout=30, observe=None):
     raise RuntimeError("launcher did not acknowledge its first rendered screen")
 
 
-def run(binary, duration, output, require_ui_ready=False):
+def run(binary, duration, output, require_ui_ready=False, dbus_session=False):
     output.mkdir(parents=True, exist_ok=True)
     rows, process = [], None
     report = {"passed": False, "duration_seconds": duration}
@@ -138,11 +138,18 @@ def run(binary, duration, output, require_ui_ready=False):
         env = os.environ.copy()
         env["VGAMES_LOG"] = "info"
         for name, suffix in (("HOME", "home"), ("XDG_CONFIG_HOME", "config"),
-                             ("XDG_DATA_HOME", "data"), ("XDG_CACHE_HOME", "cache")):
+                             ("XDG_DATA_HOME", "data"), ("XDG_CACHE_HOME", "cache"),
+                             ("XDG_RUNTIME_DIR", "runtime")):
             directory = Path(profile.name) / suffix
             directory.mkdir(mode=0o700)
             env[name] = str(directory)
-        process = subprocess.Popen([str(binary)], env=env, start_new_session=True,
+        command = [str(binary)]
+        if dbus_session:
+            for name in ("DBUS_SESSION_BUS_ADDRESS", "DBUS_SESSION_BUS_PID",
+                         "DBUS_STARTER_ADDRESS", "DBUS_STARTER_BUS_TYPE"):
+                env.pop(name, None)
+            command = ["dbus-run-session", "--", *command]
+        process = subprocess.Popen(command, env=env, start_new_session=True,
                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         table = processes()
         if process.pid not in table:
@@ -209,9 +216,12 @@ if __name__ == "__main__":
     parser.add_argument("--hours", required=True, type=hours)
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument("--require-ui-ready", action="store_true")
+    parser.add_argument("--dbus-session", action="store_true",
+                        help="start a private session bus inside the temporary profile")
     args = parser.parse_args()
     def interrupted(_signal, _frame):
         raise KeyboardInterrupt
 
     signal.signal(signal.SIGTERM, interrupted)
-    raise SystemExit(run(args.binary.resolve(), args.hours * 3600, args.out, args.require_ui_ready))
+    raise SystemExit(run(args.binary.resolve(), args.hours * 3600, args.out,
+                         args.require_ui_ready, args.dbus_session))
