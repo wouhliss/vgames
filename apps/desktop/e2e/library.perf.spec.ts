@@ -2,7 +2,15 @@
 // Runs in the "perf" project, alone and after every other test (playwright.config.ts), so the frames
 // measured here share the CPU with nothing else from the suite.
 import { expect, test } from "@playwright/test";
-import { open } from "./helpers";
+import { axeViolations, open } from "./helpers";
+
+// Keep accessibility work outside the frame-pacing measurement.
+test.afterEach(async ({ page }) => {
+  const violations = (await axeViolations(page)).filter(
+    (v) => v.impact === "serious" || v.impact === "critical",
+  );
+  expect(violations).toEqual([]);
+});
 
 test("5,000 installed packages scroll without dropped frames", async ({ page }) => {
   test.setTimeout(90_000);
