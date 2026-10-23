@@ -4,7 +4,9 @@
 //!   learns both from `VGAMES_OVERLAY_ENDPOINT` / `VGAMES_OVERLAY_TOKEN`.
 //! - A connection must send `Hello` (right version, right token, compared in constant time)
 //!   within [`HELLO_TIMEOUT`]; anything else closes it. After [`MAX_AUTH_FAILURES`] failed
-//!   handshakes the broker stops for good (the game plays on without the overlay).
+//!   handshakes the broker is disabled for good (the game plays on without the overlay): its
+//!   event channel closes, and it keeps the port until the game session ends, closing new
+//!   connections unread.
 //! - Exactly one renderer is served at a time. The listener stays bound for the broker's whole
 //!   life, so no other process can take the port and receive a reconnecting renderer's token;
 //!   while a renderer is served, any other connection is closed unread. When that renderer goes
@@ -124,6 +126,17 @@ struct Task {
     stop: CancellationToken,
 }
 
+/// A disabled broker keeps its port until the game session ends (05-social §6.1), so another
+/// process cannot take it and wait for a retrying renderer's token; connections close unread.
+async fn hold_disabled(listener: TcpListener, stop: CancellationToken) {
+    loop {
+        tokio::select! {
+            () = stop.cancelled() => return,
+            accepted = listener.accept() => drop(accepted),
+        }
+    }
+}
+
 async fn read_frame(stream: &mut TcpStream) -> Result<ToBroker, FrameError> {
     let mut header = [0u8; 4];
     stream.read_exact(&mut header).await?;
@@ -178,6 +191,11 @@ impl Task {
                     tracing::warn!(failures, "overlay handshake refused");
                     if failures >= MAX_AUTH_FAILURES {
                         self.event(BrokerEvent::Stopped);
+                        let stop = self.stop.clone();
+                        // Dropping the task closes the event channel, so the watcher sees the
+                        // broker gone even if `Stopped` was dropped from a full queue.
+                        drop(self);
+                        hold_disabled(listener, stop).await;
                         return;
                     }
                 }
@@ -520,9 +538,13 @@ mod tests {
         .unwrap();
         assert_eq!(r.event().await, BrokerEvent::AuthFailed);
         assert_eq!(r.event().await, BrokerEvent::Stopped);
-        // Even the right token is refused now: nobody listens any more.
+        // The event channel closes with the disabled broker.
+        let closed = tokio::time::timeout(Duration::from_secs(10), r.events.recv())
+            .await
+            .expect("the event channel closes");
+        assert!(closed.is_none());
+        // Even the right token is refused now, yet the port stays reserved for this game.
         let token = r.token();
-        tokio::time::sleep(Duration::from_millis(100)).await;
         let res = tokio::task::spawn_blocking(move || {
             connect(addr, token).and_then(|mut s| {
                 let mut buf = [0u8; 1];
@@ -532,6 +554,20 @@ mod tests {
         .await
         .unwrap();
         assert!(matches!(res, Err(_) | Ok(0)));
+        assert!(
+            std::net::TcpListener::bind(addr).is_err(),
+            "a disabled broker released its port"
+        );
+        // The reservation ends with the game session.
+        drop(r.broker);
+        let until = std::time::Instant::now() + Duration::from_secs(5);
+        while std::net::TcpListener::bind(addr).is_err() {
+            assert!(
+                std::time::Instant::now() < until,
+                "the port outlived the session"
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
