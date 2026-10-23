@@ -136,8 +136,9 @@ GAME asks INT-11 to close F4 and launcher F5 (and Q4) in the next security revie
   the same port when the renderer left. While a renderer was served, any local process (including another OS
   user's) could bind the port; a probe showed `bind` succeeding and the reconnecting renderer's 39-byte `Hello`,
   token included, reaching that process. It could also have acted as the broker toward the in-game overlay.
-- Fix: contract #322 (05-social §6.1, 05-social-notes) and its implementation PR keep the listener bound for the
-  broker's life and close extra connections before `Welcome`. No renderer change. On Windows another user cannot
+- Fix: contract #330 (INT's adoption of #322; 05-social §6.1, 05-social-notes) and its implementation #323 keep the
+  listener bound for the broker's life and close extra connections before `Welcome`; a broker disabled after five
+  failed handshakes closes its event channel and holds the port until the game session ends. No renderer change. On Windows another user cannot
   take the bound port by default; same-user processes can already read the token from the game's environment.
   Please review under INT-11 (overlay F2/F4 boundary).
 
