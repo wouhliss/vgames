@@ -14,6 +14,22 @@ spec.loader.exec_module(soak)
 
 
 class SoakTests(unittest.TestCase):
+    def test_only_a_live_launcher_with_a_rendered_screen_receipt_is_ready(self):
+        from unittest.mock import Mock
+        process = Mock()
+        process.poll.return_value = None
+        with tempfile.TemporaryDirectory() as temporary:
+            profile = Path(temporary)
+            log = profile / 'vgames.log'
+            log.write_text('starting vgames\nthe UI did not call app_ready\n')
+            with self.assertRaisesRegex(RuntimeError, 'first rendered screen'):
+                soak.wait_for_ui(process, profile, timeout=0.01)
+            log.write_text('INFO main UI ready\n')
+            soak.wait_for_ui(process, profile)
+            process.poll.return_value = 1
+            with self.assertRaisesRegex(RuntimeError, 'exited'):
+                soak.wait_for_ui(process, profile)
+
     def rows(self, growth=0):
         return [{"seconds": t, "rss_kib": 100000 + max(0, t - 600) * growth / 3000}
                 for t in range(0, 3601, 60)]

@@ -114,7 +114,19 @@ def stop_known(known):
                 os.close(descriptor)
 
 
-def run(binary, duration, output):
+def wait_for_ui(process, profile, timeout=30):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            raise RuntimeError("launcher exited before its UI was ready")
+        for log in profile.rglob("vgames.log"):
+            if not log.is_symlink() and "main UI ready" in log.read_text():
+                return
+        time.sleep(0.1)
+    raise RuntimeError("launcher did not acknowledge its first rendered screen")
+
+
+def run(binary, duration, output, require_ui_ready=False):
     output.mkdir(parents=True, exist_ok=True)
     rows, process = [], None
     report = {"passed": False, "duration_seconds": duration}
@@ -122,6 +134,7 @@ def run(binary, duration, output):
     known = {}
     try:
         env = os.environ.copy()
+        env["VGAMES_LOG"] = "info"
         for name, suffix in (("HOME", "home"), ("XDG_CONFIG_HOME", "config"),
                              ("XDG_DATA_HOME", "data"), ("XDG_CACHE_HOME", "cache")):
             directory = Path(profile.name) / suffix
@@ -129,6 +142,9 @@ def run(binary, duration, output):
             env[name] = str(directory)
         process = subprocess.Popen([str(binary)], env=env, start_new_session=True,
                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if require_ui_ready:
+            wait_for_ui(process, Path(profile.name))
+            report["ui_ready"] = True
         started = time.monotonic()
         table = processes()
         if process.pid not in table:
@@ -189,9 +205,10 @@ if __name__ == "__main__":
     parser.add_argument("--binary", required=True, type=Path)
     parser.add_argument("--hours", required=True, type=hours)
     parser.add_argument("--out", required=True, type=Path)
+    parser.add_argument("--require-ui-ready", action="store_true")
     args = parser.parse_args()
     def interrupted(_signal, _frame):
         raise KeyboardInterrupt
 
     signal.signal(signal.SIGTERM, interrupted)
-    raise SystemExit(run(args.binary.resolve(), args.hours * 3600, args.out))
+    raise SystemExit(run(args.binary.resolve(), args.hours * 3600, args.out, args.require_ui_ready))
