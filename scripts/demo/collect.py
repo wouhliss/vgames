@@ -208,12 +208,20 @@ def requirements(milestone, collector):
         rows = [proof(f"desktop {name}", "desktop-matrix.yml", name,
                       "Rust tests (launcher and the crates it ships)", [r"test result: ok\. [1-9]\d* passed"])
                 for name in ("Windows x64", "Linux x64", "macOS arm64")]
-        rows.extend(collector.workflow_health(label, "compat-e2e.yml")
-                    for label in ("GAME-05/06 compatibility workflow",))
+        rows.append(proof("GAME-05 Proton D3D11", "compat-e2e.yml",
+                          "Proton (ubuntu-24.04, lavapipe)",
+                          "The D3D11 test game runs through Proton (DXVK)",
+                          [rust_test("compat::plan::proton_e2e::the_d3d11_test_game_runs_through_proton")]))
+        for label, step, backend in (
+            ("DXMT", "The D3D11 test game through Wine + DXMT (recorded; missing Metal goes to human-checklist §B4)", "Dxmt"),
+            ("DXVK-macOS", "The D3D11 test game through Wine + DXVK-macOS (recorded)", "Dxvk"),
+            ("wined3d", "The D3D11 test game through Wine + wined3d (recorded)", "Wined3d"),
+        ):
+            rows.append(proof(f"GAME-06 Wine {label}", "compat-e2e.yml", "Wine (macos-15 arm64)", step,
+                              [rust_test("compat::plan::wine_e2e::the_d3d11_test_game_runs_through_wine"),
+                               rf"Wine plan: [^\n]* with {backend}(?:\r?\n|$)"]))
         return rows + [result("D3D11 overlay / sequential cross-OS saves", "pending",
-                              "pending (GAME-09, PLAY-06): hosted scenarios are not implemented"),
-                       result("Proton and Wine graphics", "pending",
-                              "pending (INT-09): add per-backend receipts from compat-e2e.yml; generic matrix is insufficient")]
+                              "pending (GAME-09, PLAY-06): hosted scenarios are not implemented")]
     return [collector.workflow_health("INT-06 signed release dry run", "release-dry-run.yml"),
             collector.workflow_health("INT-07 soak workflow", "soak.yml"),
             collector.workflow_health("INS-07 release transfer budgets", "transfer-budgets.yml"),
