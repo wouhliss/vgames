@@ -28,8 +28,29 @@ export function mockId(prefix: string, n: number): string {
   return `${prefix}-0000-7000-8000-${n.toString(16).padStart(12, "0")}`;
 }
 
+const scheduled = new Set<ReturnType<typeof setTimeout>>();
+
+/** `setTimeout` that `cancelScheduled` can clear; the handle also works with `clearTimeout`. */
+export function schedule(fn: () => void, ms: number): ReturnType<typeof setTimeout> {
+  const handle = setTimeout(() => {
+    scheduled.delete(handle);
+    fn();
+  }, ms);
+  scheduled.add(handle);
+  return handle;
+}
+
+/**
+ * Clears every pending `schedule`/`later` timer. Test teardown calls it before the IPC mocks go:
+ * a simulated install that finishes after the test would otherwise emit through a missing `invoke`.
+ */
+export function cancelScheduled(): void {
+  for (const handle of scheduled) clearTimeout(handle);
+  scheduled.clear();
+}
+
 /** Runs `fn` after `ms`, or synchronously when `ms` is 0 (unit tests). */
 export function later(ms: number, fn: () => void): void {
   if (ms <= 0) fn();
-  else setTimeout(fn, ms);
+  else schedule(fn, ms);
 }

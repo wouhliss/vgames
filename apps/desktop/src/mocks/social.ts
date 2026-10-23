@@ -17,7 +17,7 @@ import type {
   UserSummary,
 } from "../ipc";
 import { events } from "../ipc";
-import { fail, type Handler } from "./runtime";
+import { fail, type Handler, schedule } from "./runtime";
 
 export const ME: UserSummary = {
   id: "01920000-0000-7000-8000-00000000a001",
@@ -285,7 +285,7 @@ export function socialHandlers(
   };
   // Always after the command returned, as in the core (the status event follows the reply).
   const deliver = (message: Message) => {
-    setTimeout(() => {
+    schedule(() => {
       const list = state.messages[message.conversation_id] ?? [];
       const status = state.messageSendFails ? "failed" : "sent";
       state.messages[message.conversation_id] = list.map((m) =>
