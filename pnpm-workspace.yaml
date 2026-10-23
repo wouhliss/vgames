@@ -8,3 +8,5 @@ packages:
 # GHSA-68fv-2mgg-jv7q: css-tree pins an affected source-map-js release.
 overrides:
   css-tree>source-map-js: 1.2.2
+  # GHSA-4qv8-2p9j-2685 / GHSA-f72v-6w45-q472 affect jsdom's HTTP client.
+  jsdom>undici: 8.12.2
