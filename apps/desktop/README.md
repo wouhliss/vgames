@@ -6,6 +6,16 @@ the generated `src/bindings.ts` (tauri-specta).
 
 ## Build dependencies
 
+The required TypeScript job builds the production UI and runs
+`node scripts/ci/bundle-size.mjs`. The initial scripts and every `modulepreload`
+chunk named in `dist/index.html` must total at most 250,000 gzip bytes, counted
+once per file. Lazy route chunks and styles are outside this JavaScript budget.
+Missing or external entries fail measurement. The same gate runs in
+`scripts/ci/local.sh typescript`; its JSON output lists every counted asset.
+`node --test scripts/ci/bundle-size.test.mjs` checks preload accounting and an
+incompressible 300 KB failure. This is a download-size gate; startup and memory
+budgets require their separate measurements (INT-10, PLAY-10).
+
 **Linux** (Ubuntu 24.04 / Debian 12 package names):
 
 ```sh
