@@ -4,6 +4,10 @@ import "./styles/global.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./app/App";
+import bundleBudgetProof from "./bundle-budget-proof.json";
+
+// Deliberately broken proof branch. Never merge this imported payload.
+Reflect.set(globalThis, "vgamesBundleBudgetProof", bundleBudgetProof);
 
 async function start(): Promise<void> {
   // `vite --mode mock` runs the UI in a plain browser against in-memory fixtures. The import is
