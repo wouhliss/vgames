@@ -570,22 +570,31 @@ mod tests {
         let cycles = super::super::BROKER_EVENTS * 3;
         // A renderer that keeps coming back (each cycle queues Connected + Disconnected);
         // nobody reads the events meanwhile.
-        tokio::task::spawn_blocking(move || {
+        let mut witness = tokio::task::spawn_blocking(move || {
             for _ in 0..cycles {
                 let mut s = reconnect(addr, token);
                 assert!(matches!(read(&mut s), ToRenderer::Welcome { .. }));
                 next_view(&mut s);
                 disconnect(&mut s);
             }
+            // A live connection proves all earlier disconnects have been processed
+            // and a full event queue does not stop the next Welcome and View.
+            let mut s = reconnect(addr, token);
+            assert!(matches!(read(&mut s), ToRenderer::Welcome { .. }));
+            next_view(&mut s);
+            s
         })
         .await
         .unwrap();
-        tokio::time::sleep(Duration::from_millis(200)).await;
         let mut queued = 0;
         while r.events.try_recv().is_ok() {
             queued += 1;
         }
         assert_eq!(queued, super::super::BROKER_EVENTS);
+        tokio::task::spawn_blocking(move || disconnect(&mut witness))
+            .await
+            .unwrap();
+        assert_eq!(r.event().await, BrokerEvent::Disconnected);
         // Still serving.
         tokio::task::spawn_blocking(move || {
             let mut s = reconnect(addr, token);
