@@ -440,8 +440,18 @@ mod tests {
     /// Keep the existing socket timeout: the broker must observe EOF and close its side.
     fn disconnect(s: &mut std::net::TcpStream) {
         s.shutdown(std::net::Shutdown::Write).unwrap();
+        let deadline = std::time::Instant::now()
+            + s.read_timeout().unwrap().expect("renderer read timeout");
         let mut pending = [0u8; 1024];
-        while s.read(&mut pending).unwrap() != 0 {}
+        loop {
+            let remaining = deadline
+                .checked_duration_since(std::time::Instant::now())
+                .expect("broker closes within the renderer read timeout");
+            s.set_read_timeout(Some(remaining)).unwrap();
+            if s.read(&mut pending).unwrap() == 0 {
+                break;
+            }
+        }
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
