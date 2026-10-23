@@ -67,8 +67,17 @@
   (today OS notifications) with a `weston --backend=headless` test.
 - GAME-12 — left: the M3 two-instance scenario in `apps/desktop/e2e-real/`.
 - GAME-14 — the 03-api §6 contract is [#252](https://github.com/wouhliss/vgames/pull/252) (reviewed by INT, green,
-  waiting for INT's merge); left: the threat review, the `apps/desktop/README.md` compatibility section,
-  `05-social-notes.md` final.
+  waiting for INT's merge). The `apps/desktop/README.md` compatibility section merged
+  ([#276](https://github.com/wouhliss/vgames/pull/276), `ebcc2f8`). The threat review
+  `docs/security/threat-review-game-2026-10-15.md` is in this PR and waits for INT's co-signature; its fix for O1
+  (the game acting as the player through the overlay) is [#279](https://github.com/wouhliss/vgames/pull/279);
+  fixes in review: O4 [#281](https://github.com/wouhliss/vgames/pull/281), C5
+  [#282](https://github.com/wouhliss/vgames/pull/282), S1/S2 [#283](https://github.com/wouhliss/vgames/pull/283), C3
+  [#285](https://github.com/wouhliss/vgames/pull/285) after its contract [#284](https://github.com/wouhliss/vgames/pull/284),
+  S4 [#288](https://github.com/wouhliss/vgames/pull/288), S5 [#287](https://github.com/wouhliss/vgames/pull/287).
+  Still open, GAME's: O2, O3, C2, C4, S3 (C2, O2 and S3 need `contract:` PRs). Left: `05-social-notes.md` final.
+- GAME-11 — the GL safety valve leaves a window's first build out of the average (a hosted runner's first EGL build
+  took over 1.1 s and tripped it): [#286](https://github.com/wouhliss/vgames/pull/286).
 - Not started: GAME-09 (Windows DLL and injector), GAME-10 (macOS panel; needs the `macOSPrivateApi` contract),
   the rest of GAME-11 (32-bit DLL, helper and manifests in the matrix; installer contents).
 
@@ -77,6 +86,8 @@
   the launcher accepts at most `social::realtime::MAX_INBOUND_FRAME` (4 × `MAX_FRAME`).
 
 ## Needs from others
+- From INT: co-sign `docs/security/threat-review-game-2026-10-15.md` (GAME-14); C1 there (runtime catalog key and
+  signing workflow not on `main`) is a release gate outside GAME's code.
 
 ## Blockers / contract questions
 - contract ack: #284 (Proton logging switches not profile or override keys; GAME implements it in #285).
