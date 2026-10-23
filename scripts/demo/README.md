@@ -13,7 +13,7 @@ The collector passing means evidence collection completed. A separate `Milestone
 (through M4, including M3B) job turns green only for a `reached` row; pending milestone
 jobs stay gray. All existing proof jobs still run and their failures fail collection.
 
-The collector uses the newest run/attempt for the exact commit. It never substitutes an
+The collector reads workflow definitions from the selected Git commit, ignoring uncommitted worktree changes. Fetch a historical commit before using `--sha`; unavailable commit objects fail closed. It uses the newest run/attempt for the exact commit. It never substitutes an
 older green run. Passing a whole job is insufficient for M1–M3: required steps and named
 test receipts must exist, so ignored tests, zero matches and skipped Node scenarios fail.
 Nightly E2E collects M1–M3 and M4; the scheduled/manual desktop matrix collects each OS
