@@ -222,12 +222,24 @@ def requirements(milestone, collector):
                                rf"Wine plan: [^\n]* with {backend}(?:\r?\n|$)"]))
         return rows + [result("D3D11 overlay / sequential cross-OS saves", "pending",
                               "pending (GAME-09, PLAY-06): hosted scenarios are not implemented")]
-    return [collector.workflow_health("INT-06 signed release dry run", "release-dry-run.yml"),
+    rows = []
+    for name in ("Windows x64", "Linux x64", "macOS arm64"):
+        job = f"Download budgets ({name}, release)"
+        rows.append(proof(f"INS-07 {name} release footprint", "transfer-budgets.yml", job,
+                          "Memory and disk footprint",
+                          [rust_test("memory_stays_bounded_at_32_connections"),
+                           rust_test("disk_usage_never_exceeds_the_final_size_plus_journal"),
+                           r"budget memory: 32 connections, 512 MiB: peak RSS ",
+                           r"\(release build,", r"budget disk: peak "]))
+        rows.append(proof(f"INS-07 {name} throughput measurements", "transfer-budgets.yml", job,
+                          "Loopback throughput (2 GiB)",
+                          [rust_test("loopback_throughput"), r"budget throughput: 2 GiB loopback,",
+                           r"budget throughput: the same folder takes plain sequential writes at "]))
+    return rows + [collector.workflow_health("INT-06 signed release dry run", "release-dry-run.yml"),
             collector.workflow_health("INT-07 soak workflow", "soak.yml"),
-            collector.workflow_health("INS-07 release transfer budgets", "transfer-budgets.yml"),
             result("signed release dry run / updater round trip", "pending", "pending (INT-06, INT-08): committed keys and current-base dry run receipts"),
             result("full hosted soak", "pending", "pending (INT-07): full-duration metric receipts required"),
-            result("release performance budgets", "pending", "pending (INS-07, PLAY-10): collect release measurements"),
+            result("release performance budgets", "pending", "pending (INS-07, PLAY-10): throughput target and populated-launcher release budgets are not attested"),
             result("security sign-off", "pending", "pending (INT-11): phase-2 review is not signed off")]
 
 
