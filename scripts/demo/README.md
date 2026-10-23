@@ -15,7 +15,13 @@ jobs stay gray. All existing proof jobs still run and their failures fail collec
 
 The collector reads workflow definitions from the selected Git commit, ignoring uncommitted worktree changes. Fetch a historical commit before using `--sha`; unavailable commit objects fail closed. It uses the newest run/attempt for the exact commit. It never substitutes an
 older green run. Passing a whole job is insufficient for M1–M3: required steps and named
-test receipts must exist within the named step, so ignored tests, zero matches and skipped Node scenarios fail. A later backend step running the same Rust test name cannot satisfy an earlier step. Unscoped or empty logs fail closed.
+Test receipts must exist within the named step, so ignored tests, zero matches and skipped Node scenarios fail. A later backend step running the same Rust test name cannot satisfy an earlier step. Unscoped or empty logs fail closed.
+Actions can archive only whole-job logs, making even current gh label every line `UNKNOWN STEP`.
+The evidence steps use `scripts/ci/evidence.sh` to delimit their output and record the actual
+command exit status. The collector requires exactly one complete matching section, rejecting
+failure, interruption, nesting and duplicate sections. The wrapper preserves errexit and pipefail;
+it cannot turn a continued workflow failure into a passing receipt. Older unmarked logs remain
+unavailable when Actions has lost their step attribution; no adjacent-step fallback is allowed.
 M3b checks Proton and each Wine backend separately. Wine must print the selected backend
 and pass its D3D11 test in that same step; a green workflow with a failed recorded step fails.
 Nightly E2E collects M1–M3 and M4; the scheduled/manual desktop matrix collects each OS
