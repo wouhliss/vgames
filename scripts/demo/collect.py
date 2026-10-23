@@ -91,6 +91,25 @@ class Collector:
                 raise EvidenceError("Actions returned an empty job log")
             return value
 
+    @functools.cache
+    def named_job_log(self, job_id):
+        # gh adds the actual job and step names to each line from the run-log archive.
+        # A receipt from another backend's step must never satisfy this step's proof.
+        value = gh("run", "view", "--repo", REPO, "--job", str(int(job_id)), "--log")
+        if not value.strip():
+            raise EvidenceError("Actions returned an empty named job log")
+        return value
+
+    def step_log(self, job_id, step):
+        lines = []
+        for line in self.named_job_log(job_id).splitlines():
+            fields = line.split("\t", 2)
+            if len(fields) == 3 and fields[1] == step:
+                lines.append(fields[2])
+        if not lines:
+            raise EvidenceError("Actions step-scoped log is unavailable")
+        return "\n".join(lines) + "\n"
+
     def proof(self, label, workflow, job_name, step, patterns):
         runs = self.runs(workflow)
         if not runs:
@@ -108,7 +127,7 @@ class Collector:
         steps = [s for s in job["steps"] if s["name"] == step]
         if len(steps) != 1 or steps[0].get("conclusion") != "success":
             return result(label, "failed", "required test step did not pass", link)
-        log = self.log(job["id"])
+        log = self.step_log(job["id"], step)
         if not all(re.search(pattern, log) for pattern in patterns):
             return result(label, "failed", "test receipts missing (zero tests or a skipped scenario)", link)
         return result(label, "passed", "test receipts verified", link)
