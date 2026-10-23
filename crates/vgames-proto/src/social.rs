@@ -660,11 +660,17 @@ pub struct InviteStatusUpdate {
     pub failure_reason: Option<InviteFailure>,
 }
 
-/// Grammar for join secrets (01-security §7): checked by the invitee before substitution.
+/// Grammar for join secrets (01-security §7):
+/// `^[A-Za-z0-9_\[][A-Za-z0-9._:\-\[\]]{0,255}$`. The first byte is never `-`, `.`, `:`
+/// or `]`, so a secret substituted as a whole argument is never option-shaped. Checked by
+/// the sender before storing and sealing, by the receiver, and again before substitution.
 pub fn is_valid_join_secret(s: &str) -> bool {
-    (1..=256).contains(&s.len())
-        && s.bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b".:_-[]".contains(&b))
+    let b = s.as_bytes();
+    (1..=256).contains(&b.len())
+        && b.first()
+            .is_some_and(|c| c.is_ascii_alphanumeric() || b"_[".contains(c))
+        && b.iter()
+            .all(|c| c.is_ascii_alphanumeric() || b".:_-[]".contains(c))
 }
 
 // ---------------------------------------------------------------------------------------
@@ -826,6 +832,28 @@ mod tests {
         assert!(!is_valid_join_secret("--flag=\"x\""));
         assert!(!is_valid_join_secret(&"a".repeat(257)));
         assert!(is_valid_join_secret(&"a".repeat(256)));
+        // Never option-shaped: the first byte is a letter, digit, `_` or `[`.
+        for (i, (s, ok)) in [
+            ("--windowed", false),
+            ("-console", false),
+            ("-", false),
+            (".hidden", false),
+            (":x", false),
+            ("]x", false),
+            ("_x", true),
+            ("[x]", true),
+            ("abc-def", true),
+            ("a", true),
+            ("a-", true),
+            ("0.0.0.0:1", true),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            assert_eq!(is_valid_join_secret(s), ok, "case {i}");
+        }
+        assert!(is_valid_join_secret(&format!("[{}", "a".repeat(255))));
+        assert!(!is_valid_join_secret(&format!("-{}", "a".repeat(255))));
     }
 
     #[test]

@@ -554,7 +554,7 @@ export function socialHandlers(
       if (message !== null && [...message].length > 200)
         fail({ kind: "invalid_input", field: "message", message: "at most 200 characters" });
       const secret = (args.joinSecret as string | null) ?? null;
-      if (secret !== null && !/^[A-Za-z0-9._:\-[\]]{1,256}$/.test(secret))
+      if (secret !== null && !/^[A-Za-z0-9_[][A-Za-z0-9._:\-[\]]{0,255}$/.test(secret))
         fail({ kind: "invalid_input", field: "join_secret", message: "not a join code" });
       const pkg = String(args.packageId);
       const installed = state.installs.find((i) => i.package.package_id === pkg);
