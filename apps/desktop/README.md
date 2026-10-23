@@ -41,6 +41,84 @@ Missing or external entries fail measurement. The same gate runs in
 incompressible 300 KB failure. This is a download-size gate; startup and memory
 budgets require their separate measurements (INT-10, PLAY-10).
 
+### Keyboard and controller walkthrough
+
+Run the required mock suite with `pnpm --filter @vgames/desktop exec playwright test`.
+`routes.spec.ts` scans every declared router path, every Settings link and every Friends tab;
+`route-coverage.test.ts` fails when a route lacks its browser fixture. Existing scenario specs
+exercise the menus and dialogs below. Each scan uses the shared helper and rejects serious or
+critical findings; the launch-link tests retain their stricter rejection of every violation.
+The real release harness scans onboarding, installation, stop/uninstall and updater checkpoints
+through WebDriver, with rule IDs and counts as diagnostics instead of DOM HTML.
+
+Keyboard: Tab/Shift+Tab move between controls, arrows operate grids/lists, Enter/Space activate,
+and Escape closes a dismissible layer and restores its trigger's focus. Controller: D-pad/stick
+move focus, Accept activates, Back dismisses, Options opens actions, and shoulders change tabs.
+Dialogs trap focus; busy operations retain their existing dismissal policy. Controller scenarios
+use prepared text and native file choices. Controller text entry and OS-native picker interaction
+require separate evidence; the hosted tests prepare those inputs.
+
+<!-- int-route-walkthrough:start -->
+| Route | Keyboard exercise | Controller exercise |
+|---|---|---|
+| `/` | Follow the redirect; focus Library navigation. | Follow the redirect; select a library tile. |
+| `/*` | Open an unknown path; continue from Library. | Open an unknown path; navigate Library. |
+| `/dev/gallery` | Tab through controls; open and dismiss each demo dialog. | Navigate controls, tabs and the three demo dialogs. |
+| `/onboarding` | Address, fingerprint, sign-in, folder and completion; test refusals. | Advance through the same steps using prepared text/folder input. |
+| `/library` | Search, grid/list, Play, actions and collections. | Move between tiles, Play, Options and collection tabs. |
+| `/browse` | Search, open a package and return to the catalog. | Move between cards, open a package, Back. |
+| `/package/:packageId` | Read compatibility, install and inspect screenshots. | Navigate actions, install choices, screenshots and Back. |
+| `/friends/*` | Friends, messages, requests and blocked users; open a conversation. | Shoulder-switch all tabs; select a friend, invite and conversation. |
+| `/downloads` | Pause/resume/retry, cancel and reorder with menu controls. | Navigate jobs, open Options and operate the same controls. |
+| `/publish` | Package/platform/version, folder/key and upload/release controls. | Navigate choices and dialogs using prepared text/file input. |
+| `/settings/*` | Visit every section; operate toggles, lists and selectors. | Navigate every section, change a setting and return. |
+<!-- int-route-walkthrough:end -->
+
+For each dialog, open it from the named location, operate its controls using each input method,
+cancel once, then reopen and confirm against the isolated fixture. Check focus containment and
+return after every dismissal. Typed confirmations use prepared fixture text in controller scenarios.
+
+| Dialog and location | Exercise |
+|---|---|
+| Sign out, account menu | Cancel, reopen and sign out. |
+| Remove an untrusted server, trust notice | Inspect the warning; cancel or remove. |
+| What's new, update banner/Settings | Read only player-facing entries; close or install and restart. |
+| Add to collection, Library actions | Select a collection and return to the tile. |
+| Manage collections, Library | Create, rename and select a collection. |
+| Delete collection, collection manager | Cancel, reopen and confirm deletion. |
+| Move package, Library actions | Select an online destination; retain the current selection on error. |
+| Uninstall, Library actions | Inspect retained data choices; cancel, reopen and confirm. |
+| Stop game, Library | Cancel, reopen and stop the running fixture. |
+| Update/repair confirmation, Library actions | Inspect the operation; cancel or continue. |
+| Install package, package page or invite | Choose platform/library; cancel or queue installation. |
+| Screenshots, package page | Previous/next image; close and restore the screenshot trigger. |
+| Install Rosetta, package compatibility | Cancel or explicitly confirm the native installation request. |
+| Cancel download, Downloads | Exercise keep/delete choices and cancellation. |
+| Add friend, Friends | Code validation and request confirmation. |
+| Remove friend, Friends | Cancel, reopen and remove. |
+| Block user, Friends | Cancel, reopen and block. |
+| Send invite, Friends | Select a game/target and send or cancel. |
+| Update invited game, invite card | Confirm the normal update path or cancel. |
+| Safety number, conversation | Read the number; open the trust confirmation or close. |
+| Trust safety number, safety dialog | Cancel, reopen and explicitly trust. |
+| Create package, Publish | Validate title/slug, cancel or create. |
+| Unlock resume key, Publish | Validate the prepared key/passphrase; cancel or resume. |
+| Release version, Publish | Inspect version/platform, cancel or release. |
+| Withdraw version, Publish | Cancel, reopen and withdraw the fixture version. |
+| Customize compatibility, Settings | Choose runtime/version and validated options; cancel or save. |
+| Move library contents, Storage | Select the destination; inspect result/error states. |
+| Remove library, Storage | Cancel, reopen and confirm removal. |
+| Revoke session, Account | Cancel, reopen and revoke the fixture session. |
+| Sign out, Account | Cancel, reopen and sign out. |
+| Remove server, Servers | Cancel, reopen and remove the fixture server. |
+| Install Rosetta, Settings | Cancel or explicitly confirm the same native request. |
+| Runtime licenses, Compatibility | Read licenses and close to the originating control. |
+| Third-party licenses, About | Read notices and close to the originating control. |
+| Open website, Markdown content | Inspect the fixed confirmation; cancel or open the validated URL. |
+| Sample dialog, development gallery | Edit the field, cancel, reopen and finish. |
+| Sample confirmation, development gallery | Cancel, reopen and confirm. |
+| Typed confirmation, development gallery | Reject a mismatch; use prepared matching text and confirm. |
+
 ## Run
 
 ```sh
