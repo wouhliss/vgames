@@ -125,9 +125,13 @@ jobs:
       - name: Build the launcher UI (embedded by tauri::generate_context!)
         run: pnpm --filter @vgames/desktop build
       - name: Rust tests (launcher and the crates it ships)
-        run: >-
-          cargo test --locked --target ${{ matrix.target }}
-          -p vgames-desktop -p vgames-core -p vgames-pack -p vgames-transfer -p vgames-overlay
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          scripts/ci/evidence.sh 'Rust tests (launcher and the crates it ships)' <<'VGAMES_EVIDENCE_COMMAND'
+          cargo test --locked --target "$TARGET" -p vgames-desktop -p vgames-core -p vgames-pack -p vgames-transfer -p vgames-overlay
+          VGAMES_EVIDENCE_COMMAND
       # GAME-11: the in-game renderer is a bundle resource (`overlay/` in Tauri's resource
       # directory). Staged before the release build, which copies it next to the executable,
       # where a cargo build's resource directory is.

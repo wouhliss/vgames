@@ -80,7 +80,9 @@ jobs:
           VGAMES_REQUIRE_GL: "1"
           VGAMES_VK_VALIDATION: "1"
           VK_LAYER_ENABLES: VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT
+        shell: bash
         run: |
+          scripts/ci/evidence.sh 'overlay renderer' <<'VGAMES_EVIDENCE_COMMAND'
           set -o pipefail
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends mesa-vulkan-drivers libvulkan1 vulkan-validationlayers \
@@ -98,7 +100,7 @@ jobs:
             grep -h '^overlay frame cost: ' "$log" | sed 's/^overlay frame cost: /- /' || echo "- no figures (see the log)"
           } >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
-
+          VGAMES_EVIDENCE_COMMAND
   sqlx:
     name: SQLx offline data and migrations
     runs-on: ubuntu-24.04
@@ -358,9 +360,17 @@ jobs:
       - name: clippy (vgames-desktop)
         run: cargo clippy -p vgames-desktop --all-targets --locked -- -D warnings
       - name: Whole launcher suite (Xvfb)
-        run: xvfb-run -a cargo test -p vgames-desktop --locked
+        shell: bash
+        run: |
+          scripts/ci/evidence.sh 'Whole launcher suite (Xvfb)' <<'VGAMES_EVIDENCE_COMMAND'
+          xvfb-run -a cargo test -p vgames-desktop --locked
+          VGAMES_EVIDENCE_COMMAND
       - name: Database-backed launcher scenarios (no soak)
-        run: scripts/ci/desktop-db-tests.sh
+        shell: bash
+        run: |
+          scripts/ci/evidence.sh 'Database-backed launcher scenarios (no soak)' <<'VGAMES_EVIDENCE_COMMAND'
+          scripts/ci/desktop-db-tests.sh
+          VGAMES_EVIDENCE_COMMAND
 
   supply-chain:
     name: Supply chain (cargo-deny, cargo-audit, pnpm audit)
