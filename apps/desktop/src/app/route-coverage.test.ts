@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import type { RouteObject } from "react-router";
 import { describe, expect, it } from "vitest";
 import { ROUTE_SCANS } from "../../e2e/route-scans";
@@ -17,6 +18,15 @@ function paths(nodes: RouteObject[], parent = ""): string[] {
 }
 
 describe("launcher route accessibility coverage", () => {
+  it("documents every route in the input walkthrough", () => {
+    const readme = readFileSync(new URL("../../README.md", import.meta.url), "utf8");
+    const table = readme
+      .split("<!-- int-route-walkthrough:start -->")[1]
+      ?.split("<!-- int-route-walkthrough:end -->")[0];
+    if (!table) throw new Error("The route walkthrough table is missing");
+    const documented = [...table.matchAll(/^\| `([^`]+)` \|/gm)].map((match) => match[1]);
+    expect(documented.sort()).toEqual(ROUTE_SCANS.map((route) => route.pattern).sort());
+  });
   it("scans every declared route, including development and redirect paths", () => {
     const planned = ROUTE_SCANS.map((route) => route.pattern);
     expect(new Set(planned).size).toBe(planned.length);
