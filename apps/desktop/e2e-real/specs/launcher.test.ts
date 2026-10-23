@@ -9,6 +9,7 @@ import { createHash } from "node:crypto";
 import { createReadStream, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
+import { nativeAxeViolations } from "../lib/accessibility.ts";
 import { type Locator, Session, WebDriverError } from "../lib/webdriver.ts";
 
 const env = (name: string): string => {
@@ -128,6 +129,13 @@ async function evidence(name: string, run: () => Promise<void>): Promise<void> {
   }
 }
 
+async function scanAccessibility(): Promise<void> {
+  const serious = (await nativeAxeViolations(session)).filter(
+    (finding) => finding.impact === "serious" || finding.impact === "critical",
+  );
+  assert.deepEqual(serious, [], "The real WebView has no serious accessibility violations");
+}
+
 before(async () => {
   session = await Session.create(port, process.env.E2E_AUTOMATION_APP ?? app);
 });
@@ -183,6 +191,7 @@ async function part3() {
   await click(button(`What's new in ${latest.version}`));
   await shown(heading(`What's new in vgames ${latest.version}`));
   await shown({ xpath: `//*[@role="dialog"]//h3[normalize-space(.)="vgames ${latest.version}"]` });
+  await scanAccessibility();
   const visible = await session.execute(
     `return Array.from(document.querySelectorAll('section[aria-label="What\\'s new"] li'), e => e.textContent);`,
   );
@@ -232,13 +241,17 @@ async function part3() {
   await click(navLink("Settings"));
   await click({ xpath: '//a[normalize-space(.)="Updates"]' });
   await shown({ xpath: `//p[normalize-space(.)="vgames ${latest.version}"]` });
+  await scanAccessibility();
 }
 
 async function part1() {
+  await shown(field("Server address"));
+  await scanAccessibility();
   // Add the server: the fingerprint shown is the one the server publishes.
   await type(field("Server address"), server);
   await click(button("Continue"));
   const fingerprint = await shown(css("[data-testid=fingerprint]"));
+  await scanAccessibility();
   const shownPrint = (await session.text(fingerprint)).replace(/[\s-]/g, "");
   const info = (await (
     await fetch(`${server}/.well-known/vgames.json`, {
@@ -255,16 +268,20 @@ async function part1() {
 
   // Sign in: the instance's browser (fixtures/xdg-open) completes the fake Discord page and
   // leaves the vgames:// link, which a player would paste when the browser cannot reach back.
+  await shown(button("Sign in with Discord"));
+  await scanAccessibility();
   await click(button("Sign in with Discord"));
   const link = join(home, "signin-link");
   await until("the browser to finish the sign-in", () => existsSync(link));
   if (await exists(button("Paste a code instead"))) await click(button("Paste a code instead"));
   await type(field("Sign-in code"), readFileSync(link, "utf8").trim());
+  await scanAccessibility();
   await click(button("Sign in"));
 
   // Library folder: "Choose folder" opens the native folder picker, which WebDriver cannot
   // drive; the suite calls the command the picker's result goes to, then reloads.
   await shown(button("Choose folder"));
+  await scanAccessibility();
   const added = await session.executeAsync(
     `const [path, done] = arguments;
      window.__TAURI_INTERNALS__.invoke("library_add", { path, makeDefault: true })
@@ -276,8 +293,10 @@ async function part1() {
 
   // An empty library and an empty catalog.
   await shown(heading("Your library is empty"));
+  await scanAccessibility();
   await click(navLink("Browse"));
   await shown(heading("This server has no packages yet"));
+  await scanAccessibility();
 }
 
 async function part2() {
@@ -290,6 +309,8 @@ async function part2() {
   await click(navLink("Browse"));
   await click(css('a[data-package="e2e-game"]'), 60_000);
   await click(button(`Install ${title}`));
+  await shown(css("[role=dialog]"));
+  await scanAccessibility();
   await click({ xpath: `//*[@role="dialog"]//button[normalize-space(.)="Install"]` });
 
   // Progress on the Downloads page, then the finished install. The job is listed while it
@@ -301,6 +322,7 @@ async function part2() {
     60_000,
   );
   await shown(css('li[data-outcome="installed"]'), 300_000);
+  await scanAccessibility();
 
   // Play: the game records its start in the instance's HOME; then stop it.
   await click(navLink("Library"));
@@ -308,6 +330,8 @@ async function part2() {
   await click(button(`Play ${title}`));
   await until("the game to start", () => existsSync(runs), 60_000);
   await click(button(`Stop ${title}`));
+  await shown(button("Stop game"));
+  await scanAccessibility();
   await click(button("Stop game"));
   await shown(button(`Play ${title}`), 60_000);
 
@@ -325,6 +349,9 @@ async function part2() {
   await click(navLink("Library"));
   await click(button(`More actions for ${title}`));
   await click(menuItem("Uninstall…"));
+  await shown(button("Uninstall"));
+  await scanAccessibility();
   await click(button("Uninstall"));
   await shown(heading("Your library is empty"), 60_000);
+  await scanAccessibility();
 }
