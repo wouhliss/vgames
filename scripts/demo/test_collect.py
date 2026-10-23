@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from collect import Collector, EvidenceError, main, requirements, result, rust_test, state
+from collect import Collector, EvidenceError, main, marked_step_log, requirements, result, rust_test, state
 
 
 class CollectorTests(unittest.TestCase):
@@ -135,9 +135,49 @@ class CollectorTests(unittest.TestCase):
             self.assertEqual(self.collector.proof('x', 'ci.yml', 'tests', 'scenario',
                                                   [rust_test('required_case')])['state'], 'failed')
             self.assertNotIn('required_case', self.collector.step_log(13, 'scenario'))
-        with patch.object(self.collector, 'named_job_log', return_value='test required_case ... ok\n'):
+        with patch.object(self.collector, 'named_job_log', return_value='test required_case ... ok\n'), \
+             patch.object(self.collector, 'log', return_value='test required_case ... ok\n'):
             with self.assertRaisesRegex(EvidenceError, 'step-scoped'):
                 self.collector.step_log(13, 'scenario')
+
+    def test_real_wrapper_preserves_failure_and_requires_complete_unique_markers(self):
+        wrapper = Path(__file__).resolve().parents[1] / 'ci/evidence.sh'
+        def run(step='scenario', code=0):
+            return subprocess.run(['bash', str(wrapper), step, 'bash', '-c',
+                                   f"printf 'test required_case ... ok\\n'; exit {code}"],
+                                  capture_output=True, text=True, timeout=10)
+        passed, failed = run(), run(code=7)
+        self.assertEqual(passed.returncode, 0)
+        self.assertEqual(failed.returncode, 7)
+        with patch.object(self.collector, 'named_job_log', return_value=''.join(
+                'job\tscenario\t' + line + '\n' for line in failed.stdout.splitlines())):
+            with self.assertRaisesRegex(EvidenceError, 'command failed'):
+                self.collector.step_log(13, 'scenario')
+        stamped = ''.join('2026-10-23T10:00:00.123Z ' + line + '\n' for line in passed.stdout.splitlines())
+        self.assertEqual(marked_step_log(stamped, 'scenario'), 'test required_case ... ok\n')
+        for output in (failed.stdout, passed.stdout + passed.stdout, run('other backend').stdout,
+                       passed.stdout.rsplit('VGAMES_STEP_END', 1)[0],
+                       passed.stdout.replace('test required_case ... ok', passed.stdout)):
+            with self.subTest(output_length=len(output)), self.assertRaises(EvidenceError):
+                marked_step_log(output, 'scenario')
+
+    def test_wrapper_stdin_keeps_errexit_and_pipefail(self):
+        wrapper = Path(__file__).resolve().parents[1] / 'ci/evidence.sh'
+        for command in ('false\nprintf unexpected\\n\n', 'false | true\nprintf unexpected\\n\n'):
+            with self.subTest(command=command):
+                run = subprocess.run(['bash', str(wrapper), 'scenario'], input=command,
+                                     capture_output=True, text=True, timeout=10)
+                self.assertNotEqual(run.returncode, 0)
+                self.assertNotIn('unexpected', run.stdout)
+                with self.assertRaisesRegex(EvidenceError, 'command failed'):
+                    marked_step_log(run.stdout, 'scenario')
+
+    def test_unknown_step_logs_use_only_marked_output(self):
+        wrapper = Path(__file__).resolve().parents[1] / 'ci/evidence.sh'
+        raw = subprocess.check_output(['bash', str(wrapper), 'scenario', 'printf', 'real receipt\n'], text=True)
+        with patch.object(self.collector, 'named_job_log', return_value='job\tUNKNOWN STEP\tborrowed receipt\n'), \
+             patch.object(self.collector, 'log', return_value=raw):
+            self.assertEqual(self.collector.step_log(13, 'scenario'), 'real receipt\n')
 
     def test_m3b_requires_each_wine_backend_despite_a_green_workflow(self):
         with patch.object(self.collector, 'proof', return_value=result('fixture', 'passed', 'fixture')) as proof:
