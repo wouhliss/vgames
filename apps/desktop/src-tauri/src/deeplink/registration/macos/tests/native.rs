@@ -96,7 +96,16 @@ impl Drop for Cleanup {
 }
 #[tokio::test]
 async fn launch_services_restores_a_deleted_registration_for_a_repaired_bundle() {
-    let (_root, executable) = fixture();
+    // Launch Services registers bundles under $TMPDIR with the `in-temp-dir`
+    // flag and leaves them out of LSCopyAllHandlersForURLScheme, so the bundle
+    // lives in a uniquely named folder under the home directory instead.
+    let home = std::env::var_os("HOME").map(PathBuf::from).unwrap();
+    let (_root, executable) = fixture_in(
+        tempfile::Builder::new()
+            .prefix("vgames-ls-fixture-")
+            .tempdir_in(home)
+            .unwrap(),
+    );
     std::fs::copy("/usr/bin/true", &executable).unwrap();
     let bundle = bundle(&executable).unwrap().to_owned();
     let _cleanup = Cleanup(bundle.clone());
