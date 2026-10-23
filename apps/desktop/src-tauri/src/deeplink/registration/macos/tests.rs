@@ -1,7 +1,10 @@
 use super::*;
 
 fn fixture() -> (tempfile::TempDir, PathBuf) {
-    let root = tempfile::tempdir().unwrap();
+    fixture_in(tempfile::tempdir().unwrap())
+}
+
+fn fixture_in(root: tempfile::TempDir) -> (tempfile::TempDir, PathBuf) {
     let executable = root.path().join("Fixture.app/Contents/MacOS/fixture");
     std::fs::create_dir_all(executable.parent().unwrap()).unwrap();
     std::fs::write(&executable, b"fixture").unwrap();
