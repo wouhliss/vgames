@@ -94,6 +94,7 @@
   `events_nobody_reads_are_dropped_and_never_block_the_broker` fail on #321 (a parallel test got the port). The
   test helper `reconnect` retries a close before `Welcome`, as `vgames_overlay::link` does; new test
   `the_port_stays_ours_while_a_renderer_is_served`. No renderer or wire change.
+- From INT (INT-09 evidence review, 2026-10-23): [Compat E2E 39927413139](https://github.com/wouhliss/vgames/actions/runs/39927413139), Wine job 120327113561, is globally green but DXMT, DXVK-macOS and wined3d each fail `wine_e2e` at plan creation with "Creating the game’s Wine prefix took too long." All fail before the Wine-plan/render receipt; missing Metal has not been established as the cause. INT’s collector requires step-scoped actual test receipts and cannot count this as M3b proof. Prefix initialization/child-process completion needs diagnosis, with the existing timeout unchanged.
 - From INT (integrator loop, zip advisories RUSTSEC-2026-0367/0368/0369): `compat::extract::extract_zip` moved to zip 9, where
   `ZipFile::name()` returns a `Result`; an unreadable (non-UTF-8) entry name now refuses the archive as `ExtractError::Corrupt`.
   One-line change, no behavior change for valid archives; the compat extract tests pass unchanged.
