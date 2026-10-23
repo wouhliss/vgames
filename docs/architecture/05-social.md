@@ -151,7 +151,8 @@ launcher starts, only while they run.
   exactly one connection carrying the session token (`VGAMES_OVERLAY_TOKEN`, 32 random bytes) at a
   time. It keeps its listener bound for the whole game and closes any other connection unread while a
   renderer is served, so no other local process can take the port and receive a reconnecting
-  renderer's token.
+  renderer's token. Five failed handshakes disable authentication for that game, but retain the
+  port reservation and close new connections unread until the owning game session ends.
 - Frame cost budget: ≤ 0.3 ms CPU and ≤ 0.3 ms GPU per frame while hidden, ≤ 1 ms while the panel is open.
   When nothing is visible the hook returns immediately after one atomic check.
 

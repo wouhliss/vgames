@@ -360,7 +360,10 @@ Additions (A4-T10):
   in a row, with the overlay on); show a notice with "Turn it back on".
 - Broker protocol (`vgames_overlay::protocol`, v1): `u32` LE length + postcard payload ≤ 64 KiB; renderer
   sends `Hello {version, token, renderer}` within 5 s, the broker answers `Welcome` or closes; 5 failed
-  handshakes stop the broker for that game. One renderer at a time: the listener stays bound for the
+  handshakes disable the broker for that game: no further handshake or renderer is served, and
+  its event channel closes even if the `Stopped` event was dropped. The disabled broker retains
+  its listener until the owning game session ends, closing new connections unread so another
+  process cannot take the port during a renderer retry. One renderer at a time: the listener stays bound for the
   broker's whole life (a released port could be taken by another local process, which would then
   receive the reconnecting renderer's `Hello` and token); while a renderer is served, any other
   connection is closed before `Welcome`, which a renderer treats like a refused connect. The renderer
