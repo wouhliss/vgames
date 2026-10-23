@@ -65,8 +65,7 @@ class CollectorTests(unittest.TestCase):
 
     def test_unavailable_evidence_does_not_turn_green(self):
         with patch.object(self.collector, "runs", side_effect=EvidenceError("unavailable")):
-            with self.assertRaises(EvidenceError):
-                self.collector.workflow_health("CI", "ci.yml")
+            self.assertEqual(self.collector.workflow_health("CI", "ci.yml")["state"], "failed")
         self.assertEqual(state([result("missing", "pending", "pending")]), "not reached")
         self.assertEqual(state([result("missing", "pending", "pending"), result("existing", "failed", "failed")]), "failed")
 
@@ -186,6 +185,23 @@ class CollectorTests(unittest.TestCase):
                                 log.replace('release build', 'debug build').replace('2 GiB', '0.1 GiB')):
                     with patch.object(self.collector, 'step_log', return_value=missing):
                         self.assertEqual(self.collector.proof(*args)['state'], 'failed')
+
+    def test_unreadable_matrix_log_does_not_hide_failed_compatibility_steps(self):
+        wine_step = 'The D3D11 test game through Wine + DXMT (recorded; missing Metal goes to human-checklist §B4)'
+        matrix = [dict(self.job, name=name, steps=[{'name': 'Rust tests (launcher and the crates it ships)',
+                                                  'conclusion': 'success'}])
+                  for name in ('Windows x64', 'Linux x64', 'macOS arm64')]
+        wine = dict(self.job, name='Wine (macos-15 arm64)',
+                    steps=[{'name': wine_step, 'conclusion': 'failure'}])
+        with patch.object(self.collector, 'runs', return_value=[self.run]), \
+             patch.object(self.collector, 'jobs', return_value=matrix + [wine]), \
+             patch.object(self.collector, 'step_log', side_effect=EvidenceError('unreadable fixture')):
+            rows = requirements('m3b', self.collector)
+        dxmt = next(row for row in rows if row['label'] == 'GAME-06 Wine DXMT')
+        self.assertEqual(dxmt['state'], 'failed')
+        self.assertEqual(dxmt['detail'], 'required test step did not pass')
+        self.assertEqual(rows[0]['detail'], 'unreadable fixture')
+        self.assertEqual(state(rows), 'failed')
 
 
 if __name__ == "__main__":
