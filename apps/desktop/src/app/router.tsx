@@ -1,18 +1,19 @@
 // Routes. Every screen is its own chunk (route-level code splitting); the dev gallery exists only
-// in development builds.
+// in development and mock test builds.
 import { createBrowserRouter, Navigate, type RouteObject } from "react-router";
 import { RouteError } from "./ErrorBoundary";
 import { RootLayout } from "./RootLayout";
 import { Shell } from "./Shell";
 
-const devRoutes: RouteObject[] = import.meta.env.DEV
-  ? [
-      {
-        path: "dev/gallery",
-        lazy: async () => ({ Component: (await import("../routes/dev/Gallery")).Gallery }),
-      },
-    ]
-  : [];
+const devRoutes: RouteObject[] =
+  import.meta.env.DEV || import.meta.env.MODE === "mock"
+    ? [
+        {
+          path: "dev/gallery",
+          lazy: async () => ({ Component: (await import("../routes/dev/Gallery")).Gallery }),
+        },
+      ]
+    : [];
 
 /** Shown while the first screen's code loads (a few milliseconds from disk): nothing. */
 function InitialLoad(): null {
