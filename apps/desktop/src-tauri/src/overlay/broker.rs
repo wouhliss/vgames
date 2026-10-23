@@ -399,6 +399,18 @@ mod tests {
         protocol::read_frame(s).unwrap()
     }
 
+    fn assert_closed(result: std::io::Result<usize>) {
+        match result {
+            Ok(0) => {}
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::ConnectionAborted
+                ) => {}
+            other => panic!("extra renderer was not closed: {other:?}"),
+        }
+    }
+
     fn next_view(s: &mut std::net::TcpStream) -> protocol::View {
         loop {
             match read(s) {
@@ -440,7 +452,7 @@ mod tests {
         tokio::task::spawn_blocking(move || {
             let mut other = connect(addr, token).unwrap();
             let mut byte = [0u8; 1];
-            assert!(matches!(other.read(&mut byte), Ok(0) | Err(_)));
+            assert_closed(other.read(&mut byte));
         })
         .await
         .unwrap();
@@ -589,9 +601,11 @@ mod tests {
         assert!(squat.is_err(), "the broker port was free while serving");
         // A second connection is closed without a Welcome and is no failed handshake.
         tokio::task::spawn_blocking(move || {
-            let mut s = connect(addr, token).unwrap();
-            let mut byte = [0u8; 1];
-            assert!(matches!(s.read(&mut byte), Ok(0) | Err(_)));
+            for _ in 0..=MAX_AUTH_FAILURES {
+                let mut s = connect(addr, token).unwrap();
+                let mut byte = [0u8; 1];
+                assert_closed(s.read(&mut byte));
+            }
         })
         .await
         .unwrap();
