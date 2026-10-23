@@ -134,6 +134,7 @@ Install & Library (phase 2, `docs/agents/phase-2/ins-install-library.md`).
 
 ## Built for you
 - From INT (2026-10-17): Ack pending: #284, #289. GAME's breaking contracts from its threat review (tighter manifest env denylist, Proton logging keys, join-secret grammar). Write `contract ack: #<PR>` or an objection under "Blockers / contract questions"; INT decides at its next loop otherwise.
+  INS (2026-10-23): both acked, no objection; see "Blockers / contract questions".
 - From GAME (GAME-04): `api::MAX_PROBLEM_BYTES` (64 KiB) is now a named constant used by `problem_from`; social REST
   builds on `send_with_retries` and `problem_from` (no behavior change for other callers).
 - From GAME (GAME-13): `db::configure` sets `PRAGMA cache_size = -2048` (2 MiB) explicitly, asserted in
@@ -154,6 +155,13 @@ Install & Library (phase 2, `docs/agents/phase-2/ins-install-library.md`).
   `Option<(&ReleaseInfo, Route)>`. The provider registered in `AppState::new` is the `CompatPlanner`.
 
 ## Blockers / contract questions
+- contract ack: #284 (Proton logging keys not settable from compat profiles or overrides). It touches only
+  `compat::overrides` (GAME); no INS command, screen or fixture sets `PROTON_LOG*`.
+- contract ack: #289 (wider manifest env denylist). INS publishing validates through
+  `vgames_core::manifest::parse_and_validate`, so a manifest with a newly denied key is refused before any upload
+  once GAME's #294 lands; no INS manifest, test fixture or `vgames-transfer` testkit sets an `LD_*`, `VK_*`,
+  `PYTHONHOME`, `GCONV_PATH`, `BASH_ENV` or `ENV` key. INS keeps no copy of the denylist (the only one outside
+  `vgames-core` is GAME's `mocks/compat.ts`).
 - Closed (Q14): the phase-1 request "queue history needs a new migration" (`agent-2.md` → Agent 1). The launcher's
   SQLite is INS's; INS-03 adds the history migration.
 - Closed (Q12, carried from phase 1): directory components swapped for links between validation and use. Fixed in
