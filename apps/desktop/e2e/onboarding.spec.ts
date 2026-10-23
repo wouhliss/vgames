@@ -1,6 +1,7 @@
 // A3-T03 acceptance: one test per onboarding edge case, against mockIPC fixtures (src/mocks).
 import { expect, test } from "@playwright/test";
 import {
+  axeViolations,
   commandCalls,
   emit,
   FINGERPRINT,
@@ -10,6 +11,13 @@ import {
   submitAddress,
   VALID_CODE,
 } from "./helpers";
+
+test.afterEach(async ({ page }) => {
+  const violations = (await axeViolations(page)).filter(
+    (v) => v.impact === "serious" || v.impact === "critical",
+  );
+  expect(violations, JSON.stringify(violations, null, 2)).toEqual([]);
+});
 
 test.describe("server address", () => {
   test.beforeEach(async ({ page }) => {
