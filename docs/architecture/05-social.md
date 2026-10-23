@@ -147,9 +147,11 @@ launcher starts, only while they run.
   that shows view models and sends back user actions. Decrypted message text crosses into the game
   process only for display; the game runs as the same OS user and could read it anyway.
 - Loopback TCP (not named pipes or Unix sockets) works identically on Windows, inside Proton/Wine,
-  and inside the pressure-vessel container. The broker listens only while a game runs, accepts
-  exactly one connection carrying the session token (`VGAMES_OVERLAY_TOKEN`, 32 random bytes), and
-  closes the listener after the handshake.
+  and inside the pressure-vessel container. The broker listens only while a game runs and serves
+  exactly one connection carrying the session token (`VGAMES_OVERLAY_TOKEN`, 32 random bytes) at a
+  time. It keeps its listener bound for the whole game and closes any other connection unread while a
+  renderer is served, so no other local process can take the port and receive a reconnecting
+  renderer's token.
 - Frame cost budget: ≤ 0.3 ms CPU and ≤ 0.3 ms GPU per frame while hidden, ≤ 1 ms while the panel is open.
   When nothing is visible the hook returns immediately after one atomic check.
 
