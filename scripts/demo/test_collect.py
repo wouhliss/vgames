@@ -160,6 +160,33 @@ class CollectorTests(unittest.TestCase):
                     with patch.object(self.collector, 'step_log', return_value=log):
                         self.assertEqual(self.collector.proof(*args)['state'], 'failed')
 
+    def test_m4_collects_release_measurements_without_claiming_the_throughput_target(self):
+        with patch.object(self.collector, 'proof', return_value=result('fixture', 'passed', 'fixture')) as proof, \
+             patch.object(self.collector, 'workflow_health', return_value=result('fixture', 'passed', 'fixture')):
+            rows = requirements('m4', self.collector)
+        self.assertEqual(len(proof.call_args_list), 6)
+        self.assertEqual(state(rows), 'not reached')
+        footprint = ('test memory_stays_bounded_at_32_connections ... ok\n'
+                     'test disk_usage_never_exceeds_the_final_size_plus_journal ... ok\n'
+                     'budget memory: 32 connections, 512 MiB: peak RSS 100 MiB (release build, fixture)\n'
+                     'budget disk: peak 42 bytes\n')
+        throughput = ('test loopback_throughput ... ok\n'
+                      'budget throughput: 2 GiB loopback, download phase 1 s\n'
+                      'budget throughput: the same folder takes plain sequential writes at 1 GB/s\n')
+        for call in proof.call_args_list:
+            args = call.args
+            log = footprint if args[3] == 'Memory and disk footprint' else throughput
+            job = dict(self.job, name=args[2], steps=[{'name': args[3], 'conclusion': 'success'}])
+            with self.subTest(label=args[0]), \
+                 patch.object(self.collector, 'runs', return_value=[self.run]), \
+                 patch.object(self.collector, 'jobs', return_value=[job]):
+                with patch.object(self.collector, 'step_log', return_value=log):
+                    self.assertEqual(self.collector.proof(*args)['state'], 'passed')
+                for missing in (log.replace('budget ', 'missing '),
+                                log.replace('release build', 'debug build').replace('2 GiB', '0.1 GiB')):
+                    with patch.object(self.collector, 'step_log', return_value=missing):
+                        self.assertEqual(self.collector.proof(*args)['state'], 'failed')
+
 
 if __name__ == "__main__":
     unittest.main()

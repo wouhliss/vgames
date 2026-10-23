@@ -30,6 +30,9 @@ soak and transfer-budget workflow failures are still collected and fail the repo
 named test/metric receipts when those scenarios land; remove the corresponding pending row
 only after its real proof is collected. A green diagnostic soak cannot stand in for a
 5.5-hour measurement. Hardware-only observations remain in human-checklist §B.
+M4 collects each OS's release memory/disk assertions and full 2 GiB throughput measurements
+from their own steps. A successful throughput measurement does not attest its target;
+that target and populated-launcher budgets remain explicit pending requirements.
 
 `python3 -m unittest discover -s scripts/demo -p test_collect.py` checks failure precedence,
 zero/skipped tests, attempt selection, exact commits, pagination and unreadable evidence.
