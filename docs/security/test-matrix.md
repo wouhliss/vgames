@@ -125,4 +125,4 @@ None open.
 
 | Property | Tests | Runs |
 |---|---|---|
-| The observer refuses reused process identities, cleans up only validated process handles, stops its child and deletes the temporary profile; launcher output is excluded from metrics | `apps/desktop/perf/test_soak.py::SoakTests::test_root_children_groups_and_known_orphans_count_but_reused_pids_do_not`, `::SoakTests::test_cleanup_uses_a_stable_handle_and_rejects_a_reused_identity`, `::SoakTests::test_incomplete_run_stops_the_child_and_deletes_its_private_profile` | CI Workflows, hosted soak build |
+| The observer refuses reused process identities, cleans up only validated process handles, stops its child and deletes the temporary profile; launcher output is excluded from metrics | `apps/desktop/perf/test_soak.py::SoakTests::test_root_children_groups_and_known_orphans_count_but_reused_pids_do_not`, `::SoakTests::test_cleanup_uses_a_stable_handle_and_rejects_a_reused_identity`, `::SoakTests::test_incomplete_run_stops_the_child_and_deletes_its_private_profile`, `::SoakTests::test_private_bus_starts_inside_private_home_and_runtime_directories` | CI Workflows, hosted soak build |
