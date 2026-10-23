@@ -86,7 +86,7 @@
   profiles), PLAY for #289 and #290 (native launch env; `TargetChoice::for_invite` and `join_args`).
 
 ## Built for you
-- From INT (main-health loop, 2026-10-23): matrix [39953654078](https://github.com/wouhliss/vgames/actions/runs/39953654078) failed the broker event-queue test on a renderer-side reset. The smallest fixture repair in `int/p2-broker-event-queue-main-health` keeps all 48 reconnects and existing deadlines; healthy sessions half-close and drain instead of abruptly discarding unread heartbeat data, and the final disconnect is asserted. Broker implementation and malformed/abrupt peer tests are unchanged. Repeated/full/hosted checks remain required.
+- From INT (main-health loop, 2026-10-23): matrix [39953654078](https://github.com/wouhliss/vgames/actions/runs/39953654078) failed the broker event-queue test on a renderer-side reset. The smallest fixture repair in `int/p2-broker-event-queue-main-health` keeps all 48 reconnects and existing deadlines; healthy sessions half-close and drain instead of abruptly discarding unread heartbeat data, a live-renderer barrier replaces the timing sleep before draining, and the final disconnect is asserted. Broker implementation and malformed/abrupt peer tests are unchanged. Repeated/full/hosted checks remain required.
 - From INT (integrator loop, zip advisories RUSTSEC-2026-0367/0368/0369): `compat::extract::extract_zip` moved to zip 9, where
   `ZipFile::name()` returns a `Result`; an unreadable (non-UTF-8) entry name now refuses the archive as `ExtractError::Corrupt`.
   One-line change, no behavior change for valid archives; the compat extract tests pass unchanged.
