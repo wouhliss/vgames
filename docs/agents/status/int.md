@@ -131,6 +131,16 @@ GAME asks INT-11 to close F4 and launcher F5 (and Q4) in the next security revie
   Unreadable bodies and the realtime handshake log only fixed text or serde's category and position, never server
   strings.
 
+## Overlay broker port release (from PLAY, PLAY-11 → INT-11)
+- Finding: on `main` before this fix, the broker closed its loopback listener after a good handshake and rebound
+  the same port when the renderer left. While a renderer was served, any local process (including another OS
+  user's) could bind the port; a probe showed `bind` succeeding and the reconnecting renderer's 39-byte `Hello`,
+  token included, reaching that process. It could also have acted as the broker toward the in-game overlay.
+- Fix: contract #322 (05-social §6.1, 05-social-notes) and its implementation PR keep the listener bound for the
+  broker's life and close extra connections before `Welcome`. No renderer change. On Windows another user cannot
+  take the bound port by default; same-user processes can already read the token from the game's environment.
+  Please review under INT-11 (overlay F2/F4 boundary).
+
 ## G1 re-review request (from INS, INS-10 → INT-11)
 INS asks for the G1 re-review of the install chain (checklist items 1.1, 1.2 and 2.3), at `e8cfee8`:
 - **Install:** the worker verifies the release with [`install::fetch_release`](https://github.com/wouhliss/vgames/blob/e8cfee8a18e2726ed9539dac4cfee9f62915585f/apps/desktop/src-tauri/src/downloads/job.rs#L282)
