@@ -114,11 +114,13 @@ def stop_known(known):
                 os.close(descriptor)
 
 
-def wait_for_ui(process, profile, timeout=30):
+def wait_for_ui(process, profile, timeout=30, observe=None):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if process.poll() is not None:
             raise RuntimeError("launcher exited before its UI was ready")
+        if observe is not None:
+            observe()
         for log in profile.rglob("vgames.log"):
             if not log.is_symlink() and "main UI ready" in log.read_text():
                 return
@@ -142,15 +144,16 @@ def run(binary, duration, output, require_ui_ready=False):
             env[name] = str(directory)
         process = subprocess.Popen([str(binary)], env=env, start_new_session=True,
                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        if require_ui_ready:
-            wait_for_ui(process, Path(profile.name))
-            report["ui_ready"] = True
-        started = time.monotonic()
         table = processes()
         if process.pid not in table:
             raise RuntimeError("launcher exited before its first sample")
         identity = table[process.pid]["start"]
         known[process.pid] = identity
+        if require_ui_ready:
+            wait_for_ui(process, Path(profile.name),
+                        observe=lambda: sample(process.pid, identity, 0, known))
+            report["ui_ready"] = True
+        started = time.monotonic()
         with (output / "rss.csv").open("w", newline="") as target:
             writer = None
             while True:
@@ -172,7 +175,7 @@ def run(binary, duration, output, require_ui_ready=False):
                 except subprocess.TimeoutExpired:
                     continue
                 raise RuntimeError("launcher exited before the soak completed")
-        report = summarize(rows, duration)
+        report.update(summarize(rows, duration))
     except (OSError, RuntimeError) as error:
         report["error"] = str(error) if isinstance(error, RuntimeError) else type(error).__name__
     finally:
