@@ -1,7 +1,7 @@
-import { readFileSync } from "node:fs";
 import type { RouteObject } from "react-router";
 import { describe, expect, it } from "vitest";
 import { ROUTE_SCANS } from "../../e2e/route-scans";
+import readme from "../../README.md?raw";
 import { routes } from "./router";
 
 function paths(nodes: RouteObject[], parent = ""): string[] {
@@ -19,7 +19,6 @@ function paths(nodes: RouteObject[], parent = ""): string[] {
 
 describe("launcher route accessibility coverage", () => {
   it("documents every route in the input walkthrough", () => {
-    const readme = readFileSync(new URL("../../README.md", import.meta.url), "utf8");
     const table = readme
       .split("<!-- int-route-walkthrough:start -->")[1]
       ?.split("<!-- int-route-walkthrough:end -->")[0];
