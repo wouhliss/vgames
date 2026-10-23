@@ -6,7 +6,7 @@
   "description": "Drives the release launcher against the real API (INS-09). See README.md.",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "test": "node --experimental-strip-types --test lib/webdriver.test.ts",
+    "test": "node --experimental-strip-types --test lib/webdriver.test.ts lib/accessibility.test.ts",
     "e2e": "./run.sh"
   },
   "devDependencies": {
