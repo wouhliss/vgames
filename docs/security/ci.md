@@ -34,7 +34,7 @@ whole workspace, so the ignore rules apply across it.
 | `Desktop matrix gate` | Always reports; passes for docs-only scope skips and a successful three-OS matrix, fails for a failed/cancelled matrix or failed scope detection |
 | `Supply chain (cargo-deny, cargo-audit, pnpm audit)` | [`deny.toml`](../../deny.toml): RustSec advisories, license allowlist (no GPL/AGPL), crates.io only, duplicate versions reported; `cargo audit`; `pnpm audit` covers production and development dependencies |
 | `Secret scan (gitleaks)` | Full history with [`.gitleaks.toml`](../../.gitleaks.toml): default rules plus `vga_`/`vgr_`/`vgs_` tokens, `vgames.key/1` key files, `.vgkey` files, minisign secret keys |
-| `Workflows (actionlint)` | Every workflow in `.github/workflows/` passes actionlint (expression and permission checks, shellcheck of `run:` scripts); the release workflows are otherwise only exercised at release time |
+| `Workflows (actionlint)` | The hosted-soak observer regressions pass; every workflow in `.github/workflows/` passes actionlint (expression and permission checks, shellcheck of `run:` scripts); the release workflows are otherwise only exercised at release time |
 | `Dependency review` | PRs only: new dependencies with moderate+ advisories or GPL/AGPL licenses. Needs GitHub Advanced Security on a private repository (see below) |
 
 The launcher database step has one home in `scripts/ci/desktop-db-tests.sh`: `social_chat` and
@@ -115,5 +115,4 @@ INT).
 - Turn on **secret scanning** and **push protection** (free on public repositories; they complement gitleaks), and
   **private vulnerability reporting**.
 - `Dependency review` now runs on every PR (it is free on public repositories). Add it to the required checks.
-- `soak.yml` uses a self-hosted runner. It never runs on `pull_request`, so fork code cannot reach that runner; keep it
-  that way, and restrict the runner group to this repository.
+- `soak.yml` builds a release launcher and social test executable once, then measures hosted launcher idle growth, chat and idle sockets in separate jobs capped at 358 minutes. The full launcher run is 5.5 hours, with a ten-minute warm-up; warmed end growth and fitted growth must each remain below 5%. Metrics cover the process tree and known orphans; profiles and launcher output are excluded from uploads. This does not establish the absolute RAM or populated-library startup budgets (PLAY-10), nor the 24-hour result (non-blocking checklist B7). The optional legacy self-hosted job stays separate. Soak never runs on `pull_request`.

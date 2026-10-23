@@ -36,3 +36,6 @@ Thumbs.db
 # Overlay renderers staged for bundling (GAME-11); build outputs.
 apps/desktop/src-tauri/resources/overlay/*
 !apps/desktop/src-tauri/resources/overlay/README.md
+
+# Python observer and automation bytecode.
+__pycache__/
