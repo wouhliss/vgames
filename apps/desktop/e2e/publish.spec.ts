@@ -1,15 +1,12 @@
 // INS-06 in the browser: the publish screen passes axe (form, live upload, invalid entries and the
 // dialogs), an upload moves pack by pack to "checked" and is released, and players never see it.
-import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
-import { open } from "./helpers";
+import { axeViolations, open } from "./helpers";
 
 async function scan(page: Page): Promise<void> {
   await expect(page.getByRole("status").filter({ hasText: "Loading" })).toHaveCount(0);
-  const results = await new AxeBuilder({ page }).analyze();
-  const serious = results.violations.filter(
-    (v) => v.impact === "serious" || v.impact === "critical",
-  );
+  const violations = await axeViolations(page);
+  const serious = violations.filter((v) => v.impact === "serious" || v.impact === "critical");
   expect(serious, JSON.stringify(serious, null, 2)).toEqual([]);
 }
 
