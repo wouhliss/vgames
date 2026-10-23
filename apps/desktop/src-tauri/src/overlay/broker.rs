@@ -436,6 +436,14 @@ mod tests {
         }
     }
 
+    /// Finish a healthy renderer session without resetting unread broker heartbeats.
+    /// Keep the existing socket timeout: the broker must observe EOF and close its side.
+    fn disconnect(s: &mut std::net::TcpStream) {
+        s.shutdown(std::net::Shutdown::Write).unwrap();
+        let mut pending = [0u8; 1024];
+        while s.read(&mut pending).unwrap() != 0 {}
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn serves_views_panel_and_actions_to_an_authenticated_renderer() {
         let mut r = rig().await;
@@ -567,6 +575,7 @@ mod tests {
                 let mut s = reconnect(addr, token);
                 assert!(matches!(read(&mut s), ToRenderer::Welcome { .. }));
                 next_view(&mut s);
+                disconnect(&mut s);
             }
         })
         .await
@@ -581,6 +590,8 @@ mod tests {
         tokio::task::spawn_blocking(move || {
             let mut s = reconnect(addr, token);
             assert!(matches!(read(&mut s), ToRenderer::Welcome { .. }));
+            next_view(&mut s);
+            disconnect(&mut s);
         })
         .await
         .unwrap();
@@ -588,6 +599,7 @@ mod tests {
             r.event().await,
             BrokerEvent::Connected(RendererKind::Vulkan)
         );
+        assert_eq!(r.event().await, BrokerEvent::Disconnected);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
