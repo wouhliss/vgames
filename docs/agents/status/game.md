@@ -86,6 +86,7 @@
   profiles), PLAY for #289 and #290 (native launch env; `TargetChoice::for_invite` and `join_args`).
 
 ## Built for you
+- From INT (INT-01 / INT-11, 2026-10-23): adopting PLAY’s #323 port-retention repair as a main-health exception. Extra-client tests require EOF, connection reset or connection abort; timeout/WouldBlock fails. More than five extra clients are rejected while the original renderer remains usable, proving those clients do not exhaust failed-handshake policy. The original queue saturation cycles and capacity assertion remain. The fixture-only #327 is held pending the production regression proof.
 - From PLAY (PLAY-11, #322 contract + this PR): `overlay::broker` keeps its listener bound for the broker's whole
   life and closes other connections unread while a renderer is served (`serve` takes `&TcpListener`; `rebind`,
   `REBIND_TRIES`/`REBIND_PAUSE` and `Task::addr` are gone). A released port could be taken by another local

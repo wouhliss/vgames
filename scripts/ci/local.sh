@@ -187,6 +187,7 @@ job_admin-e2e() {
 }
 
 job_desktop() {
+  need desktop-file-validate "apt-get install desktop-file-utils"
   need pkg-config "apt-get install pkg-config"
   pkg-config --exists webkit2gtk-4.1 || {
     echo "MISSING: WebKitGTK 4.1 — apt-get install libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libdbus-1-dev libudev-dev"
