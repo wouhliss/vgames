@@ -56,10 +56,10 @@ machine that stays awake for a day, from a checkout of `main`:
 ```sh
 pnpm install --frozen-lockfile
 pnpm --filter @vgames/desktop build
-cargo build --locked --release -p vgames-desktop
-dbus-run-session -- xvfb-run -a -s '-screen 0 1280x800x24' \
+cargo build --locked --release -p vgames-desktop --features tauri/custom-protocol
+xvfb-run -a -s '-screen 0 1280x800x24' \
   python3 apps/desktop/perf/soak.py --binary target/release/vgames-desktop \
-  --hours 24 --out /tmp/vgames-launcher-idle-24h
+  --hours 24 --out /tmp/vgames-launcher-idle-24h --require-ui-ready --dbus-session
 ```
 
 Pass: exit 0 and `summary.json` has `passed: true`, 86,400 measured seconds, and both growth percentages below 5. Keep `rss.csv` and `summary.json`; report their start/median/end RSS and slope with the commit. The observer uses a temporary empty profile and includes WebView descendants; this is idle growth, not the populated-library or install workload budget. It deletes the profile and terminates its processes.

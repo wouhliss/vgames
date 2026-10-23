@@ -138,6 +138,35 @@ class SoakTests(unittest.TestCase):
             self.assertNotIn('vgames-soak-profile-', report)
             self.assertEqual({p.name for p in output.iterdir()}, {'summary.json'})
 
+    def test_private_bus_starts_inside_private_home_and_runtime_directories(self):
+        popen = soak.subprocess.Popen
+        profiles = []
+        def launch(command, **kwargs):
+            self.assertEqual(command[:2], ['dbus-run-session', '--'])
+            env = kwargs['env']
+            for name in ('DBUS_SESSION_BUS_ADDRESS', 'DBUS_SESSION_BUS_PID',
+                         'DBUS_STARTER_ADDRESS', 'DBUS_STARTER_BUS_TYPE'):
+                self.assertNotIn(name, env)
+            for name in ('HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME',
+                         'XDG_CACHE_HOME', 'XDG_RUNTIME_DIR'):
+                directory = Path(env[name])
+                self.assertEqual(directory.stat().st_mode & 0o777, 0o700)
+                profiles.append(directory)
+            # Exercise real child cleanup without needing a session bus in unit CI.
+            return popen(command[2:], **kwargs)
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.dict(soak.os.environ, {'DBUS_SESSION_BUS_ADDRESS': 'fixture-bus'}), \
+             patch.object(soak.subprocess, 'Popen', side_effect=launch), \
+             contextlib.redirect_stdout(io.StringIO()):
+            binary = Path(directory) / 'fixture-launcher'
+            binary.write_text('#!/bin/sh\nexec sleep 30\n')
+            binary.chmod(0o755)
+            self.assertEqual(soak.run(binary, 0.02, Path(directory) / 'metrics',
+                                      dbus_session=True), 1)
+            self.assertEqual(soak.os.environ['DBUS_SESSION_BUS_ADDRESS'], 'fixture-bus')
+            self.assertTrue(profiles)
+            self.assertTrue(all(not path.exists() for path in profiles))
+
 
 if __name__ == '__main__':
     unittest.main()
