@@ -18,6 +18,16 @@ class EvidenceError(Exception):
     pass
 
 
+def evidence(method):
+    @functools.wraps(method)
+    def checked(self, label, *args, **kwargs):
+        try:
+            return method(self, label, *args, **kwargs)
+        except EvidenceError as error:
+            return result(label, "failed", str(error))
+    return checked
+
+
 def gh(*args):
     # Logs may contain application output. Never echo a response or gh's stderr.
     try:
@@ -110,6 +120,7 @@ class Collector:
             raise EvidenceError("Actions step-scoped log is unavailable")
         return "\n".join(lines) + "\n"
 
+    @evidence
     def proof(self, label, workflow, job_name, step, patterns):
         runs = self.runs(workflow)
         if not runs:
@@ -132,6 +143,7 @@ class Collector:
             return result(label, "failed", "test receipts missing (zero tests or a skipped scenario)", link)
         return result(label, "passed", "test receipts verified", link)
 
+    @evidence
     def workflow_health(self, label, workflow):
         runs = self.runs(workflow)
         if not runs:
