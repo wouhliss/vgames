@@ -451,6 +451,22 @@ describe("package details", () => {
       expect(compat).not.toHaveTextContent("Needs Rosetta 2.");
     });
 
+    it("reports nothing when the player declines the native Rosetta 2 dialog", async () => {
+      const { user, backend } = setup(FORGE, { host: "macos-aarch64", rosettaInstalled: false });
+      backend.on("rosetta_install", () => "cancelled");
+      await heading("Frozen Forge");
+      const compat = screen.getByRole("region", { name: "Compatibility" });
+      await user.click(within(compat).getByRole("button", { name: "Install Rosetta 2" }));
+      await user.click(
+        within(screen.getByRole("alertdialog")).getByRole("button", { name: "Install Rosetta 2" }),
+      );
+      await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+      expect(backend.callsTo("rosetta_install")).toHaveLength(1);
+      expect(screen.queryByText("Rosetta 2 is installed")).not.toBeInTheDocument();
+      expect(screen.queryByText(/couldn't be installed/)).not.toBeInTheDocument();
+      expect(compat).toHaveTextContent("Needs Rosetta 2.");
+    });
+
     it("says why Rosetta 2 could not be installed", async () => {
       const { user, backend } = setup(FORGE, { host: "macos-aarch64", rosettaInstalled: false });
       backend.on("rosetta_install", () =>
