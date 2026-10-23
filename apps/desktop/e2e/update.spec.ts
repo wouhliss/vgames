@@ -1,15 +1,14 @@
 // A3-T10 in the browser: the update banner and What's new pass axe, and work with the keyboard only
 // and with a controller only. The `ready` preset has 0.9.1 available over the installed 0.4.0.
-import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
-import { commandCalls, emit, open } from "./helpers";
+import { axeViolations, commandCalls, emit, open } from "./helpers";
 
 const pad = (page: Page, action: string) =>
   emit(page, "ui-nav", { action, controller: "xinput", repeat: false });
 
 async function serious(page: Page) {
-  const results = await new AxeBuilder({ page }).analyze();
-  return results.violations.filter((v) => v.impact === "serious" || v.impact === "critical");
+  const violations = await axeViolations(page);
+  return violations.filter((v) => v.impact === "serious" || v.impact === "critical");
 }
 
 const banner = (page: Page) => page.getByRole("region", { name: "vgames 0.9.1 is available" });

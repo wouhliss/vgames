@@ -1,3 +1,4 @@
+import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page } from "@playwright/test";
 
 export const FINGERPRINT = "VG1-7K2M-Q9XD-4HT8-B3NW-RC5E-X1JP-V6GA-M0ZF";
@@ -11,6 +12,13 @@ export async function open(
 ): Promise<void> {
   const extra = state ? `&mockState=${encodeURIComponent(JSON.stringify(state))}` : "";
   await page.goto(`/?mock=${preset}${extra}`);
+}
+
+/** One scan entry point for launcher accessibility checks; callers retain their impact assertions. */
+export async function axeViolations(page: Page, include?: string) {
+  const scanner = new AxeBuilder({ page });
+  if (include) scanner.include(include);
+  return (await scanner.analyze()).violations;
 }
 
 /** Emits a Rust event into the page (mock mode). */
