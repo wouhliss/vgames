@@ -31,7 +31,7 @@ import { type ControllersState, controllerHandlers, defaultControllersState } fr
 import { type DownloadsState, defaultDownloadsState, downloadHandlers } from "./downloads";
 import { defaultLibraryState, type LibraryState, libraryHandlers } from "./library";
 import { defaultPublishingState, type PublishingState, publishingHandlers } from "./publishing";
-import { CommandFailure, fail, type Handler, later } from "./runtime";
+import { CommandFailure, fail, type Handler, later, schedule } from "./runtime";
 import {
   defaultSettingsState,
   loadPersisted,
@@ -366,7 +366,7 @@ export function installMockBackend(overrides: Partial<MockState> = {}): MockBack
       };
       flows.set(flow.flow_id, entry);
       if (behaviour?.auth !== "paste" && browserOpened) {
-        entry.timer = setTimeout(() => {
+        entry.timer = schedule(() => {
           if (!flows.has(flow.flow_id)) return;
           flows.delete(flow.flow_id);
           const error = behaviour?.auth;
