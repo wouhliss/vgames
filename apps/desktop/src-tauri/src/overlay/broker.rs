@@ -440,8 +440,8 @@ mod tests {
     /// Keep the existing socket timeout: the broker must observe EOF and close its side.
     fn disconnect(s: &mut std::net::TcpStream) {
         s.shutdown(std::net::Shutdown::Write).unwrap();
-        let deadline = std::time::Instant::now()
-            + s.read_timeout().unwrap().expect("renderer read timeout");
+        let deadline =
+            std::time::Instant::now() + s.read_timeout().unwrap().expect("renderer read timeout");
         let mut pending = [0u8; 1024];
         loop {
             let remaining = deadline
