@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from collect import Collector, EvidenceError, main, result, rust_test, state
+from collect import Collector, EvidenceError, main, requirements, result, rust_test, state
 
 
 class CollectorTests(unittest.TestCase):
@@ -139,6 +139,26 @@ class CollectorTests(unittest.TestCase):
         with patch.object(self.collector, 'named_job_log', return_value='test required_case ... ok\n'):
             with self.assertRaisesRegex(EvidenceError, 'step-scoped'):
                 self.collector.step_log(13, 'scenario')
+
+    def test_m3b_requires_each_wine_backend_despite_a_green_workflow(self):
+        with patch.object(self.collector, 'proof', return_value=result('fixture', 'passed', 'fixture')) as proof:
+            requirements('m3b', self.collector)
+        cases = [call.args for call in proof.call_args_list if call.args[0].startswith('GAME-06 Wine ')]
+        self.assertEqual(len(cases), 3)
+        receipt = 'test compat::plan::wine_e2e::the_d3d11_test_game_runs_through_wine ... ok\n'
+        for args, backend in zip(cases, ('Dxmt', 'Dxvk', 'Wined3d'), strict=True):
+            job = dict(self.job, name=args[2], steps=[{'name': args[3], 'conclusion': 'success'}])
+            with self.subTest(backend=backend), \
+                 patch.object(self.collector, 'runs', return_value=[self.run]), \
+                 patch.object(self.collector, 'jobs', return_value=[job]):
+                with patch.object(self.collector, 'step_log', return_value=f'Wine plan: fixture with {backend}\n{receipt}'):
+                    self.assertEqual(self.collector.proof(*args)['state'], 'passed')
+                    job['steps'][0]['conclusion'] = 'failure'
+                    self.assertEqual(self.collector.proof(*args)['state'], 'failed')
+                job['steps'][0]['conclusion'] = 'success'
+                for log in (receipt, f'Wine plan: fixture with OtherBackend\n{receipt}'):
+                    with patch.object(self.collector, 'step_log', return_value=log):
+                        self.assertEqual(self.collector.proof(*args)['state'], 'failed')
 
 
 if __name__ == "__main__":
