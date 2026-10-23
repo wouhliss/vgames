@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { runInNewContext } from "node:vm";
 import { nativeAxeViolations } from "./accessibility.ts";
 
 test("real-WebView scans retain findings without logging HTML or input values", async () => {
@@ -14,9 +15,29 @@ test("real-WebView scans retain findings without logging HTML or input values", 
       assert.ok(injected);
       assert.ok(script.includes("axe.run"));
       assert.deepEqual(args, [null]);
-      return {
-        violations: [{ id: "label", impact: "serious", nodes: [{ html: "MOCK_SENSITIVE_FIELD" }] }],
-      };
+      return new Promise((resolve) => {
+        const done = (value: unknown) => {
+          assert.ok(!JSON.stringify(value).includes("MOCK_SENSITIVE_FIELD"));
+          resolve(value);
+        };
+        runInNewContext(script, {
+          arguments: [...(args ?? []), done],
+          document: {},
+          axe: {
+            run(
+              _scope: unknown,
+              _options: unknown,
+              callback: (error: null, value: unknown) => void,
+            ) {
+              callback(null, {
+                violations: [
+                  { id: "label", impact: "serious", nodes: [{ html: "MOCK_SENSITIVE_FIELD" }] },
+                ],
+              });
+            },
+          },
+        });
+      });
     },
   });
   assert.deepEqual(findings, [{ id: "label", impact: "serious", affectedNodes: 1 }]);
