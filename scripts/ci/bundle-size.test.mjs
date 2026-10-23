@@ -18,9 +18,12 @@ async function fixture(run) {
 
 test("counts entry and quoted modulepreloads once, without lazy chunks or styles", async () => {
   await fixture(async (directory) => {
-    await writeFile(join(directory, "index.html"), `<script src='/entry.js' type='module'></script>
+    await writeFile(
+      join(directory, "index.html"),
+      `<script src='/entry.js' type='module'></script>
       <link href="/shared.js?hash=1" crossorigin rel="modulepreload">
-      <link rel='modulepreload' href='./shared.js#fragment'><link rel="stylesheet" href="/style.css">`);
+      <link rel='modulepreload' href='./shared.js#fragment'><link rel="stylesheet" href="/style.css">`,
+    );
     const entry = Buffer.from("import './shared.js'; import('./lazy.js');");
     const shared = Buffer.from("export const value = 42;");
     await writeFile(join(directory, "entry.js"), entry);
@@ -42,8 +45,11 @@ test("an incompressible 300 KB initial chunk fails the actual gzip budget", asyn
 
 test("missing entry, unreadable preload, remote script and symlink escape fail closed", async () => {
   await fixture(async (directory) => {
-    for (const html of ["<html></html>", '<script src="/missing.js"></script>',
-      '<script src="https://example.invalid/entry.js"></script>']) {
+    for (const html of [
+      "<html></html>",
+      '<script src="/missing.js"></script>',
+      '<script src="https://example.invalid/entry.js"></script>',
+    ]) {
       await writeFile(join(directory, "index.html"), html);
       await assert.rejects(measureInitialJs(directory));
     }
