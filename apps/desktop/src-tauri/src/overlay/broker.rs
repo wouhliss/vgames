@@ -596,23 +596,30 @@ mod tests {
         let cycles = super::super::BROKER_EVENTS * 3;
         // A renderer that keeps coming back (each cycle queues Connected + Disconnected);
         // nobody reads the events meanwhile.
-        tokio::task::spawn_blocking(move || {
+        let witness = tokio::task::spawn_blocking(move || {
             for _ in 0..cycles {
                 let mut s = reconnect(addr, token);
                 next_view(&mut s);
             }
+            // A live renderer proves earlier disconnects have been processed and the
+            // full event queue does not stop the next Welcome and View.
+            let mut s = reconnect(addr, token);
+            next_view(&mut s);
+            s
         })
         .await
         .unwrap();
-        tokio::time::sleep(Duration::from_millis(200)).await;
         let mut queued = 0;
         while r.events.try_recv().is_ok() {
             queued += 1;
         }
         assert_eq!(queued, super::super::BROKER_EVENTS);
+        drop(witness);
+        assert_eq!(r.event().await, BrokerEvent::Disconnected);
         // Still serving.
         tokio::task::spawn_blocking(move || {
-            reconnect(addr, token);
+            let mut s = reconnect(addr, token);
+            next_view(&mut s);
         })
         .await
         .unwrap();
@@ -620,6 +627,7 @@ mod tests {
             r.event().await,
             BrokerEvent::Connected(RendererKind::Vulkan)
         );
+        assert_eq!(r.event().await, BrokerEvent::Disconnected);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
