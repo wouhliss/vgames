@@ -360,8 +360,11 @@ Additions (A4-T10):
   in a row, with the overlay on); show a notice with "Turn it back on".
 - Broker protocol (`vgames_overlay::protocol`, v1): `u32` LE length + postcard payload ≤ 64 KiB; renderer
   sends `Hello {version, token, renderer}` within 5 s, the broker answers `Welcome` or closes; 5 failed
-  handshakes stop the broker for that game. One renderer at a time: the listener closes after a good
-  handshake and is bound again on the same port when that renderer leaves (swapchain or device
+  handshakes stop the broker for that game. One renderer at a time: the listener stays bound for the
+  broker's whole life (a released port could be taken by another local process, which would then
+  receive the reconnecting renderer's `Hello` and token); while a renderer is served, any other
+  connection is closed before `Welcome`, which a renderer treats like a refused connect. The renderer
+  reconnects to the same port when its link drops (swapchain or device
   recreation). Heartbeats every 5 s, a link silent for 15 s is dropped. Caps: 4 toasts, 50 friends, 20
   invites, 20 messages; names 64, titles 128, texts 280, replies 500 characters; control characters refused.
 - Launch integration: `OverlayService` is the launcher's `launch::orchestrate::LaunchHooks`. Before each game
