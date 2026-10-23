@@ -70,7 +70,7 @@ jobs:
       - run: pnpm --filter @vgames/desktop build
       - name: Build once, before the hosted time budgets start
         run: |
-          cargo build --locked --release -p vgames-desktop
+          cargo build --locked --release -p vgames-desktop --features tauri/custom-protocol
           cargo test --locked -p vgames-desktop --test social_soak --no-run --message-format json > "$RUNNER_TEMP/soak-build.jsonl"
           python3 - <<'PY_BUILD'
           import json, os, shutil
@@ -125,7 +125,7 @@ jobs:
         run: |
           dbus-run-session -- xvfb-run -a -s '-screen 0 1280x800x24' \
             python3 apps/desktop/perf/soak.py --binary "$RUNNER_TEMP/soak-binaries/vgames-desktop" \
-            --hours "$HOSTED_HOURS" --out "$RUNNER_TEMP/soak"
+            --hours "$HOSTED_HOURS" --out "$RUNNER_TEMP/soak" --require-ui-ready
       - name: RSS summary
         if: always()
         run: |
