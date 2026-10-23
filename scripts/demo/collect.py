@@ -41,8 +41,25 @@ class Collector:
         self.sha = sha
 
     @functools.cache
+    def source(self, path):
+        try:
+            value = subprocess.run(["git", "show", f"{self.sha}:{path}"], cwd=ROOT,
+                                   capture_output=True, timeout=10)
+            if value.returncode:
+                commit = subprocess.run(["git", "cat-file", "-e", f"{self.sha}^{{commit}}"],
+                                        cwd=ROOT, capture_output=True, timeout=10)
+                if commit.returncode:
+                    raise EvidenceError("Fetch the selected evidence commit before collecting")
+                return None
+            if len(value.stdout) > 1024 * 1024:
+                raise EvidenceError("Evidence source exceeds the size limit")
+            return value.stdout.decode("utf-8")
+        except (OSError, subprocess.TimeoutExpired, UnicodeError) as error:
+            raise EvidenceError("Evidence source is unavailable") from error
+
+    @functools.cache
     def runs(self, workflow):
-        if not (ROOT / ".github/workflows" / workflow).is_file():
+        if self.source(f".github/workflows/{workflow}") is None:
             return []
         # Most recent attempt wins, even if an older attempt was green.
         runs = api(f"actions/workflows/{workflow}/runs?head_sha={self.sha}&per_page=100")["workflow_runs"]

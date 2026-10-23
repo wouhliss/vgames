@@ -2,6 +2,7 @@ import contextlib
 import io
 import os
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -12,6 +13,9 @@ from collect import Collector, EvidenceError, main, result, rust_test, state
 class CollectorTests(unittest.TestCase):
     def setUp(self):
         self.collector = Collector("a" * 40)
+        source = patch.object(self.collector, "source", return_value="name: CI\n")
+        source.start()
+        self.addCleanup(source.stop)
         self.run = {"id": 42, "head_sha": "a" * 40, "run_number": 2,
                     "run_attempt": 1, "status": "completed", "conclusion": "success"}
         self.job = {"id": 13, "name": "tests", "status": "completed", "conclusion": "success",
@@ -101,6 +105,27 @@ class CollectorTests(unittest.TestCase):
                     output.write_text('')
                     self.assertEqual(main(), code)
                     self.assertEqual(output.read_text(), f'm1={expected}\n')
+
+    def test_selected_commit_source_ignores_worktree_changes_and_distinguishes_missing_objects(self):
+        with tempfile.TemporaryDirectory() as directory:
+            def git(*args):
+                return subprocess.check_output(['git', '-C', directory, *args], stderr=subprocess.DEVNULL)
+            git('init', '-q')
+            git('config', 'user.name', 'Evidence fixture')
+            git('config', 'user.email', 'fixture@example.invalid')
+            git('config', 'commit.gpgsign', 'false')
+            path = Path(directory) / 'workflow.yml'
+            path.write_text('committed evidence\n')
+            git('add', 'workflow.yml')
+            git('commit', '-qm', 'fixture')
+            sha = git('rev-parse', 'HEAD').decode().strip()
+            path.write_text('uncommitted changes\n')
+            with patch('collect.ROOT', Path(directory)):
+                collector = Collector(sha)
+                self.assertEqual(collector.source('workflow.yml'), 'committed evidence\n')
+                self.assertIsNone(collector.source('missing.yml'))
+                with self.assertRaisesRegex(EvidenceError, 'Fetch the selected'):
+                    Collector('a' * 40).source('workflow.yml')
 
 
 if __name__ == "__main__":
