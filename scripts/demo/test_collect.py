@@ -24,7 +24,7 @@ class CollectorTests(unittest.TestCase):
     def proof(self, log="test required_case ... ok\n"):
         with patch.object(self.collector, "runs", return_value=[self.run]), \
                 patch.object(self.collector, "jobs", return_value=[self.job]), \
-                patch.object(self.collector, "log", return_value=log):
+                patch.object(self.collector, "step_log", return_value=log):
             return self.collector.proof("test", "ci.yml", "tests", "scenario", [rust_test("required_case")])
 
     def test_zero_tests_ignored_and_missing_receipts_fail(self):
@@ -126,6 +126,19 @@ class CollectorTests(unittest.TestCase):
                 self.assertIsNone(collector.source('missing.yml'))
                 with self.assertRaisesRegex(EvidenceError, 'Fetch the selected'):
                     Collector('a' * 40).source('workflow.yml')
+
+    def test_a_later_backend_receipt_cannot_satisfy_the_requested_step(self):
+        log = ('job\tscenario\t2026-10-23T10:00:00Z test result: ok. 0 passed\n'
+               'job\tother backend\t2026-10-23T10:00:01Z test required_case ... ok\n')
+        with patch.object(self.collector, 'runs', return_value=[self.run]), \
+             patch.object(self.collector, 'jobs', return_value=[self.job]), \
+             patch.object(self.collector, 'named_job_log', return_value=log):
+            self.assertEqual(self.collector.proof('x', 'ci.yml', 'tests', 'scenario',
+                                                  [rust_test('required_case')])['state'], 'failed')
+            self.assertNotIn('required_case', self.collector.step_log(13, 'scenario'))
+        with patch.object(self.collector, 'named_job_log', return_value='test required_case ... ok\n'):
+            with self.assertRaisesRegex(EvidenceError, 'step-scoped'):
+                self.collector.step_log(13, 'scenario')
 
 
 if __name__ == "__main__":
