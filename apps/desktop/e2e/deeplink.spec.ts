@@ -1,6 +1,5 @@
-import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
-import { emit, open } from "./helpers";
+import { axeViolations, emit, open } from "./helpers";
 
 for (const [reason, message] of [
   ["rate_limited", "Wait a moment before opening another game link."],
@@ -18,8 +17,8 @@ for (const [reason, message] of [
     await expect(page.getByRole("heading", { level: 1, name: "Library" })).toBeVisible();
     await emit(page, "deeplink-refused", { reason });
     await expect(page.getByText(message, { exact: true })).toBeVisible();
-    const results = await new AxeBuilder({ page }).analyze();
-    expect(results.violations).toEqual([]);
+    const violations = await axeViolations(page);
+    expect(violations).toEqual([]);
     const dismiss = page.getByRole("button", { name: "Dismiss notification" });
     await dismiss.focus();
     await page.keyboard.press("Enter");
