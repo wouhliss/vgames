@@ -25,6 +25,25 @@ env:
   SQLX_OFFLINE: "true"
 
 jobs:
+  milestones:
+    name: Milestone M3b (per-OS evidence)
+    needs: [build, gate]
+    if: always() && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Collect each OS and compatibility evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEMO_SHA: ${{ github.sha }}
+        run: scripts/demo/m3b.sh --report
+
   changes:
     name: Desktop change detection
     runs-on: ubuntu-24.04

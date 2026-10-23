@@ -47,6 +47,25 @@ env:
   VGAMES_METADATA_STEAM_ENABLED: "false"
 
 jobs:
+  milestones:
+    name: Milestones M1–M4 (test receipts)
+    needs: [admin-web, install, launcher]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Collect exact-commit milestone evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEMO_SHA: ${{ github.sha }}
+        run: python3 scripts/demo/collect.py m1 m2 m3 m4 --report
+
   key-pipeline:
     name: Key pipeline (CLI ↔ API)
     runs-on: ubuntu-24.04
