@@ -1,7 +1,12 @@
+import contextlib
+import io
+import os
+from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import patch
 
-from collect import Collector, EvidenceError, result, rust_test, state
+from collect import Collector, EvidenceError, main, result, rust_test, state
 
 
 class CollectorTests(unittest.TestCase):
@@ -60,6 +65,42 @@ class CollectorTests(unittest.TestCase):
                 self.collector.workflow_health("CI", "ci.yml")
         self.assertEqual(state([result("missing", "pending", "pending")]), "not reached")
         self.assertEqual(state([result("missing", "pending", "pending"), result("existing", "failed", "failed")]), "failed")
+
+    def test_empty_job_logs_use_the_same_job_fallback_and_still_fail_if_empty(self):
+        with patch("collect.gh", side_effect=["", "test required_case ... ok\n"]) as gh:
+            self.assertIn("required_case", self.collector.log(13))
+            self.assertIn("13", gh.call_args.args)
+        with patch("collect.gh", return_value=""):
+            with self.assertRaisesRegex(EvidenceError, "empty job log"):
+                self.collector.log(14)
+
+    def test_history_requires_a_successful_named_main_gate_and_never_changes_current_failure(self):
+        older = dict(self.run, id=41, run_number=1, head_branch="main")
+        latest = dict(self.run, head_branch="main", conclusion="failure")
+        foreign = dict(self.run, id=43, run_number=3, head_branch="feature")
+        passed = dict(self.job, name="Milestone M1")
+        skipped = dict(passed, conclusion="skipped")
+        with patch("collect.api", return_value={"workflow_runs": [older, latest, foreign]}), \
+             patch.object(self.collector, "jobs", side_effect=[[skipped], [passed]]):
+            self.assertTrue(self.collector.last_green("m1").endswith("/41"))
+        self.assertEqual(state([result("current test", "failed", "failed")]), "failed")
+        with patch("collect.api", return_value={"workflow_runs": [latest]}), \
+             patch.object(self.collector, "jobs", return_value=[skipped]):
+            self.assertEqual(self.collector.last_green("m1"), "")
+
+    def test_report_outputs_distinguish_pending_failed_and_reached_despite_green_history(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / 'outputs'
+            for status, expected, code in (('pending', 'not reached', 0),
+                                           ('failed', 'failed', 1), ('passed', 'reached', 0)):
+                with patch('sys.argv', ['collect.py', 'm1', '--sha', 'a' * 40, '--report']), \
+                     patch('collect.requirements', return_value=[result('proof', status, 'fixture')]), \
+                     patch.object(Collector, 'last_green', return_value='https://github.com/wouhliss/vgames/actions/runs/41'), \
+                     patch.dict(os.environ, {'GITHUB_OUTPUT': str(output), 'GITHUB_STEP_SUMMARY': ''}), \
+                     contextlib.redirect_stdout(io.StringIO()):
+                    output.write_text('')
+                    self.assertEqual(main(), code)
+                    self.assertEqual(output.read_text(), f'm1={expected}\n')
 
 
 if __name__ == "__main__":

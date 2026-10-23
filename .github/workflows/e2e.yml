@@ -48,7 +48,7 @@ env:
 
 jobs:
   milestones:
-    name: Milestones M1–M4 (test receipts)
+    name: Collect milestone evidence
     needs: [admin-web, install, launcher]
     if: always()
     runs-on: ubuntu-24.04
@@ -56,15 +56,69 @@ jobs:
     permissions:
       contents: read
       actions: read
+    outputs:
+      m1: ${{ steps.collect.outputs.m1 }}
+      m2: ${{ steps.collect.outputs.m2 }}
+      m3: ${{ steps.collect.outputs.m3 }}
+      m4: ${{ steps.collect.outputs.m4 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Collect exact-commit milestone evidence
+        id: collect
         env:
           GH_TOKEN: ${{ github.token }}
           DEMO_SHA: ${{ github.sha }}
         run: python3 scripts/demo/collect.py m1 m2 m3 m4 --report
+
+  m1:
+    name: Milestone M1
+    needs: milestones
+    if: always() && needs.milestones.outputs.m1 == 'reached'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require complete milestone proof
+        env:
+          MILESTONE_STATUS: ${{ needs.milestones.outputs.m1 }}
+        run: test "$MILESTONE_STATUS" = reached
+
+  m2:
+    name: Milestone M2
+    needs: milestones
+    if: always() && needs.milestones.outputs.m2 == 'reached'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require complete milestone proof
+        env:
+          MILESTONE_STATUS: ${{ needs.milestones.outputs.m2 }}
+        run: test "$MILESTONE_STATUS" = reached
+
+  m3:
+    name: Milestone M3
+    needs: milestones
+    if: always() && needs.milestones.outputs.m3 == 'reached'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require complete milestone proof
+        env:
+          MILESTONE_STATUS: ${{ needs.milestones.outputs.m3 }}
+        run: test "$MILESTONE_STATUS" = reached
+
+  m4:
+    name: Milestone M4
+    needs: milestones
+    if: always() && needs.milestones.outputs.m4 == 'reached'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require complete milestone proof
+        env:
+          MILESTONE_STATUS: ${{ needs.milestones.outputs.m4 }}
+        run: test "$MILESTONE_STATUS" = reached
 
   key-pipeline:
     name: Key pipeline (CLI ↔ API)

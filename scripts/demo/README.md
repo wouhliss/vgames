@@ -9,7 +9,9 @@ Exit codes: 0 means reached, 1 means an existing proof failed or evidence could 
 read, and 2 means not reached because evidence/tasks are pending. `--report` gives pending
 a zero exit code so nightly summaries can describe unfinished work; its table still says
 **not reached**, and any existing failed, skipped or cancelled test job still exits 1.
-The reporter passing is not milestone acceptance. Only a `reached` table row is acceptance.
+The collector passing means evidence collection completed. A separate `Milestone M1`
+(through M4, including M3B) job turns green only for a `reached` row; pending milestone
+jobs stay gray. All existing proof jobs still run and their failures fail collection.
 
 The collector uses the newest run/attempt for the exact commit. It never substitutes an
 older green run. Passing a whole job is insufficient for M1–M3: required steps and named
@@ -17,6 +19,8 @@ test receipts must exist, so ignored tests, zero matches and skipped Node scenar
 Nightly E2E collects M1–M3 and M4; the scheduled/manual desktop matrix collects each OS
 for M3b. A run in progress is pending until its required job completes. Re-run the entry
 point after concurrent CI/matrix jobs finish. Actions jobs receive only contents/actions read.
+The last-green column searches the latest thirty completed main runs for a successful
+named milestone job. It is history only and never changes the current status.
 
 M3's two-profile real-app invite, M3b's Windows overlay and sequential cloud-save scenario,
 and M4's full acceptance adapters are explicitly pending. Existing compatibility, dry-run,

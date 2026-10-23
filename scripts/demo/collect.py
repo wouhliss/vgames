@@ -26,7 +26,7 @@ def gh(*args):
         raise EvidenceError("Actions evidence request failed") from error
     if result.returncode or len(result.stdout) > 32 * 1024 * 1024:
         raise EvidenceError("Actions evidence is unavailable or exceeds the size limit")
-    return re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", result.stdout.decode("utf-8"))
+    return re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", result.stdout.decode("utf-8", errors="replace"))
 
 
 def api(path):
@@ -64,9 +64,15 @@ class Collector:
     @functools.cache
     def log(self, job_id):
         try:
-            return gh("api", f"repos/{REPO}/actions/jobs/{int(job_id)}/logs")
+            value = gh("api", f"repos/{REPO}/actions/jobs/{int(job_id)}/logs")
+            if not value.strip():
+                raise EvidenceError("Actions returned an empty job log")
+            return value
         except EvidenceError:
-            return gh("run", "view", "--repo", REPO, "--job", str(int(job_id)), "--log")
+            value = gh("run", "view", "--repo", REPO, "--job", str(int(job_id)), "--log")
+            if not value.strip():
+                raise EvidenceError("Actions returned an empty job log")
+            return value
 
     def proof(self, label, workflow, job_name, step, patterns):
         runs = self.runs(workflow)
@@ -101,6 +107,19 @@ class Collector:
         if run["conclusion"] != "success":
             return result(label, "failed", "existing workflow did not pass", link)
         return result(label, "passed", "workflow passed; scenario receipts are separate requirements", link)
+
+    def last_green(self, milestone):
+        # History is informational and never substitutes for current-commit proof.
+        workflow = "desktop-matrix.yml" if milestone == "m3b" else "e2e.yml"
+        runs = api(f"actions/workflows/{workflow}/runs?branch=main&status=completed&per_page=30")["workflow_runs"]
+        for run in sorted(runs, key=lambda r: (r["run_number"], r["run_attempt"]), reverse=True):
+            if run["head_branch"] != "main":
+                continue
+            jobs = [job for job in self.jobs(run["id"], run["run_attempt"])
+                    if job["name"] == f"Milestone {milestone.upper()}"]
+            if len(jobs) == 1 and jobs[0]["conclusion"] == "success":
+                return f"https://github.com/{REPO}/actions/runs/{int(run['id'])}"
+        return ""
 
 
 def result(label, state, detail, link=""):
@@ -192,14 +211,20 @@ def main():
         except EvidenceError as error:
             rows = [result("Actions evidence", "failed", str(error))]
         reports[milestone] = {"status": state(rows), "requirements": rows}
-    table = [f"Milestone evidence for `{sha}`", "", "| Milestone | Status | Green evidence runs | Missing tasks / failures |",
-             "|---|---|---|---|"]
+    table = [f"Milestone evidence for `{sha}`", "", "| Milestone | Status | Last green on main (last 30 runs) | Current evidence runs | Missing tasks / failures |",
+             "|---|---|---|---|---|"]
     for milestone, report in reports.items():
         rows = report["requirements"]
         links = sorted({r["run"] for r in rows if r["state"] == "passed" and r["run"]})
         evidence = ", ".join(f"[run {url.rsplit('/', 1)[1]}]({url})" for url in links) or "none"
         missing = "; ".join(f"{r['label']}: {r['detail']}" for r in rows if r["state"] != "passed") or "none"
-        table.append(f"| {milestone.upper()} | {report['status']} | {evidence} | {missing} |")
+        try:
+            history = collector.last_green(milestone)
+            report["last_green"] = history
+            previous = f"[run {history.rsplit('/', 1)[1]}]({history})" if history else "none"
+        except EvidenceError:
+            previous = "history unavailable"
+        table.append(f"| {milestone.upper()} | {report['status']} | {previous} | {evidence} | {missing} |")
     rendered = "\n".join(table) + "\n"
     print(rendered)
     if os.environ.get("GITHUB_STEP_SUMMARY"):
@@ -207,6 +232,10 @@ def main():
             summary.write(rendered)
     if args.out:
         args.out.write_text(json.dumps({"sha": sha, "milestones": reports}, indent=2) + "\n")
+    if os.environ.get("GITHUB_OUTPUT"):
+        with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+            for milestone, report in reports.items():
+                output.write(f"{milestone}={report['status']}\n")
     if any(r["status"] == "failed" for r in reports.values()):
         return 1
     return 0 if args.report or all(r["status"] == "reached" for r in reports.values()) else 2
