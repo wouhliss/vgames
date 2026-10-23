@@ -5,9 +5,10 @@
 //! - A connection must send `Hello` (right version, right token, compared in constant time)
 //!   within [`HELLO_TIMEOUT`]; anything else closes it. After [`MAX_AUTH_FAILURES`] failed
 //!   handshakes the broker stops for good (the game plays on without the overlay).
-//! - Exactly one renderer is served at a time: after a good handshake the listener is closed.
-//!   When that renderer goes away (the game recreated its swapchain or device), the broker
-//!   binds the same port again and waits for it to come back with the same token.
+//! - Exactly one renderer is served at a time. The listener stays bound for the broker's whole
+//!   life, so no other process can take the port and receive a reconnecting renderer's token;
+//!   while a renderer is served, any other connection is closed unread. When that renderer goes
+//!   away (the game recreated its swapchain or device), it comes back with the same token.
 //! - The renderer receives the whole view on connect and on every change, heartbeats every
 //!   5 s, and `Panel` commands; its frames are untrusted (length before allocation, closed
 //!   enums, caps) and a link silent for 15 s is dropped.
@@ -32,9 +33,6 @@ use super::model::OverlayView;
 pub const HELLO_TIMEOUT: Duration = Duration::from_secs(5);
 /// Failed handshakes before the broker gives up.
 pub const MAX_AUTH_FAILURES: u32 = 5;
-/// Attempts to listen again on the same port after a renderer left.
-const REBIND_TRIES: u32 = 10;
-const REBIND_PAUSE: Duration = Duration::from_millis(100);
 
 /// What a game launched with the overlay gets in its environment.
 #[derive(Clone)]
@@ -106,7 +104,6 @@ impl Broker {
         let endpoint = Endpoint { addr, token };
         let task = Task {
             token,
-            addr,
             views,
             panel,
             actions,
@@ -120,7 +117,6 @@ impl Broker {
 
 struct Task {
     token: [u8; TOKEN_LEN],
-    addr: SocketAddr,
     views: watch::Receiver<OverlayView>,
     panel: watch::Receiver<bool>,
     actions: mpsc::Sender<Action>,
@@ -154,42 +150,23 @@ impl Task {
         }
     }
 
-    async fn run(mut self, first: TcpListener) {
-        let mut listener = Some(first);
+    async fn run(mut self, listener: TcpListener) {
         let mut failures = 0u32;
         loop {
-            let Some(l) = listener.take() else {
-                // Serve again on the same port after a renderer left (a few tries: the old
-                // connection may still be closing).
-                match self.rebind().await {
-                    Some(l) => {
-                        listener = Some(l);
-                        continue;
-                    }
-                    None => {
-                        self.event(BrokerEvent::Stopped);
-                        return;
-                    }
-                }
-            };
             let accepted = tokio::select! {
                 () = self.stop.cancelled() => return,
-                a = l.accept() => a,
+                a = listener.accept() => a,
             };
             let Ok((mut stream, peer)) = accepted else {
-                listener = Some(l);
                 continue;
             };
             if !peer.ip().is_loopback() {
-                listener = Some(l);
                 continue;
             }
             match tokio::time::timeout(HELLO_TIMEOUT, self.handshake(&mut stream)).await {
                 Ok(Ok(kind)) => {
-                    // One renderer at a time: stop listening while it is served.
-                    drop(l);
                     self.event(BrokerEvent::Connected(kind));
-                    let stopped = self.serve(stream).await;
+                    let stopped = self.serve(stream, &listener).await;
                     self.event(BrokerEvent::Disconnected);
                     if stopped {
                         return;
@@ -203,28 +180,9 @@ impl Task {
                         self.event(BrokerEvent::Stopped);
                         return;
                     }
-                    listener = Some(l);
                 }
             }
         }
-    }
-
-    async fn rebind(&self) -> Option<TcpListener> {
-        let mut last = None;
-        for _ in 0..REBIND_TRIES {
-            match TcpListener::bind(self.addr).await {
-                Ok(l) => return Some(l),
-                Err(error) => last = Some(error),
-            }
-            tokio::select! {
-                () = self.stop.cancelled() => return None,
-                () = tokio::time::sleep(REBIND_PAUSE) => {}
-            }
-        }
-        if let Some(error) = last {
-            tracing::warn!(%error, "overlay broker cannot listen again; overlay off for this game");
-        }
-        None
     }
 
     async fn handshake(&self, stream: &mut TcpStream) -> Result<RendererKind, FrameError> {
@@ -248,7 +206,9 @@ impl Task {
     }
 
     /// Serves one renderer until it leaves. `true` when the broker itself is stopping.
-    async fn serve(&mut self, stream: TcpStream) -> bool {
+    /// `listener` stays bound meanwhile so no other process can take the port; any other
+    /// connection is closed at once, unread.
+    async fn serve(&mut self, stream: TcpStream, listener: &TcpListener) -> bool {
         let (mut rd, mut wr) = stream.into_split();
         let (in_tx, mut inbound) = mpsc::channel::<Result<ToBroker, FrameError>>(16);
         let reader = tokio::spawn(async move {
@@ -295,6 +255,10 @@ impl Task {
                     break;
                 }
                 _ = beat.tick() => ToRenderer::Heartbeat,
+                extra = listener.accept() => {
+                    drop(extra);
+                    continue;
+                }
                 r = self.views.changed() => {
                     if r.is_err() { stopping = true; break; }
                     let view = to_protocol(&self.views.borrow_and_update(), OffsetDateTime::now_utc());
@@ -391,17 +355,26 @@ mod tests {
         }
     }
 
-    /// Like a renderer coming back: retries while the broker is not listening yet.
+    /// Like a renderer coming back (`vgames_overlay::link`): a connection closed before
+    /// `Welcome` (the broker has not seen the old link go yet) is retried. Returns the
+    /// stream right after its `Welcome`.
     fn reconnect(addr: SocketAddr, token: [u8; TOKEN_LEN]) -> std::net::TcpStream {
         let until = std::time::Instant::now() + Duration::from_secs(5);
         loop {
-            match connect(addr, token) {
+            let welcomed = connect(addr, token).and_then(|mut s| {
+                match protocol::read_frame::<ToRenderer>(&mut s) {
+                    Ok(ToRenderer::Welcome { .. }) => Ok(s),
+                    Ok(other) => panic!("{other:?}"),
+                    Err(e) => Err(std::io::Error::other(e.to_string())),
+                }
+            });
+            match welcomed {
                 Ok(s) => return s,
                 Err(e) if std::time::Instant::now() < until => {
                     let _ = e;
                     std::thread::sleep(Duration::from_millis(50));
                 }
-                Err(e) => panic!("the broker never listened again: {e}"),
+                Err(e) => panic!("the broker never welcomed the renderer back: {e}"),
             }
         }
     }
@@ -463,8 +436,14 @@ mod tests {
             r.event().await,
             BrokerEvent::Connected(RendererKind::Vulkan)
         );
-        // Only one renderer: the listener is closed while it is served.
-        assert!(std::net::TcpStream::connect(addr).is_err());
+        // Only one renderer: another connection is closed unread while it is served.
+        tokio::task::spawn_blocking(move || {
+            let mut other = connect(addr, token).unwrap();
+            let mut byte = [0u8; 1];
+            assert!(matches!(other.read(&mut byte), Ok(0) | Err(_)));
+        })
+        .await
+        .unwrap();
 
         let mut view = OverlayView::default();
         view.recent_messages
@@ -565,7 +544,6 @@ mod tests {
         tokio::task::spawn_blocking(move || {
             for _ in 0..cycles {
                 let mut s = reconnect(addr, token);
-                assert!(matches!(read(&mut s), ToRenderer::Welcome { .. }));
                 next_view(&mut s);
             }
         })
@@ -579,7 +557,51 @@ mod tests {
         assert_eq!(queued, super::super::BROKER_EVENTS);
         // Still serving.
         tokio::task::spawn_blocking(move || {
-            let mut s = reconnect(addr, token);
+            reconnect(addr, token);
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            r.event().await,
+            BrokerEvent::Connected(RendererKind::Vulkan)
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn the_port_stays_ours_while_a_renderer_is_served() {
+        let mut r = rig().await;
+        let (addr, token) = (r.broker.endpoint.addr, r.token());
+        let (leave, left) = std::sync::mpsc::channel::<()>();
+        let first = tokio::task::spawn_blocking(move || {
+            let mut s = connect(addr, token).unwrap();
+            assert!(matches!(read(&mut s), ToRenderer::Welcome { .. }));
+            next_view(&mut s);
+            left.recv().unwrap();
+            // The served link is untouched by what happened meanwhile.
+            next_view(&mut s)
+        });
+        assert_eq!(
+            r.event().await,
+            BrokerEvent::Connected(RendererKind::Vulkan)
+        );
+        // No other socket can take the port and wait for the renderer's token.
+        let squat = std::net::TcpListener::bind(addr);
+        assert!(squat.is_err(), "the broker port was free while serving");
+        // A second connection is closed without a Welcome and is no failed handshake.
+        tokio::task::spawn_blocking(move || {
+            let mut s = connect(addr, token).unwrap();
+            let mut byte = [0u8; 1];
+            assert!(matches!(s.read(&mut byte), Ok(0) | Err(_)));
+        })
+        .await
+        .unwrap();
+        r.views.send(OverlayView::default()).unwrap();
+        leave.send(()).unwrap();
+        first.await.unwrap();
+        assert_eq!(r.event().await, BrokerEvent::Disconnected);
+        // The renderer comes back on the same port.
+        tokio::task::spawn_blocking(move || {
+            let mut s = connect(addr, token).unwrap();
             assert!(matches!(read(&mut s), ToRenderer::Welcome { .. }));
         })
         .await
@@ -619,7 +641,6 @@ mod tests {
         // The game recreated its swapchain: the renderer comes back on the same endpoint.
         tokio::task::spawn_blocking(move || {
             let mut s = reconnect(addr, token);
-            assert!(matches!(read(&mut s), ToRenderer::Welcome { .. }));
             next_view(&mut s);
             // An invalid action (empty reply) also drops the link.
             protocol::write_frame(

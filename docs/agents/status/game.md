@@ -86,6 +86,13 @@
   profiles), PLAY for #289 and #290 (native launch env; `TargetChoice::for_invite` and `join_args`).
 
 ## Built for you
+- From PLAY (PLAY-11, #322 contract + this PR): `overlay::broker` keeps its listener bound for the broker's whole
+  life and closes other connections unread while a renderer is served (`serve` takes `&TcpListener`; `rebind`,
+  `REBIND_TRIES`/`REBIND_PAUSE` and `Task::addr` are gone). A released port could be taken by another local
+  process and receive the reconnecting renderer's `Hello` and token; it also made
+  `events_nobody_reads_are_dropped_and_never_block_the_broker` fail on #321 (a parallel test got the port). The
+  test helper `reconnect` retries a close before `Welcome`, as `vgames_overlay::link` does; new test
+  `the_port_stays_ours_while_a_renderer_is_served`. No renderer or wire change.
 - From INT (integrator loop, zip advisories RUSTSEC-2026-0367/0368/0369): `compat::extract::extract_zip` moved to zip 9, where
   `ZipFile::name()` returns a `Result`; an unreadable (non-UTF-8) entry name now refuses the archive as `ExtractError::Corrupt`.
   One-line change, no behavior change for valid archives; the compat extract tests pass unchanged.
