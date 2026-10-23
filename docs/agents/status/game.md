@@ -94,6 +94,7 @@
   `events_nobody_reads_are_dropped_and_never_block_the_broker` fail on #321 (a parallel test got the port). The
   test helper `reconnect` retries a close before `Welcome`, as `vgames_overlay::link` does; new test
   `the_port_stays_ours_while_a_renderer_is_served`. No renderer or wire change.
+- From INT (INT-07 measurement receipts): social_soak now prints its already-recorded initial RSS sample at t=0, using the same numeric format as later samples. This lets workflow summaries report actual start/median/end/slope instead of labelling the first delayed sample as startup. Durations, sample cadence and the 16 MiB chat / 8 MiB idle policies are unchanged. Short diagnostics and full hosted validation remain required; this adds measurement output only.
 - From INT (integrator loop, zip advisories RUSTSEC-2026-0367/0368/0369): `compat::extract::extract_zip` moved to zip 9, where
   `ZipFile::name()` returns a `Result`; an unreadable (non-UTF-8) entry name now refuses the archive as `ExtractError::Corrupt`.
   One-line change, no behavior change for valid archives; the compat extract tests pass unchanged.
