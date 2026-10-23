@@ -2,6 +2,7 @@
 """Collect exact-commit Actions evidence. Missing work never means a milestone passed."""
 
 import argparse
+import base64
 import functools
 import json
 import os
@@ -44,6 +45,32 @@ def api(path):
         return json.loads(gh("api", f"repos/{REPO}/{path}"))
     except (ValueError, UnicodeError) as error:
         raise EvidenceError("Actions returned invalid evidence metadata") from error
+
+
+def marked_step_log(log, step):
+    expected = base64.b64encode(step.encode()).decode()
+    active, matches, lines = None, [], []
+    for line in log.splitlines():
+        line = re.sub(r"^\d{4}-\d\d-\d\dT[\d:.]+Z\s+", "", line)
+        start = re.fullmatch(r"VGAMES_STEP_START ([A-Za-z0-9+/=]+)", line)
+        end = re.fullmatch(r"VGAMES_STEP_END ([A-Za-z0-9+/=]+) (\d+)", line)
+        if start:
+            if active is not None:
+                raise EvidenceError("Nested evidence step markers")
+            active, lines = start[1], []
+        elif end:
+            if end[1] != active:
+                raise EvidenceError("Unbalanced evidence step markers")
+            if active == expected:
+                if end[2] != "0":
+                    raise EvidenceError("Recorded evidence command failed")
+                matches.append("\n".join(lines) + "\n")
+            active = None
+        elif active == expected:
+            lines.append(line)
+    if active is not None or len(matches) != 1:
+        raise EvidenceError("Complete unique step-scoped evidence is unavailable")
+    return matches[0]
 
 
 class Collector:
@@ -112,13 +139,19 @@ class Collector:
 
     def step_log(self, job_id, step):
         lines = []
-        for line in self.named_job_log(job_id).splitlines():
-            fields = line.split("\t", 2)
-            if len(fields) == 3 and fields[1] == step:
-                lines.append(fields[2])
-        if not lines:
-            raise EvidenceError("Actions step-scoped log is unavailable")
-        return "\n".join(lines) + "\n"
+        try:
+            for line in self.named_job_log(job_id).splitlines():
+                fields = line.split("\t", 2)
+                if len(fields) == 3 and fields[1] == step:
+                    lines.append(fields[2])
+        except EvidenceError:
+            pass
+        if lines:
+            scoped = "\n".join(lines) + "\n"
+            return marked_step_log(scoped, step) if "VGAMES_STEP_" in scoped else scoped
+        # New archives can contain only whole-job files; gh labels every line UNKNOWN STEP.
+        # Only balanced markers from our exit-status-preserving wrapper can scope that output.
+        return marked_step_log(self.log(job_id), step)
 
     @evidence
     def proof(self, label, workflow, job_name, step, patterns):
