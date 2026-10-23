@@ -4,7 +4,8 @@
 //!   learns both from `VGAMES_OVERLAY_ENDPOINT` / `VGAMES_OVERLAY_TOKEN`.
 //! - A connection must send `Hello` (right version, right token, compared in constant time)
 //!   within [`HELLO_TIMEOUT`]; anything else closes it. After [`MAX_AUTH_FAILURES`] failed
-//!   handshakes the broker stops for good (the game plays on without the overlay).
+//!   handshakes authentication stops for good (the game plays on without the overlay),
+//!   retaining the port reservation until the owning session ends.
 //! - Exactly one renderer is served at a time. The listener stays bound for the broker's whole
 //!   life, so no other process can take the port and receive a reconnecting renderer's token;
 //!   while a renderer is served, any other connection is closed unread. When that renderer goes
@@ -70,7 +71,7 @@ pub enum BrokerEvent {
     Connected(RendererKind),
     Disconnected,
     AuthFailed,
-    /// Too many failed handshakes, or the port could not be bound again.
+    /// Authentication disabled after too many failed handshakes.
     Stopped,
 }
 
@@ -143,7 +144,7 @@ async fn write_frame(stream: &mut TcpStream, msg: &ToRenderer) -> Result<(), Fra
 
 impl Task {
     /// Reports a state change; dropped when the watcher is behind (the queue is bounded).
-    /// A lost `Stopped` is still seen: the channel closes when this task ends.
+    /// A lost `Stopped` is still seen: disabling the broker closes the event channel.
     fn event(&self, event: BrokerEvent) {
         if self.events.try_send(event).is_err() {
             tracing::debug!("overlay broker event dropped");
@@ -178,7 +179,16 @@ impl Task {
                     tracing::warn!(failures, "overlay handshake refused");
                     if failures >= MAX_AUTH_FAILURES {
                         self.event(BrokerEvent::Stopped);
-                        return;
+                        drop(stream);
+                        drop(self.events);
+                        // Authentication stays disabled, but releasing the port would let a
+                        // different process receive a retrying renderer's Hello and token.
+                        loop {
+                            tokio::select! {
+                                () = self.stop.cancelled() => return,
+                                extra = listener.accept() => drop(extra),
+                            }
+                        }
                     }
                 }
             }
@@ -325,10 +335,14 @@ mod tests {
     }
 
     async fn rig() -> Rig {
+        rig_with_event_capacity(super::super::BROKER_EVENTS).await
+    }
+
+    async fn rig_with_event_capacity(capacity: usize) -> Rig {
         let (views, vrx) = watch::channel(OverlayView::default());
         let (panel, prx) = watch::channel(false);
         let (atx, actions) = mpsc::channel(8);
-        let (etx, events) = mpsc::channel(super::super::BROKER_EVENTS);
+        let (etx, events) = mpsc::channel(capacity);
         let broker = Broker::start(vrx, prx, atx, etx, &CancellationToken::new())
             .await
             .unwrap();
@@ -532,9 +546,9 @@ mod tests {
         .unwrap();
         assert_eq!(r.event().await, BrokerEvent::AuthFailed);
         assert_eq!(r.event().await, BrokerEvent::Stopped);
-        // Even the right token is refused now: nobody listens any more.
+        // Authentication stays off, and nobody else can take the port during renderer retries.
+        assert!(std::net::TcpListener::bind(addr).is_err());
         let token = r.token();
-        tokio::time::sleep(Duration::from_millis(100)).await;
         let res = tokio::task::spawn_blocking(move || {
             connect(addr, token).and_then(|mut s| {
                 let mut buf = [0u8; 1];
@@ -543,7 +557,36 @@ mod tests {
         })
         .await
         .unwrap();
-        assert!(matches!(res, Err(_) | Ok(0)));
+        assert_closed(res);
+        assert!(matches!(
+            r.events.try_recv(),
+            Err(mpsc::error::TryRecvError::Disconnected)
+        ));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_dropped_stop_event_still_closes_the_channel_and_keeps_the_port_reserved() {
+        let mut r = rig_with_event_capacity(1).await;
+        let addr = r.broker.endpoint.addr;
+        let mut bad = r.token();
+        bad[0] ^= 1;
+        tokio::task::spawn_blocking(move || {
+            for _ in 0..MAX_AUTH_FAILURES {
+                let mut s = connect(addr, bad).unwrap();
+                let mut byte = [0u8; 1];
+                assert_closed(s.read(&mut byte));
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(r.event().await, BrokerEvent::AuthFailed);
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(10), r.events.recv())
+                .await
+                .expect("disabled broker closes the event channel"),
+            None
+        );
+        assert!(std::net::TcpListener::bind(addr).is_err());
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
