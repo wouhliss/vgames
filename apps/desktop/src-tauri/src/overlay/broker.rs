@@ -186,6 +186,9 @@ impl Task {
                     }
                 }
                 Ok(Err(_)) | Err(_) => {
+                    // Close the refused connection now: after the last failure this arm never
+                    // returns (the port is held until the session ends).
+                    drop(stream);
                     failures += 1;
                     self.event(BrokerEvent::AuthFailed);
                     tracing::warn!(failures, "overlay handshake refused");
