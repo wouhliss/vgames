@@ -174,6 +174,9 @@ job_typescript() {
   pnpm typecheck
   pnpm test
   pnpm openapi:lint
+  node --test scripts/ci/bundle-size.test.mjs
+  pnpm --filter @vgames/desktop build
+  node scripts/ci/bundle-size.mjs
 }
 
 job_desktop-e2e() {

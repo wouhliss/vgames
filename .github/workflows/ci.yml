@@ -251,6 +251,11 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm openapi:lint
+      - name: Initial launcher JavaScript budget (250 KB gzip)
+        run: |
+          node --test scripts/ci/bundle-size.test.mjs
+          pnpm --filter @vgames/desktop build
+          node scripts/ci/bundle-size.mjs
 
   desktop-e2e:
     name: Launcher UI end-to-end (mock mode)
