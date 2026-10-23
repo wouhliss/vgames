@@ -423,6 +423,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Milestone evidence collector regressions
+        run: python3 -m unittest discover -s scripts/demo -p test_collect.py
       - name: Install actionlint (pinned, checksum-verified)
         run: |
           curl -sSfL -o "$RUNNER_TEMP/actionlint.tgz" \
