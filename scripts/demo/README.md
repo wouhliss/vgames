@@ -1,0 +1,29 @@
+# Milestone evidence
+
+Run `scripts/demo/m1.sh` (or `m2.sh`, `m3.sh`, `m3b.sh`, `m4.sh`) with an authenticated
+read-only `gh` session. The default commit is HEAD; `--sha <40-character SHA>` collects
+another commit. These commands read Actions metadata and test logs; they do not deploy,
+publish, generate keys, or run against a user's server. Raw logs are never printed or saved.
+
+Exit codes: 0 means reached, 1 means an existing proof failed or evidence could not be
+read, and 2 means not reached because evidence/tasks are pending. `--report` gives pending
+a zero exit code so nightly summaries can describe unfinished work; its table still says
+**not reached**, and any existing failed, skipped or cancelled test job still exits 1.
+The reporter passing is not milestone acceptance. Only a `reached` table row is acceptance.
+
+The collector uses the newest run/attempt for the exact commit. It never substitutes an
+older green run. Passing a whole job is insufficient for M1–M3: required steps and named
+test receipts must exist, so ignored tests, zero matches and skipped Node scenarios fail.
+Nightly E2E collects M1–M3 and M4; the scheduled/manual desktop matrix collects each OS
+for M3b. A run in progress is pending until its required job completes. Re-run the entry
+point after concurrent CI/matrix jobs finish. Actions jobs receive only contents/actions read.
+
+M3's two-profile real-app invite, M3b's Windows overlay and sequential cloud-save scenario,
+and M4's full acceptance adapters are explicitly pending. Existing compatibility, dry-run,
+soak and transfer-budget workflow failures are still collected and fail the report. Add
+named test/metric receipts when those scenarios land; remove the corresponding pending row
+only after its real proof is collected. A green diagnostic soak cannot stand in for a
+5.5-hour measurement. Hardware-only observations remain in human-checklist §B.
+
+`python3 -m unittest discover -s scripts/demo -p test_collect.py` checks failure precedence,
+zero/skipped tests, attempt selection, exact commits, pagination and unreadable evidence.
