@@ -10,12 +10,16 @@
 | `release-desktop.yml` | tag `desktop-v*` (protected) | Matrix build (includes the overlay binaries: `vgames_overlay64.dll`, `vgames_overlay32.dll` + 32-bit inject helper, `libvgames_overlay.so` + Vulkan layer manifests), Optional OS code signing when certificates exist (otherwise the draft says "Unsigned build"), mandatory version-bound updater signatures, `latest.json`, user changelog JSON (release-notes agent, §3.4), SBOM, provenance, draft GitHub Release. **Requires approval** of the `release` environment |
 | `release-dry-run.yml` | weekly, manual | Same unsigned Windows, Linux and macOS build steps as the release, throwaway updater keys within each job, signed-version verification in an independent artifact job, installed-file check (smoke extension pending PLAY-09) and real-app update round trip from 0.0.1; no repository secrets or release environment |
 | `release-api.yml` | tag `api-v*` | Multi-arch container image (`ghcr.io/<owner>/vgames-api`, includes admin-web build), SBOM, provenance, signed with cosign keyless |
-| `soak.yml` | weekly, manual | 24 h launcher leak test (RSS/handle counts) on a self-hosted runner |
+| `soak.yml` | weekly, manual | Build the release launcher and social test executable once, then separate hosted jobs: launcher idle (5 h 30 min), social chat (1 h), idle sockets (5 h 30 min); each measurement job under 6 h. Optional legacy self-hosted 24 h job remains separate |
 | `runtimes.yml` | daily schedule, manual | Checks upstream releases of UMU-Proton, GE-Proton, umu-launcher, WineHQ macOS builds, DXMT, DXVK-macOS and MoltenVK; downloads, hashes, cross-checks upstream checksums, smoke-tests (Proton: run a D3D11 test exe headless under Xvfb; Wine: `wine --version` + a D3D11 test on a macOS runner) and **opens a PR** updating `runtimes/catalog.toml` |
 | `release-runtimes.yml` | merge to `main` touching `runtimes/catalog.toml` | Builds `runtimes.json` from the catalog, signs it with the runtime-catalog key (`VGAMES_RUNTIME_CATALOG_KEY`), publishes it to the `runtimes` GitHub release. **Requires approval** of the `release` environment |
 
 Rules: actions pinned by SHA; `permissions: {}` at the top of each workflow, widened per job;
 no secrets in PR workflows from forks; caches keyed by lockfiles; `concurrency` cancels superseded runs.
+
+Hosted soak acceptance (owner decision 2026-10-05) uses `ubuntu-24.04`. Compilation finishes before the measurement jobs start, so a 5.5-hour observation fits their 358-minute limits. The launcher observer includes WebView descendants, its process group and known orphan processes; it rejects PID reuse, cleans up its temporary profile, and uploads only metric samples and a summary. After ten minutes of warm-up, both end RSS growth and fitted growth over the observation window must be strictly below 5%. Social durations and budgets remain those of the social soak tests. Short diagnostic runs are labelled by their measured durations and do not establish full acceptance.
+
+These runs do not claim the 24-hour idle or install-workload result, absolute idle RAM, populated-library startup, or physical-hardware performance. The 24-hour confirmation in human-checklist §B7 is non-blocking; the original long-duration target in 00-overview §7 remains a target. Other launcher budgets require their own release-build proofs.
 
 ## 2. Launcher auto-update
 
