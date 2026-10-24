@@ -3,6 +3,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
+import { requestSaveConflict } from "../../app/saves/requests";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import type { IconName } from "../../components/Icon";
 import type { MenuEntry } from "../../components/Menu";
@@ -157,7 +158,14 @@ export function LibraryActionsProvider({
           title: launchErrorMessage(error, pkg.title),
           ...(error.kind === "integrity" || error.kind === "key_revoked"
             ? { action: { label: t("library.toasts.verify"), onClick: () => void verify(pkg) } }
-            : {}),
+            : error.kind === "save_conflict"
+              ? {
+                  action: {
+                    label: t("library.toasts.resolveSaves"),
+                    onClick: () => requestSaveConflict(error.conflict_id),
+                  },
+                }
+              : {}),
         });
       } catch {
         toast({ tone: "danger", title: t("error.generic") });

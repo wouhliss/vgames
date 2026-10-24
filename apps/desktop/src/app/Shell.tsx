@@ -12,6 +12,7 @@ import { canPublish } from "../routes/publish/model";
 import { OverlayDisabledNotice } from "./OverlayDisabledNotice";
 import { useActiveServer, useOnboardingNeed, useServers } from "./queries";
 import styles from "./Shell.module.css";
+import { SaveConflictHost } from "./saves/SaveConflictDialog";
 import { AccountMenu, DownloadIndicator, ServerSwitcher } from "./TopBar";
 import { UpdateBanner } from "./update/UpdateBanner";
 
@@ -106,6 +107,7 @@ export function Shell() {
         </header>
         <UpdateBanner />
         <OverlayDisabledNotice />
+        <SaveConflictHost />
         {offline.has(server.id) ? (
           <div className={styles.banner} role="status">
             <span className={styles.bannerIcon}>
