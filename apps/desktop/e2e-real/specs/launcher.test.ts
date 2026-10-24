@@ -111,13 +111,17 @@ async function type(locator: Locator, text: string) {
 
 const exists = async (locator: Locator) => (await session.find(locator)) !== null;
 
+let onboardingComplete = false;
+
 /** On failure: a screenshot and the visible text next to the logs (fake data only). */
 async function evidence(name: string, run: () => Promise<void>): Promise<void> {
   try {
     await run();
+    if (name === "part1") onboardingComplete = true;
   } catch (error) {
     // A fresh sign-in code is a credential even when the Discord identity is synthetic.
-    if (name === "part1") throw error;
+    // A dependent scenario can fail while the first-run screen is still visible.
+    if (name === "part1" || !onboardingComplete) throw error;
     try {
       writeFileSync(join(work, `${name}.png`), Buffer.from(await session.screenshot(), "base64"));
       const text = await session.execute("return document.body.innerText;");
