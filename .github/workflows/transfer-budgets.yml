@@ -40,6 +40,9 @@ jobs:
     defaults:
       run:
         shell: bash
+    env:
+      VGAMES_CAPTURE_RECEIPTS: "1"
+      VGAMES_EVIDENCE_JOB: Download budgets (${{ matrix.name }}, release)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -82,3 +85,11 @@ jobs:
             cat resilience.log bench.log 2>/dev/null | grep '^budget ' || echo "no measurements"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Publish scoped milestone receipts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: milestone-receipts-${{ env.VGAMES_EVIDENCE_JOB }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/milestone-receipts/*.json
+          if-no-files-found: error
+          retention-days: 7

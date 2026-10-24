@@ -42,3 +42,13 @@ that target and populated-launcher budgets remain explicit pending requirements.
 
 `python3 -m unittest discover -s scripts/demo -p test_collect.py` checks failure precedence,
 zero/skipped tests, attempt selection, exact commits, pagination and unreadable evidence.
+
+A producer workflow cannot read its own final log archive while the dependent collector
+is still running. Wrapped steps therefore also publish bounded receipt artifacts. These
+contain public Rust test names, the two fixed launcher TAP receipts, confirmed admin-test
+results, numeric budget metrics and a redacted Wine backend label. HTML, command paths,
+credentials, environment values and other application output are excluded. Each receipt
+binds the source commit, run, attempt, job, step and actual command exit status. The
+collector uses this transport only when logs are unavailable; it never overrides a failed
+recorded command. Missing, expired, duplicate, oversized or mismatched receipts fail closed.
+The producer keeps errexit and pipefail, including stdin commands and stderr metrics.
