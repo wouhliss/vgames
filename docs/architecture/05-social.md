@@ -143,7 +143,7 @@ launcher starts, only while they run.
  └──────────────────────────────┘                     └───────────────────────────────────────────┘
 ```
 
-- All social logic, crypto and network stay in the launcher. The in-game module is a thin renderer
+- All social logic, message encryption and server network access stay in the launcher. The in-game module is a thin renderer
   that shows view models and sends back user actions. Decrypted message text crosses into the game
   process only for display; the game runs as the same OS user and could read it anyway.
 - Loopback TCP (not named pipes or Unix sockets) works identically on Windows, inside Proton/Wine,
