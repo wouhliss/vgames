@@ -25,23 +25,63 @@ use crate::launch::ResolvedTarget;
 
 struct AskFor(String);
 
-async fn record_bootstrap_state(prefix: &std::path::Path) {
-    let mut probe = tokio::process::Command::new("/bin/ps");
-    probe.args(["-axo", "command="]).kill_on_drop(true);
-    let output = tokio::time::timeout(Duration::from_secs(5), probe.output()).await;
-    let counts = match output {
-        Ok(Ok(output)) if output.status.success() && output.stdout.len() <= 1024 * 1024 => {
-            Some(super::bootstrap_diagnostics::bootstrap_process_counts(
-                &String::from_utf8_lossy(&output.stdout),
-            ))
+async fn bounded_probe(command: &mut tokio::process::Command) -> Option<Vec<u8>> {
+    use tokio::io::AsyncReadExt;
+    command
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true);
+    let mut child = command.spawn().ok()?;
+    let stdout = child.stdout.take()?;
+    let result = tokio::time::timeout(Duration::from_secs(5), async {
+        let mut output = Vec::new();
+        stdout
+            .take(1024 * 1024 + 1)
+            .read_to_end(&mut output)
+            .await
+            .ok()?;
+        if output.len() > 1024 * 1024 {
+            return None;
         }
-        _ => None,
-    };
-    // Never emit command lines, environment values, registry contents or probe stderr.
+        child.wait().await.ok()?.success().then_some(output)
+    })
+    .await
+    .ok()
+    .flatten();
+    // On timeout/oversize, kill_on_drop ends this diagnostic subprocess.
+    result
+}
+
+async fn record_bootstrap_state(prefix: &std::path::Path) {
+    let output =
+        bounded_probe(tokio::process::Command::new("/bin/ps").args(["-axo", "pid=,command="]))
+            .await;
+    let commands = output.as_deref().map(String::from_utf8_lossy);
+    let counts = commands
+        .as_deref()
+        .map(super::bootstrap_diagnostics::bootstrap_process_counts);
+    let pids = commands
+        .as_deref()
+        .map(super::bootstrap_diagnostics::bootstrap_pids)
+        .unwrap_or_default();
+    let mut samples = Vec::new();
+    for pid in pids {
+        let output = bounded_probe(tokio::process::Command::new("/usr/bin/sample").args([
+            pid.to_string(),
+            "1".into(),
+            "10".into(),
+        ]))
+        .await;
+        samples.push(output.map(|bytes| {
+            super::bootstrap_diagnostics::bootstrap_wait_symbols(&String::from_utf8_lossy(&bytes))
+        }));
+    }
+    // Never emit raw samples, command lines, environment, registry contents or stderr.
     println!(
         "Wine bootstrap state: {}",
         serde_json::json!({
             "process_counts": counts,
+            "wait_symbols": samples,
             "drive_c_exists": prefix.join("drive_c").is_dir(),
             "system_registry_exists": prefix.join("system.reg").is_file(),
             "user_registry_exists": prefix.join("user.reg").is_file(),
