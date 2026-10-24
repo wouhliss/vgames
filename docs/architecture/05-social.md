@@ -148,10 +148,9 @@ launcher starts, only while they run.
   process only for display; the game runs as the same OS user and could read it anyway.
 - Loopback TCP (not named pipes or Unix sockets) works identically on Windows, inside Proton/Wine,
   and inside the pressure-vessel container. The broker listens only while a game runs and serves
-  exactly one connection carrying the session token (`VGAMES_OVERLAY_TOKEN`, 32 random bytes) at a
-  time. It keeps its listener bound for the whole game and closes any other connection unread while a
-  renderer is served, so no other local process can take the port and receive a reconnecting
-  renderer's token. Five failed handshakes disable authentication for that game, but retain the
+  exactly one connection authenticated with the session key (`VGAMES_OVERLAY_TOKEN`, 32 random bytes)
+  at a time. It keeps its listener bound for the whole game and closes any other connection unread while a
+  renderer is served, so no other local process can take the live broker's port. Five failed handshakes disable authentication for that game, but retain the
   port reservation and close new connections unread until the owning game session ends.
 - **Endpoint authentication (protocol v2).** Port reservation does not survive a launcher crash.
   A renderer authenticates the broker before accepting a welcome, view or panel command. The
