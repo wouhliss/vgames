@@ -81,6 +81,7 @@ fn context() -> LaunchContext {
         platform: Platform::WindowsX86_64,
         layer: LaunchLayer::Proton,
         prefix_dir: Some(PathBuf::from("data/prefixes/1/2")),
+        saves: None,
         cancellation: CancellationToken::new(),
     }
 }
