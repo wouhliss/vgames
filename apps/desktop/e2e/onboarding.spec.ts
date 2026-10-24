@@ -19,6 +19,24 @@ test.afterEach(async ({ page }) => {
   expect(violations, JSON.stringify(violations, null, 2)).toEqual([]);
 });
 
+test.describe("first-run appearance", () => {
+  const cases = [
+    { name: "system light", scheme: "light", theme: "system", resolved: "light" },
+    { name: "system dark", scheme: "dark", theme: "system", resolved: "dark" },
+    { name: "high contrast", scheme: "light", theme: "high_contrast", resolved: "high-contrast" },
+  ] as const;
+
+  for (const { name, scheme, theme, resolved } of cases) {
+    test(name, async ({ page }) => {
+      await page.emulateMedia({ colorScheme: scheme, reducedMotion: "reduce" });
+      await open(page, "fresh", { appearance: { theme, reduce_motion: true } });
+      await expect(page.locator("html")).toHaveAttribute("data-theme", resolved);
+      await expect(page.getByRole("heading", { name: "Welcome to vgames" })).toBeVisible();
+      await expect(page.getByRole("textbox", { name: /Server address/ })).toBeVisible();
+    });
+  }
+});
+
 test.describe("server address", () => {
   test.beforeEach(async ({ page }) => {
     await open(page, "fresh");
