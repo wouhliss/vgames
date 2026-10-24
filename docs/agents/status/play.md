@@ -45,6 +45,11 @@
 - contract ack: #290 (join secrets never option-shaped). GAME's #295 edits PLAY's `launch/target.rs` to use
   `vgames_proto::social::is_valid_join_secret`: an old-grammar secret falls back to the default target, the secret
   stays out of `Debug`, and the tests cover both. Reviewed and fine to merge as is.
+- contract ack: #364 (overlay protocol v2, mutual HMAC-SHA-256 endpoint authentication). PLAY owns the broker
+  (PLAY-11). Every MAC input field has a fixed length, so the concatenation is unambiguous; role separation stops
+  reflection, both fresh nonces stop replay, and the broker proving first means an impostor on a rebound port learns
+  nothing usable. No v1 fallback, and the five-failure disable and lifetime port reservation from #322/#334 stay. One
+  implementation note: draw nonces from `getrandom` and treat its failure as a closed connection, as the contract says.
 - Repository write access and email privacy are resolved; PLAY commits use the account's GitHub no-reply address.
 
 ## Built for you
