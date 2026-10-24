@@ -315,6 +315,8 @@ async function part2() {
   await click(button(`Install ${title}`));
   await shown(css("[role=dialog]"));
   await scanAccessibility();
+  await shown(css("[role=dialog] [role=radiogroup]"));
+  await scanAccessibility();
   await click({ xpath: `//*[@role="dialog"]//button[normalize-space(.)="Install"]` });
 
   // Progress on the Downloads page, then the finished install. The job is listed while it
