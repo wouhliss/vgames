@@ -30,10 +30,15 @@ pub enum Error {
     Changed,
     #[error("Save scanning cancelled.")]
     Cancelled,
+    #[error("A save file does not match its expected contents.")]
+    Mismatch,
 }
 pub struct Location {
     pub(super) id: String,
     pub(super) path_key: String,
+    // Canonical native base and the manifest's relative folder, for restore.
+    pub(super) base: PathBuf,
+    pub(super) folder: String,
     dir: Option<Dir>,
     pub(super) include: GlobSet,
     pub(super) exclude: GlobSet,
@@ -62,7 +67,7 @@ impl Location {
                 .ok_or(Error::Invalid)?
                 .replace('\\', "/"),
         );
-        let mut dir = match Dir::open_ambient_dir(base, cap_std::ambient_authority()) {
+        let mut dir = match Dir::open_ambient_dir(&base, cap_std::ambient_authority()) {
             Ok(dir) => Some(dir),
             Err(error) if error.kind() == io::ErrorKind::NotFound => None,
             Err(error) => return Err(error.into()),
@@ -87,6 +92,8 @@ impl Location {
         Ok(Self {
             id: config.id.clone(),
             path_key,
+            base,
+            folder: config.path.clone(),
             dir,
             include,
             exclude,
@@ -214,7 +221,7 @@ fn walk(
         } else {
             format!("{prefix}/{name}")
         };
-        if location.exclude.is_match(&relative) {
+        if location.exclude.is_match(&relative) || is_temp_name(name) {
             continue;
         }
         let kind = entry.file_type()?;
@@ -310,6 +317,10 @@ fn walk(
         }
     }
     Ok(())
+}
+/// Restore's same-directory temporary files; scans skip them and recovery removes them.
+pub(super) fn is_temp_name(name: &str) -> bool {
+    name.starts_with(".vgames-") && name.ends_with(".tmp")
 }
 pub(super) fn valid_hash(hash: &str) -> bool {
     hash.len() == 64

@@ -2,4 +2,5 @@
 //! are separate so authenticated requests never expose credentials to the UI.
 pub mod http;
 pub mod policy;
+pub mod restore;
 pub mod scan;
