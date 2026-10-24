@@ -35,6 +35,8 @@ Agents append each item with exact steps and the build to use. Expected list:
 | B7 | 24 h launcher idle soak and 8 h controller soak with two emulated pads | Hosted jobs stop at 6 h |
 | B8 | Two physical controllers of different brands (e.g. DualSense, Switch Pro) mapped by position and by label in a real game | Needs real pads |
 
+**B4, automated prerequisites.** The compatibility job provisions Wine's own checksum-bound Mono and Gecko installers before unattended prefix initialization. A prefix-bootstrap failure is a software/preparation failure and cannot be waived as missing Metal; only an actual graphics capability limitation belongs in B4.
+
 **B7, social idle soak for 24 h (GAME-13).** Hosted jobs stop at 6 h, so `soak.yml` runs 5 h 30 min. On a Linux
 machine that stays awake for a day, from a checkout of `main`:
 
