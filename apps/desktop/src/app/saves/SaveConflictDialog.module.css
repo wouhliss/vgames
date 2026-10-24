@@ -1,0 +1,39 @@
+.sides {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.side {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+}
+
+.side h3 {
+  margin: 0 0 var(--space-2);
+  font-size: 1rem;
+}
+
+.side dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+}
+
+.side dt {
+  color: var(--color-text-muted);
+}
+
+.side dd {
+  margin: 0;
+}
+
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}

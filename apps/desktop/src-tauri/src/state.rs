@@ -169,6 +169,12 @@ impl AppState {
                 Arc::new(move |package| games.is_running(package))
             },
         )?);
+        // Pull before and push after every session, and the library's cloud-save badges (PLAY-06).
+        launcher.hooks().register(
+            crate::launch::hooks::HookStage::Saves,
+            Arc::clone(&saves) as _,
+        );
+        installs.set_cloud_save_provider(Arc::clone(&saves) as _);
         Ok(Self {
             saves,
             compat_profiles,
