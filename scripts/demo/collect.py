@@ -4,18 +4,26 @@
 import argparse
 import base64
 import functools
+import io
 import json
 import os
 from pathlib import Path
 import re
 import subprocess
 import sys
+import zipfile
+
+from receipts import FORMAT, MAX_BYTES, filename, sanitize
 
 ROOT = Path(__file__).resolve().parents[2]
 REPO = "wouhliss/vgames"
 
 
 class EvidenceError(Exception):
+    pass
+
+
+class LogUnavailable(EvidenceError):
     pass
 
 
@@ -123,9 +131,12 @@ class Collector:
                 raise EvidenceError("Actions returned an empty job log")
             return value
         except EvidenceError:
-            value = gh("run", "view", "--repo", REPO, "--job", str(int(job_id)), "--log")
+            try:
+                value = gh("run", "view", "--repo", REPO, "--job", str(int(job_id)), "--log")
+            except EvidenceError as error:
+                raise LogUnavailable("Actions job logs are unavailable") from error
             if not value.strip():
-                raise EvidenceError("Actions returned an empty job log")
+                raise LogUnavailable("Actions returned an empty job log")
             # This value came from gh, whose archive reader prefixes every line with
             # the job and step names (including UNKNOWN STEP for whole-job archives).
             # Preserve content and markers; step_log still requires complete scoping.
@@ -157,6 +168,64 @@ class Collector:
         # Only balanced markers from our exit-status-preserving wrapper can scope that output.
         return marked_step_log(self.log(job_id), step)
 
+    @functools.cache
+    def receipt_log(self, run_id, attempt, job_name, step):
+        # A workflow cannot download its own final run-log archive. Producer jobs
+        # publish only sanitized receipts, available before this dependent job runs.
+        artifacts, page = [], 1
+        while True:
+            batch = api(f"actions/runs/{run_id}/artifacts?per_page=100&page={page}")["artifacts"]
+            if not isinstance(batch, list) or any(not isinstance(item, dict) for item in batch):
+                raise EvidenceError("Receipt artifact metadata is invalid")
+            artifacts.extend(batch)
+            if len(batch) < 100:
+                break
+            page += 1
+            if page > 10:
+                raise EvidenceError("Receipt artifact list exceeds the size limit")
+        name = f"milestone-receipts-{job_name}-{attempt}"
+        matches = [item for item in artifacts if item.get("name") == name]
+        if len(matches) != 1 or matches[0].get("expired") is not False:
+            raise EvidenceError("Complete unique receipt artifact is unavailable")
+        artifact = matches[0]
+        size = artifact.get("size_in_bytes")
+        if type(size) is not int or not 0 <= size <= MAX_BYTES or type(artifact.get("id")) is not int:
+            raise EvidenceError("Receipt artifact exceeds the size limit")
+        try:
+            response = subprocess.run(
+                ["gh", "api", f"repos/{REPO}/actions/artifacts/{int(artifact['id'])}/zip"],
+                capture_output=True, timeout=90)
+            if response.returncode or len(response.stdout) > MAX_BYTES:
+                raise EvidenceError("Receipt artifact download failed")
+            with zipfile.ZipFile(io.BytesIO(response.stdout)) as archive:
+                entries = archive.infolist()
+                if not 1 <= len(entries) <= 32 or sum(entry.file_size for entry in entries) > MAX_BYTES or any(
+                        not re.fullmatch(r"[0-9a-f]{64}\.json", entry.filename) for entry in entries):
+                    raise EvidenceError("Receipt archive contains invalid entries")
+                wanted = [entry for entry in entries if entry.filename == filename(step)]
+                if len(wanted) != 1 or wanted[0].file_size > MAX_BYTES:
+                    raise EvidenceError("Complete unique step receipt is unavailable")
+                value = json.loads(archive.read(wanted[0]))
+        except (OSError, subprocess.TimeoutExpired, ValueError, zipfile.BadZipFile, KeyError) as error:
+            raise EvidenceError("Receipt artifact is unreadable") from error
+        expected = {"format": FORMAT, "sha": self.sha, "run_id": run_id,
+                    "attempt": attempt, "job": job_name, "step": step}
+        if not isinstance(value, dict) or set(value) != set(expected) | {"exit_code", "lines"} or any(
+                value.get(key) != item for key, item in expected.items()) or any(
+                type(value.get(key)) is not int for key in ("run_id", "attempt")):
+            raise EvidenceError("Receipt artifact identity mismatch")
+        if type(value.get("exit_code")) is not int or value["exit_code"] != 0:
+            raise EvidenceError("Recorded evidence command failed")
+        lines = value.get("lines")
+        if not isinstance(lines, list) or len(lines) > 4096 or any(
+                not isinstance(line, str) or
+                (line != "foundation.spec.ts admins see the navigation" and sanitize(line) != line)
+                for line in lines):
+            raise EvidenceError("Receipt artifact contains invalid public receipts")
+        if len(set(lines)) != len(lines):
+            raise EvidenceError("Receipt artifact contains duplicate receipts")
+        return "\n".join(lines) + "\n"
+
     @evidence
     def proof(self, label, workflow, job_name, step, patterns):
         runs = self.runs(workflow)
@@ -175,7 +244,10 @@ class Collector:
         steps = [s for s in job["steps"] if s["name"] == step]
         if len(steps) != 1 or steps[0].get("conclusion") != "success":
             return result(label, "failed", "required test step did not pass", link)
-        log = self.step_log(job["id"], step)
+        try:
+            log = self.step_log(job["id"], step)
+        except LogUnavailable:
+            log = self.receipt_log(run["id"], run["run_attempt"], job_name, step)
         if not all(re.search(pattern, log) for pattern in patterns):
             return result(label, "failed", "test receipts missing (zero tests or a skipped scenario)", link)
         return result(label, "passed", "test receipts verified", link)
