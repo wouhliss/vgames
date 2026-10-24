@@ -159,7 +159,11 @@ fn every_pull_row_content_deletion_mtime_and_first_sync() {
 async fn migration_preserves_unattributed_state_without_assigning_it_to_a_login() {
     let mut conn = Connection::open_in_memory().unwrap();
     let migrations = super::super::migrations::MIGRATIONS;
-    super::super::migrations::run_list(&mut conn, &migrations[..migrations.len() - 1]).unwrap();
+    let accounts = migrations
+        .iter()
+        .position(|migration| migration.name == "0010_save_accounts")
+        .unwrap();
+    super::super::migrations::run_list(&mut conn, &migrations[..accounts]).unwrap();
     let scope = scope();
     conn.execute("INSERT INTO servers (id,url,name,root_public_key,root_fingerprint,added_at) VALUES (?1,'https://fixture.example.invalid','Fixture',zeroblob(32),'VG1',0)", [scope.package.server_id.to_string()]).unwrap();
     let head = Uuid::now_v7();
@@ -180,4 +184,121 @@ async fn migration_preserves_unattributed_state_without_assigning_it_to_a_login(
     )
     .unwrap();
     assert!(matches!(load(&conn, scope), Err(DbError::Json(_))));
+}
+
+#[tokio::test]
+async fn unfinished_restores_survive_restart_and_settle_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.sqlite3");
+    let scope = scope();
+    let (interrupted, finished) = (Uuid::now_v7(), Uuid::now_v7());
+    {
+        let db = Db::open(&path).unwrap();
+        server(&db, scope).await;
+        let store = Store::new(db);
+        for id in [interrupted, finished] {
+            store
+                .begin_restore(scope, id, BackupReason::Restore, 1, 4)
+                .await
+                .unwrap();
+        }
+        store.begin_push(scope, request()).await.unwrap();
+        let base = RestoredBase {
+            snapshot_id: Some(Uuid::now_v7()),
+            files: BTreeMap::from([("game/slot.sav".into(), file())]),
+        };
+        assert!(
+            store
+                .finish_restore(scope, finished, Some(base.clone()))
+                .await
+                .unwrap()
+        );
+        let state = store.state(scope).await.unwrap();
+        assert_eq!(state.base_snapshot_id, base.snapshot_id);
+        assert_eq!(state.files, base.files);
+        assert!(state.push.is_none() && !state.pending);
+        // A second settle of the same record changes nothing.
+        assert!(!store.finish_restore(scope, finished, None).await.unwrap());
+        assert!(!store.rolled_back(scope, finished).await.unwrap());
+    }
+    // Restart: only the interrupted restore needs recovery.
+    let store = Store::new(Db::open(&path).unwrap());
+    assert_eq!(
+        store.unfinished_restores().await.unwrap(),
+        [(scope, interrupted)]
+    );
+    // Another account cannot settle it.
+    let other = Scope {
+        user_id: Uuid::now_v7(),
+        ..scope
+    };
+    assert!(!store.rolled_back(other, interrupted).await.unwrap());
+    assert!(store.rolled_back(scope, interrupted).await.unwrap());
+    assert!(store.unfinished_restores().await.unwrap().is_empty());
+    let states: Vec<_> = store
+        .backups(scope)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|record| (record.id, record.state))
+        .collect();
+    assert_eq!(
+        states,
+        [
+            (finished, BackupState::Complete),
+            (interrupted, BackupState::RolledBack)
+        ]
+    );
+    assert!(store.backups(other).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn retention_keeps_the_newest_finished_backups_and_every_unfinished_one() {
+    let db = Db::open_in_memory().unwrap();
+    let scope = scope();
+    server(&db, scope).await;
+    let store = Store::new(db);
+    let mut ids = Vec::new();
+    for index in 0..8 {
+        let id = Uuid::now_v7();
+        store
+            .begin_restore(scope, id, BackupReason::Conflict, index, index * 10)
+            .await
+            .unwrap();
+        // The oldest stays unfinished: recovery still needs its folder.
+        if index > 0 {
+            store.finish_restore(scope, id, None).await.unwrap();
+        }
+        ids.push(id);
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    let mut kept = store.retain_backups(scope, 5).await.unwrap();
+    kept.sort();
+    let mut expected = vec![ids[0]];
+    expected.extend(&ids[3..]);
+    assert_eq!(kept, expected);
+    let records = store.backups(scope).await.unwrap();
+    assert_eq!(records.len(), 6);
+    assert_eq!(records[0].reason, BackupReason::Conflict);
+    assert_eq!((records[0].file_count, records[0].total_bytes), (7, 70));
+}
+
+#[tokio::test]
+async fn corrupt_backup_rows_fail_closed() {
+    let db = Db::open_in_memory().unwrap();
+    let scope = scope();
+    server(&db, scope).await;
+    let store = Store::new(db.clone());
+    store
+        .begin_restore(scope, Uuid::now_v7(), BackupReason::Restore, 0, 0)
+        .await
+        .unwrap();
+    db.call(|conn| {
+        conn.execute("UPDATE save_backups SET id='not-a-uuid'", [])?;
+        Ok(())
+    })
+    .await
+    .unwrap();
+    assert!(store.backups(scope).await.is_err());
+    assert!(store.unfinished_restores().await.is_err());
 }

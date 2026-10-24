@@ -65,6 +65,10 @@ pub const MIGRATIONS: &[Migration] = &[
         name: "0010_save_accounts",
         sql: include_str!("migrations/0010_save_accounts.sql"),
     },
+    Migration {
+        name: "0011_save_backups",
+        sql: include_str!("migrations/0011_save_backups.sql"),
+    },
 ];
 
 fn checksum(sql: &str) -> String {

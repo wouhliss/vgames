@@ -11,7 +11,7 @@ use super::{Db, DbError, now_unix};
 use crate::events::PackageRef;
 
 /// Constructed by native authenticated code, never from a WebView user id.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Scope {
     pub package: PackageRef,
     pub user_id: Uuid,
@@ -191,6 +191,258 @@ impl Store {
             })
             .await
     }
+
+    /// Records a backup whose restore is about to start, before any save
+    /// file changes. Until `finish_restore` or `rolled_back`, startup
+    /// recovery rolls it back.
+    pub async fn begin_restore(
+        &self,
+        scope: Scope,
+        backup: Uuid,
+        reason: BackupReason,
+        file_count: i64,
+        total_bytes: i64,
+    ) -> Result<(), DbError> {
+        self.0
+            .call(move |conn| {
+                conn.execute(
+                    "INSERT INTO save_backups
+                     (id,server_id,package_id,user_id,reason,state,file_count,total_bytes,created_at)
+                     VALUES (?1,?2,?3,?4,?5,'restoring',?6,?7,?8)",
+                    params![
+                        backup.to_string(),
+                        scope.package.server_id.to_string(),
+                        scope.package.package_id.to_string(),
+                        scope.user_id.to_string(),
+                        reason.as_str(),
+                        file_count,
+                        total_bytes,
+                        now_unix()
+                    ],
+                )?;
+                Ok(())
+            })
+            .await
+    }
+
+    /// Completes a restore and, with `base`, makes the restored snapshot the
+    /// sync base in the same transaction. `false` when the record is not an
+    /// unfinished restore of this scope (already completed or rolled back).
+    pub async fn finish_restore(
+        &self,
+        scope: Scope,
+        backup: Uuid,
+        base: Option<RestoredBase>,
+    ) -> Result<bool, DbError> {
+        self.0
+            .call(move |conn| {
+                let tx = conn.transaction()?;
+                if !settle(&tx, scope, backup, BackupState::Complete)? {
+                    return Ok(false);
+                }
+                if let Some(base) = base {
+                    let mut state = load(&tx, scope)?;
+                    state.base_snapshot_id = base.snapshot_id;
+                    state.files = base.files;
+                    // Local files now equal that snapshot; an older retry is void.
+                    state.push = None;
+                    state.pending = false;
+                    state.last_synced_at = Some(now_unix());
+                    write(&tx, scope, &state)?;
+                }
+                tx.commit()?;
+                Ok(true)
+            })
+            .await
+    }
+
+    /// Marks an interrupted or failed restore as rolled back from its backup.
+    pub async fn rolled_back(&self, scope: Scope, backup: Uuid) -> Result<bool, DbError> {
+        self.0
+            .call(move |conn| settle(conn, scope, backup, BackupState::RolledBack))
+            .await
+    }
+
+    /// Every restore that started and never finished, for startup recovery.
+    pub async fn unfinished_restores(&self) -> Result<Vec<(Scope, Uuid)>, DbError> {
+        self.0
+            .call(|conn| {
+                let mut statement = conn.prepare(
+                    "SELECT server_id, package_id, user_id, id FROM save_backups
+                     WHERE state='restoring' ORDER BY id",
+                )?;
+                let rows = statement.query_map([], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                    ))
+                })?;
+                let mut unfinished = Vec::new();
+                for row in rows {
+                    let (server_id, package_id, user_id, id) = row?;
+                    unfinished.push((
+                        Scope {
+                            package: PackageRef {
+                                server_id: uuid(server_id)?,
+                                package_id: uuid(package_id)?,
+                            },
+                            user_id: uuid(user_id)?,
+                        },
+                        uuid(id)?,
+                    ));
+                }
+                Ok(unfinished)
+            })
+            .await
+    }
+
+    /// Local backups of this scope, newest first (Settings → Cloud saves history).
+    pub async fn backups(&self, scope: Scope) -> Result<Vec<BackupRecord>, DbError> {
+        self.0.call(move |conn| backups(conn, scope)).await
+    }
+
+    /// Forgets finished backups beyond the `keep` newest. Returns every id
+    /// still recorded, unfinished ones included, so the caller removes all
+    /// other backup folders (`restore::prune(dir, 0, &kept)`).
+    pub async fn retain_backups(&self, scope: Scope, keep: usize) -> Result<Vec<Uuid>, DbError> {
+        self.0
+            .call(move |conn| {
+                let tx = conn.transaction()?;
+                let mut kept = Vec::new();
+                let mut finished = 0usize;
+                for record in backups(&tx, scope)? {
+                    if record.state != BackupState::Restoring {
+                        finished += 1;
+                        if finished > keep {
+                            tx.execute(
+                                "DELETE FROM save_backups WHERE id=?1",
+                                [record.id.to_string()],
+                            )?;
+                            continue;
+                        }
+                    }
+                    kept.push(record.id);
+                }
+                tx.commit()?;
+                Ok(kept)
+            })
+            .await
+    }
+}
+
+/// Why a local backup was made: before restoring a snapshot, or to protect one
+/// side of a conflict resolution.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BackupReason {
+    Restore,
+    Conflict,
+}
+impl BackupReason {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Restore => "restore",
+            Self::Conflict => "conflict",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BackupState {
+    Restoring,
+    Complete,
+    RolledBack,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BackupRecord {
+    pub id: Uuid,
+    pub reason: BackupReason,
+    pub state: BackupState,
+    pub file_count: i64,
+    pub total_bytes: i64,
+    pub created_at: i64,
+}
+
+/// The snapshot a finished restore leaves on disk; `None` id for an empty head.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RestoredBase {
+    pub snapshot_id: Option<Uuid>,
+    pub files: BTreeMap<String, SaveFile>,
+}
+
+fn uuid(raw: String) -> Result<Uuid, DbError> {
+    Ok(serde_json::from_value(serde_json::Value::String(raw))?)
+}
+
+fn settle(conn: &Connection, scope: Scope, backup: Uuid, to: BackupState) -> Result<bool, DbError> {
+    let state = match to {
+        BackupState::Complete => "complete",
+        BackupState::RolledBack => "rolled_back",
+        BackupState::Restoring => return Ok(false),
+    };
+    let changed = conn.execute(
+        "UPDATE save_backups SET state=?1
+         WHERE id=?2 AND server_id=?3 AND package_id=?4 AND user_id=?5 AND state='restoring'",
+        params![
+            state,
+            backup.to_string(),
+            scope.package.server_id.to_string(),
+            scope.package.package_id.to_string(),
+            scope.user_id.to_string()
+        ],
+    )?;
+    Ok(changed == 1)
+}
+
+fn backups(conn: &Connection, scope: Scope) -> Result<Vec<BackupRecord>, DbError> {
+    let mut statement = conn.prepare(
+        "SELECT id, reason, state, file_count, total_bytes, created_at FROM save_backups
+         WHERE server_id=?1 AND package_id=?2 AND user_id=?3 ORDER BY id DESC",
+    )?;
+    let rows = statement.query_map(
+        params![
+            scope.package.server_id.to_string(),
+            scope.package.package_id.to_string(),
+            scope.user_id.to_string()
+        ],
+        |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, i64>(3)?,
+                row.get::<_, i64>(4)?,
+                row.get::<_, i64>(5)?,
+            ))
+        },
+    )?;
+    let mut records = Vec::new();
+    for row in rows {
+        let (id, reason, state, file_count, total_bytes, created_at) = row?;
+        // The schema's CHECKs make any other value a corrupt database: fail closed.
+        let reason = match reason.as_str() {
+            "restore" => BackupReason::Restore,
+            "conflict" => BackupReason::Conflict,
+            _ => return Err(rusqlite::Error::InvalidQuery.into()),
+        };
+        let state = match state.as_str() {
+            "restoring" => BackupState::Restoring,
+            "complete" => BackupState::Complete,
+            "rolled_back" => BackupState::RolledBack,
+            _ => return Err(rusqlite::Error::InvalidQuery.into()),
+        };
+        records.push(BackupRecord {
+            id: uuid(id)?,
+            reason,
+            state,
+            file_count,
+            total_bytes,
+            created_at,
+        });
+    }
+    Ok(records)
 }
 
 #[cfg(test)]
