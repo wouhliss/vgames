@@ -25,6 +25,30 @@ use crate::launch::ResolvedTarget;
 
 struct AskFor(String);
 
+async fn record_bootstrap_state(prefix: &std::path::Path) {
+    let mut probe = tokio::process::Command::new("/bin/ps");
+    probe.args(["-axo", "command="]).kill_on_drop(true);
+    let output = tokio::time::timeout(Duration::from_secs(5), probe.output()).await;
+    let counts = match output {
+        Ok(Ok(output)) if output.status.success() && output.stdout.len() <= 1024 * 1024 => {
+            Some(super::bootstrap_diagnostics::bootstrap_process_counts(
+                &String::from_utf8_lossy(&output.stdout),
+            ))
+        }
+        _ => None,
+    };
+    // Never emit command lines, environment values, registry contents or probe stderr.
+    println!(
+        "Wine bootstrap state: {}",
+        serde_json::json!({
+            "process_counts": counts,
+            "drive_c_exists": prefix.join("drive_c").is_dir(),
+            "system_registry_exists": prefix.join("system.reg").is_file(),
+            "user_registry_exists": prefix.join("user.reg").is_file(),
+        })
+    );
+}
+
 impl ProfileSource for AskFor {
     async fn fetch(
         &self,
@@ -133,10 +157,24 @@ async fn the_d3d11_test_game_runs_through_wine() {
         platform: Platform::WindowsX86_64,
         sequence: 1,
     };
-    let plan = planner
-        .plan_for(package, &release, &game)
-        .await
-        .unwrap_or_else(|e| panic!("plan refused: {e}"));
+    let prefix = crate::compat::prefix_dir(&data, &package);
+    let planned = {
+        let planning = planner.plan_for(package, &release, &game);
+        tokio::pin!(planning);
+        tokio::select! {
+            result = &mut planning => result,
+            () = tokio::time::sleep(Duration::from_secs(240)) => {
+                eprintln!("Wine bootstrap snapshot: while planning");
+                record_bootstrap_state(&prefix).await;
+                planning.await
+            }
+        }
+    };
+    if planned.is_err() {
+        eprintln!("Wine bootstrap snapshot: after failure");
+        record_bootstrap_state(&prefix).await;
+    }
+    let plan = planned.unwrap_or_else(|e| panic!("plan refused: {e}"));
     let LaunchPlan::Wine(wine) = &plan else {
         panic!("not a Wine plan: {plan:?}");
     };
