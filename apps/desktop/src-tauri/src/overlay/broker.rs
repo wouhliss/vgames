@@ -20,7 +20,6 @@ use std::time::Duration;
 
 use time::OffsetDateTime;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, watch};
 use tokio_util::sync::CancellationToken;
@@ -148,7 +147,11 @@ async fn write_frame(stream: &mut TcpStream, msg: &ToRenderer) -> Result<(), Fra
 
 /// Writes one frame to the renderer. `false` when the link failed, the renderer has not
 /// taken it within [`WRITE_TIMEOUT`], or the broker is stopping.
-async fn write_bytes(wr: &mut OwnedWriteHalf, bytes: &[u8], stop: &CancellationToken) -> bool {
+async fn write_bytes<W: tokio::io::AsyncWrite + Unpin>(
+    wr: &mut W,
+    bytes: &[u8],
+    stop: &CancellationToken,
+) -> bool {
     tokio::select! {
         () = stop.cancelled() => false,
         written = tokio::time::timeout(WRITE_TIMEOUT, wr.write_all(bytes)) => {
@@ -803,6 +806,34 @@ mod tests {
         assert!(std::net::TcpListener::bind(addr).is_err());
     }
 
+    #[tokio::test]
+    async fn a_pending_write_observes_stop_and_a_stalled_write_expires() {
+        use std::future::{Future, poll_fn};
+        use std::task::Poll;
+        let (mut writer, _peer) = tokio::io::duplex(1);
+        let stop = CancellationToken::new();
+        let bytes = [0u8; 8192];
+        let writing = write_bytes(&mut writer, &bytes, &stop);
+        tokio::pin!(writing);
+        assert!(poll_fn(|context| Poll::Ready(writing.as_mut().poll(context).is_pending())).await);
+        stop.cancel();
+        assert!(
+            !tokio::time::timeout(Duration::from_secs(1), writing)
+                .await
+                .unwrap()
+        );
+
+        let (mut writer, _peer) = tokio::io::duplex(1);
+        let stop = CancellationToken::new();
+        let started = std::time::Instant::now();
+        assert!(
+            !tokio::time::timeout(WRITE_TIMEOUT * 2, write_bytes(&mut writer, &bytes, &stop))
+                .await
+                .unwrap()
+        );
+        assert!(started.elapsed() >= WRITE_TIMEOUT);
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn a_renderer_that_stops_reading_never_blocks_the_broker() {
         let mut r = rig().await;
@@ -815,15 +846,7 @@ mod tests {
             let mut s = stalled;
             s.set_nonblocking(false).unwrap();
             s.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
-            protocol::write_frame(
-                &mut s,
-                &ToBroker::Hello {
-                    version: PROTOCOL_VERSION,
-                    token,
-                    renderer: RendererKind::Vulkan,
-                },
-            )
-            .unwrap();
+            protocol::renderer_authenticate(&mut s, &token, RendererKind::Vulkan).unwrap();
             assert!(matches!(read(&mut s), ToRenderer::Welcome { .. }));
             s
         })
