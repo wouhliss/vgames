@@ -12,7 +12,8 @@
 //!   away (the game recreated its swapchain or device), it comes back with the same token.
 //! - The renderer receives the whole view on connect and on every change, heartbeats every
 //!   5 s, and `Panel` commands; its frames are untrusted (length before allocation, closed
-//!   enums, caps) and a link silent for 15 s is dropped.
+//!   enums, caps) and a link silent for 15 s is dropped. A renderer that stops reading is
+//!   dropped after [`WRITE_TIMEOUT`]; a pending write never hides the stop signal.
 
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::time::Duration;
@@ -32,6 +33,8 @@ use super::model::OverlayView;
 
 /// Time a new connection has to present its `Hello`.
 pub const HELLO_TIMEOUT: Duration = Duration::from_secs(5);
+/// Time one frame to the renderer may take before the link is dropped.
+pub const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 /// Failed handshakes before the broker gives up.
 pub const MAX_AUTH_FAILURES: u32 = 5;
 
@@ -140,6 +143,24 @@ async fn write_frame(stream: &mut TcpStream, msg: &ToRenderer) -> Result<(), Fra
     let bytes = protocol::encode(msg)?;
     stream.write_all(&bytes).await?;
     Ok(())
+}
+
+/// Writes one frame to the renderer. `false` when the link failed, the renderer has not
+/// taken it within [`WRITE_TIMEOUT`], or the broker is stopping.
+async fn write_bytes<W: tokio::io::AsyncWrite + Unpin>(
+    wr: &mut W,
+    bytes: &[u8],
+    stop: &CancellationToken,
+) -> bool {
+    tokio::select! {
+        () = stop.cancelled() => false,
+        written = tokio::time::timeout(WRITE_TIMEOUT, wr.write_all(bytes)) => {
+            if written.is_err() {
+                tracing::info!("overlay renderer stopped reading; dropping the link");
+            }
+            matches!(written, Ok(Ok(())))
+        }
+    }
 }
 
 impl Task {
@@ -271,12 +292,12 @@ impl Task {
         let first = to_protocol(&self.views.borrow_and_update(), OffsetDateTime::now_utc());
         let open = *self.panel.borrow_and_update();
         let mut ok = match send(ToRenderer::View(first)).await {
-            Ok(b) => wr.write_all(&b).await.is_ok(),
+            Ok(b) => write_bytes(&mut wr, &b, &self.stop).await,
             Err(_) => false,
         };
         if ok && open {
             ok = match send(ToRenderer::Panel { open }).await {
-                Ok(b) => wr.write_all(&b).await.is_ok(),
+                Ok(b) => write_bytes(&mut wr, &b, &self.stop).await,
                 Err(_) => false,
             };
         }
@@ -326,7 +347,7 @@ impl Task {
                 }
             };
             ok = match protocol::encode(&out) {
-                Ok(bytes) => wr.write_all(&bytes).await.is_ok(),
+                Ok(bytes) => write_bytes(&mut wr, &bytes, &self.stop).await,
                 Err(error) => {
                     tracing::warn!(%error, "overlay frame not sent");
                     true
@@ -334,7 +355,7 @@ impl Task {
             };
         }
         reader.abort();
-        stopping
+        stopping || self.stop.is_cancelled()
     }
 }
 
@@ -783,6 +804,81 @@ mod tests {
             None
         );
         assert!(std::net::TcpListener::bind(addr).is_err());
+    }
+
+    #[tokio::test]
+    async fn a_pending_write_observes_stop_and_a_stalled_write_expires() {
+        use std::future::{Future, poll_fn};
+        use std::task::Poll;
+        let (mut writer, _peer) = tokio::io::duplex(1);
+        let stop = CancellationToken::new();
+        let bytes = [0u8; 8192];
+        let writing = write_bytes(&mut writer, &bytes, &stop);
+        tokio::pin!(writing);
+        assert!(poll_fn(|context| Poll::Ready(writing.as_mut().poll(context).is_pending())).await);
+        stop.cancel();
+        assert!(
+            !tokio::time::timeout(Duration::from_secs(1), writing)
+                .await
+                .unwrap()
+        );
+
+        let (mut writer, _peer) = tokio::io::duplex(1);
+        let stop = CancellationToken::new();
+        let started = std::time::Instant::now();
+        assert!(
+            !tokio::time::timeout(WRITE_TIMEOUT * 2, write_bytes(&mut writer, &bytes, &stop))
+                .await
+                .unwrap()
+        );
+        assert!(started.elapsed() >= WRITE_TIMEOUT);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_renderer_that_stops_reading_never_blocks_the_broker() {
+        let mut r = rig().await;
+        let (addr, token) = (r.broker.endpoint.addr, r.token());
+        // A renderer with a tiny receive window that says Hello and never reads again.
+        let socket = tokio::net::TcpSocket::new_v4().unwrap();
+        socket.set_recv_buffer_size(4096).unwrap();
+        let stalled = socket.connect(addr).await.unwrap().into_std().unwrap();
+        let stalled = tokio::task::spawn_blocking(move || {
+            let mut s = stalled;
+            s.set_nonblocking(false).unwrap();
+            s.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+            protocol::renderer_authenticate(&mut s, &token, RendererKind::Vulkan).unwrap();
+            assert!(matches!(read(&mut s), ToRenderer::Welcome { .. }));
+            s
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            r.event().await,
+            BrokerEvent::Connected(RendererKind::Vulkan)
+        );
+        // ~50 KB views until the socket buffers are full and a write is pending.
+        let message = super::super::model::OverlayMessage {
+            conversation_id: Uuid::from_u128(3),
+            from: "sam".into(),
+            text: "x".repeat(1_000),
+            sent_at: "2026-09-29T10:00:00Z".into(),
+        };
+        for i in 0..600u32 {
+            let mut view = OverlayView {
+                recent_messages: vec![message.clone(); 50],
+                ..OverlayView::default()
+            };
+            view.recent_messages[0].from = i.to_string();
+            r.views.send_replace(view);
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
+        // The game exits while that write is pending: the broker stops at once, without
+        // waiting for the renderer to read.
+        let start = std::time::Instant::now();
+        r.broker.stop.cancel();
+        assert_eq!(r.event().await, BrokerEvent::Disconnected);
+        assert!(start.elapsed() < WRITE_TIMEOUT, "{:?}", start.elapsed());
+        drop(stalled);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
