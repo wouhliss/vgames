@@ -158,8 +158,20 @@ async fn the_d3d11_test_game_runs_through_wine() {
         sequence: 1,
     };
     let prefix = crate::compat::prefix_dir(&data, &package);
-    let planned = planner.plan_for(package, &release, &game).await;
+    let planned = {
+        let planning = planner.plan_for(package, &release, &game);
+        tokio::pin!(planning);
+        tokio::select! {
+            result = &mut planning => result,
+            () = tokio::time::sleep(Duration::from_secs(240)) => {
+                eprintln!("Wine bootstrap snapshot: while planning");
+                record_bootstrap_state(&prefix).await;
+                planning.await
+            }
+        }
+    };
     if planned.is_err() {
+        eprintln!("Wine bootstrap snapshot: after failure");
         record_bootstrap_state(&prefix).await;
     }
     let plan = planned.unwrap_or_else(|e| panic!("plan refused: {e}"));
