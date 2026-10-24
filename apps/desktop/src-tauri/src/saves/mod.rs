@@ -7,5 +7,6 @@ pub mod locations;
 pub mod policy;
 pub mod restore;
 pub mod scan;
+pub mod service;
 pub mod sync;
 pub mod transaction;

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-saves-status"
+description = "Enables the saves_status command without any pre-configured scope."
+commands.allow = ["saves_status"]
+
+[[permission]]
+identifier = "deny-saves-status"
+description = "Denies the saves_status command without any pre-configured scope."
+commands.deny = ["saves_status"]
