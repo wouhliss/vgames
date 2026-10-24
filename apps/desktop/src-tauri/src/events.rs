@@ -308,6 +308,8 @@ pub enum AppEvent {
     ActiveControllerChanged(ActiveControllerChanged),
     PadsChanged(PadsChanged),
     ControllerTesterState(ControllerTesterState),
+    /// A package's cloud-save status changed (PLAY-06).
+    SaveSyncChanged(crate::saves::service::SaveSyncChanged),
 }
 
 /// Cloneable handle to the internal broadcast bus.
@@ -371,6 +373,7 @@ pub fn spawn_ui_bridge<R: Runtime>(app: AppHandle<R>, bus: &EventBus, shutdown: 
                 Ok(AppEvent::ActiveControllerChanged(e)) => e.emit(&app),
                 Ok(AppEvent::PadsChanged(e)) => e.emit(&app),
                 Ok(AppEvent::ControllerTesterState(e)) => e.emit(&app),
+                Ok(AppEvent::SaveSyncChanged(e)) => e.emit(&app),
                 Err(broadcast::error::RecvError::Lagged(skipped)) => {
                     tracing::warn!(skipped, "UI event bridge lagged");
                     Ok(())

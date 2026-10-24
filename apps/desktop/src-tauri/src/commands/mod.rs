@@ -18,6 +18,7 @@ mod installs;
 mod libraries;
 pub mod names;
 mod publishing;
+mod saves;
 mod servers;
 pub mod shortcuts;
 
@@ -161,6 +162,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             compat::compat_override_reset,
             compat::compat_licenses,
             compat::rosetta_install,
+            saves::saves_status,
         ])
         .events(tauri_specta::collect_events![
             DeeplinkRefused,
@@ -199,6 +201,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             crate::events::ActiveControllerChanged,
             crate::events::PadsChanged,
             crate::events::ControllerTesterState,
+            crate::saves::service::SaveSyncChanged,
         ])
         .error_handling(tauri_specta::ErrorHandlingMode::Result)
         // Byte counts and ids that are u64 in Rust stay below 2^53.

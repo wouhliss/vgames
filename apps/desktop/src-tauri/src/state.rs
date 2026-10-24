@@ -62,6 +62,8 @@ pub struct AppState {
     pub runtime_store: Arc<crate::compat::runtimes::RuntimeStore>,
     /// Verified compat profiles per package and target (GAME-04).
     pub compat_profiles: Arc<crate::compat::profiles::Profiles<Servers>>,
+    /// Cloud saves: status, and the launch hook once conflicts can be resolved (PLAY-06).
+    pub saves: Arc<crate::saves::service::Saves>,
 }
 
 impl AppState {
@@ -156,7 +158,15 @@ impl AppState {
         if !launcher.hooks().register_plan_source(planner) {
             tracing::warn!("a launch plan source was already registered");
         }
+        let saves = Arc::new(crate::saves::service::Saves::new(
+            Arc::clone(&servers) as _,
+            db.clone(),
+            bus.clone(),
+            crate::saves::locations::KnownFolders::native(),
+            paths.data_dir.clone(),
+        )?);
         Ok(Self {
+            saves,
             compat_profiles,
             runtime_store,
             runtime_catalog,

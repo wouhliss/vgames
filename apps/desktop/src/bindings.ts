@@ -248,6 +248,8 @@ export const commands = {
 	compatLicenses: () => typedError<RuntimeLicense[], AppError>(__TAURI_INVOKE("compat_licenses")),
 	/**  Installs Rosetta 2. The UI calls this only after the player confirmed. */
 	rosettaInstall: () => typedError<null, AppError>(__TAURI_INVOKE("rosetta_install")),
+	/**  The package's cloud-save state from durable records (no network request). */
+	savesStatus: (pkg: PackageRef) => typedError<SaveStatus, AppError>(__TAURI_INVOKE("saves_status", { pkg })),
 };
 
 /** Events */
@@ -280,6 +282,7 @@ export const events = {
 	padsChanged: makeEvent<PadsChanged>("pads-changed"),
 	presenceChanged: makeEvent<PresenceChanged>("presence-changed"),
 	publishProgress: makeEvent<PublishProgress>("publish-progress"),
+	saveSyncChanged: makeEvent<SaveSyncChanged>("save-sync-changed"),
 	serverAddRequested: makeEvent<ServerAddRequested>("server-add-requested"),
 	serverSwitched: makeEvent<ServerSwitched>("server-switched"),
 	serversChanged: makeEvent<ServersChanged>("servers-changed"),
@@ -1348,6 +1351,18 @@ export type RuntimeLicense = {
 export type RuntimeRemoveError = { kind: "not_found" } | 
 /**  Installed packages still launch with it. */
 { kind: "in_use"; used_by: number } | { kind: "io"; detail: string };
+
+export type SaveStatus = {
+	package: PackageRef,
+	state: CloudSaveState,
+	/**  RFC 3339, null when this device never synced. */
+	last_synced_at: string | null,
+	/**  Set exactly when `state` is `conflict`. */
+	conflict_id: string | null,
+};
+
+/**  A package's save status changed; re-read only that package. */
+export type SaveSyncChanged = SaveStatus;
 
 export type Screenshot = {
 	url: string,
