@@ -40,6 +40,9 @@ jobs:
     timeout-minutes: 75
     permissions:
       contents: read
+    env:
+      VGAMES_CAPTURE_RECEIPTS: "1"
+      VGAMES_EVIDENCE_JOB: Proton (ubuntu-24.04, lavapipe)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -158,6 +161,14 @@ jobs:
         run: |
           echo "D3D12 through VKD3D-Proton on lavapipe: ${OUTCOME} (a lavapipe gap goes to human-checklist §B3)" \
             | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Publish scoped milestone receipts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: milestone-receipts-${{ env.VGAMES_EVIDENCE_JOB }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/milestone-receipts/*.json
+          if-no-files-found: error
+          retention-days: 7
 
   wine:
     name: Wine (macos-15 arm64)
@@ -165,6 +176,9 @@ jobs:
     timeout-minutes: 75
     permissions:
       contents: read
+    env:
+      VGAMES_CAPTURE_RECEIPTS: "1"
+      VGAMES_EVIDENCE_JOB: Wine (macos-15 arm64)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -236,3 +250,11 @@ jobs:
         run: |
           echo "Wine + DXMT: ${DXMT}; Wine + DXVK-macOS: ${DXVK}; Wine + wined3d: ${WINED3D} (failures without Metal go to human-checklist §B4)" \
             | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Publish scoped milestone receipts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: milestone-receipts-${{ env.VGAMES_EVIDENCE_JOB }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/milestone-receipts/*.json
+          if-no-files-found: error
+          retention-days: 7
