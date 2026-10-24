@@ -130,7 +130,7 @@ class Collector:
             # the job and step names (including UNKNOWN STEP for whole-job archives).
             # Preserve content and markers; step_log still requires complete scoping.
             lines = [line.split("\t", 2) for line in value.splitlines()]
-            return "".join((parts[2] if len(parts) == 3 else parts[0]) + "\n" for parts in lines)
+            return "".join((parts[2] if len(parts) == 3 else "\t".join(parts)) + "\n" for parts in lines)
 
     @functools.cache
     def named_job_log(self, job_id):
