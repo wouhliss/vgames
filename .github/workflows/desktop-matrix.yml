@@ -25,6 +25,40 @@ env:
   SQLX_OFFLINE: "true"
 
 jobs:
+  milestones:
+    name: Collect per-OS milestone evidence
+    needs: [build, gate]
+    if: always() && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      m3b: ${{ steps.collect.outputs.m3b }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Collect each OS and compatibility evidence
+        id: collect
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEMO_SHA: ${{ github.sha }}
+        run: scripts/demo/m3b.sh --report
+
+  m3b:
+    name: Milestone M3B
+    needs: milestones
+    if: always() && needs.milestones.outputs.m3b == 'reached'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require complete milestone proof
+        env:
+          MILESTONE_STATUS: ${{ needs.milestones.outputs.m3b }}
+        run: test "$MILESTONE_STATUS" = reached
+
   changes:
     name: Desktop change detection
     runs-on: ubuntu-24.04
@@ -59,6 +93,9 @@ jobs:
           - { name: "Windows x64", os: windows-2025, target: x86_64-pc-windows-msvc }
           - { name: "Linux x64", os: ubuntu-24.04, target: x86_64-unknown-linux-gnu }
           - { name: "macOS arm64", os: macos-15, target: aarch64-apple-darwin }
+    env:
+      VGAMES_CAPTURE_RECEIPTS: "1"
+      VGAMES_EVIDENCE_JOB: ${{ matrix.name }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -91,9 +128,13 @@ jobs:
       - name: Build the launcher UI (embedded by tauri::generate_context!)
         run: pnpm --filter @vgames/desktop build
       - name: Rust tests (launcher and the crates it ships)
-        run: >-
-          cargo test --locked --target ${{ matrix.target }}
-          -p vgames-desktop -p vgames-core -p vgames-pack -p vgames-transfer -p vgames-overlay
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          scripts/ci/evidence.sh 'Rust tests (launcher and the crates it ships)' <<'VGAMES_EVIDENCE_COMMAND'
+          cargo test --locked --target "$TARGET" -p vgames-desktop -p vgames-core -p vgames-pack -p vgames-transfer -p vgames-overlay
+          VGAMES_EVIDENCE_COMMAND
       # GAME-11: the in-game renderer is a bundle resource (`overlay/` in Tauri's resource
       # directory). Staged before the release build, which copies it next to the executable,
       # where a cargo build's resource directory is.
@@ -134,6 +175,14 @@ jobs:
           echo "bundled renderer: $found"
         env:
           TARGET: ${{ matrix.target }}
+      - name: Publish scoped milestone receipts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: milestone-receipts-${{ env.VGAMES_EVIDENCE_JOB }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/milestone-receipts/*.json
+          if-no-files-found: error
+          retention-days: 7
 
   gate:
     name: Desktop matrix gate

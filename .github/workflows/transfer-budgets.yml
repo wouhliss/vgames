@@ -40,6 +40,9 @@ jobs:
     defaults:
       run:
         shell: bash
+    env:
+      VGAMES_CAPTURE_RECEIPTS: "1"
+      VGAMES_EVIDENCE_JOB: Download budgets (${{ matrix.name }}, release)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -53,17 +56,23 @@ jobs:
       - name: Build the tests (release)
         run: cargo test --locked --release -p vgames-transfer --test resilience --test bench_loopback --no-run
       - name: Memory and disk footprint
+        shell: bash
         run: |
+          scripts/ci/evidence.sh 'Memory and disk footprint' <<'VGAMES_EVIDENCE_COMMAND'
           cargo test --locked --release -p vgames-transfer --test resilience -- --nocapture 2>&1 \
             | tee resilience.log
+          VGAMES_EVIDENCE_COMMAND
       - name: Loopback throughput (2 GiB)
         env:
           VGAMES_BENCH_GIB: "2"
+        shell: bash
         run: |
+          scripts/ci/evidence.sh 'Loopback throughput (2 GiB)' <<'VGAMES_EVIDENCE_COMMAND'
           # A RAM disk where the runner has one, so the disk is not what is measured.
           if [ -d /dev/shm ]; then export VGAMES_BENCH_DIR=/dev/shm; else export VGAMES_BENCH_DIR="$RUNNER_TEMP"; fi
           cargo test --locked --release -p vgames-transfer --test bench_loopback -- --ignored --nocapture 2>&1 \
             | tee bench.log
+          VGAMES_EVIDENCE_COMMAND
       - name: Summary
         if: always()
         env:
@@ -76,3 +85,11 @@ jobs:
             cat resilience.log bench.log 2>/dev/null | grep '^budget ' || echo "no measurements"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Publish scoped milestone receipts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: milestone-receipts-${{ env.VGAMES_EVIDENCE_JOB }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/milestone-receipts/*.json
+          if-no-files-found: error
+          retention-days: 7
