@@ -23,7 +23,7 @@ def sanitize(line):
         return f"test result: {match[1]}. {match[2]} passed; {match[3]} failed; {match[4]} ignored;"
     if re.fullmatch(r"ok \d+ - part (?:1: add the server, sign in, choose a library \(M1\)|2: install, play, stop, verify, uninstall \(M2\))", line):
         return line
-    if re.match(r"✓\s+\d+\s+.*foundation\.spec\.ts.*› admins see the navigation(?:\s|$)", line):
+    if re.match(r"✓\s+\d+\s+.*foundation\.spec\.ts.*› admins see the navigation(?:[ ;,(]|$)", line):
         return "foundation.spec.ts admins see the navigation"
     match = re.match(r"([1-9]\d*) passed(?:\s|\(|$)", line)
     if match:
