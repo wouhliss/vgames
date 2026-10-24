@@ -13,8 +13,7 @@ The collector passing means evidence collection completed. A separate `Milestone
 (through M4, including M3B) job turns green only for a `reached` row; pending milestone
 jobs stay gray. All existing proof jobs still run and their failures fail collection.
 
-The collector reads workflow definitions from the selected Git commit, ignoring uncommitted worktree changes. Fetch a historical commit before using `--sha`; unavailable commit objects fail closed. It uses the newest run/attempt for the exact commit. It never substitutes an
-older green run. Passing a whole job is insufficient for M1–M3: required steps and named
+The collector reads workflow definitions from the selected Git commit, ignoring uncommitted worktree changes. Fetch a historical commit before using `--sha`; unavailable commit objects fail closed. M1–M3b use the newest run/attempt for the exact commit. M4 health follows the conservative main-source policy below. A failed newest proof never substitutes an older green run. Passing a whole job is insufficient for M1–M3: required steps and named
 Test receipts must exist within the named step, so ignored tests, zero matches and skipped Node scenarios fail. A later backend step running the same Rust test name cannot satisfy an earlier step. Unscoped or empty logs fail closed.
 Actions can archive only whole-job logs, making even current gh label every line `UNKNOWN STEP`.
 The evidence steps use `scripts/ci/evidence.sh` to delimit their output and record the actual
