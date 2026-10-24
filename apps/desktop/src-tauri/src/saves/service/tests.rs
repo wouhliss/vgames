@@ -30,6 +30,11 @@ impl Accounts for Fixed {
     }
 }
 
+/// A build this machine runs natively, so resolution finds a launch layer.
+fn host() -> Platform {
+    crate::launch::orchestrate::host_platform().unwrap_or(Platform::LinuxX86_64)
+}
+
 /// Registers the rig's package as installed, its manifest declaring `saves`.
 async fn install(rig: &Rig, saves: bool) {
     let execution = Execution {
@@ -50,7 +55,7 @@ async fn install(rig: &Rig, saves: bool) {
         vgames_pack::Compression::None,
         vgames_pack::PACK_SIZE,
         &Identity {
-            platform: Platform::LinuxX86_64,
+            platform: host(),
             ..Identity::default()
         },
         &execution,
@@ -75,11 +80,12 @@ async fn install(rig: &Rig, saves: bool) {
             conn.execute(
                 "INSERT INTO installs (server_id, package_id, library_id, dir_name, version_id,
                  sequence, platform, state)
-                 VALUES (?1, ?2, 'lib', 'game', ?3, 1, 'linux-x86_64', 'installed')",
+                 VALUES (?1, ?2, 'lib', 'game', ?3, 1, ?4, 'installed')",
                 [
                     scope.package.server_id.to_string(),
                     scope.package.package_id.to_string(),
                     Uuid::now_v7().to_string(),
+                    host().as_str().to_owned(),
                 ],
             )?;
             Ok(())
