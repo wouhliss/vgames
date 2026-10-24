@@ -22,7 +22,9 @@ use crate::db::saves::{BackupReason, PullDecision, RestoredBase, Scope, Store, d
 
 mod conflict;
 mod push;
+mod resolve;
 pub use push::Push;
+pub use resolve::Resolution;
 
 /// `blobs/download-urls` accepts at most this many hashes per call.
 const URL_BATCH: usize = 1000;

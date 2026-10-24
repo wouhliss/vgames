@@ -163,6 +163,8 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             compat::compat_licenses,
             compat::rosetta_install,
             saves::saves_status,
+            saves::save_conflict_get,
+            saves::save_conflict_resolve,
         ])
         .events(tauri_specta::collect_events![
             DeeplinkRefused,
@@ -202,6 +204,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             crate::events::PadsChanged,
             crate::events::ControllerTesterState,
             crate::saves::service::SaveSyncChanged,
+            crate::saves::service::SaveConflict,
         ])
         .error_handling(tauri_specta::ErrorHandlingMode::Result)
         // Byte counts and ids that are u64 in Rust stay below 2^53.

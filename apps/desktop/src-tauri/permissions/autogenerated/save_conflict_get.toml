@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-save-conflict-get"
+description = "Enables the save_conflict_get command without any pre-configured scope."
+commands.allow = ["save_conflict_get"]
+
+[[permission]]
+identifier = "deny-save-conflict-get"
+description = "Denies the save_conflict_get command without any pre-configured scope."
+commands.deny = ["save_conflict_get"]

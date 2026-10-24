@@ -117,6 +117,43 @@ pub fn back_up(
     Ok(backup)
 }
 
+/// Backs up the plan's writes from their staged blobs instead of the device
+/// (the cloud side kept by "keep both"), in the same layout as [`back_up`]:
+/// restoring it later writes exactly these files. Each copy must match its
+/// declared size and BLAKE3.
+pub fn back_up_staged(
+    plan: &Plan,
+    staging: &Dir,
+    backups: &Dir,
+    cancel: &CancellationToken,
+) -> Result<Backup, Error> {
+    let id = Uuid::now_v7();
+    let folder = create_dirs(backups, &[&id.to_string(), FILES])?;
+    let mut entries = Vec::new();
+    for file in &plan.writes {
+        let (dirs, name) = split(&file.path)?;
+        let mut source = open_read(staging, &file.blake3)?.ok_or(Error::Mismatch)?;
+        let mut path = vec![file.root.as_str()];
+        path.extend(&dirs);
+        let into = create_dirs(&folder, &path)?;
+        let original = copy_new(&mut source, &into, name, cancel)?;
+        if Some(original.size) != u64::try_from(file.size).ok() || original.blake3 != file.blake3 {
+            return Err(Error::Mismatch);
+        }
+        entries.push(Entry {
+            root: file.root.clone(),
+            path: file.path.clone(),
+            original: Some(original),
+        });
+    }
+    let backup = Backup { id, entries };
+    let json = serde_json::to_vec(&backup).map_err(|_| Error::Invalid)?;
+    let own = backups.open_dir_nofollow(id.to_string())?;
+    write_atomic(&own, MANIFEST, &mut json.as_slice(), None)?;
+    sync_dir(backups)?;
+    Ok(backup)
+}
+
 /// Writes every staged blob (named by its BLAKE3 in `staging`) over its
 /// target and removes every deletion. Returns at the first error or
 /// cancellation; the caller must then `roll_back`.

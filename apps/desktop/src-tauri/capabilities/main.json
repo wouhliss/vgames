@@ -124,6 +124,8 @@
     "allow-compat-override-reset",
     "allow-compat-licenses",
     "allow-rosetta-install",
-    "allow-saves-status"
+    "allow-saves-status",
+    "allow-save-conflict-get",
+    "allow-save-conflict-resolve"
   ]
 }

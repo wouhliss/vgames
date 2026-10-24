@@ -131,6 +131,8 @@ pub const MAIN_WINDOW_COMMANDS: &[&str] = &[
     "compat_licenses",
     "rosetta_install",
     "saves_status",
+    "save_conflict_get",
+    "save_conflict_resolve",
 ];
 
 /// Commands the in-game overlay window may call. Only `overlay_*` commands
