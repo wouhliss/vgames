@@ -190,9 +190,10 @@ impl<T: TrustSource> Launcher<T> {
         .await
         .map_err(|e| LaunchError::io("The pre-launch check stopped", &e))??;
 
-        let ctx = self
+        let mut ctx = self
             .sessions
             .context(package, row.root.clone(), platform, layer);
+        ctx.saves = checked.manifest.saves.clone().map(Arc::new);
         let plan = self.hooks.plan(&ctx, &checked.manifest).await?;
         let mut prepared = plan
             .prepare(checked.target, std::env::vars_os())
