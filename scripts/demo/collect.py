@@ -126,7 +126,11 @@ class Collector:
             value = gh("run", "view", "--repo", REPO, "--job", str(int(job_id)), "--log")
             if not value.strip():
                 raise EvidenceError("Actions returned an empty job log")
-            return value
+            # This value came from gh, whose archive reader prefixes every line with
+            # the job and step names (including UNKNOWN STEP for whole-job archives).
+            # Preserve content and markers; step_log still requires complete scoping.
+            lines = [line.split("\t", 2) for line in value.splitlines()]
+            return "".join((parts[2] if len(parts) == 3 else parts[0]) + "\n" for parts in lines)
 
     @functools.cache
     def named_job_log(self, job_id):
