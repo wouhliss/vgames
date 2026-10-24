@@ -125,6 +125,7 @@ impl GameSessions {
                 .as_ref()
                 .filter(|_| layer != LaunchLayer::Native)
                 .map(|data| crate::compat::prefix_dir(data, &package)),
+            saves: None,
             cancellation: self.inner.shutdown.child_token(),
         }
     }

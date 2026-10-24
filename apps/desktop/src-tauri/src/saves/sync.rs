@@ -20,6 +20,7 @@ use crate::api::ApiError;
 use crate::db::DbError;
 use crate::db::saves::{BackupReason, PullDecision, RestoredBase, Scope, Store, decide_pull};
 
+mod conflict;
 mod push;
 pub use push::Push;
 
@@ -278,4 +279,4 @@ fn offline_transfer(error: &blobs::Error) -> bool {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

@@ -534,6 +534,7 @@ fn context(r: &Rig) -> crate::launch::hooks::LaunchContext {
         platform: Platform::WindowsX86_64,
         layer: crate::launch::hooks::LaunchLayer::Proton,
         prefix_dir: Some(crate::compat::prefix_dir(&r.data, &PACKAGE)),
+        saves: None,
         cancellation: tokio_util::sync::CancellationToken::new(),
     }
 }

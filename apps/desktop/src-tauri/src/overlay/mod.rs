@@ -876,6 +876,7 @@ mod tests {
             platform: crate::launch::orchestrate::host_platform().unwrap(),
             layer: crate::launch::hooks::LaunchLayer::Native,
             prefix_dir: None,
+            saves: None,
             cancellation: CancellationToken::new(),
         };
         let env = LaunchHooks::before_spawn(&overlay, &ctx).await.unwrap().0;
@@ -913,6 +914,7 @@ mod tests {
             platform,
             layer,
             prefix_dir: None,
+            saves: None,
             cancellation: CancellationToken::new(),
         };
         let lib = std::path::Path::new("/opt/vgames/libvgames_overlay.so");
