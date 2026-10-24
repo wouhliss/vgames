@@ -547,6 +547,31 @@ fn process_parents() -> io::Result<std::collections::BTreeMap<u32, u32>> {
     Ok(descendants)
 }
 
+/// The process has finished (its handle is signaled); zero never blocks.
+fn is_signaled(process: &OwnedHandle) -> bool {
+    #[allow(unsafe_code)]
+    // SAFETY: the owned handle carries SYNCHRONIZE and stays live for the call.
+    unsafe {
+        WaitForSingleObject(raw(process), 0) == 0
+    }
+}
+
+/// A query-only handle to `pid` when it has already exited: rights an exiting
+/// process still grants. `None` when it is running, gone or unreadable, so a
+/// PID reused by a live process is never mistaken for an exited one.
+fn exited_process(pid: u32) -> Option<OwnedHandle> {
+    #[allow(unsafe_code)]
+    // SAFETY: opens a fresh, non-inherited query handle owned below.
+    let handle = unsafe {
+        OpenProcess(
+            PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE,
+            0,
+            pid,
+        )
+    };
+    own(handle).ok().filter(is_signaled)
+}
+
 fn adopt_children(job: &OwnedHandle, leader: ProcessIdentity) -> io::Result<()> {
     use std::collections::{BTreeMap, BTreeSet};
     let descendants = process_parents()?;
@@ -569,19 +594,32 @@ fn adopt_children(job: &OwnedHandle, leader: ProcessIdentity) -> io::Result<()> 
             // SAFETY: OpenProcess uses a snapshot PID; time and parent are verified below.
             let handle = unsafe {
                 OpenProcess(
-                    PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SET_QUOTA | PROCESS_TERMINATE,
+                    PROCESS_QUERY_LIMITED_INFORMATION
+                        | PROCESS_SYNCHRONIZE
+                        | PROCESS_SET_QUOTA
+                        | PROCESS_TERMINATE,
                     0,
                     pid,
                 )
             };
-            if handle.is_null() {
+            // As for the leader: an exiting process stays in the snapshot but
+            // refuses assignment rights. Keep it in the tree (its live children
+            // are still the game's) without assigning it; any other refusal
+            // still fails the re-attach.
+            let (process, exiting) = if handle.is_null() {
                 let error = io::Error::last_os_error();
                 if error.raw_os_error() == Some(ERROR_INVALID_PARAMETER as i32) {
                     continue;
                 }
-                return Err(error);
-            }
-            let process = own(handle)?;
+                match exited_process(pid) {
+                    Some(process) if error.raw_os_error() == Some(ERROR_ACCESS_DENIED as i32) => {
+                        (process, true)
+                    }
+                    _ => return Err(error),
+                }
+            } else {
+                (own(handle)?, false)
+            };
             let started = creation_time(&process)?;
             // A PID could have been recycled between snapshot and OpenProcess.
             // Recheck its parent while the child and its verified parent are pinned.
@@ -590,7 +628,16 @@ fn adopt_children(job: &OwnedHandle, leader: ProcessIdentity) -> io::Result<()> 
                 .is_some_and(|&parent_start| started >= parent_start)
                 && process_parents()?.get(&pid) == Some(&parent)
             {
-                assign(job, &process)?;
+                if !exiting {
+                    match assign(job, &process) {
+                        Ok(()) => {}
+                        // The child exited between OpenProcess and assignment.
+                        Err(error)
+                            if error.raw_os_error() == Some(ERROR_ACCESS_DENIED as i32)
+                                && is_signaled(&process) => {}
+                        Err(error) => return Err(error),
+                    }
+                }
                 parents.insert(pid, started);
                 pinned.push(process);
             }
