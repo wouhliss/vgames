@@ -78,6 +78,7 @@
   and honours `ctx.cancellation`. `compat::save_base(prefix, runner, base) -> Option<PathBuf>` (README §1 signature)
   maps every 06 §1 base into a prefix per 09 §6 (`steamuser` for Proton, the login name for Wine; `None` for
   `install`) for PLAY-06.
+- INT-10 input-evidence finding: the existing onboarding controller scenario fills the server address before ui-nav actions, and native file-picker choices are prepared by the real harness. Those scenarios prove navigation/activation; controller text entry and OS picker interaction need separate evidence. Suggested software substitute: exercise the on-screen/native text-entry adapter through ui-nav with an isolated text fixture. The README walkthrough records the scope instead of claiming those interactions were demonstrated.
 
 ## PLAY-01 integration API (branch `play/p2-launch-hooks`)
 
