@@ -2,7 +2,7 @@
 //! launch hook plus each package's `SaveStatus`, read from durable state so a
 //! missed `save-sync-changed` event is repaired by asking again. Status never
 //! makes a network request.
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -47,7 +47,14 @@ pub struct Saves {
     bus: EventBus,
     /// Packages whose pull or push is running.
     syncing: Mutex<HashSet<PackageRef>>,
+    /// One pull, push or resolution per package at a time.
+    locks: Mutex<HashMap<PackageRef, Arc<tokio::sync::Mutex<()>>>>,
+    running: Running,
+    data_dir: PathBuf,
 }
+
+/// Whether the package's process tree is running.
+pub type Running = Arc<dyn Fn(PackageRef) -> bool + Send + Sync>;
 
 impl Saves {
     pub fn new(
@@ -56,14 +63,18 @@ impl Saves {
         bus: EventBus,
         folders: KnownFolders,
         data_dir: PathBuf,
+        running: Running,
     ) -> reqwest::Result<Self> {
         Ok(Self {
-            hook: SaveHook::new(accounts.clone(), db.clone(), folders, data_dir)?,
+            hook: SaveHook::new(accounts.clone(), db.clone(), folders, data_dir.clone())?,
             accounts,
             store: Store::new(db.clone()),
             db,
             bus,
             syncing: Mutex::default(),
+            locks: Mutex::default(),
+            running,
+            data_dir,
         })
     }
 
@@ -114,10 +125,19 @@ impl Saves {
             return Ok(false);
         };
         Ok(
-            tokio::task::spawn_blocking(move || manifest_declares_saves(&row.root))
+            tokio::task::spawn_blocking(move || installed_saves(&row.root).is_some())
                 .await
                 .unwrap_or(false),
         )
+    }
+
+    fn lock(&self, package: PackageRef) -> Arc<tokio::sync::Mutex<()>> {
+        self.locks
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .entry(package)
+            .or_default()
+            .clone()
     }
 
     fn is_syncing(&self, package: PackageRef) -> bool {
@@ -149,22 +169,32 @@ impl Saves {
         }
     }
 
-    async fn around<T>(&self, ctx: &LaunchContext, work: impl Future<Output = T>) -> T {
-        // Packages without saves never show a sync.
-        if ctx.saves.as_ref().is_none_or(|s| s.locations.is_empty()) {
-            return work.await;
-        }
+    /// Runs a hook step under the package's lock, announcing its progress.
+    async fn around<T>(
+        &self,
+        ctx: &LaunchContext,
+        _one: tokio::sync::OwnedMutexGuard<()>,
+        work: impl Future<Output = T>,
+    ) -> T {
+        let before = self.status(ctx.package).await.ok();
         self.set_syncing(ctx.package, true);
         self.announce(ctx.package).await;
         let result = work.await;
         self.set_syncing(ctx.package, false);
         self.announce(ctx.package).await;
+        self.announce_new_conflict(ctx.package, before.and_then(|s| s.conflict_id))
+            .await;
         result
     }
 }
 
-/// The installed release's verified manifest declares save locations.
-fn manifest_declares_saves(root: &Path) -> bool {
+/// Packages without saves never show a sync.
+fn declares(ctx: &LaunchContext) -> bool {
+    ctx.saves.as_ref().is_some_and(|s| !s.locations.is_empty())
+}
+
+/// The save locations the installed release's verified manifest declares.
+fn installed_saves(root: &Path) -> Option<vgames_core::manifest::Saves> {
     let path = root
         .join(vgames_transfer::install::META_DIR)
         .join(vgames_transfer::install::MANIFEST_FILE);
@@ -172,7 +202,7 @@ fn manifest_declares_saves(root: &Path) -> bool {
         .ok()
         .and_then(|bytes| vgames_core::manifest::parse_and_validate(&bytes).ok())
         .and_then(|manifest| manifest.saves)
-        .is_some_and(|saves| !saves.locations.is_empty())
+        .filter(|saves| !saves.locations.is_empty())
 }
 
 impl LaunchHooks for Saves {
@@ -180,11 +210,27 @@ impl LaunchHooks for Saves {
         &'a self,
         ctx: &'a LaunchContext,
     ) -> HookFuture<'a, Result<HookEnv, LaunchVeto>> {
-        Box::pin(self.around(ctx, self.hook.before_spawn(ctx)))
+        Box::pin(async move {
+            if !declares(ctx) {
+                return Ok(HookEnv::default());
+            }
+            // A resolution or restore in progress must finish first: never
+            // wait into the hook budget and launch without saves.
+            let Ok(one) = self.lock(ctx.package).try_lock_owned() else {
+                return Err(LaunchVeto::SavesUnavailable);
+            };
+            self.around(ctx, one, self.hook.before_spawn(ctx)).await
+        })
     }
 
     fn after_exit<'a>(&'a self, ctx: &'a LaunchContext, exit: &'a GameExit) -> HookFuture<'a, ()> {
-        Box::pin(self.around(ctx, self.hook.after_exit(ctx, exit)))
+        Box::pin(async move {
+            if !declares(ctx) {
+                return;
+            }
+            let one = self.lock(ctx.package).lock_owned().await;
+            self.around(ctx, one, self.hook.after_exit(ctx, exit)).await;
+        })
     }
 
     fn aborted(&self, ctx: &LaunchContext) {
@@ -213,6 +259,9 @@ impl CloudSaveProvider for Saves {
             .map_or(CloudSaveState::Pending, |status| status.state)
     }
 }
+
+mod resolve;
+pub use resolve::{ConflictChoice, SaveConflict, SaveSource, SaveSummary};
 
 #[cfg(test)]
 mod tests;

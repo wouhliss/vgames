@@ -78,11 +78,11 @@ pub struct SaveHook {
 }
 
 /// One launch's resolved saves.
-struct Prepared {
-    scope: Scope,
-    sync: Sync,
-    locations: Arc<Vec<Location>>,
-    protected: Arc<ProtectedInstalls>,
+pub(super) struct Prepared {
+    pub(super) scope: Scope,
+    pub(super) sync: Sync,
+    pub(super) locations: Arc<Vec<Location>>,
+    pub(super) protected: Arc<ProtectedInstalls>,
 }
 
 impl SaveHook {
@@ -106,7 +106,7 @@ impl SaveHook {
     }
 
     /// `None` when the release declares no saves or nobody is signed in.
-    async fn prepare(
+    pub(super) async fn prepare(
         &self,
         ctx: &LaunchContext,
         cancel: &CancellationToken,

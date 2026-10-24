@@ -250,6 +250,13 @@ export const commands = {
 	rosettaInstall: () => typedError<null, AppError>(__TAURI_INVOKE("rosetta_install")),
 	/**  The package's cloud-save state from durable records (no network request). */
 	savesStatus: (pkg: PackageRef) => typedError<SaveStatus, AppError>(__TAURI_INVOKE("saves_status", { pkg })),
+	/**  An open conflict of the signed-in account, for the dialog. */
+	saveConflictGet: (conflictId: string) => typedError<SaveConflict, AppError>(__TAURI_INVOKE("save_conflict_get", { conflictId })),
+	/**
+	 *  Applies the player's choice; `cancel` changes nothing. Never launches the
+	 *  game: the player retries the launch.
+	 */
+	saveConflictResolve: (conflictId: string, choice: ConflictChoice) => typedError<SaveStatus, AppError>(__TAURI_INVOKE("save_conflict_resolve", { conflictId, choice })),
 };
 
 /** Events */
@@ -282,6 +289,7 @@ export const events = {
 	padsChanged: makeEvent<PadsChanged>("pads-changed"),
 	presenceChanged: makeEvent<PresenceChanged>("presence-changed"),
 	publishProgress: makeEvent<PublishProgress>("publish-progress"),
+	saveConflict: makeEvent<SaveConflict>("save-conflict"),
 	saveSyncChanged: makeEvent<SaveSyncChanged>("save-sync-changed"),
 	serverAddRequested: makeEvent<ServerAddRequested>("server-add-requested"),
 	serverSwitched: makeEvent<ServerSwitched>("server-switched"),
@@ -529,6 +537,8 @@ export type CompatRunner = "proton" | "wine";
 export type CompatSettingsError = { kind: "not_found" } | { kind: "unknown_runner" } | { kind: "graphics_unavailable"; backend: GraphicsBackend } | { kind: "invalid_env"; key: string; reason: EnvRefusal } | { kind: "io"; detail: string };
 
 export type CompatStatus = "verified" | "playable" | "unsupported" | "untested";
+
+export type ConflictChoice = "keep_cloud" | "keep_device" | "keep_both" | "cancel";
 
 /**  Whether the launcher could reach a server on its last attempt. */
 export type ConnectivityChanged = {
@@ -1352,6 +1362,23 @@ export type RuntimeRemoveError = { kind: "not_found" } |
 /**  Installed packages still launch with it. */
 { kind: "in_use"; used_by: number } | { kind: "io"; detail: string };
 
+/**  A durable conflict, as the dialog shows it. */
+export type SaveConflict = {
+	conflict_id: string,
+	package: PackageRef,
+	cloud: SaveSummary,
+	/**  The device's files as they were when the conflict was found. */
+	device: SaveSummary,
+	/**  RFC 3339. */
+	created_at: string | null,
+};
+
+/**
+ *  Where a summarized save lives: a server snapshot or a local backup. Both
+ *  ids are opaque; neither is ever a path.
+ */
+export type SaveSource = { kind: "cloud"; snapshot_id: string } | { kind: "backup"; backup_id: string };
+
 export type SaveStatus = {
 	package: PackageRef,
 	state: CloudSaveState,
@@ -1359,6 +1386,16 @@ export type SaveStatus = {
 	last_synced_at: string | null,
 	/**  Set exactly when `state` is `conflict`. */
 	conflict_id: string | null,
+};
+
+export type SaveSummary = {
+	source: SaveSource,
+	/**  RFC 3339. */
+	created_at: string | null,
+	/**  Plain text from the server; null for this device's own backups. */
+	device_name: string | null,
+	file_count: number,
+	total_bytes: number,
 };
 
 /**  A package's save status changed; re-read only that package. */

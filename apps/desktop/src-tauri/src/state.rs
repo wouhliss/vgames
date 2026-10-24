@@ -164,6 +164,10 @@ impl AppState {
             bus.clone(),
             crate::saves::locations::KnownFolders::native(),
             paths.data_dir.clone(),
+            {
+                let games = games.clone();
+                Arc::new(move |package| games.is_running(package))
+            },
         )?);
         Ok(Self {
             saves,

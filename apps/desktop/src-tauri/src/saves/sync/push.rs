@@ -30,7 +30,7 @@ pub enum Push {
     Offline,
 }
 
-const PLATFORM: OsFamily = if cfg!(windows) {
+pub(super) const PLATFORM: OsFamily = if cfg!(windows) {
     OsFamily::Windows
 } else if cfg!(target_os = "macos") {
     OsFamily::Macos
@@ -79,7 +79,7 @@ impl Sync {
         }
     }
 
-    async fn push_operation(
+    pub(super) async fn push_operation(
         &self,
         scope: Scope,
         locations: &Arc<Vec<Location>>,
@@ -200,7 +200,7 @@ impl Sync {
     }
 }
 
-fn problem(error: &super::http::Error) -> Option<&str> {
+pub(super) fn problem(error: &super::http::Error) -> Option<&str> {
     match error {
         super::http::Error::Api(error) => error.problem_code(),
         super::http::Error::Cancelled => None,

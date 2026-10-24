@@ -206,6 +206,37 @@ impl Transactions {
             restore::back_up(&locations, &plan, &open_dir(&dir, true)?, &cancel)
         })
         .await?;
+        self.record_protected(scope, &backup).await
+    }
+
+    /// Backs up `files` from their verified blobs in `staging` (the cloud
+    /// side a "keep both" resolution keeps locally). No save file changes.
+    pub async fn protect_staged(
+        &self,
+        scope: Scope,
+        locations: Arc<Vec<Location>>,
+        protected: Arc<ProtectedInstalls>,
+        files: Vec<SaveFile>,
+        staging: PathBuf,
+        cancel: CancellationToken,
+    ) -> Result<Uuid, Error> {
+        let _one = self.lock.lock().await;
+        let dir = self.dir(scope);
+        let backup = blocking(move || {
+            // The same validation as a restore of these files.
+            let plan = Plan::new(&locations, files, Vec::new(), &protected, &cancel)?;
+            let staging = Dir::open_ambient_dir(&staging, cap_std::ambient_authority())?;
+            restore::back_up_staged(&plan, &staging, &open_dir(&dir, true)?, &cancel)
+        })
+        .await?;
+        self.record_protected(scope, &backup).await
+    }
+
+    async fn record_protected(
+        &self,
+        scope: Scope,
+        backup: &restore::Backup,
+    ) -> Result<Uuid, Error> {
         let saved: Vec<_> = backup
             .entries
             .iter()
