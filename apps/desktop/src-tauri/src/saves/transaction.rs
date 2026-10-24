@@ -186,6 +186,45 @@ impl Transactions {
         Ok(backup.id)
     }
 
+    /// Backs up `files` (the device's current saves) without changing any of
+    /// them, so a conflict can always return to this side. Returns the backup id.
+    pub async fn protect(
+        &self,
+        scope: Scope,
+        locations: Arc<Vec<Location>>,
+        protected: Arc<ProtectedInstalls>,
+        files: Vec<SaveFile>,
+        cancel: CancellationToken,
+    ) -> Result<Uuid, Error> {
+        let _one = self.lock.lock().await;
+        self.recover_locked(scope, locations.clone()).await?;
+        let dir = self.dir(scope);
+        let backup = blocking(move || {
+            // Every file is a target of the plan, so it is backed up; nothing
+            // is ever applied.
+            let plan = Plan::new(&locations, Vec::new(), files, &protected, &cancel)?;
+            restore::back_up(&locations, &plan, &open_dir(&dir, true)?, &cancel)
+        })
+        .await?;
+        let saved: Vec<_> = backup
+            .entries
+            .iter()
+            .filter_map(|entry| entry.original.as_ref())
+            .collect();
+        let bytes = saved.iter().map(|original| original.size).sum::<u64>();
+        self.store
+            .record_backup(
+                scope,
+                backup.id,
+                BackupReason::Conflict,
+                i64::try_from(saved.len()).map_err(|_| scan::Error::Limit)?,
+                i64::try_from(bytes).map_err(|_| scan::Error::Limit)?,
+            )
+            .await?;
+        self.retain(scope).await;
+        Ok(backup.id)
+    }
+
     /// Keeps the newest finished backups plus every unfinished one, and removes
     /// unrecorded folders. Retention never fails a restore that succeeded.
     async fn retain(&self, scope: Scope) {

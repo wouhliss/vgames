@@ -273,3 +273,46 @@ async fn a_cancelled_restore_changes_nothing() {
     assert_eq!(std::fs::read(game.join("slot.sav")).unwrap(), b"original");
     assert!(store.unfinished_restores().await.unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn protecting_a_conflict_backs_up_the_device_side_without_changing_it() {
+    let root = tempfile::tempdir().unwrap();
+    let scope = scope();
+    let store = store(&root.path().join("db.sqlite3"), scope).await;
+    let txn = Transactions::new(store.clone(), &root.path().join("data"));
+    let game = root.path().join("docs/game");
+    std::fs::create_dir_all(&game).unwrap();
+    std::fs::write(game.join("slot.sav"), b"device side").unwrap();
+    let id = txn
+        .protect(
+            scope,
+            locations(root.path()),
+            protected(),
+            vec![file("slot.sav", b"device side")],
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        std::fs::read(game.join("slot.sav")).unwrap(),
+        b"device side"
+    );
+    let records = store.backups(scope).await.unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(
+        (records[0].id, records[0].reason, records[0].state),
+        (id, BackupReason::Conflict, BackupState::Complete)
+    );
+    assert_eq!((records[0].file_count, records[0].total_bytes), (1, 11));
+    // The device side can be put back from that backup later.
+    std::fs::write(game.join("slot.sav"), b"cloud side").unwrap();
+    let dir = txn.dir(scope);
+    let backups = open_dir(&dir, false).unwrap();
+    let backup = restore::read_backup(&backups, id).unwrap();
+    restore::roll_back(&locations(root.path()), &backup, &backups).unwrap();
+    assert_eq!(
+        std::fs::read(game.join("slot.sav")).unwrap(),
+        b"device side"
+    );
+    assert!(store.unfinished_restores().await.unwrap().is_empty());
+}
