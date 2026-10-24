@@ -790,6 +790,49 @@ mod overrides {
         assert_eq!(plan.env.get("OK").map(String::as_str), Some("1"));
     }
 
+    #[tokio::test]
+    async fn proton_logging_never_comes_from_a_profile_or_an_override() {
+        // GAME-14 C3: verbose Proton logs and their location are not a profile's or
+        // a player override's to choose (a package's manifest env still may).
+        let r = rig().await;
+        *r.profiles.0.lock().unwrap() = vec![signed_profile(serde_json::json!({
+            "kind": "proton",
+            "env": {"PROTON_LOG": "1", "PROTON_LOG_DIR": "/tmp/profile", "DXVK_HUD": "fps"}
+        }))];
+        let plan = proton_plan(&r).await;
+        assert!(!plan.env.contains_key("PROTON_LOG"), "{:?}", plan.env);
+        assert!(!plan.env.contains_key("PROTON_LOG_DIR"), "{:?}", plan.env);
+        assert_eq!(plan.env.get("DXVK_HUD").map(String::as_str), Some("fps"));
+
+        // Refused when saved, and ignored if planted in storage anyway.
+        assert!(
+            overrides::check(&CompatOverride {
+                env: [("PROTON_LOG".to_owned(), "1".to_owned())].into(),
+                ..CompatOverride::default()
+            })
+            .is_err()
+        );
+        let (server, package) = (
+            PACKAGE.server_id.to_string(),
+            PACKAGE.package_id.to_string(),
+        );
+        r.planner
+            .db
+            .call(move |conn| {
+                conn.execute(
+                    "INSERT INTO compat_overrides (server_id, package_id, env, updated_at)
+                     VALUES (?1, ?2, '{\"PROTON_LOG\":\"1\",\"PROTON_LOG_DIR\":\"/tmp/evil\"}', 0)",
+                    [server, package],
+                )?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        let plan = proton_plan(&r).await;
+        assert!(!plan.env.contains_key("PROTON_LOG"), "{:?}", plan.env);
+        assert!(!plan.env.contains_key("PROTON_LOG_DIR"), "{:?}", plan.env);
+    }
+
     #[cfg(unix)] // the fake `wine` is a shell script
     #[tokio::test]
     async fn the_players_graphics_backend_goes_first_on_a_mac() {

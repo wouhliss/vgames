@@ -1471,6 +1471,80 @@ fn join_secrets_are_sealed_and_invite_join_is_queued_once() {
 }
 
 #[test]
+fn a_stored_old_grammar_secret_is_not_sent() {
+    let (ua, ub, _) = users();
+    let mut relay = Relay::default();
+    let mut alice = Launcher::new("alice", ua);
+    let mut bob = Launcher::new("bob", ub);
+    relay.register(&mut alice);
+    relay.register(&mut bob);
+    let (invite, package, conv) = (Uuid::now_v7(), Uuid::now_v7(), Uuid::now_v7());
+    // A secret stored before the grammar changed: sealed like any other, but option-shaped.
+    let old = "--windowed";
+    invite_sent(
+        &alice.db,
+        &alice.keys,
+        SERVER,
+        invite,
+        package,
+        Some("placeholder"),
+        NOW,
+    )
+    .unwrap();
+    let (nonce, sealed) = alice
+        .keys
+        .body
+        .seal(&invites::secret_aad(SERVER, invite), old.as_bytes())
+        .unwrap();
+    alice
+        .db
+        .execute(
+            "UPDATE social_invites_local SET secret_nonce = ?1, secret = ?2",
+            rusqlite::params![nonce.to_vec(), sealed],
+        )
+        .unwrap();
+
+    // The invite still goes out, without a secret.
+    let m = queue_invite_join(&mut alice.db, &alice.keys, SERVER, invite, conv, NOW)
+        .unwrap()
+        .unwrap();
+    assert_eq!(m.body, MessageBody::InviteJoin { invite_id: invite });
+    let item = outbox_due(&alice.db, &alice.keys, SERVER, NOW, 10)
+        .unwrap()
+        .pop()
+        .unwrap();
+    assert!(
+        !item
+            .plaintext
+            .windows(old.len())
+            .any(|w| w == old.as_bytes()),
+        "the old-grammar secret never reaches the payload"
+    );
+    alice.learn(&relay, &[ub]);
+    let claimed = relay.claim(&[bob.device]);
+    let out = encrypt_for(
+        &mut alice.db,
+        &alice.keys,
+        SERVER,
+        &[bob.device],
+        &claimed,
+        &item.plaintext,
+        NOW,
+    )
+    .unwrap();
+    relay.deliver(&alice, conv, &out.envelopes);
+    bob.learn(&relay, &[ua]);
+    let received = bob.receive_all(&mut relay);
+    assert!(
+        matches!(
+            &received[..],
+            [Received::InviteJoin { invite_id, join_secret: None, .. }] if *invite_id == invite
+        ),
+        "expected one invite.join without a secret"
+    );
+}
+
+#[test]
 fn accepted_invites_throttle_progress_and_are_forgotten() {
     let l = Launcher::new("bob", Uuid::now_v7());
     let (invite, package) = (Uuid::now_v7(), Uuid::now_v7());
