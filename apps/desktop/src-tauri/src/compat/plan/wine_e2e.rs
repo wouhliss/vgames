@@ -25,37 +25,16 @@ use crate::launch::ResolvedTarget;
 
 struct AskFor(String);
 
-fn bootstrap_process_counts(commands: &str) -> BTreeMap<&'static str, usize> {
-    let commands = commands.to_ascii_lowercase();
-    [
-        ("wineboot", "wineboot.exe"),
-        ("installer", "msiexec.exe"),
-        ("mono_installer", "wine-mono"),
-        ("wineserver", "wineserver"),
-        ("services", "services.exe"),
-        ("explorer", "explorer.exe"),
-    ]
-    .into_iter()
-    .map(|(name, pattern)| {
-        (
-            name,
-            commands
-                .lines()
-                .filter(|line| line.contains(pattern))
-                .count(),
-        )
-    })
-    .collect()
-}
-
 async fn record_bootstrap_state(prefix: &std::path::Path) {
     let mut probe = tokio::process::Command::new("/bin/ps");
     probe.args(["-axo", "command="]).kill_on_drop(true);
     let output = tokio::time::timeout(Duration::from_secs(5), probe.output()).await;
     let counts = match output {
-        Ok(Ok(output)) if output.status.success() && output.stdout.len() <= 1024 * 1024 => Some(
-            bootstrap_process_counts(&String::from_utf8_lossy(&output.stdout)),
-        ),
+        Ok(Ok(output)) if output.status.success() && output.stdout.len() <= 1024 * 1024 => {
+            Some(super::bootstrap_diagnostics::bootstrap_process_counts(
+                &String::from_utf8_lossy(&output.stdout),
+            ))
+        }
         _ => None,
     };
     // Never emit command lines, environment values, registry contents or probe stderr.
@@ -68,20 +47,6 @@ async fn record_bootstrap_state(prefix: &std::path::Path) {
             "user_registry_exists": prefix.join("user.reg").is_file(),
         })
     );
-}
-
-#[test]
-fn bootstrap_diagnostics_only_emit_fixed_counts() {
-    let input = "wineboot.exe --fixture-private-value\nmsiexec.exe wine-mono.msi\nexplorer.exe\n";
-    let counts = bootstrap_process_counts(input);
-    assert_eq!(counts["wineboot"], 1);
-    assert_eq!(counts["installer"], 1);
-    assert_eq!(counts["mono_installer"], 1);
-    assert_eq!(counts["explorer"], 1);
-    assert_eq!(counts["wineserver"], 0);
-    let output = serde_json::to_string(&counts).unwrap();
-    assert!(!output.contains("fixture-private-value"));
-    assert!(!output.contains("msiexec.exe"));
 }
 
 impl ProfileSource for AskFor {
