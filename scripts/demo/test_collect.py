@@ -179,6 +179,22 @@ class CollectorTests(unittest.TestCase):
              patch.object(self.collector, 'log', return_value=raw):
             self.assertEqual(self.collector.step_log(13, 'scenario'), 'real receipt\n')
 
+    def test_marked_cli_fallback_keeps_scope_when_the_raw_log_endpoint_is_unavailable(self):
+        wrapper = Path(__file__).resolve().parents[1] / 'ci/evidence.sh'
+        raw = subprocess.check_output(['bash', str(wrapper), 'scenario', 'printf', 'real receipt\n'], text=True)
+        def decorated(output):
+            return ''.join('job\tUNKNOWN STEP\t2026-10-24T12:00:00.123Z ' + line + '\n'
+                           for line in output.splitlines())
+        with patch.object(self.collector, 'named_job_log', return_value=decorated(raw)), \
+             patch('collect.gh', side_effect=[EvidenceError('unavailable'), decorated(raw)]):
+            self.assertEqual(self.collector.step_log(13, 'scenario'), 'real receipt\n')
+        self.collector.log.cache_clear()
+        unmarked = decorated('test required_case ... ok\n')
+        with patch.object(self.collector, 'named_job_log', return_value=unmarked), \
+             patch('collect.gh', side_effect=[EvidenceError('unavailable'), unmarked]):
+            with self.assertRaisesRegex(EvidenceError, 'step-scoped'):
+                self.collector.step_log(13, 'scenario')
+
     def test_m3b_requires_each_wine_backend_despite_a_green_workflow(self):
         with patch.object(self.collector, 'proof', return_value=result('fixture', 'passed', 'fixture')) as proof:
             requirements('m3b', self.collector)
