@@ -256,11 +256,89 @@ mod tests {
         panic!("vgames-sdl thread not found");
     }
 
+    /// Records what the idle wait watches (`/dev`, `/dev/input`) with the same
+    /// mask, so an idle-test failure names the device-node change that woke it.
+    #[cfg(target_os = "linux")]
+    struct DevChanges(std::os::fd::OwnedFd);
+
+    #[cfg(target_os = "linux")]
+    impl DevChanges {
+        fn start() -> Self {
+            use std::os::fd::{AsRawFd, FromRawFd};
+            #[allow(unsafe_code)]
+            // SAFETY: inotify_init1 takes only flags and returns a fresh descriptor.
+            let fd = unsafe { libc::inotify_init1(libc::IN_CLOEXEC | libc::IN_NONBLOCK) };
+            assert!(fd >= 0, "{}", std::io::Error::last_os_error());
+            #[allow(unsafe_code)]
+            // SAFETY: fd was just created and is owned here.
+            let owned = unsafe { std::os::fd::OwnedFd::from_raw_fd(fd) };
+            for path in [c"/dev", c"/dev/input"] {
+                #[allow(unsafe_code)]
+                // SAFETY: path is NUL terminated and fd is an owned inotify instance.
+                unsafe {
+                    libc::inotify_add_watch(
+                        owned.as_raw_fd(),
+                        path.as_ptr(),
+                        libc::IN_CREATE
+                            | libc::IN_DELETE
+                            | libc::IN_ATTRIB
+                            | libc::IN_MOVED_FROM
+                            | libc::IN_MOVED_TO
+                            | libc::IN_DELETE_SELF
+                            | libc::IN_MOVE_SELF
+                            | libc::IN_ONLYDIR,
+                    );
+                }
+            }
+            Self(owned)
+        }
+
+        /// Every queued change as `mask name`, oldest first.
+        fn drain(&self) -> Vec<String> {
+            use std::os::fd::AsRawFd;
+            let mut seen = Vec::new();
+            let mut bytes = [0_u8; 4096];
+            loop {
+                #[allow(unsafe_code)]
+                // SAFETY: bytes is writable for its full size and the fd is owned.
+                let read = unsafe {
+                    libc::read(self.0.as_raw_fd(), bytes.as_mut_ptr().cast(), bytes.len())
+                };
+                let Ok(read) = usize::try_from(read) else {
+                    return seen;
+                };
+                let mut at = 0;
+                // inotify_event: wd, mask, cookie, len (4 × u32), then `len` name bytes.
+                while at + 16 <= read {
+                    let field = |offset: usize| {
+                        u32::from_ne_bytes(bytes[at + offset..at + offset + 4].try_into().unwrap())
+                    };
+                    let (mask, len) = (field(4), field(12) as usize);
+                    let name = String::from_utf8_lossy(&bytes[at + 16..at + 16 + len]);
+                    seen.push(format!("{mask:#x} {}", name.trim_end_matches('\0')));
+                    at += 16 + len;
+                }
+            }
+        }
+    }
+
     #[test]
     fn input_thread_starts_blocks_when_idle_and_wakes_for_shutdown() {
-        let _serial = SDL_TEST_LOCK.lock().unwrap();
-        let mut input = InputThread::start(|_| |_: InputEvent, _: &sdl3::GamepadSubsystem| {})
-            .expect("SDL input starts");
+        let _serial = SDL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        #[cfg(target_os = "linux")]
+        let changes = DevChanges::start();
+        let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let seen = events.clone();
+        let mut input = InputThread::start(move |_| {
+            move |event: InputEvent, _: &sdl3::GamepadSubsystem| {
+                if let InputEvent::Native(event) = event {
+                    seen.lock().unwrap().push(format!("{event:?}"));
+                }
+            }
+        })
+        .expect("SDL input starts");
         let before = input.iterations();
         // Keep the first startup wait out of the steady-state interval.
         #[cfg(target_os = "linux")]
@@ -271,16 +349,21 @@ mod tests {
         thread::sleep(Duration::from_secs(60));
         #[cfg(not(target_os = "linux"))]
         thread::sleep(Duration::from_secs(10));
+        #[cfg(target_os = "linux")]
+        let changes = changes.drain();
+        #[cfg(not(target_os = "linux"))]
+        let changes: Vec<String> = Vec::new();
         assert_eq!(
             input.iterations(),
             before,
-            "idle SDL wait returned without input"
+            "idle SDL wait returned without input; SDL events: {:?}; /dev changes: {changes:?}",
+            events.lock().unwrap()
         );
         #[cfg(target_os = "linux")]
         assert_eq!(
             input_thread_switches(),
             switches,
-            "headless SDL woke internally while idle"
+            "headless SDL woke internally while idle; /dev changes: {changes:?}"
         );
         input.stop();
         assert!(input.iterations() > before, "shutdown did not wake SDL");

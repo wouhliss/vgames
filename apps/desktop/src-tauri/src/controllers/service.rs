@@ -263,7 +263,11 @@ mod tests {
         use sdl3::joystick::{JoystickType, VirtualJoystickDescription};
         use std::sync::mpsc;
         use std::time::Duration;
-        let _serial = super::super::input::SDL_TEST_LOCK.lock().unwrap();
+        // A panic in the other SDL test poisons the lock; report that test's
+        // failure once instead of failing here too.
+        let _serial = super::super::input::SDL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let (outputs, receive) = mpsc::channel();
         let router = Arc::new(Mutex::new(Router::new(Arc::new(move |output| {
