@@ -27,6 +27,82 @@ class CollectorTests(unittest.TestCase):
                 patch.object(self.collector, "step_log", return_value=log):
             return self.collector.proof("test", "ci.yml", "tests", "scenario", [rust_test("required_case")])
 
+    def main_workflow(self, **changes):
+        return dict(self.run, head_sha="b" * 40, head_branch="main", event="workflow_dispatch",
+                    head_repository={"full_name": "wouhliss/vgames"}, **changes)
+
+    def main_health(self, runs=None, files=None, comparison=None):
+        compared = {"status": "ahead", "merge_base_commit": {"sha": "b" * 40},
+                    "files": [] if files is None else files}
+        if comparison is not None:
+            compared.update(comparison)
+        with patch.object(self.collector, "runs", return_value=[]), \
+             patch("collect.api", side_effect=[{"workflow_runs": runs or [self.main_workflow()]}, compared]):
+            return self.collector.latest_main_health("soak", "soak.yml")
+
+    def test_latest_main_health_prefers_an_exact_proof_including_its_failure(self):
+        for conclusion, expected in [("success", "passed"), ("failure", "failed")]:
+            with patch.object(self.collector, "runs", return_value=[dict(self.run, conclusion=conclusion)]), \
+                 patch("collect.api") as api:
+                self.assertEqual(self.collector.latest_main_health("soak", "soak.yml")["state"], expected)
+                api.assert_not_called()
+
+    def test_latest_main_failure_and_attempt_never_fall_back_to_older_green(self):
+        older = dict(self.main_workflow(), run_number=1)
+        latest = dict(self.main_workflow(), run_attempt=2, conclusion="failure")
+        foreign = dict(latest, run_number=100, head_repository={"full_name": "foreign/fork"})
+        branch = dict(latest, run_number=101, head_branch="feature")
+        self.assertEqual(self.main_health([older, self.main_workflow(), latest, foreign, branch])["state"], "failed")
+        self.assertEqual(self.main_health([dict(latest, status="in_progress")])["state"], "pending")
+
+    def test_latest_main_health_allows_only_statuses_and_new_internal_fragments(self):
+        fragment = "---\naudience: internal\ncomponent: launcher\ntype: fixed\n---\nValidation receipt.\n"
+        files = [{"filename": f"docs/agents/status/{owner}.md", "status": "modified"}
+                 for owner in ("ins", "play", "game", "int")]
+        files.append({"filename": ".changes/validation-receipt.md", "status": "added"})
+        with patch.object(self.collector, "source", return_value=fragment):
+            self.assertEqual(self.main_health(files=files)["state"], "passed")
+        self.assertEqual(self.main_health(files=files[:-1])["state"], "passed")
+        for header in [fragment.replace("internal", "user"),
+                       fragment.replace("audience: internal", "audience: internal\naudience: user"),
+                       fragment.replace("audience: internal", "audience: internal # receipt"),
+                       fragment.replace("component: launcher", "component: unknown"),
+                       fragment.replace("---\n", "", 1), ""]:
+            with self.subTest(header=header), patch.object(self.collector, "source", return_value=header):
+                self.assertEqual(self.main_health(files=files)["state"], "pending")
+        with patch.object(self.collector, "source", side_effect=lambda path: None if path.startswith(".changes/") else "workflow"):
+            self.assertEqual(self.main_health(files=files)["state"], "pending")
+
+    def test_source_changes_renames_deletions_and_comparison_truncation_require_fresh_proof(self):
+        for file in [
+            {"filename": "apps/desktop/src/app/router.tsx", "status": "modified"},
+            {"filename": ".github/workflows/soak.yml", "status": "modified"},
+            {"filename": "runtimes/catalog.pub", "status": "modified"},
+            {"filename": "Cargo.toml", "status": "modified"},
+            {"filename": "docs/architecture/05-social.md", "status": "modified"},
+            {"filename": "docs/agents/status/int.md", "status": "removed"},
+            {"filename": ".changes/receipt.md", "status": "modified"},
+            {"filename": "docs/agents/status/int.md", "status": "modified", "previous_filename": "source.rs"},
+        ]:
+            with self.subTest(file=file):
+                self.assertEqual(self.main_health(files=[file])["state"], "pending")
+        repeated = [{"filename": "docs/agents/status/int.md", "status": "modified"}] * 300
+        self.assertEqual(self.main_health(files=repeated)["state"], "pending")
+        for comparison in [{"status": "behind"}, {"status": "diverged"},
+                           {"merge_base_commit": {"sha": "c" * 40}}]:
+            self.assertEqual(self.main_health(comparison=comparison)["state"], "pending")
+        self.assertEqual(self.main_health(comparison={"files": None})["state"], "failed")
+
+    def test_unverifiable_main_repository_identity_never_uses_an_older_green(self):
+        unknown = dict(self.main_workflow(), run_number=3, head_repository={})
+        self.assertEqual(self.main_health([self.main_workflow(), unknown])["state"], "failed")
+        foreign = dict(self.main_workflow(), run_number=3, head_repository={"full_name": "foreign/fork"})
+        self.assertEqual(self.main_health([self.main_workflow(), foreign])["state"], "passed")
+        with patch.object(self.collector, "runs", return_value=[]), \
+             patch.object(self.collector, "source", return_value=None), patch("collect.api") as api:
+            self.assertEqual(self.collector.latest_main_health("release", "release-dry-run.yml")["state"], "pending")
+            api.assert_not_called()
+
     def test_zero_tests_ignored_and_missing_receipts_fail(self):
         self.assertEqual(self.proof()["state"], "passed")
         for log in ("test result: ok. 0 passed", "test required_case ... ignored\n",
@@ -217,7 +293,7 @@ class CollectorTests(unittest.TestCase):
 
     def test_m4_collects_release_measurements_without_claiming_the_throughput_target(self):
         with patch.object(self.collector, 'proof', return_value=result('fixture', 'passed', 'fixture')) as proof, \
-             patch.object(self.collector, 'workflow_health', return_value=result('fixture', 'passed', 'fixture')):
+             patch.object(self.collector, 'latest_main_health', return_value=result('fixture', 'passed', 'fixture')):
             rows = requirements('m4', self.collector)
         self.assertEqual(len(proof.call_args_list), 6)
         self.assertEqual(state(rows), 'not reached')

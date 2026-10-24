@@ -265,6 +265,83 @@ class Collector:
             return result(label, "failed", "existing workflow did not pass", link)
         return result(label, "passed", "workflow passed; scenario receipts are separate requirements", link)
 
+    def health_source_matches(self, run_sha):
+        if run_sha == self.sha:
+            return True
+        if not isinstance(run_sha, str) or not re.fullmatch(r"[0-9a-f]{40}", run_sha):
+            raise EvidenceError("Invalid workflow source commit")
+        comparison = api(f"compare/{run_sha}...{self.sha}")
+        if (comparison.get("status") != "ahead"
+                or comparison.get("merge_base_commit", {}).get("sha") != run_sha):
+            return False
+        files = comparison.get("files")
+        if not isinstance(files, list):
+            raise EvidenceError("Source comparison files are unavailable")
+        # GitHub caps comparison files at 300, even with commit pagination.
+        if len(files) >= 300:
+            return False
+        statuses = {f"docs/agents/status/{owner}.md" for owner in ("ins", "play", "game", "int")}
+        for changed in files:
+            if not isinstance(changed, dict) or not isinstance(changed.get("filename"), str):
+                raise EvidenceError("Invalid source comparison file")
+            name = changed["filename"]
+            if "previous_filename" in changed:
+                return False
+            if name in statuses and changed.get("status") == "modified":
+                continue
+            if (changed.get("status") != "added"
+                    or not re.fullmatch(r"\.changes/[a-z0-9]+(?:-[a-z0-9]+)*\.md", name)):
+                return False
+            source = self.source(name)
+            if source is None:
+                return False
+            lines = source.splitlines()
+            if not lines or lines[0] != "---" or "---" not in lines[1:]:
+                return False
+            header = lines[1:lines[1:].index("---") + 1]
+            fields = [re.fullmatch(r"(audience|component|type): ([a-z]+)", line) for line in header]
+            if len(fields) != 3 or not all(fields):
+                return False
+            metadata = {field[1]: field[2] for field in fields}
+            if (len(metadata) != 3 or metadata.get("audience") != "internal"
+                    or metadata.get("component") not in {"launcher", "admin", "server"}
+                    or metadata.get("type") not in {"added", "changed", "fixed", "removed", "security"}):
+                return False
+        return True
+
+    @evidence
+    def latest_main_health(self, label, workflow):
+        exact = self.runs(workflow)
+        if exact:
+            # A candidate fix's exact proof takes precedence over an older main failure.
+            return self.workflow_health(label, workflow)
+        if self.source(f".github/workflows/{workflow}") is None:
+            return result(label, "pending", f"pending: {workflow} is not implemented")
+        runs = api(f"actions/workflows/{workflow}/runs?branch=main&per_page=100")["workflow_runs"]
+        ordered = sorted(runs, key=lambda run: (run["run_number"], run["run_attempt"]), reverse=True)
+        latest = None
+        for run in ordered:
+            if run.get("head_branch") != "main" or run.get("event") == "pull_request":
+                continue
+            identity = run.get("head_repository")
+            repository = identity.get("full_name") if isinstance(identity, dict) else None
+            if repository is None:
+                raise EvidenceError("Main workflow repository identity is unavailable")
+            if repository == REPO:
+                latest = run
+                break
+        if latest is None:
+            return result(label, "pending", f"pending: no main {workflow} evidence")
+        link = f"https://github.com/{REPO}/actions/runs/{int(latest['id'])}"
+        if latest["status"] != "completed":
+            return result(label, "pending", "latest main workflow has not completed", link)
+        if latest["conclusion"] != "success":
+            return result(label, "failed", "latest main workflow did not pass", link)
+        if not self.health_source_matches(latest["head_sha"]):
+            return result(label, "pending", "fresh workflow required after source changes", link)
+        return result(label, "passed", "latest main workflow passed on equivalent executable source; "
+                      "scenario receipts remain separate requirements", link)
+
     def last_green(self, milestone):
         # History is informational and never substitutes for current-commit proof.
         workflow = "desktop-matrix.yml" if milestone == "m3b" else "e2e.yml"
@@ -356,8 +433,8 @@ def requirements(milestone, collector):
                           "Loopback throughput (2 GiB)",
                           [rust_test("loopback_throughput"), r"budget throughput: 2 GiB loopback,",
                            r"budget throughput: the same folder takes plain sequential writes at "]))
-    return rows + [collector.workflow_health("INT-06 signed release dry run", "release-dry-run.yml"),
-            collector.workflow_health("INT-07 soak workflow", "soak.yml"),
+    return rows + [collector.latest_main_health("INT-06 signed release dry run", "release-dry-run.yml"),
+            collector.latest_main_health("INT-07 soak workflow", "soak.yml"),
             result("signed release dry run / updater round trip", "pending", "pending (INT-06, INT-08): committed keys and current-base dry run receipts"),
             result("full hosted soak", "pending", "pending (INT-07): full-duration metric receipts required"),
             result("release performance budgets", "pending", "pending (INS-07, PLAY-10): throughput target and populated-launcher release budgets are not attested"),

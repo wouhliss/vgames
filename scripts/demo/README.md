@@ -52,3 +52,13 @@ binds the source commit, run, attempt, job, step and actual command exit status.
 collector uses this transport only when logs are unavailable; it never overrides a failed
 recorded command. Missing, expired, duplicate, oversized or mismatched receipts fail closed.
 The producer keeps errexit and pipefail, including stdin commands and stderr metrics.
+
+M4's dry-run and soak health first use the newest exact-commit proof when one exists.
+Otherwise they read the newest own-repository main run and attempt. Its failure or
+in-progress result never falls back to an older green run. A successful main proof
+can cover a descendant containing only modifications to the four agent status files
+and newly added, strictly validated internal changelog fragments. Executable code,
+workflows, keys, versions, contracts, user fragments, renames, deletions, diverged
+history or a potentially truncated comparison require fresh proof. These health rows
+do not attest update/restart, full soak durations, budgets or security sign-off; their
+separate acceptance adapters remain required.
