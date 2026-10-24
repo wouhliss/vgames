@@ -23,7 +23,7 @@ class ReceiptTests(unittest.TestCase):
             self.assertIsNone(sanitize(line))
         self.assertEqual(sanitize('Wine plan: /fixture-private-value/wine with Dxmt'),
                          'Wine plan: [redacted] with Dxmt')
-        self.assertEqual(sanitize('✓ 1 [chromium] › foundation.spec.ts:10:1 › admins see the navigation (1s)'),
+        self.assertEqual(sanitize('✓ 1 [chromium] › foundation.spec.ts:10:1 › admins see the navigation; every page is reachable by keyboard (1s)'),
                          'foundation.spec.ts admins see the navigation')
         for line in ('test required_case ... ok', 'test required_case ... ignored',
                      'test result: ok. 0 passed; 0 failed; 1 ignored; finished in 0s',
