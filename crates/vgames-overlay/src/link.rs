@@ -325,8 +325,10 @@ fn session(link: &Link, endpoint: &Endpoint, renderer: RendererKind) -> Session 
         stream: &mut stream,
         deadline: Instant::now() + CONNECT_TIMEOUT,
     };
-    if protocol::renderer_authenticate(&mut bounded, &endpoint.token, renderer).is_err() {
-        return Session::Refused;
+    match protocol::renderer_authenticate(&mut bounded, &endpoint.token, renderer) {
+        Ok(()) => {}
+        Err(FrameError::Io(_)) => return Session::Refused,
+        Err(_) => return Session::Fatal,
     }
     match protocol::read_frame::<ToRenderer>(&mut bounded) {
         Ok(ToRenderer::Welcome { version }) if version == PROTOCOL_VERSION => {}
@@ -334,7 +336,9 @@ fn session(link: &Link, endpoint: &Endpoint, renderer: RendererKind) -> Session 
         Err(_) => return Session::Refused,
     }
     link.connected.store(true, Ordering::Relaxed);
-    if stream.set_read_timeout(Some(TICK)).is_err() {
+    if stream.set_read_timeout(Some(TICK)).is_err()
+        || stream.set_write_timeout(Some(CONNECT_TIMEOUT)).is_err()
+    {
         return Session::Dropped;
     }
     let mut reader = FrameReader::default();
@@ -629,11 +633,14 @@ mod tests {
         });
         for _ in 0..2 {
             let link = Link::new();
-            let _ = session(
-                &link,
-                &Endpoint { addr, token: TOKEN },
-                RendererKind::Vulkan,
-            );
+            assert!(matches!(
+                session(
+                    &link,
+                    &Endpoint { addr, token: TOKEN },
+                    RendererKind::Vulkan
+                ),
+                Session::Fatal
+            ));
             assert!(!link.is_connected());
             assert!(!link.should_draw());
         }
