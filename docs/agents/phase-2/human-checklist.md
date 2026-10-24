@@ -39,7 +39,8 @@ Agents append each item with exact steps and the build to use. Expected list:
 runtime verification and the software backend remain hosted software checks. Compat E2E
 [39927413139](https://github.com/wouhliss/vgames/actions/runs/39927413139) records all three Wine backends
 timing out during prefix creation, before their plan/render receipts; that is not evidence of missing Metal
-and cannot receive a hardware waiver. Platform-independent Wine plan tests remain the automated substitute
+and cannot receive a hardware waiver. Its MoltenVK log enumerates an Apple Paravirtual GPU with Metal
+Shading Language 3.1. Platform-independent Wine plan tests remain the automated substitute
 for hardware-specific plan choices; they do not prove that the hosted prefix or rendering succeeded.
 
 **B7, social idle soak for 24 h (GAME-13).** Hosted jobs stop at 6 h, so `soak.yml` runs 5 h 30 min. On a Linux
