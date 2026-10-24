@@ -29,6 +29,9 @@ serde.workspace = true
 thiserror.workspace = true
 postcard.workspace = true
 uuid.workspace = true
+hmac.workspace = true
+sha2.workspace = true
+getrandom.workspace = true
 ash = { workspace = true, optional = true }
 font8x8 = { workspace = true, optional = true }
 

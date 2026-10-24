@@ -2,9 +2,9 @@
 //!
 //! Loopback TCP, one connection per game. Every frame is a little-endian `u32` length
 //! followed by a [postcard](https://docs.rs/postcard) payload of at most [`MAX_FRAME`] bytes.
-//! The renderer speaks first with [`ToBroker::Hello`] (protocol version and the 32-byte
-//! session token from `VGAMES_OVERLAY_TOKEN`); the broker answers [`ToRenderer::Welcome`]
-//! or closes. Both sides send [`ToBroker::Heartbeat`] / [`ToRenderer::Heartbeat`] every
+//! The renderer speaks first with a fresh nonce in [`ToBroker::Hello`]. Both endpoints
+//! prove session-key possession with role-separated, nonce-bound HMAC-SHA-256 before
+//! [`ToRenderer::Welcome`]; the session key never crosses the socket. Both sides send [`ToBroker::Heartbeat`] / [`ToRenderer::Heartbeat`] every
 //! [`HEARTBEAT_EVERY`] and drop a link silent for [`DEAD_AFTER`].
 //!
 //! Both sides treat every inbound frame as untrusted: the length is checked before anything
@@ -14,12 +14,15 @@
 use std::io::{self, Read, Write};
 use std::time::Duration;
 
+use hmac::{Hmac, KeyInit, Mac};
+use sha2::Sha256;
+
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// Bumped on any incompatible change; the broker refuses other versions.
-pub const PROTOCOL_VERSION: u16 = 1;
+pub const PROTOCOL_VERSION: u16 = 2;
 /// Largest payload in either direction.
 pub const MAX_FRAME: usize = 64 * 1024;
 /// Session token length (`VGAMES_OVERLAY_TOKEN` is its lowercase hex).
@@ -143,13 +146,147 @@ pub enum Action {
     ClosePanel,
 }
 
-/// Renderer → broker. `Debug` prints `[redacted]` in place of the token.
+/// A handshake MAC; never include its bytes in diagnostics.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AuthProof([u8; TOKEN_LEN]);
+
+impl std::fmt::Debug for AuthProof {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("[redacted]")
+    }
+}
+
+#[derive(Clone, Copy)]
+pub enum AuthRole {
+    Broker,
+    Renderer,
+}
+
+pub fn fresh_nonce() -> Result<[u8; TOKEN_LEN], FrameError> {
+    let mut nonce = [0; TOKEN_LEN];
+    getrandom::fill(&mut nonce)
+        .map_err(|_| FrameError::Io(io::Error::other("overlay entropy unavailable")))?;
+    Ok(nonce)
+}
+
+fn auth_mac(
+    key: &[u8; TOKEN_LEN],
+    role: AuthRole,
+    version: u16,
+    renderer: RendererKind,
+    client: &[u8; TOKEN_LEN],
+    server: &[u8; TOKEN_LEN],
+) -> Result<Hmac<Sha256>, FrameError> {
+    let mut mac = Hmac::<Sha256>::new_from_slice(key).map_err(|_| FrameError::Malformed)?;
+    mac.update(b"vgames.overlay.auth.v2\0");
+    mac.update(match role {
+        AuthRole::Broker => b"broker",
+        AuthRole::Renderer => b"renderer",
+    });
+    mac.update(&[0]);
+    mac.update(&version.to_le_bytes());
+    mac.update(&[match renderer {
+        RendererKind::D3d9 => 0,
+        RendererKind::D3d11 => 1,
+        RendererKind::D3d12 => 2,
+        RendererKind::OpenGl => 3,
+        RendererKind::Vulkan => 4,
+        RendererKind::Window => 5,
+    }]);
+    mac.update(client);
+    mac.update(server);
+    Ok(mac)
+}
+
+pub fn auth_proof(
+    key: &[u8; TOKEN_LEN],
+    role: AuthRole,
+    version: u16,
+    renderer: RendererKind,
+    client: &[u8; TOKEN_LEN],
+    server: &[u8; TOKEN_LEN],
+) -> Result<AuthProof, FrameError> {
+    Ok(AuthProof(
+        auth_mac(key, role, version, renderer, client, server)?
+            .finalize()
+            .into_bytes()
+            .into(),
+    ))
+}
+
+/// MAC verification uses the cryptographic implementation's constant-time comparison.
+pub fn verify_auth(
+    key: &[u8; TOKEN_LEN],
+    role: AuthRole,
+    version: u16,
+    renderer: RendererKind,
+    client: &[u8; TOKEN_LEN],
+    server: &[u8; TOKEN_LEN],
+    proof: &AuthProof,
+) -> bool {
+    auth_mac(key, role, version, renderer, client, server)
+        .is_ok_and(|mac| mac.verify_slice(&proof.0).is_ok())
+}
+
+/// Authenticate the broker and send the renderer response. The caller must still
+/// require Welcome before accepting application frames, and bound all I/O by one deadline.
+pub fn renderer_authenticate(
+    stream: &mut (impl Read + Write),
+    key: &[u8; TOKEN_LEN],
+    renderer: RendererKind,
+) -> Result<(), FrameError> {
+    let client_nonce = fresh_nonce()?;
+    write_frame(
+        stream,
+        &ToBroker::Hello {
+            version: PROTOCOL_VERSION,
+            client_nonce,
+            renderer,
+        },
+    )?;
+    let ToRenderer::Challenge {
+        server_nonce,
+        proof,
+    } = read_frame(stream)?
+    else {
+        return Err(FrameError::Malformed);
+    };
+    if !verify_auth(
+        key,
+        AuthRole::Broker,
+        PROTOCOL_VERSION,
+        renderer,
+        &client_nonce,
+        &server_nonce,
+        &proof,
+    ) {
+        return Err(FrameError::Malformed);
+    }
+    write_frame(
+        stream,
+        &ToBroker::Authenticate {
+            proof: auth_proof(
+                key,
+                AuthRole::Renderer,
+                PROTOCOL_VERSION,
+                renderer,
+                &client_nonce,
+                &server_nonce,
+            )?,
+        },
+    )
+}
+
+/// Renderer → broker. Authentication proofs have redacted Debug output.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ToBroker {
     Hello {
         version: u16,
-        token: [u8; TOKEN_LEN],
+        client_nonce: [u8; TOKEN_LEN],
         renderer: RendererKind,
+    },
+    Authenticate {
+        proof: AuthProof,
     },
     Heartbeat,
     Action(Action),
@@ -163,9 +300,10 @@ impl std::fmt::Debug for ToBroker {
             } => f
                 .debug_struct("Hello")
                 .field("version", version)
-                .field("token", &format_args!("[redacted]"))
+                .field("client_nonce", &format_args!("[redacted]"))
                 .field("renderer", renderer)
                 .finish(),
+            Self::Authenticate { .. } => f.write_str("Authenticate { proof: [redacted] }"),
             Self::Heartbeat => f.write_str("Heartbeat"),
             Self::Action(action) => f.debug_tuple("Action").field(action).finish(),
         }
@@ -175,6 +313,10 @@ impl std::fmt::Debug for ToBroker {
 /// Broker → renderer.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ToRenderer {
+    Challenge {
+        server_nonce: [u8; TOKEN_LEN],
+        proof: AuthProof,
+    },
     Welcome {
         version: u16,
     },
@@ -403,6 +545,131 @@ mod tests {
     }
 
     #[test]
+    fn authentication_matches_the_independent_hmac_vector_and_binds_the_transcript() {
+        let (key, client, server) = ([0x2a; TOKEN_LEN], [0x11; TOKEN_LEN], [0x22; TOKEN_LEN]);
+        let proof = auth_proof(
+            &key,
+            AuthRole::Broker,
+            2,
+            RendererKind::OpenGl,
+            &client,
+            &server,
+        )
+        .unwrap();
+        assert_eq!(
+            token_hex(&proof.0),
+            "48378244b6f23550dcbd3a41758f2134115fbb8c38a92666f34441e8128223d1"
+        );
+        assert!(verify_auth(
+            &key,
+            AuthRole::Broker,
+            2,
+            RendererKind::OpenGl,
+            &client,
+            &server,
+            &proof
+        ));
+        assert!(!verify_auth(
+            &key,
+            AuthRole::Renderer,
+            2,
+            RendererKind::OpenGl,
+            &client,
+            &server,
+            &proof
+        ));
+        assert!(!verify_auth(
+            &key,
+            AuthRole::Broker,
+            1,
+            RendererKind::OpenGl,
+            &client,
+            &server,
+            &proof
+        ));
+        for renderer in [
+            RendererKind::D3d9,
+            RendererKind::D3d11,
+            RendererKind::D3d12,
+            RendererKind::Vulkan,
+            RendererKind::Window,
+        ] {
+            assert!(!verify_auth(
+                &key,
+                AuthRole::Broker,
+                2,
+                renderer,
+                &client,
+                &server,
+                &proof
+            ));
+        }
+        let changed = [0x33; TOKEN_LEN];
+        assert!(!verify_auth(
+            &changed,
+            AuthRole::Broker,
+            2,
+            RendererKind::OpenGl,
+            &client,
+            &server,
+            &proof
+        ));
+        assert!(!verify_auth(
+            &key,
+            AuthRole::Broker,
+            2,
+            RendererKind::OpenGl,
+            &changed,
+            &server,
+            &proof
+        ));
+        assert!(!verify_auth(
+            &key,
+            AuthRole::Broker,
+            2,
+            RendererKind::OpenGl,
+            &client,
+            &changed,
+            &proof
+        ));
+        for index in 0..TOKEN_LEN {
+            let mut corrupt = proof.clone();
+            corrupt.0[index] ^= 1;
+            assert!(!verify_auth(
+                &key,
+                AuthRole::Broker,
+                2,
+                RendererKind::OpenGl,
+                &client,
+                &server,
+                &corrupt
+            ));
+        }
+        for message in [
+            format!(
+                "{:?}",
+                ToBroker::Authenticate {
+                    proof: proof.clone()
+                }
+            ),
+            format!(
+                "{:?}",
+                ToRenderer::Challenge {
+                    server_nonce: server,
+                    proof
+                }
+            ),
+        ] {
+            assert!(message.contains("[redacted]"));
+            assert!(
+                !message
+                    .contains("48378244b6f23550dcbd3a41758f2134115fbb8c38a92666f34441e8128223d1")
+            );
+            assert!(!message.contains(&token_hex(&key)));
+        }
+    }
+
+    #[test]
     fn frames_round_trip() {
         let msgs = [
             ToRenderer::Welcome {
@@ -422,7 +689,7 @@ mod tests {
         }
         let hello = ToBroker::Hello {
             version: PROTOCOL_VERSION,
-            token: [7; TOKEN_LEN],
+            client_nonce: [7; TOKEN_LEN],
             renderer: RendererKind::Vulkan,
         };
         let bytes = encode(&hello).unwrap();
@@ -479,7 +746,7 @@ mod tests {
         let token = [0xa7; TOKEN_LEN];
         let hello = ToBroker::Hello {
             version: PROTOCOL_VERSION,
-            token,
+            client_nonce: token,
             renderer: RendererKind::Vulkan,
         };
         for printed in [format!("{hello:?}"), format!("{hello:#?}")] {
