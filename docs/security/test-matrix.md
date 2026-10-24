@@ -127,5 +127,4 @@ None open.
 |---|---|---|
 | A replacement overlay listener steals the session key or authenticates after launcher termination | `link::tests::an_untrusted_listener_never_receives_the_session_key`, `::an_invalid_or_replayed_broker_proof_cannot_receive_a_renderer_proof`; nonce-bound HMAC-SHA-256 with separate broker/renderer roles | Rust CI (renderer feature); native GL/Vulkan suites |
 | Overlay handshake replay, context substitution or trickled reads bypass authentication/deadlines | `protocol::tests::authentication_matches_the_independent_hmac_vector_and_binds_the_transcript`, `link::tests::partial_progress_cannot_extend_the_handshake_deadline`, `overlay::broker::tests::a_renderer_proof_cannot_be_replayed_on_a_new_connection`, `::unsupported_versions_receive_no_authentication_challenge` | Rust and required desktop CI; Desktop matrix |
-
 | An authenticated renderer stops reading and hides the owning session cancellation or deadline | `overlay::broker::tests::a_pending_write_observes_stop_and_a_stalled_write_expires`, `::a_renderer_that_stops_reading_never_blocks_the_broker` | Required desktop CI; Desktop matrix |
