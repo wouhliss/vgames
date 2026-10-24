@@ -2,12 +2,12 @@
 //!
 //! - Listens on `127.0.0.1:<random>` with a fresh 32-byte token while one game runs; the game
 //!   learns both from `VGAMES_OVERLAY_ENDPOINT` / `VGAMES_OVERLAY_TOKEN`.
-//! - A connection must send `Hello` (right version, right token, compared in constant time)
-//!   within [`HELLO_TIMEOUT`]; anything else closes it. After [`MAX_AUTH_FAILURES`] failed
+//! - A connection proves session-key possession after verifying the broker proof, with
+//!   fresh nonces and role-separated HMACs within [`HELLO_TIMEOUT`]; the key is never sent. After [`MAX_AUTH_FAILURES`] failed
 //!   handshakes authentication stops for good (the game plays on without the overlay),
 //!   retaining the port reservation until the owning session ends.
 //! - Exactly one renderer is served at a time. The listener stays bound for the broker's whole
-//!   life, so no other process can take the port and receive a reconnecting renderer's token;
+//!   life, so no other process can take the live broker's port;
 //!   while a renderer is served, any other connection is closed unread. When that renderer goes
 //!   away (the game recreated its swapchain or device), it comes back with the same token.
 //! - The renderer receives the whole view on connect and on every change, heartbeats every
@@ -182,7 +182,7 @@ impl Task {
                         drop(stream);
                         drop(self.events);
                         // Authentication stays disabled, but releasing the port would let a
-                        // different process receive a retrying renderer's Hello and token.
+                        // different process impersonate the live broker's endpoint.
                         loop {
                             tokio::select! {
                                 () = self.stop.cancelled() => return,
@@ -196,23 +196,50 @@ impl Task {
     }
 
     async fn handshake(&self, stream: &mut TcpStream) -> Result<RendererKind, FrameError> {
-        match read_frame(stream).await? {
-            ToBroker::Hello {
-                version,
-                token,
-                renderer,
-            } if version == PROTOCOL_VERSION && protocol::token_eq(&token, &self.token) => {
-                write_frame(
-                    stream,
-                    &ToRenderer::Welcome {
-                        version: PROTOCOL_VERSION,
-                    },
-                )
-                .await?;
-                Ok(renderer)
-            }
-            _ => Err(FrameError::Malformed),
+        let ToBroker::Hello {
+            version,
+            client_nonce,
+            renderer,
+        } = read_frame(stream).await?
+        else {
+            return Err(FrameError::Malformed);
+        };
+        if version != PROTOCOL_VERSION {
+            return Err(FrameError::Malformed);
         }
+        let server_nonce = protocol::fresh_nonce()?;
+        let proof = protocol::auth_proof(
+            &self.token,
+            protocol::AuthRole::Broker,
+            version,
+            renderer,
+            &client_nonce,
+            &server_nonce,
+        )?;
+        write_frame(
+            stream,
+            &ToRenderer::Challenge {
+                server_nonce,
+                proof,
+            },
+        )
+        .await?;
+        let ToBroker::Authenticate { proof } = read_frame(stream).await? else {
+            return Err(FrameError::Malformed);
+        };
+        if !protocol::verify_auth(
+            &self.token,
+            protocol::AuthRole::Renderer,
+            version,
+            renderer,
+            &client_nonce,
+            &server_nonce,
+            &proof,
+        ) {
+            return Err(FrameError::Malformed);
+        }
+        write_frame(stream, &ToRenderer::Welcome { version }).await?;
+        Ok(renderer)
     }
 
     /// Serves one renderer until it leaves. `true` when the broker itself is stopping.
@@ -290,7 +317,7 @@ impl Task {
                                 tracing::debug!("overlay action dropped (queue full)");
                             }
                         }
-                        Some(Ok(ToBroker::Hello { .. })) | Some(Err(_)) | None => {
+                        Some(Ok(ToBroker::Hello { .. } | ToBroker::Authenticate { .. })) | Some(Err(_)) | None => {
                             tracing::debug!("overlay renderer closed or sent a bad frame");
                             break;
                         }
@@ -393,19 +420,188 @@ mod tests {
         }
     }
 
-    /// A fake renderer on a blocking socket (like the in-game side).
+    #[tokio::test]
+    async fn a_renderer_proof_cannot_be_replayed_on_a_new_connection() {
+        let mut r = rig().await;
+        let (addr, token) = (r.broker.endpoint.addr, r.token());
+        let (old_nonce, old_proof) = tokio::task::spawn_blocking(move || {
+            let mut stream = std::net::TcpStream::connect(addr).unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let client_nonce = [0x21; TOKEN_LEN];
+            protocol::write_frame(
+                &mut stream,
+                &ToBroker::Hello {
+                    version: PROTOCOL_VERSION,
+                    client_nonce,
+                    renderer: RendererKind::Vulkan,
+                },
+            )
+            .unwrap();
+            let ToRenderer::Challenge {
+                server_nonce,
+                proof,
+            } = read(&mut stream)
+            else {
+                panic!("expected broker challenge");
+            };
+            assert!(protocol::verify_auth(
+                &token,
+                protocol::AuthRole::Broker,
+                PROTOCOL_VERSION,
+                RendererKind::Vulkan,
+                &client_nonce,
+                &server_nonce,
+                &proof
+            ));
+            let proof = protocol::auth_proof(
+                &token,
+                protocol::AuthRole::Renderer,
+                PROTOCOL_VERSION,
+                RendererKind::Vulkan,
+                &client_nonce,
+                &server_nonce,
+            )
+            .unwrap();
+            protocol::write_frame(
+                &mut stream,
+                &ToBroker::Authenticate {
+                    proof: proof.clone(),
+                },
+            )
+            .unwrap();
+            assert!(matches!(read(&mut stream), ToRenderer::Welcome { .. }));
+            (server_nonce, proof)
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            r.event().await,
+            BrokerEvent::Connected(RendererKind::Vulkan)
+        );
+        assert_eq!(r.event().await, BrokerEvent::Disconnected);
+        tokio::task::spawn_blocking(move || {
+            let mut stream = std::net::TcpStream::connect(addr).unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            protocol::write_frame(
+                &mut stream,
+                &ToBroker::Hello {
+                    version: PROTOCOL_VERSION,
+                    client_nonce: [0x21; TOKEN_LEN],
+                    renderer: RendererKind::Vulkan,
+                },
+            )
+            .unwrap();
+            let ToRenderer::Challenge { server_nonce, .. } = read(&mut stream) else {
+                panic!("expected fresh broker challenge");
+            };
+            assert_ne!(old_nonce, server_nonce);
+            protocol::write_frame(&mut stream, &ToBroker::Authenticate { proof: old_proof })
+                .unwrap();
+            match protocol::read_frame::<ToRenderer>(&mut stream) {
+                Err(FrameError::Io(error))
+                    if matches!(
+                        error.kind(),
+                        std::io::ErrorKind::UnexpectedEof
+                            | std::io::ErrorKind::ConnectionReset
+                            | std::io::ErrorKind::ConnectionAborted
+                    ) => {}
+                _ => panic!("replayed proof was accepted or not closed"),
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(r.event().await, BrokerEvent::AuthFailed);
+        tokio::task::spawn_blocking(move || {
+            let mut stream = connect(addr, token).unwrap();
+            assert!(matches!(read(&mut stream), ToRenderer::Welcome { .. }));
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            r.event().await,
+            BrokerEvent::Connected(RendererKind::Vulkan)
+        );
+    }
+
+    #[tokio::test]
+    async fn unsupported_versions_receive_no_authentication_challenge() {
+        let mut r = rig().await;
+        let addr = r.broker.endpoint.addr;
+        for version in [0, 1, PROTOCOL_VERSION + 1] {
+            tokio::task::spawn_blocking(move || {
+                let mut stream = std::net::TcpStream::connect(addr).unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                protocol::write_frame(
+                    &mut stream,
+                    &ToBroker::Hello {
+                        version,
+                        client_nonce: [0; TOKEN_LEN],
+                        renderer: RendererKind::Vulkan,
+                    },
+                )
+                .unwrap();
+                match protocol::read_frame::<ToRenderer>(&mut stream) {
+                    Err(FrameError::Io(error))
+                        if matches!(
+                            error.kind(),
+                            std::io::ErrorKind::UnexpectedEof
+                                | std::io::ErrorKind::ConnectionReset
+                                | std::io::ErrorKind::ConnectionAborted
+                        ) => {}
+                    _ => panic!("unsupported version was not closed before the challenge"),
+                }
+            })
+            .await
+            .unwrap();
+            assert_eq!(r.event().await, BrokerEvent::AuthFailed);
+        }
+    }
+
+    /// A renderer fixture for broker refusal tests: wrong keys still send a proof.
+    /// The production link tests separately require verification of the broker proof.
     fn connect(addr: SocketAddr, token: [u8; TOKEN_LEN]) -> std::io::Result<std::net::TcpStream> {
         let mut s = std::net::TcpStream::connect(addr)?;
         s.set_read_timeout(Some(Duration::from_secs(10)))?;
+        let client_nonce = protocol::fresh_nonce().map_err(std::io::Error::other)?;
         protocol::write_frame(
             &mut s,
             &ToBroker::Hello {
                 version: PROTOCOL_VERSION,
-                token,
+                client_nonce,
                 renderer: RendererKind::Vulkan,
             },
         )
-        .map_err(|e| std::io::Error::other(e.to_string()))?;
+        .map_err(std::io::Error::other)?;
+        match protocol::read_frame::<ToRenderer>(&mut s) {
+            Ok(ToRenderer::Challenge { server_nonce, .. }) => {
+                let proof = protocol::auth_proof(
+                    &token,
+                    protocol::AuthRole::Renderer,
+                    PROTOCOL_VERSION,
+                    RendererKind::Vulkan,
+                    &client_nonce,
+                    &server_nonce,
+                )
+                .map_err(std::io::Error::other)?;
+                protocol::write_frame(&mut s, &ToBroker::Authenticate { proof })
+                    .map_err(std::io::Error::other)?;
+            }
+            Err(FrameError::Io(error))
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::UnexpectedEof
+                        | std::io::ErrorKind::ConnectionReset
+                        | std::io::ErrorKind::ConnectionAborted
+                ) => {}
+            Err(error) => return Err(std::io::Error::other(error)),
+            Ok(_) => return Err(std::io::Error::other("unexpected authentication frame")),
+        }
         Ok(s)
     }
 

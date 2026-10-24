@@ -577,7 +577,7 @@ mod tests {
     use std::time::Duration;
 
     use uuid::Uuid;
-    use vgames_overlay::protocol::{self, PROTOCOL_VERSION, RendererKind, ToBroker, ToRenderer};
+    use vgames_overlay::protocol::{self, RendererKind, ToBroker, ToRenderer};
 
     use super::*;
     use crate::events::{GameExit, GameStopped};
@@ -727,15 +727,7 @@ mod tests {
         let token = protocol::parse_token(&env[2].1).unwrap();
         let renderer = tokio::task::spawn_blocking(move || {
             let mut s = std::net::TcpStream::connect(addr).unwrap();
-            protocol::write_frame(
-                &mut s,
-                &ToBroker::Hello {
-                    version: PROTOCOL_VERSION,
-                    token,
-                    renderer: RendererKind::D3d11,
-                },
-            )
-            .unwrap();
+            protocol::renderer_authenticate(&mut s, &token, RendererKind::D3d11).unwrap();
             assert!(matches!(
                 protocol::read_frame::<ToRenderer>(&mut s).unwrap(),
                 ToRenderer::Welcome { .. }
@@ -806,15 +798,7 @@ mod tests {
         let mut renderer = tokio::task::spawn_blocking(move || {
             let mut s = std::net::TcpStream::connect(addr).unwrap();
             s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
-            protocol::write_frame(
-                &mut s,
-                &ToBroker::Hello {
-                    version: PROTOCOL_VERSION,
-                    token,
-                    renderer: RendererKind::OpenGl,
-                },
-            )
-            .unwrap();
+            protocol::renderer_authenticate(&mut s, &token, RendererKind::OpenGl).unwrap();
             assert!(matches!(
                 protocol::read_frame::<ToRenderer>(&mut s).unwrap(),
                 ToRenderer::Welcome { .. }
