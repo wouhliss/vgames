@@ -57,8 +57,10 @@ struct Rss {
 
 impl Rss {
     fn new() -> Self {
+        let initial = rss_kib();
+        eprintln!("rss sample: t={:>6}s rss={initial:>7} KiB", 0);
         Self {
-            samples: vec![(Duration::ZERO, rss_kib())],
+            samples: vec![(Duration::ZERO, initial)],
             started: Instant::now(),
         }
     }

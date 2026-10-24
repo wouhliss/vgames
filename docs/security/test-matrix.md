@@ -120,3 +120,9 @@ None open.
 | Recover orphan process groups; descendants leaving the group stay outside its scope | `reattach_finds_the_group_after_the_leader_exited`, `escaped_children_are_not_tracked` | Linux, macOS |
 | Idle tracking blocks indefinitely until process activity or explicit cancellation | `kqueue_wait_has_no_periodic_wakeups`: unchanged wait counter for one second, then cancellation wakes the queue and leaves the game alive | macOS |
 | Verified launch inputs reach the native backend without a shell | Portable `launch::orchestrate::tests` | Linux, Windows, macOS |
+
+## Hosted measurement process safety (INT-07)
+
+| Property | Tests | Runs |
+|---|---|---|
+| The observer refuses reused process identities, cleans up only validated process handles, stops its child and deletes the temporary profile; launcher output is excluded from metrics | `apps/desktop/perf/test_soak.py::SoakTests::test_root_children_groups_and_known_orphans_count_but_reused_pids_do_not`, `::SoakTests::test_cleanup_uses_a_stable_handle_and_rejects_a_reused_identity`, `::SoakTests::test_incomplete_run_stops_the_child_and_deletes_its_private_profile`, `::SoakTests::test_private_bus_starts_inside_private_home_and_runtime_directories` | CI Workflows, hosted soak build |

@@ -51,6 +51,19 @@ machine that stays awake for a day, from a checkout of `main`:
    "at the end" RSS within 8 MiB of the "after warm-up" figure. Open an issue titled "B7: social idle soak 24 h"
    with the last 50 lines of `idle-24h.log`; GAME records them in `docs/agents/status/game.md`.
 
+**B7, launcher idle soak for 24 h (INT-07 / PLAY-10).** Hosted acceptance measures 5.5 hours; the longer confirmation is non-blocking. On Ubuntu 24.04, check out the same commit as the hosted Soak run linked in `int.md`, install the development packages in `soak.yml`'s build job plus `xvfb xauth dbus-x11`, then:
+
+```sh
+pnpm install --frozen-lockfile
+pnpm --filter @vgames/desktop build
+cargo build --locked --release -p vgames-desktop --features tauri/custom-protocol
+xvfb-run -a -s '-screen 0 1280x800x24' \
+  python3 apps/desktop/perf/soak.py --binary target/release/vgames-desktop \
+  --hours 24 --out /tmp/vgames-launcher-idle-24h --require-ui-ready --dbus-session
+```
+
+Pass: exit 0 and `summary.json` has `passed: true`, 86,400 measured seconds, and both growth percentages below 5. Keep `rss.csv` and `summary.json`; report their start/median/end RSS and slope with the commit. The observer uses a temporary empty profile and includes WebView descendants; this is idle growth, not the populated-library or install workload budget. It deletes the profile and terminates its processes.
+
 ## C. For each vgames server you run (operations, not part of finishing the project)
 
 Root key ceremony and first trust bundle (`docs/security/runbooks.md` §1), one publisher key per admin (§2), a
