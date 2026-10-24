@@ -153,6 +153,30 @@ launcher starts, only while they run.
   renderer is served, so no other local process can take the port and receive a reconnecting
   renderer's token. Five failed handshakes disable authentication for that game, but retain the
   port reservation and close new connections unread until the owning game session ends.
+- **Endpoint authentication (protocol v2).** Port reservation does not survive a launcher crash.
+  A renderer authenticates the broker before accepting a welcome, view or panel command. The
+  32-byte session key remains in the launch environment and is never sent over the socket.
+  No v1/bearer-token fallback is allowed; the bundled broker and renderers change together.
+  The handshake uses independent fresh 32-byte CSPRNG nonces for every connection, including
+  reconnects, and HMAC-SHA-256 with the session key:
+  1. Renderer → broker: `Hello { version: 2, renderer, client_nonce }`.
+  2. Broker → renderer: `Challenge { server_nonce, proof }`; the renderer verifies the broker
+     proof before sending any authentication response or accepting application frames.
+  3. Renderer → broker: `Authenticate { proof }`; the broker verifies the renderer proof
+     before `Welcome { version: 2 }`, connection events, views, panel commands or actions.
+  The MAC input is the concatenation of the ASCII domain `vgames.overlay.auth.v2`, one zero
+  byte, the ASCII role (`broker` or `renderer`), one zero byte, the little-endian u16 version,
+  one renderer byte (D3D9=0, D3D11=1, D3D12=2, OpenGL=3, Vulkan=4, Window=5), then the
+  client nonce and server nonce in that order. Verify MACs in constant time. Binding both
+  nonces, role, version and renderer prevents replay, reflection and renderer substitution.
+  Unknown versions, wrong order, invalid proofs, malformed/oversized frames and entropy failure
+  close the connection without exposing the key or application data. Authentication proofs
+  and the key have redacted Debug output. Existing frame/list caps and five-failure disable
+  behavior remain; disabled/occupied ports stay reserved until their game session ends.
+  A single five-second broker deadline and three-second renderer deadline bound the entire
+  handshake's reads and writes, rather than restarting a timeout after partial progress.
+  A broker proving key possession protects a reconnect after endpoint rebinding; this protocol
+  does not defend against a process that can already read the game's environment or memory.
 - Frame cost budget: ≤ 0.3 ms CPU and ≤ 0.3 ms GPU per frame while hidden, ≤ 1 ms while the panel is open.
   When nothing is visible the hook returns immediately after one atomic check.
 
