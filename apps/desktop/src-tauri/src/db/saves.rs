@@ -303,16 +303,35 @@ impl Store {
         self.0.call(move |conn| backups(conn, scope)).await
     }
 
-    /// Forgets finished backups beyond the `keep` newest. Returns every id
-    /// still recorded, unfinished ones included, so the caller removes all
+    /// Forgets finished backups beyond the `keep` newest, except those an open
+    /// conflict protects. Returns every id still recorded, unfinished ones included, so the caller removes all
     /// other backup folders (`restore::prune(dir, 0, &kept)`).
     pub async fn retain_backups(&self, scope: Scope, keep: usize) -> Result<Vec<Uuid>, DbError> {
         self.0
             .call(move |conn| {
                 let tx = conn.transaction()?;
+                // An open conflict's device backup is never pruned.
+                let protected: Vec<String> = tx
+                    .prepare(
+                        "SELECT device_backup_id FROM save_conflicts
+                         WHERE server_id=?1 AND package_id=?2 AND user_id=?3 AND resolved_at IS NULL",
+                    )?
+                    .query_map(
+                        params![
+                            scope.package.server_id.to_string(),
+                            scope.package.package_id.to_string(),
+                            scope.user_id.to_string()
+                        ],
+                        |row| row.get(0),
+                    )?
+                    .collect::<Result<_, _>>()?;
                 let mut kept = Vec::new();
                 let mut finished = 0usize;
                 for record in backups(&tx, scope)? {
+                    if protected.contains(&record.id.to_string()) {
+                        kept.push(record.id);
+                        continue;
+                    }
                     if record.state != BackupState::Restoring {
                         finished += 1;
                         if finished > keep {
@@ -444,6 +463,9 @@ fn backups(conn: &Connection, scope: Scope) -> Result<Vec<BackupRecord>, DbError
     }
     Ok(records)
 }
+
+mod conflicts;
+pub use conflicts::ConflictRecord;
 
 #[cfg(test)]
 mod tests;
