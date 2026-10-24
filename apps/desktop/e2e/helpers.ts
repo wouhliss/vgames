@@ -1,5 +1,7 @@
 import { expect, type Page } from "@playwright/test";
 
+export { axeViolations } from "./a11y.ts";
+
 export const FINGERPRINT = "VG1-7K2M-Q9XD-4HT8-B3NW-RC5E-X1JP-V6GA-M0ZF";
 export const OTHER_FINGERPRINT = "VG1-J3KD-8PQX-NW2A-TY4B-C9RM-5EHV-G7ZS-1FQ0";
 export const VALID_CODE = "VALID-CODE-0123456789-abcdefghijklmnopqrstuvwxyz";

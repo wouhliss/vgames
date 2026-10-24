@@ -2,7 +2,15 @@
 // Chrome DevTools Protocol after forced garbage collection; also checks DOM nodes and event
 // listeners, which catch leaked subscriptions (e.g. Tauri event listeners not removed on unmount).
 import { type CDPSession, expect, type Page, test } from "@playwright/test";
-import { open } from "./helpers";
+import { axeViolations, open } from "./helpers";
+
+// Scan after every measurement so axe's allocations do not enter the memory windows.
+test.afterEach(async ({ page }) => {
+  const violations = (await axeViolations(page)).filter(
+    (v) => v.impact === "serious" || v.impact === "critical",
+  );
+  expect(violations).toEqual([]);
+});
 
 const ROUTES = ["Browse", "Friends", "Downloads", "Settings", "Library"];
 

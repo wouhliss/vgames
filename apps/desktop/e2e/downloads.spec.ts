@@ -1,8 +1,7 @@
 // A3-T06 acceptance in the browser: the queue with live progress, keyboard-only and controller-only
 // use, and accessibility. The `ready` preset has one job in every state (src/mocks/downloads.ts).
-import AxeBuilder from "@axe-core/playwright";
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { commandCalls, emit, open } from "./helpers";
+import { axeViolations, commandCalls, emit, open } from "./helpers";
 
 const pad = (page: Page, action: string) =>
   emit(page, "ui-nav", { action, controller: "xinput", repeat: false });
@@ -33,10 +32,8 @@ const upNext = (page: Page) =>
 test("has no serious accessibility violations (queue, menu, cancel dialog)", async ({ page }) => {
   await toDownloads(page);
   const scan = async () => {
-    const results = await new AxeBuilder({ page }).analyze();
-    const serious = results.violations.filter(
-      (v) => v.impact === "serious" || v.impact === "critical",
-    );
+    const violations = await axeViolations(page);
+    const serious = violations.filter((v) => v.impact === "serious" || v.impact === "critical");
     expect(serious, JSON.stringify(serious, null, 2)).toEqual([]);
   };
   await scan();
