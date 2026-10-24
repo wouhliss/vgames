@@ -230,6 +230,27 @@ pub fn prune(backups: &Dir, keep: usize, protect: &[Uuid]) -> Result<(), Error> 
     Ok(())
 }
 
+/// Copies one save file, without following links, into the new private file
+/// `into` and returns what was copied. Uploads send this copy, so the bytes
+/// stored in the cloud always equal the hash checked here.
+pub fn stage_copy(
+    locations: &[Location],
+    file: &SaveFile,
+    into: &std::path::Path,
+    cancel: &CancellationToken,
+) -> Result<Original, Error> {
+    paths::validate_path(&file.path).map_err(|_| Error::Invalid)?;
+    let location = location(locations, &file.root)?;
+    let (dirs, name) = split(&file.path)?;
+    // The file was scanned moments ago; gone now means the game changed it.
+    let parent = target_parent(location, &dirs, false)?.ok_or(Error::Changed)?;
+    let mut source = open_read(&parent, name)?.ok_or(Error::Changed)?;
+    let mut out = std::fs::File::create_new(into)?;
+    let (size, blake3) = copy(&mut source, &mut out, Some(cancel))?;
+    out.sync_all()?;
+    Ok(Original { size, blake3 })
+}
+
 fn location<'a>(locations: &'a [Location], id: &str) -> Result<&'a Location, Error> {
     locations
         .iter()

@@ -12,15 +12,15 @@ use crate::db::rusqlite::params;
 use crate::events::PackageRef;
 use crate::secrets::{MemoryVault, VaultHandle};
 
-struct Rig {
-    root: tempfile::TempDir,
-    scope: Scope,
-    store: Store,
-    sync: Sync,
+pub(crate) struct Rig {
+    pub(crate) root: tempfile::TempDir,
+    pub(crate) scope: Scope,
+    pub(crate) store: Store,
+    pub(crate) sync: Sync,
 }
 
 impl Rig {
-    async fn new(base: &str) -> Self {
+    pub(crate) async fn new(base: &str) -> Self {
         let root = tempfile::tempdir().unwrap();
         let scope = Scope {
             package: PackageRef {
@@ -71,20 +71,20 @@ impl Rig {
         }
     }
 
-    fn game(&self) -> std::path::PathBuf {
+    pub(crate) fn game(&self) -> std::path::PathBuf {
         self.root.path().join("docs/game")
     }
 
-    fn write(&self, name: &str, bytes: &[u8]) {
+    pub(crate) fn write(&self, name: &str, bytes: &[u8]) {
         std::fs::create_dir_all(self.game()).unwrap();
         std::fs::write(self.game().join(name), bytes).unwrap();
     }
 
-    fn read(&self, name: &str) -> Option<Vec<u8>> {
+    pub(crate) fn read(&self, name: &str) -> Option<Vec<u8>> {
         std::fs::read(self.game().join(name)).ok()
     }
 
-    async fn pull(&self) -> Result<Pull, Error> {
+    pub(crate) fn locations(&self) -> Arc<Vec<Location>> {
         let config = SaveLocation {
             id: "game".into(),
             base: SaveBase::Documents,
@@ -92,13 +92,16 @@ impl Rig {
             include: vec![],
             exclude: vec![],
         };
-        let locations = Arc::new(vec![
+        Arc::new(vec![
             Location::open(&config, &self.root.path().join("docs")).unwrap(),
-        ]);
+        ])
+    }
+
+    pub(crate) async fn pull(&self) -> Result<Pull, Error> {
         self.sync
             .pull(
                 self.scope,
-                locations,
+                self.locations(),
                 Arc::new(ProtectedInstalls::open(std::iter::empty()).unwrap()),
                 CancellationToken::new(),
             )
@@ -106,7 +109,7 @@ impl Rig {
     }
 
     /// Makes `files` the last synced state, as a finished restore would.
-    async fn synced(&self, snapshot: Uuid, files: &[(&str, &[u8])]) {
+    pub(crate) async fn synced(&self, snapshot: Uuid, files: &[(&str, &[u8])]) {
         let id = Uuid::now_v7();
         self.store
             .begin_restore(self.scope, id, BackupReason::Restore, 0, 0)
@@ -129,7 +132,7 @@ impl Rig {
     }
 }
 
-fn file(name: &str, bytes: &[u8]) -> SaveFile {
+pub(crate) fn file(name: &str, bytes: &[u8]) -> SaveFile {
     SaveFile {
         root: "game".into(),
         path: name.into(),
@@ -139,7 +142,7 @@ fn file(name: &str, bytes: &[u8]) -> SaveFile {
     }
 }
 
-fn snapshot(id: Uuid, package: Uuid, files: &[(&str, &[u8])]) -> serde_json::Value {
+pub(crate) fn snapshot(id: Uuid, package: Uuid, files: &[(&str, &[u8])]) -> serde_json::Value {
     let files: Vec<_> = files
         .iter()
         .map(|(name, bytes)| {
@@ -155,7 +158,7 @@ fn snapshot(id: Uuid, package: Uuid, files: &[(&str, &[u8])]) -> serde_json::Val
         "total_size": total, "created_at": "2026-10-13T12:00:00Z", "files": files })
 }
 
-async fn serve_head(server: &MockServer, rig: &Rig, head: Option<serde_json::Value>) {
+pub(crate) async fn serve_head(server: &MockServer, rig: &Rig, head: Option<serde_json::Value>) {
     let route = format!("/v1/saves/{}/head", rig.scope.package.package_id);
     let response = match head {
         Some(body) => ResponseTemplate::new(200).set_body_json(body),
@@ -169,7 +172,12 @@ async fn serve_head(server: &MockServer, rig: &Rig, head: Option<serde_json::Val
 }
 
 /// Serves every blob of `files`; `tamper` replaces their bytes.
-async fn serve_blobs(server: &MockServer, rig: &Rig, files: &[(&str, &[u8])], tamper: bool) {
+pub(crate) async fn serve_blobs(
+    server: &MockServer,
+    rig: &Rig,
+    files: &[(&str, &[u8])],
+    tamper: bool,
+) {
     let items: Vec<_> = files
         .iter()
         .map(|(_, bytes)| {
