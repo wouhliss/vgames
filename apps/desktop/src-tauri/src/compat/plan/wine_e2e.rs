@@ -70,6 +70,8 @@ async fn record_bootstrap_state(prefix: &std::path::Path) {
             pid.to_string(),
             "1".into(),
             "10".into(),
+            "-file".into(),
+            "/dev/stdout".into(),
         ]))
         .await;
         samples.push(output.map(|bytes| {
