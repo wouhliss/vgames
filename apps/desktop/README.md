@@ -293,3 +293,5 @@ for the launcher and its WebKit processes.
 - **The second launch does nothing:** that is expected. It forwards its arguments to the running instance and
   exits. Use a different `VGAMES_PROFILE` in debug builds to run two launchers.
 - **Blank window under WSLg or in VMs:** try `WEBKIT_DISABLE_DMABUF_RENDERER=1`.
+
+Accessibility snapshots wait for finite entry/colour transitions and a rendered frame in both Chromium and the native WebView. Infinite activity indicators keep running; every Axe rule and severity gate remains enabled. The memory and scrolling snapshots still occur after their measurement windows.

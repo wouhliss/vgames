@@ -14,6 +14,17 @@ export interface AxeAnalyzer {
   analyze(include?: string): Promise<unknown>;
 }
 
+/** The same browser-side readiness condition is used by Chromium and WebKit. */
+export const animationReadiness = `async () => {
+  const frame = () => new Promise(resolve => requestAnimationFrame(resolve));
+  await frame();
+  const animations = document.getAnimations?.() ?? [];
+  await Promise.all(animations
+    .filter(animation => Number.isFinite(animation.effect?.getComputedTiming().endTime))
+    .map(animation => animation.finished.catch(() => {})));
+  await frame();
+}`;
+
 type Impact = "minor" | "moderate" | "serious" | "critical" | null;
 const IMPACTS = new Set<unknown>([null, undefined, "minor", "moderate", "serious", "critical"]);
 
@@ -44,6 +55,7 @@ export function summarizeAccessibility(value: unknown): {
 /** Shared by Playwright and the real WebKit WebDriver adapter; no rules are disabled. */
 export async function axeViolations(target: Page | AxeAnalyzer, include?: string) {
   if ("analyze" in target) return summarizeAccessibility(await target.analyze(include));
+  await target.evaluate(`(${animationReadiness})()`);
   const scanner = new AxeBuilder({ page: target });
   if (include) scanner.include(include);
   return summarizeAccessibility(await scanner.analyze());
