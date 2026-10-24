@@ -15,7 +15,9 @@ use crate::secrets::{MemoryVault, VaultHandle};
 pub(crate) struct Rig {
     pub(crate) root: tempfile::TempDir,
     pub(crate) scope: Scope,
+    pub(crate) db: Db,
     pub(crate) store: Store,
+    pub(crate) api: ApiClient,
     pub(crate) sync: Sync,
 }
 
@@ -39,7 +41,7 @@ impl Rig {
         })
         .await
         .unwrap();
-        let store = Store::new(db);
+        let store = Store::new(db.clone());
         let url = url::Url::parse(&format!("{base}/")).unwrap();
         let session = Arc::new(Session::new(
             Uuid::new_v4(),
@@ -51,10 +53,8 @@ impl Rig {
             .store(&serde_json::from_value(json!({ "access_token": "fixture-access", "refresh_token": "fixture-refresh", "token_type": "Bearer", "expires_in": 3600,
                 "user": { "id": scope.user_id, "username": "fixture", "role": "user", "created_at": "2026-10-13T12:00:00Z" } })).unwrap())
             .await;
-        let http = http::Client::new(
-            ApiClient::new(crate::api::http_client().unwrap(), url, session),
-            CancellationToken::new(),
-        );
+        let api = ApiClient::new(crate::api::http_client().unwrap(), url, session);
+        let http = http::Client::new(api.clone(), CancellationToken::new());
         let data = root.path().join("data");
         let sync = Sync::new(
             http,
@@ -66,7 +66,9 @@ impl Rig {
         Self {
             root,
             scope,
+            db,
             store,
+            api,
             sync,
         }
     }

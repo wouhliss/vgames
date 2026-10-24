@@ -12,7 +12,7 @@ use std::time::Duration;
 use futures_util::FutureExt;
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
-use vgames_core::manifest::{Manifest, Platform};
+use vgames_core::manifest::{Manifest, Platform, Saves};
 
 use super::LaunchPlan;
 use super::orchestrate::LaunchError;
@@ -37,6 +37,8 @@ pub struct LaunchContext {
     pub layer: LaunchLayer,
     /// Derived only from AppPaths::data_dir and the package's UUIDs.
     pub prefix_dir: Option<PathBuf>,
+    /// The verified manifest's save locations; unknown after a re-attach.
+    pub saves: Option<Arc<Saves>>,
     pub cancellation: CancellationToken,
 }
 
@@ -45,13 +47,21 @@ pub struct HookEnv(pub Vec<(String, String)>);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LaunchVeto {
-    SaveConflict { conflict_id: String },
+    SaveConflict {
+        conflict_id: String,
+    },
+    /// Save files may be half restored, or a conflict could not be protected:
+    /// the game must not use them yet.
+    SavesUnavailable,
 }
 
 impl From<LaunchVeto> for LaunchError {
     fn from(value: LaunchVeto) -> Self {
         match value {
             LaunchVeto::SaveConflict { conflict_id } => Self::SaveConflict { conflict_id },
+            LaunchVeto::SavesUnavailable => Self::Io {
+                detail: "Your saves could not be prepared. Try again in a moment.".into(),
+            },
         }
     }
 }
