@@ -143,9 +143,16 @@ pub(super) async fn status(
             tokio::task::yield_now().await;
         }
     };
-    // Both futures and the pipe belong to this call. Cancellation detaches no reader task;
-    // the command's existing kill_on_drop ends the child, and Receipt emits fixed counts.
-    tokio::try_join!(child.wait(), drain).map(|(status, ())| status)
+    // The parent may finish while a descendant still owns stderr. Preserve status()
+    // completion semantics: cancel our reader on parent exit instead of awaiting pipe EOF.
+    // Both futures remain owned here, including when the existing timeout cancels this call.
+    tokio::select! {
+        status = child.wait() => status,
+        drained = drain => {
+            drained?;
+            child.wait().await
+        }
+    }
 }
 
 #[test]
@@ -178,4 +185,21 @@ fn oversized_lines_are_discarded_without_hiding_later_complete_events() {
     assert_eq!(trace.report()["oversized_lines"], 1);
     assert_eq!(trace.report()["exception_classes"]["dll_not_found"], 0);
     assert_eq!(trace.report()["exception_classes"]["breakpoint"], 1);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn completed_bootstrap_does_not_wait_for_a_descendants_stderr() {
+    let mut command = tokio::process::Command::new("/bin/sh");
+    command
+        .args(["-c", "/bin/sleep 3 & exit 0"])
+        .env_clear()
+        .kill_on_drop(true)
+        .stdout(std::process::Stdio::null());
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(1),
+        status(&mut command, true),
+    )
+    .await;
+    assert!(result.is_ok_and(|result| result.is_ok_and(|status| status.success())));
 }

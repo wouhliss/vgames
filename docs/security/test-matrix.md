@@ -125,4 +125,4 @@ None open.
 
 | Property | Automated evidence | Runner |
 |---|---|---|
-| Wine bootstrap diagnostics retain only fixed exception/loader counts and bounded line memory | `apps/desktop/src-tauri/src/compat/plan/bootstrap_trace.rs::only_fixed_classes_and_counts_leave_the_trace_boundary`, `::oversized_lines_are_discarded_without_hiding_later_complete_events` | Desktop |
+| Wine bootstrap diagnostics retain only fixed exception/loader counts and bounded line memory | `apps/desktop/src-tauri/src/compat/plan/bootstrap_trace.rs::only_fixed_classes_and_counts_leave_the_trace_boundary`, `::oversized_lines_are_discarded_without_hiding_later_complete_events`, `::completed_bootstrap_does_not_wait_for_a_descendants_stderr` | Desktop |
