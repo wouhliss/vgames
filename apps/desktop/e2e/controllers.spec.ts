@@ -96,3 +96,81 @@ test("gamepad toggles labels and drives the tester without a mouse", async ({ pa
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Test DualSense" })).toBeFocused();
 });
+
+test("a per-game profile is edited and saved with the keyboard only and survives restart", async ({
+  page,
+}) => {
+  await settings(page, { persistKey: "controller-profile-browser" });
+  const game = page.getByRole("combobox", { name: "Game" });
+  await game.focus();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  const save = page.getByRole("button", { name: "Save controller profile" });
+  await expect(save).toBeVisible();
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+
+  await page.getByRole("radio", { name: "Automatic" }).focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByRole("radio", { name: "Always" })).toBeChecked();
+  const deadzone = page.getByRole("slider", { name: "Left stick deadzone" });
+  const before = Number(await deadzone.inputValue());
+  await deadzone.focus();
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowRight");
+  await save.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("Saved")).toBeVisible();
+  await expect(save).toBeFocused();
+  const calls = (await commandCalls(page, "controllers_profile_set")) as {
+    profile: { mode: string; mapping: { left_stick: { deadzone: number } } };
+  }[];
+  expect(calls).toHaveLength(1);
+  expect(calls[0]?.profile.mode).toBe("always");
+  expect(calls[0]?.profile.mapping.left_stick.deadzone).toBe(before + 2);
+
+  await page.reload();
+  await settings(page, { persistKey: "controller-profile-browser" });
+  await page.getByRole("combobox", { name: "Game" }).focus();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("radio", { name: "Always" })).toBeChecked();
+  await expect(page.getByRole("slider", { name: "Left stick deadzone" })).toHaveValue(
+    String(before + 2),
+  );
+});
+
+test("a per-game profile is edited and saved with a controller only", async ({ page }) => {
+  await settings(page, { persistKey: "controller-profile-gamepad" });
+  const nav = async (action: string) =>
+    emit(page, "ui-nav", { action, controller: "dualsense", repeat: false });
+  const focused = () =>
+    page.evaluate(
+      () =>
+        document.activeElement?.getAttribute("aria-label") ??
+        document.activeElement?.textContent ??
+        "",
+    );
+  const game = page.getByRole("combobox", { name: "Game" });
+  await game.focus();
+  await nav("accept");
+  await nav("down");
+  await nav("accept");
+  const save = page.getByRole("button", { name: "Save controller profile" });
+  await expect(save).toBeVisible();
+  const invert = page.getByRole("switch", { name: "Invert left stick Y" });
+  // Move down until the switch has focus (bounded), then flip it and go on to Save.
+  for (let i = 0; i < 12 && !(await invert.evaluate((el) => el === document.activeElement)); i++)
+    await nav("down");
+  await expect(invert).toBeFocused();
+  await nav("accept");
+  await expect(invert).toHaveAttribute("aria-checked", "true");
+  for (let i = 0; i < 40 && !(await save.evaluate((el) => el === document.activeElement)); i++)
+    await nav("down");
+  await expect(save, await focused()).toBeFocused();
+  await nav("accept");
+  await expect(page.getByText("Saved")).toBeVisible();
+  const calls = (await commandCalls(page, "controllers_profile_set")) as {
+    profile: { mapping: { left_stick: { invert_y: boolean } } };
+  }[];
+  expect(calls.map((call) => call.profile.mapping.left_stick.invert_y)).toEqual([true]);
+});
