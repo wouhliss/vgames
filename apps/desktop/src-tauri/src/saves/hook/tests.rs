@@ -40,13 +40,16 @@ fn hook(rig: &Rig, signed_in: bool) -> (SaveHook, Arc<Fixed>) {
         documents: Some(rig.root.path().join("docs")),
         ..KnownFolders::default()
     };
+    // A loaded CI runner can take longer than the 5 s product budget for these local pulls; the
+    // budget itself is tested with a short one below.
     let hook = SaveHook::new(
         accounts.clone(),
         rig.db.clone(),
         folders,
         rig.root.path().join("data"),
     )
-    .unwrap();
+    .unwrap()
+    .with_pull_budget(Duration::from_secs(30));
     (hook, accounts)
 }
 
@@ -99,7 +102,13 @@ async fn a_newer_cloud_head_is_in_place_before_the_game_starts() {
     let (hook, _) = hook(&rig, true);
     let env = hook.before_spawn(&context(&rig, true)).await.unwrap();
     assert_eq!(env, HookEnv::default());
-    assert_eq!(rig.read("slot.sav").unwrap(), b"from the cloud");
+    let state = rig.store.state(rig.scope).await.unwrap();
+    assert_eq!(
+        rig.read("slot.sav").as_deref(),
+        Some(&b"from the cloud"[..]),
+        "not restored before launch (pending: {})",
+        state.pending
+    );
 }
 
 #[tokio::test]
@@ -210,6 +219,7 @@ async fn a_slow_download_starts_the_game_with_local_saves_after_the_budget() {
         .mount(&server)
         .await;
     let (hook, _) = hook(&rig, true);
+    let hook = hook.with_pull_budget(Duration::from_secs(1));
     let started = std::time::Instant::now();
     assert!(hook.before_spawn(&context(&rig, true)).await.is_ok());
     assert!(started.elapsed() < Duration::from_secs(15));
