@@ -121,4 +121,8 @@ None open.
 | Idle tracking blocks indefinitely until process activity or explicit cancellation | `kqueue_wait_has_no_periodic_wakeups`: unchanged wait counter for one second, then cancellation wakes the queue and leaves the game alive | macOS |
 | Verified launch inputs reach the native backend without a shell | Portable `launch::orchestrate::tests` | Linux, Windows, macOS |
 
+## Compatibility diagnostic privacy (INT-09)
+
+| Property | Automated evidence | Runner |
+|---|---|---|
 | Wine bootstrap diagnostics retain only fixed exception/loader counts and bounded line memory | `apps/desktop/src-tauri/src/compat/plan/bootstrap_trace.rs::only_fixed_classes_and_counts_leave_the_trace_boundary`, `::oversized_lines_are_discarded_without_hiding_later_complete_events` | Desktop |
