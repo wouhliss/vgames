@@ -519,5 +519,8 @@ mod proton_e2e;
 #[cfg(test)]
 mod bootstrap_diagnostics;
 
+#[cfg(test)]
+mod bootstrap_trace;
+
 #[cfg(all(test, target_os = "macos"))]
 mod wine_e2e;
