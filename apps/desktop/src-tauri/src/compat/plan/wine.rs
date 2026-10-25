@@ -240,7 +240,11 @@ async fn run_wine(wine: &Path, prefix: &Path, args: &[&str]) -> Result<(), Launc
         .env("WINEPREFIX", prefix)
         .env("WINEDEBUG", "-all")
         .kill_on_drop(true);
-    let status = tokio::time::timeout(WINEBOOT_TIMEOUT, command.status())
+    #[cfg(test)]
+    let wait = super::bootstrap_trace::status(&mut command, args == ["wineboot", "--init"]);
+    #[cfg(not(test))]
+    let wait = command.status();
+    let status = tokio::time::timeout(WINEBOOT_TIMEOUT, wait)
         .await
         .map_err(|_| unavailable("Creating the game's Wine prefix took too long."))?
         .map_err(|e| unavailable(format!("Cannot run Wine: {e}")))?;

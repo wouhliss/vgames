@@ -35,6 +35,10 @@ Agents append each item with exact steps and the build to use. Expected list:
 | B7 | 24 h launcher idle soak and 8 h controller soak with two emulated pads | Hosted jobs stop at 6 h |
 | B8 | Two physical controllers of different brands (e.g. DualSense, Switch Pro) mapped by position and by label in a real game | Needs real pads |
 
+The hosted Wine prefix/loader checks run for every backend. Prefix timeouts are software failures;
+B4 covers GPU/driver behavior that hosted runners cannot show. Bounded public-symbol and exception-count
+diagnostics support that automated investigation without uploading application output or profiles.
+
 **B7, social idle soak for 24 h (GAME-13).** Hosted jobs stop at 6 h, so `soak.yml` runs 5 h 30 min. On a Linux
 machine that stays awake for a day, from a checkout of `main`:
 
