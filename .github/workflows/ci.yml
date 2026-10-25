@@ -137,9 +137,11 @@ jobs:
             ~/.cargo/bin/sqlx
             ~/.cargo/bin/cargo-sqlx
           key: sqlx-cli-0.9.0-rustls-postgres-${{ runner.os }}
+      # --force: the shared rust-cache above can restore these binaries into ~/.cargo/bin while
+      # this cache misses, and cargo install refuses to overwrite them.
       - name: Install sqlx-cli
         if: steps.sqlx-cli.outputs.cache-hit != 'true'
-        run: cargo install sqlx-cli --version 0.9.0 --locked --no-default-features --features rustls,postgres
+        run: cargo install sqlx-cli --version 0.9.0 --locked --force --no-default-features --features rustls,postgres
       - name: Migrations apply to an empty database
         run: |
           sqlx database create --database-url "$PG/ci_empty"
