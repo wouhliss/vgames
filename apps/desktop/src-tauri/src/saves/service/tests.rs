@@ -466,3 +466,192 @@ async fn a_launch_during_a_resolution_is_refused_at_once() {
     );
     assert!(started.elapsed() < Duration::from_secs(1));
 }
+
+mod history {
+    use serde_json::json;
+    use wiremock::matchers::{method, path, query_param, query_param_is_missing};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    use super::*;
+    use crate::error::AppError;
+
+    fn summary(id: Uuid, rig: &Rig) -> serde_json::Value {
+        let mut value = snapshot(id, rig.scope.package.package_id, &[]);
+        value.as_object_mut().unwrap().remove("files");
+        value
+    }
+
+    #[tokio::test]
+    async fn history_lists_every_cloud_page_and_the_local_backups_newest_first() {
+        let server = MockServer::start().await;
+        let rig = Rig::new(&server.uri()).await;
+        install(&rig, true).await;
+        let (older, head) = (Uuid::now_v7(), Uuid::now_v7());
+        serve_head(
+            &server,
+            &rig,
+            Some(snapshot(head, rig.scope.package.package_id, &[])),
+        )
+        .await;
+        let route = format!("/v1/saves/{}/snapshots", rig.scope.package.package_id);
+        Mock::given(method("GET"))
+            .and(path(&route))
+            .and(query_param_is_missing("cursor"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(
+                    json!({ "items": [summary(head, &rig)], "next_cursor": "page-2" }),
+                ),
+            )
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path(&route))
+            .and(query_param("cursor", "page-2"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(json!({ "items": [summary(older, &rig)] })),
+            )
+            .mount(&server)
+            .await;
+        let backup = Uuid::now_v7();
+        rig.store
+            .record_backup(rig.scope, backup, BackupReason::Restore, 2, 20)
+            .await
+            .unwrap();
+        let (service, _) = saves(&rig, true);
+        let history = service.history(rig.scope.package).await.unwrap();
+        assert_eq!(history.head_snapshot_id, Some(head));
+        let sources: Vec<_> = history.entries.iter().map(|e| e.source.clone()).collect();
+        assert_eq!(
+            sources,
+            [
+                SaveSource::Backup { backup_id: backup },
+                SaveSource::Cloud { snapshot_id: head },
+                SaveSource::Cloud { snapshot_id: older },
+            ]
+        );
+        assert_eq!(history.entries[0].file_count, 2);
+
+        // Offline: this device's backups still show.
+        let offline = Rig::new("http://127.0.0.1:1").await;
+        install(&offline, true).await;
+        offline
+            .store
+            .record_backup(offline.scope, backup, BackupReason::Restore, 2, 20)
+            .await
+            .unwrap();
+        let (service, _) = saves(&offline, true);
+        let history = service.history(offline.scope.package).await.unwrap();
+        assert_eq!(history.head_snapshot_id, None);
+        assert_eq!(history.entries.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn an_older_snapshot_is_restored_over_the_head_and_its_backup_undoes_it() {
+        let server = MockServer::start().await;
+        let rig = Rig::new(&server.uri()).await;
+        install(&rig, true).await;
+        let (older, head) = (Uuid::now_v7(), Uuid::now_v7());
+        rig.write("slot.sav", b"current");
+        rig.synced(head, &[("slot.sav", b"current")]).await;
+        let package = rig.scope.package.package_id;
+        serve_head(
+            &server,
+            &rig,
+            Some(snapshot(head, package, &[("slot.sav", b"current")])),
+        )
+        .await;
+        let old_files: &[(&str, &[u8])] = &[("slot.sav", b"an older save")];
+        Mock::given(method("GET"))
+            .and(path(format!("/v1/saves/{package}/snapshots/{older}")))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(snapshot(older, package, old_files)),
+            )
+            .mount(&server)
+            .await;
+        serve_blobs(&server, &rig, old_files, false).await;
+        let (service, _) = saves(&rig, true);
+        let status = service
+            .restore(rig.scope.package, SaveSource::Cloud { snapshot_id: older })
+            .await
+            .unwrap();
+        assert_eq!(rig.read("slot.sav").unwrap(), b"an older save");
+        // Pushed on top of the head after the next session.
+        assert_eq!(status.state, CloudSaveState::Pending);
+        let state = rig.store.state(rig.scope).await.unwrap();
+        assert_eq!(state.base_snapshot_id, Some(head));
+
+        // The restore backed up the current file; restoring that backup brings it back.
+        let backup = rig.store.backups(rig.scope).await.unwrap()[0].id;
+        let status = service
+            .restore(rig.scope.package, SaveSource::Backup { backup_id: backup })
+            .await
+            .unwrap();
+        assert_eq!(rig.read("slot.sav").unwrap(), b"current");
+        assert_eq!(status.state, CloudSaveState::Pending);
+
+        // A backup whose bytes no longer match its record restores nothing.
+        let newest = rig.store.backups(rig.scope).await.unwrap()[0].id;
+        let saved = rig
+            .root
+            .path()
+            .join("data/save-backups")
+            .join(rig.scope.package.server_id.to_string())
+            .join(rig.scope.package.package_id.to_string())
+            .join(rig.scope.user_id.to_string())
+            .join(newest.to_string())
+            .join("files/game/slot.sav");
+        std::fs::write(&saved, b"tampered!!!!!").unwrap();
+        assert!(
+            service
+                .restore(rig.scope.package, SaveSource::Backup { backup_id: newest })
+                .await
+                .is_err()
+        );
+        assert_eq!(rig.read("slot.sav").unwrap(), b"current");
+    }
+
+    #[tokio::test]
+    async fn restores_are_refused_while_running_during_a_conflict_or_for_unknown_backups() {
+        let rig = Rig::new("http://127.0.0.1:1").await;
+        install(&rig, true).await;
+        rig.write("slot.sav", b"mine");
+        let unknown = SaveSource::Backup {
+            backup_id: Uuid::now_v7(),
+        };
+        let (running, _) = saves_with(&rig, true, true);
+        assert!(matches!(
+            running.restore(rig.scope.package, unknown.clone()).await,
+            Err(AppError::InvalidInput { .. })
+        ));
+        let (service, _) = saves(&rig, true);
+        assert!(matches!(
+            service.restore(rig.scope.package, unknown.clone()).await,
+            Err(AppError::NotFound)
+        ));
+        let backup = Uuid::now_v7();
+        rig.store
+            .record_backup(rig.scope, backup, BackupReason::Conflict, 0, 0)
+            .await
+            .unwrap();
+        let cloud =
+            serde_json::from_value(snapshot(Uuid::now_v7(), rig.scope.package.package_id, &[]))
+                .unwrap();
+        rig.store
+            .open_conflict(rig.scope, cloud, backup)
+            .await
+            .unwrap();
+        assert!(matches!(
+            service
+                .restore(rig.scope.package, SaveSource::Backup { backup_id: backup })
+                .await,
+            Err(AppError::InvalidInput { .. })
+        ));
+        let (signed_out, _) = saves(&rig, false);
+        assert!(matches!(
+            signed_out.history(rig.scope.package).await,
+            Err(AppError::Unauthenticated)
+        ));
+        assert_eq!(rig.read("slot.sav").unwrap(), b"mine");
+    }
+}

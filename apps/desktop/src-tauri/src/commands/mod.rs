@@ -165,6 +165,8 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             saves::saves_status,
             saves::save_conflict_get,
             saves::save_conflict_resolve,
+            saves::saves_history,
+            saves::saves_restore,
         ])
         .events(tauri_specta::collect_events![
             DeeplinkRefused,

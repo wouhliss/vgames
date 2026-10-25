@@ -121,6 +121,59 @@ impl Transactions {
         cancel: CancellationToken,
     ) -> Result<Uuid, Error> {
         let _one = self.lock.lock().await;
+        self.restore_locked(scope, locations, protected, request, cancel)
+            .await
+    }
+
+    /// Puts back what backup `id` saved (see [`restore::stage_backup`]) as one
+    /// more recorded, backed-up restore. The sync base is kept, so the result
+    /// is this device's progress and is pushed after the next session.
+    pub async fn restore_backup(
+        &self,
+        scope: Scope,
+        locations: Arc<Vec<Location>>,
+        protected: Arc<ProtectedInstalls>,
+        id: Uuid,
+        cancel: CancellationToken,
+    ) -> Result<Uuid, Error> {
+        let _one = self.lock.lock().await;
+        let dir = self.dir(scope);
+        let staging = self.root.join(".staging").join(Uuid::now_v7().to_string());
+        let staged = {
+            let (dir, staging, cancel) = (dir.clone(), staging.clone(), cancel.clone());
+            blocking(move || {
+                let backups = open_dir(&dir, false)?;
+                let backup = restore::read_backup(&backups, id)?;
+                restore::stage_backup(&backups, &backup, &open_dir(&staging, true)?, &cancel)
+            })
+            .await
+        };
+        let result = match staged {
+            Ok((writes, deletes)) => {
+                let request = Request {
+                    writes,
+                    deletes,
+                    staging: staging.clone(),
+                    reason: BackupReason::Restore,
+                    base: None,
+                };
+                self.restore_locked(scope, locations, protected, request, cancel)
+                    .await
+            }
+            Err(error) => Err(error.into()),
+        };
+        let _ = tokio::fs::remove_dir_all(&staging).await;
+        result
+    }
+
+    async fn restore_locked(
+        &self,
+        scope: Scope,
+        locations: Arc<Vec<Location>>,
+        protected: Arc<ProtectedInstalls>,
+        request: Request,
+        cancel: CancellationToken,
+    ) -> Result<Uuid, Error> {
         self.recover_locked(scope, locations.clone()).await?;
         let dir = self.dir(scope);
         let Request {

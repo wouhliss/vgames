@@ -213,14 +213,17 @@ impl Saves {
         })
     }
 
-    async fn status_or_error(&self, package: PackageRef) -> Result<SaveStatus, AppError> {
+    pub(super) async fn status_or_error(
+        &self,
+        package: PackageRef,
+    ) -> Result<SaveStatus, AppError> {
         self.status(package)
             .await
             .map_err(|error| AppError::internal("read the cloud-save status", &error))
     }
 
     /// What a launch of the installed release would use, without launching.
-    async fn context(&self, package: PackageRef) -> Result<LaunchContext, AppError> {
+    pub(super) async fn context(&self, package: PackageRef) -> Result<LaunchContext, AppError> {
         let row = db::installs::row(&self.db, package)
             .await
             .map_err(|error| AppError::internal("read the install", &error))?
@@ -251,7 +254,7 @@ impl Saves {
     }
 }
 
-fn cloud_summary(head: &SaveSnapshotSummary) -> SaveSummary {
+pub(super) fn cloud_summary(head: &SaveSnapshotSummary) -> SaveSummary {
     SaveSummary {
         source: SaveSource::Cloud {
             snapshot_id: head.id,
@@ -263,7 +266,7 @@ fn cloud_summary(head: &SaveSnapshotSummary) -> SaveSummary {
     }
 }
 
-fn rfc3339(unix: i64) -> Option<String> {
+pub(super) fn rfc3339(unix: i64) -> Option<String> {
     time::OffsetDateTime::from_unix_timestamp(unix)
         .ok()
         .map(crate::catalog::rfc3339)

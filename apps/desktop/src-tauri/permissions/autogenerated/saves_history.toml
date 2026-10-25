@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-saves-history"
+description = "Enables the saves_history command without any pre-configured scope."
+commands.allow = ["saves_history"]
+
+[[permission]]
+identifier = "deny-saves-history"
+description = "Denies the saves_history command without any pre-configured scope."
+commands.deny = ["saves_history"]

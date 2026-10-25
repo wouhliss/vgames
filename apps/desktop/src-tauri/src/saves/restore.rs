@@ -218,6 +218,54 @@ pub fn roll_back(locations: &[Location], backup: &Backup, backups: &Dir) -> Resu
     Ok(())
 }
 
+/// What restoring a backup means for a restore [`Plan`]: write every file the
+/// backup saved (staged into `staging`, named by BLAKE3 and checked against
+/// the backup's record) and remove every file it recorded as absent. A backup
+/// made before a restore therefore undoes exactly the files it covered.
+pub fn stage_backup(
+    backups: &Dir,
+    backup: &Backup,
+    staging: &Dir,
+    cancel: &CancellationToken,
+) -> Result<(Vec<SaveFile>, Vec<SaveFile>), Error> {
+    let files = backups
+        .open_dir_nofollow(backup.id.to_string())?
+        .open_dir_nofollow(FILES)?;
+    let file = |entry: &Entry, size: u64, blake3: &str| -> Result<SaveFile, Error> {
+        Ok(SaveFile {
+            root: entry.root.clone(),
+            path: entry.path.clone(),
+            size: i64::try_from(size).map_err(|_| Error::Limit)?,
+            blake3: blake3.to_owned(),
+            mtime: time::OffsetDateTime::now_utc(),
+        })
+    };
+    let (mut writes, mut deletes) = (Vec::new(), Vec::new());
+    for entry in &backup.entries {
+        if cancel.is_cancelled() {
+            return Err(Error::Cancelled);
+        }
+        let Some(original) = &entry.original else {
+            // Removed files carry no content; any valid hash passes the plan.
+            deletes.push(file(entry, 0, &"0".repeat(64))?);
+            continue;
+        };
+        if open_read(staging, &original.blake3)?.is_none() {
+            let (dirs, name) = split(&entry.path)?;
+            let mut path = vec![entry.root.as_str()];
+            path.extend(&dirs);
+            let mut source = open_read(&open_dirs(&files, &path)?, name)?.ok_or(Error::Mismatch)?;
+            let copied = copy_new(&mut source, staging, &original.blake3, cancel)?;
+            if copied != *original {
+                staging.remove_file(&original.blake3)?;
+                return Err(Error::Mismatch);
+            }
+        }
+        writes.push(file(entry, original.size, &original.blake3)?);
+    }
+    Ok((writes, deletes))
+}
+
 /// Reads and validates `<backups>/<id>/manifest.json`.
 pub fn read_backup(backups: &Dir, id: Uuid) -> Result<Backup, Error> {
     let own = backups.open_dir_nofollow(id.to_string())?;

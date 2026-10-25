@@ -257,6 +257,13 @@ export const commands = {
 	 *  game: the player retries the launch.
 	 */
 	saveConflictResolve: (conflictId: string, choice: ConflictChoice) => typedError<SaveStatus, AppError>(__TAURI_INVOKE("save_conflict_resolve", { conflictId, choice })),
+	/**  Cloud snapshots and this device's retained backups, newest first. */
+	savesHistory: (pkg: PackageRef) => typedError<SaveHistory, AppError>(__TAURI_INVOKE("saves_history", { pkg })),
+	/**
+	 *  Restores an earlier save after backing up the current files. The UI
+	 *  confirms first; refused while the game runs or a conflict is open.
+	 */
+	savesRestore: (pkg: PackageRef, source: SaveSource) => typedError<SaveStatus, AppError>(__TAURI_INVOKE("saves_restore", { pkg, source })),
 };
 
 /** Events */
@@ -1371,6 +1378,14 @@ export type SaveConflict = {
 	device: SaveSummary,
 	/**  RFC 3339. */
 	created_at: string | null,
+};
+
+export type SaveHistory = {
+	package: PackageRef,
+	/**  Newest first: cloud snapshots and this device's backups. */
+	entries: SaveSummary[],
+	/**  Null when the server has no saves or could not be reached. */
+	head_snapshot_id: string | null,
 };
 
 /**

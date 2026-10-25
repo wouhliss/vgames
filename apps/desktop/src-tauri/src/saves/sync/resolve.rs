@@ -45,7 +45,7 @@ impl Sync {
         let state = self.store.state(scope).await?;
         let local = scan_local(locations.clone(), state.files, cancel.clone()).await?;
         offline(
-            self.restore(scope, &local, head, locations, protected, cancel)
+            self.restore(scope, &local, head.into(), locations, protected, cancel)
                 .await
                 .map(|_| Resolution::Done),
         )

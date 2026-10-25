@@ -7,7 +7,7 @@ use crate::error::AppError;
 use crate::events::PackageRef;
 use uuid::Uuid;
 
-use crate::saves::service::{ConflictChoice, SaveConflict, SaveStatus};
+use crate::saves::service::{ConflictChoice, SaveConflict, SaveHistory, SaveSource, SaveStatus};
 use crate::state::AppState;
 
 /// The package's cloud-save state from durable records (no network request).
@@ -44,4 +44,26 @@ pub async fn save_conflict_resolve(
     choice: ConflictChoice,
 ) -> Result<SaveStatus, AppError> {
     state.saves.resolve(conflict_id, choice).await
+}
+
+/// Cloud snapshots and this device's retained backups, newest first.
+#[tauri::command]
+#[specta::specta]
+pub async fn saves_history(
+    state: State<'_, AppState>,
+    pkg: PackageRef,
+) -> Result<SaveHistory, AppError> {
+    state.saves.history(pkg).await
+}
+
+/// Restores an earlier save after backing up the current files. The UI
+/// confirms first; refused while the game runs or a conflict is open.
+#[tauri::command]
+#[specta::specta]
+pub async fn saves_restore(
+    state: State<'_, AppState>,
+    pkg: PackageRef,
+    source: SaveSource,
+) -> Result<SaveStatus, AppError> {
+    state.saves.restore(pkg, source).await
 }

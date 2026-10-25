@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-saves-restore"
+description = "Enables the saves_restore command without any pre-configured scope."
+commands.allow = ["saves_restore"]
+
+[[permission]]
+identifier = "deny-saves-restore"
+description = "Denies the saves_restore command without any pre-configured scope."
+commands.deny = ["saves_restore"]
