@@ -6,6 +6,8 @@ import type {
   LaunchError,
   PackageRef,
   SaveConflict,
+  SaveHistory,
+  SaveSource,
   SaveStatus,
 } from "../ipc";
 import { fail, type Handler } from "./runtime";
@@ -16,10 +18,20 @@ export interface SavesState {
   saveResolveError: AppError | null;
   /** The next resolution finds the cloud changed again: the conflict stays with a new cloud side. */
   saveConflictRenews: boolean;
+  /** History per package id; packages without one have an empty history. */
+  saveHistories: Record<string, SaveHistory>;
+  /** What the next `saves_restore` returns instead of restoring. */
+  saveRestoreError: AppError | null;
 }
 
 export function defaultSavesState(): SavesState {
-  return { saveConflicts: {}, saveResolveError: null, saveConflictRenews: false };
+  return {
+    saveConflicts: {},
+    saveResolveError: null,
+    saveConflictRenews: false,
+    saveHistories: {},
+    saveRestoreError: null,
+  };
 }
 
 /** A conflict for `pkg` whose sides differ the way the dialog has to show. */
@@ -45,6 +57,37 @@ export function makeSaveConflict(pkg: PackageRef, id = "c0ffee00-0000-7000-8000-
   } satisfies SaveConflict;
 }
 
+/** Two cloud snapshots (the newest is the head) and one backup from this device. */
+export function makeSaveHistory(pkg: PackageRef): SaveHistory {
+  return {
+    package: pkg,
+    head_snapshot_id: "5a5e0000-0000-7000-8000-000000000003",
+    entries: [
+      {
+        source: { kind: "cloud", snapshot_id: "5a5e0000-0000-7000-8000-000000000003" },
+        created_at: "2026-10-24T20:10:00Z",
+        device_name: "Living room PC",
+        file_count: 3,
+        total_bytes: 2_400_000,
+      },
+      {
+        source: { kind: "backup", backup_id: "bacc0000-0000-7000-8000-000000000002" },
+        created_at: "2026-10-24T18:00:00Z",
+        device_name: null,
+        file_count: 2,
+        total_bytes: 1_900_000,
+      },
+      {
+        source: { kind: "cloud", snapshot_id: "5a5e0000-0000-7000-8000-000000000002" },
+        created_at: "2026-10-22T09:30:00Z",
+        device_name: "Laptop",
+        file_count: 2,
+        total_bytes: 1_800_000,
+      },
+    ],
+  };
+}
+
 const same = (a: PackageRef, b: unknown) =>
   typeof b === "object" &&
   b !== null &&
@@ -67,6 +110,36 @@ export function savesHandlers(
   };
   return {
     saves_status: (args) => status(args.pkg as PackageRef),
+    saves_history: (args) => {
+      const pkg = args.pkg as PackageRef;
+      return (
+        state.saveHistories[pkg.package_id] ?? {
+          package: pkg,
+          entries: [],
+          head_snapshot_id: null,
+        }
+      );
+    },
+    saves_restore: (args) => {
+      const pkg = args.pkg as PackageRef;
+      if (state.saveRestoreError) {
+        const error = state.saveRestoreError;
+        state.saveRestoreError = null;
+        fail(error);
+      }
+      const source = args.source as SaveSource;
+      const history = state.saveHistories[pkg.package_id];
+      const known = history?.entries.some(
+        (entry) => JSON.stringify(entry.source) === JSON.stringify(source),
+      );
+      if (!known) fail({ kind: "not_found" } satisfies AppError);
+      return {
+        package: pkg,
+        state: "pending",
+        last_synced_at: "2026-10-24T08:00:00Z",
+        conflict_id: null,
+      } satisfies SaveStatus;
+    },
     save_conflict_get: (args) => {
       const conflict = state.saveConflicts[String(args.conflictId)];
       if (!conflict) fail({ kind: "not_found" } satisfies AppError);

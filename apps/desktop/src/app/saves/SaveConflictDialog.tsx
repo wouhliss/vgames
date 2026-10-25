@@ -22,10 +22,16 @@ import { useInstalls } from "../queries";
 import { closeSaveConflict, requestSaveConflict, useRequestedSaveConflict } from "./requests";
 import styles from "./SaveConflictDialog.module.css";
 
-/** Mounted once in the shell: opens on `save-conflict` and on the launch toast's "Resolve". */
+/** Mounted once in the shell: opens on `save-conflict` and on the launch toast's "Resolve";
+ * refreshes the installs list (tile badges) on `save-sync-changed`. */
 export function SaveConflictHost() {
   const requested = useRequestedSaveConflict();
+  const client = useQueryClient();
   useTauriEvent(events.saveConflict, (conflict) => requestSaveConflict(conflict.conflict_id));
+  // Tiles and Settings show each game's sync state from the installs list.
+  useTauriEvent(events.saveSyncChanged, () => {
+    void client.invalidateQueries({ queryKey: queryKeys.installs });
+  });
   if (!requested) return null;
   return <SaveConflictDialog key={requested} conflictId={requested} onClose={closeSaveConflict} />;
 }
