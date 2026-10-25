@@ -16,6 +16,7 @@ use std::time::Duration;
 
 use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
+use zeroize::Zeroizing;
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -475,12 +476,12 @@ pub fn parse_token(hex: &str) -> Option<[u8; TOKEN_LEN]> {
     if hex.len() != TOKEN_LEN * 2 {
         return None;
     }
-    let mut out = [0u8; TOKEN_LEN];
+    let mut out = Zeroizing::new([0u8; TOKEN_LEN]);
     let (pairs, _) = hex.as_chunks::<2>();
     for (slot, [hi, lo]) in out.iter_mut().zip(pairs) {
         *slot = (nibble(*hi)? << 4) | nibble(*lo)?;
     }
-    Some(out)
+    Some(*out)
 }
 
 fn nibble(c: u8) -> Option<u8> {
@@ -518,6 +519,14 @@ mod tests {
 
     use super::*;
     use proptest::prelude::*;
+
+    #[test]
+    fn key_state_retains_zeroization_guards() {
+        fn guarded<T: zeroize::ZeroizeOnDrop>() {}
+        guarded::<<Sha256 as hmac::digest::block_api::CoreProxy>::Core>();
+        #[cfg(feature = "renderer")]
+        guarded::<crate::link::Endpoint>();
+    }
 
     fn view() -> View {
         View {
