@@ -126,4 +126,5 @@ None open.
 | Property | Automated evidence | Runner |
 |---|---|---|
 | A replacement overlay listener steals the session key or authenticates after launcher termination | `link::tests::an_untrusted_listener_never_receives_the_session_key`, `::an_invalid_or_replayed_broker_proof_cannot_receive_a_renderer_proof`; nonce-bound HMAC-SHA-256 with separate broker/renderer roles | Rust CI (renderer feature); native GL/Vulkan suites |
+| Owned overlay key state retains zeroization guards | `crates/vgames-overlay/src/protocol.rs::key_state_retains_zeroization_guards`; `apps/desktop/src-tauri/src/overlay/broker.rs::session_endpoint_retains_its_zeroization_contract` | CI, Desktop; renderer feature |
 | Overlay handshake replay, context substitution or trickled reads bypass authentication/deadlines | `protocol::tests::authentication_matches_the_independent_hmac_vector_and_binds_the_transcript`, `link::tests::partial_progress_cannot_extend_the_handshake_deadline`, `overlay::broker::tests::a_renderer_proof_cannot_be_replayed_on_a_new_connection`, `::unsupported_versions_receive_no_authentication_challenge` | Rust and required desktop CI; Desktop matrix |

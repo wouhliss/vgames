@@ -26,6 +26,7 @@ use vgames_overlay::protocol::{
     self, Action, DEAD_AFTER, FrameError, HEARTBEAT_EVERY, PROTOCOL_VERSION, RendererKind,
     TOKEN_LEN, ToBroker, ToRenderer,
 };
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use super::hub::to_protocol;
 use super::model::OverlayView;
@@ -36,8 +37,9 @@ pub const HELLO_TIMEOUT: Duration = Duration::from_secs(5);
 pub const MAX_AUTH_FAILURES: u32 = 5;
 
 /// What a game launched with the overlay gets in its environment.
-#[derive(Clone)]
+#[derive(Clone, Zeroize, ZeroizeOnDrop)]
 pub struct Endpoint {
+    #[zeroize(skip)]
     pub addr: SocketAddr,
     token: [u8; TOKEN_LEN],
 }
@@ -99,10 +101,13 @@ impl Broker {
     ) -> std::io::Result<Self> {
         let listener = TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0)).await?;
         let addr = listener.local_addr()?;
-        let mut token = [0u8; TOKEN_LEN];
-        getrandom::fill(&mut token).map_err(|e| std::io::Error::other(e.to_string()))?;
+        let mut token = Zeroizing::new([0u8; TOKEN_LEN]);
+        getrandom::fill(&mut *token).map_err(|e| std::io::Error::other(e.to_string()))?;
         let stop = parent.child_token();
-        let endpoint = Endpoint { addr, token };
+        let endpoint = Endpoint {
+            addr,
+            token: *token,
+        };
         let task = Task {
             token,
             views,
@@ -117,7 +122,7 @@ impl Broker {
 }
 
 struct Task {
-    token: [u8; TOKEN_LEN],
+    token: Zeroizing<[u8; TOKEN_LEN]>,
     views: watch::Receiver<OverlayView>,
     panel: watch::Receiver<bool>,
     actions: mpsc::Sender<Action>,
@@ -352,6 +357,12 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
+
+    #[test]
+    fn session_endpoint_retains_its_zeroization_contract() {
+        fn guarded<T: zeroize::ZeroizeOnDrop>() {}
+        guarded::<Endpoint>();
+    }
 
     struct Rig {
         broker: Broker,

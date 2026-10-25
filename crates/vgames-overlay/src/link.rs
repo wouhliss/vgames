@@ -22,6 +22,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
+
 use crate::protocol::{
     self, Action, DEAD_AFTER, FrameError, HEARTBEAT_EVERY, PROTOCOL_VERSION, RendererKind,
     TOKEN_LEN, ToBroker, ToRenderer, View,
@@ -38,8 +40,9 @@ const MAX_BACKOFF: Duration = Duration::from_secs(10);
 const MAX_REFUSALS: u32 = 3;
 
 /// Where to connect, from the launch environment.
-#[derive(Clone)]
+#[derive(Clone, Zeroize, ZeroizeOnDrop)]
 pub struct Endpoint {
+    #[zeroize(skip)]
     pub addr: SocketAddr,
     pub token: [u8; TOKEN_LEN],
 }
@@ -56,10 +59,11 @@ impl std::fmt::Debug for Endpoint {
 impl Endpoint {
     /// `None` unless `VGAMES_OVERLAY=1` and a loopback endpoint and a valid token are set.
     pub fn from_env() -> Option<Self> {
+        let token = std::env::var(protocol::env::TOKEN).ok().map(Zeroizing::new);
         Self::from_vars(
             std::env::var(protocol::env::ENABLED).ok().as_deref(),
             std::env::var(protocol::env::ENDPOINT).ok().as_deref(),
-            std::env::var(protocol::env::TOKEN).ok().as_deref(),
+            token.as_ref().map(|token| token.as_str()),
         )
     }
 
