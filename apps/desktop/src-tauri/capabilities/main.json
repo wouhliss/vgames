@@ -133,6 +133,7 @@
     "allow-app-licenses",
     "allow-controllers-list",
     "allow-controllers-tester-start",
-    "allow-controllers-tester-stop"
+    "allow-controllers-tester-stop",
+    "allow-controllers-driver-status"
   ]
 }

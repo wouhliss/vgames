@@ -269,6 +269,7 @@ export const commands = {
 	controllersList: () => typedError<ControllerList, AppError>(__TAURI_INVOKE("controllers_list")),
 	controllersTesterStart: (instanceId: number) => typedError<Tester, AppError>(__TAURI_INVOKE("controllers_tester_start", { instanceId })),
 	controllersTesterStop: (subscriptionId: string) => typedError<null, AppError>(__TAURI_INVOKE("controllers_tester_stop", { subscriptionId })),
+	controllersDriverStatus: () => typedError<ControllerDriverStatus, AppError>(__TAURI_INVOKE("controllers_driver_status")),
 };
 
 /** Events */
@@ -601,6 +602,13 @@ export type ControllerAvailability = { kind: "ready" } | { kind: "unavailable"; 
 export type ControllerChange = { kind: "connected"; controller: ControllerKind; name: string } | { kind: "disconnected" } | 
 /**  Guide/PS held for 1 s (opens the in-game overlay, 05-social §6). */
 { kind: "guide_held" };
+
+export type ControllerDriverState = { kind: "available" } | { kind: "not_required" } | { kind: "vigembus_missing" } | { kind: "uinput_denied"; udev_rule: string } | { kind: "hidhide_missing" } | { kind: "macos_entitlement_missing" } | { kind: "probe_error"; detail: string };
+
+export type ControllerDriverStatus = {
+	emulation: ControllerDriverState,
+	hiding: ControllerDriverState,
+};
 
 /**  A controller event from the input thread. */
 export type ControllerEvent = {

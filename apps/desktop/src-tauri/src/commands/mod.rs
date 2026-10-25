@@ -13,6 +13,7 @@ mod appearance;
 mod catalog;
 mod collections;
 mod compat;
+mod controller_drivers;
 mod controller_runtime;
 mod controllers;
 mod downloads;
@@ -174,7 +175,8 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             app_licenses::app_licenses,
             controller_runtime::controllers_list,
             controller_runtime::controllers_tester_start,
-            controller_runtime::controllers_tester_stop
+            controller_runtime::controllers_tester_stop,
+            controller_drivers::controllers_driver_status
         ])
         .events(tauri_specta::collect_events![
             DeeplinkRefused,
