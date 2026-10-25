@@ -126,6 +126,8 @@
     "allow-rosetta-install",
     "allow-saves-status",
     "allow-save-conflict-get",
-    "allow-save-conflict-resolve"
+    "allow-save-conflict-resolve",
+    "allow-saves-history",
+    "allow-saves-restore"
   ]
 }

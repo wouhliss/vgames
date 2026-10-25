@@ -260,7 +260,9 @@ impl CloudSaveProvider for Saves {
     }
 }
 
+mod history;
 mod resolve;
+pub use history::SaveHistory;
 pub use resolve::{ConflictChoice, SaveConflict, SaveSource, SaveSummary};
 
 #[cfg(test)]

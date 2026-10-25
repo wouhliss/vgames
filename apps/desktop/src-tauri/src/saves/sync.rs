@@ -21,8 +21,10 @@ use crate::db::DbError;
 use crate::db::saves::{BackupReason, PullDecision, RestoredBase, Scope, Store, decide_pull};
 
 mod conflict;
+mod history;
 mod push;
 mod resolve;
+pub use history::CloudHistory;
 pub use push::Push;
 pub use resolve::Resolution;
 
@@ -57,6 +59,21 @@ pub enum Error {
     Transfer(blobs::Error),
     #[error("the cloud-save server sent an invalid response")]
     Invalid,
+}
+
+/// What a restore writes, and the sync base afterwards (`None`: the snapshot).
+struct RestoreTarget {
+    snapshot: SaveSnapshot,
+    base: Option<RestoredBase>,
+}
+
+impl From<SaveSnapshot> for RestoreTarget {
+    fn from(snapshot: SaveSnapshot) -> Self {
+        Self {
+            snapshot,
+            base: None,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -125,7 +142,7 @@ impl Sync {
             }),
             PullDecision::Restore => {
                 match self
-                    .restore(scope, &local, head, locations, protected, cancel)
+                    .restore(scope, &local, head.into(), locations, protected, cancel)
                     .await
                 {
                     Err(Error::Transfer(error)) if offline_transfer(&error) => {
@@ -147,11 +164,15 @@ impl Sync {
         &self,
         scope: Scope,
         local: &BTreeMap<String, SaveFile>,
-        head: SaveSnapshot,
+        target: RestoreTarget,
         locations: Arc<Vec<Location>>,
         protected: Arc<ProtectedInstalls>,
         cancel: CancellationToken,
     ) -> Result<Pull, Error> {
+        let RestoreTarget {
+            snapshot: head,
+            base,
+        } = target;
         let snapshot = head.summary.id;
         let files: BTreeMap<String, SaveFile> = head
             .files
@@ -191,10 +212,10 @@ impl Sync {
                         deletes,
                         staging: staging.clone(),
                         reason: BackupReason::Restore,
-                        base: Some(RestoredBase {
+                        base: Some(base.unwrap_or(RestoredBase {
                             snapshot_id: Some(snapshot),
                             files,
-                        }),
+                        })),
                     },
                     cancel,
                 )
