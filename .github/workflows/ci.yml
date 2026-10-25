@@ -49,6 +49,8 @@ jobs:
           --health-cmd "pg_isready -U vgames -d vgames"
           --health-interval 5s --health-timeout 3s --health-retries 20
     env:
+      VGAMES_CAPTURE_RECEIPTS: "1"
+      VGAMES_EVIDENCE_JOB: Rust (fmt, clippy, tests)
       # #[sqlx::test] creates one throwaway database per test from this URL.
       DATABASE_URL: postgres://vgames:vgames-ci-only@localhost:5432/vgames
     steps:
@@ -80,7 +82,9 @@ jobs:
           VGAMES_REQUIRE_GL: "1"
           VGAMES_VK_VALIDATION: "1"
           VK_LAYER_ENABLES: VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT
+        shell: bash
         run: |
+          scripts/ci/evidence.sh 'overlay renderer' <<'VGAMES_EVIDENCE_COMMAND'
           set -o pipefail
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends mesa-vulkan-drivers libvulkan1 vulkan-validationlayers \
@@ -98,6 +102,15 @@ jobs:
             grep -h '^overlay frame cost: ' "$log" | sed 's/^overlay frame cost: /- /' || echo "- no figures (see the log)"
           } >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
+          VGAMES_EVIDENCE_COMMAND
+      - name: Publish scoped milestone receipts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: milestone-receipts-${{ env.VGAMES_EVIDENCE_JOB }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/milestone-receipts/*.json
+          if-no-files-found: error
+          retention-days: 7
 
   sqlx:
     name: SQLx offline data and migrations
@@ -330,6 +343,8 @@ jobs:
           --health-cmd "pg_isready -U vgames -d vgames"
           --health-interval 5s --health-timeout 3s --health-retries 20
     env:
+      VGAMES_CAPTURE_RECEIPTS: "1"
+      VGAMES_EVIDENCE_JOB: Desktop build check (Linux, WebKitGTK)
       VGAMES_TEST_DATABASE_URL: postgres://vgames:vgames-ci-only@localhost:5432/postgres
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -363,9 +378,25 @@ jobs:
       - name: clippy (vgames-desktop)
         run: cargo clippy -p vgames-desktop --all-targets --locked -- -D warnings
       - name: Whole launcher suite (Xvfb)
-        run: xvfb-run -a cargo test -p vgames-desktop --locked
+        shell: bash
+        run: |
+          scripts/ci/evidence.sh 'Whole launcher suite (Xvfb)' <<'VGAMES_EVIDENCE_COMMAND'
+          xvfb-run -a cargo test -p vgames-desktop --locked
+          VGAMES_EVIDENCE_COMMAND
       - name: Database-backed launcher scenarios (no soak)
-        run: scripts/ci/desktop-db-tests.sh
+        shell: bash
+        run: |
+          scripts/ci/evidence.sh 'Database-backed launcher scenarios (no soak)' <<'VGAMES_EVIDENCE_COMMAND'
+          scripts/ci/desktop-db-tests.sh
+          VGAMES_EVIDENCE_COMMAND
+      - name: Publish scoped milestone receipts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: milestone-receipts-${{ env.VGAMES_EVIDENCE_JOB }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/milestone-receipts/*.json
+          if-no-files-found: error
+          retention-days: 7
 
   supply-chain:
     name: Supply chain (cargo-deny, cargo-audit, pnpm audit)
@@ -428,6 +459,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Milestone evidence collector regressions
+        run: python3 -m unittest discover -s scripts/demo -p test_collect.py
       - name: Install actionlint (pinned, checksum-verified)
         run: |
           curl -sSfL -o "$RUNNER_TEMP/actionlint.tgz" \

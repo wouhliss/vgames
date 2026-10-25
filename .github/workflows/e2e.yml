@@ -47,6 +47,79 @@ env:
   VGAMES_METADATA_STEAM_ENABLED: "false"
 
 jobs:
+  milestones:
+    name: Collect milestone evidence
+    needs: [admin-web, install, launcher]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      m1: ${{ steps.collect.outputs.m1 }}
+      m2: ${{ steps.collect.outputs.m2 }}
+      m3: ${{ steps.collect.outputs.m3 }}
+      m4: ${{ steps.collect.outputs.m4 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Collect exact-commit milestone evidence
+        id: collect
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEMO_SHA: ${{ github.sha }}
+        run: python3 scripts/demo/collect.py m1 m2 m3 m4 --report
+
+  m1:
+    name: Milestone M1
+    needs: milestones
+    if: always() && needs.milestones.outputs.m1 == 'reached'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require complete milestone proof
+        env:
+          MILESTONE_STATUS: ${{ needs.milestones.outputs.m1 }}
+        run: test "$MILESTONE_STATUS" = reached
+
+  m2:
+    name: Milestone M2
+    needs: milestones
+    if: always() && needs.milestones.outputs.m2 == 'reached'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require complete milestone proof
+        env:
+          MILESTONE_STATUS: ${{ needs.milestones.outputs.m2 }}
+        run: test "$MILESTONE_STATUS" = reached
+
+  m3:
+    name: Milestone M3
+    needs: milestones
+    if: always() && needs.milestones.outputs.m3 == 'reached'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require complete milestone proof
+        env:
+          MILESTONE_STATUS: ${{ needs.milestones.outputs.m3 }}
+        run: test "$MILESTONE_STATUS" = reached
+
+  m4:
+    name: Milestone M4
+    needs: milestones
+    if: always() && needs.milestones.outputs.m4 == 'reached'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require complete milestone proof
+        env:
+          MILESTONE_STATUS: ${{ needs.milestones.outputs.m4 }}
+        run: test "$MILESTONE_STATUS" = reached
+
   key-pipeline:
     name: Key pipeline (CLI ↔ API)
     runs-on: ubuntu-24.04
@@ -121,6 +194,9 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U vgames -d vgames"
           --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      VGAMES_CAPTURE_RECEIPTS: "1"
+      VGAMES_EVIDENCE_JOB: Admin web (Playwright, real API)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -152,7 +228,11 @@ jobs:
           for _ in $(seq 1 60); do curl -sf http://127.0.0.1:8080/v1/health > /dev/null && exit 0; sleep 1; done
           cat "$RUNNER_TEMP/api.log"; exit 1
       - name: Admin Playwright suite
-        run: pnpm --filter @vgames/admin-web e2e
+        shell: bash
+        run: |
+          scripts/ci/evidence.sh 'Admin Playwright suite' <<'VGAMES_EVIDENCE_COMMAND'
+          pnpm --filter @vgames/admin-web e2e
+          VGAMES_EVIDENCE_COMMAND
         env:
           CI: "true"
           ADMIN_E2E_BASE_URL: http://localhost:8080
@@ -163,6 +243,14 @@ jobs:
           path: |
             apps/admin-web/playwright-report
             ${{ runner.temp }}/api.log
+          retention-days: 7
+      - name: Publish scoped milestone receipts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: milestone-receipts-${{ env.VGAMES_EVIDENCE_JOB }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/milestone-receipts/*.json
+          if-no-files-found: error
           retention-days: 7
 
   install:
@@ -186,6 +274,9 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U vgames -d vgames"
           --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      VGAMES_CAPTURE_RECEIPTS: "1"
+      VGAMES_EVIDENCE_JOB: Install end to end (8 GiB)
     steps:
       - name: Free disk space (source, server storage and install hold 8 GiB each)
         run: |
@@ -223,12 +314,24 @@ jobs:
         env:
           VGAMES_TEST_DATABASE_URL: postgres://vgames:vgames-e2e-only@localhost:5432/postgres
           VGAMES_E2E_SCALE: "1.0"
-        run: cargo test -p vgames-desktop --locked --test install_e2e -- --ignored --exact install_e2e --nocapture
+        shell: bash
+        run: |
+          scripts/ci/evidence.sh 'Install end to end at full scale' <<'VGAMES_EVIDENCE_COMMAND'
+          cargo test -p vgames-desktop --locked --test install_e2e -- --ignored --exact install_e2e --nocapture
+          VGAMES_EVIDENCE_COMMAND
       - name: Publish from the launcher at 5 GiB (INS-06)
         env:
           VGAMES_TEST_DATABASE_URL: postgres://vgames:vgames-e2e-only@localhost:5432/postgres
           VGAMES_PUBLISH_E2E_GIB: "5"
         run: cargo test -p vgames-desktop --locked --test publish_e2e -- --ignored --exact publish_e2e --nocapture
+      - name: Publish scoped milestone receipts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: milestone-receipts-${{ env.VGAMES_EVIDENCE_JOB }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/milestone-receipts/*.json
+          if-no-files-found: error
+          retention-days: 7
 
   launcher:
     # INS-09 (M1, M2): the release launcher driven through tauri-driver and WebKitWebDriver
@@ -250,6 +353,9 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U vgames -d vgames"
           --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      VGAMES_CAPTURE_RECEIPTS: "1"
+      VGAMES_EVIDENCE_JOB: Launcher end to end (release build, real API)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -289,7 +395,11 @@ jobs:
         env:
           E2E_DATABASE_URL: postgres://vgames:vgames-e2e-only@localhost:5432/vgames
           E2E_WORK_DIR: ${{ runner.temp }}/e2e-real
-        run: apps/desktop/e2e-real/run.sh 1,2
+        shell: bash
+        run: |
+          scripts/ci/evidence.sh 'Parts 1 and 2 (M1, M2)' <<'VGAMES_EVIDENCE_COMMAND'
+          apps/desktop/e2e-real/run.sh 1,2
+          VGAMES_EVIDENCE_COMMAND
       - if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -297,4 +407,12 @@ jobs:
           path: |
             ${{ runner.temp }}/e2e-real/api/api.log
             ${{ runner.temp }}/e2e-real/instance-a.log
+          retention-days: 7
+      - name: Publish scoped milestone receipts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: milestone-receipts-${{ env.VGAMES_EVIDENCE_JOB }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/milestone-receipts/*.json
+          if-no-files-found: error
           retention-days: 7

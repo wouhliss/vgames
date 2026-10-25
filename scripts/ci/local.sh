@@ -223,6 +223,7 @@ job_secrets() {
 }
 
 job_workflows() {
+  python3 -m unittest discover -s scripts/demo -p test_collect.py
   local actionlint
   actionlint=$(pinned_tool actionlint "$ACTIONLINT_VERSION" "$ACTIONLINT_SHA256" \
     "https://github.com/rhysd/actionlint/releases/download/v{v}/actionlint_{v}_linux_amd64.tar.gz")

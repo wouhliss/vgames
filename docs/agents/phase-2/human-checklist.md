@@ -35,6 +35,14 @@ Agents append each item with exact steps and the build to use. Expected list:
 | B7 | 24 h launcher idle soak and 8 h controller soak with two emulated pads | Hosted jobs stop at 6 h |
 | B8 | Two physical controllers of different brands (e.g. DualSense, Switch Pro) mapped by position and by label in a real game | Needs real pads |
 
+**B4 boundary.** A missing Metal device can defer only the rendering observation. Prefix initialization,
+runtime verification and the software backend remain hosted software checks. Compat E2E
+[39927413139](https://github.com/wouhliss/vgames/actions/runs/39927413139) records all three Wine backends
+timing out during prefix creation, before their plan/render receipts; that is not evidence of missing Metal
+and cannot receive a hardware waiver. Its MoltenVK log enumerates an Apple Paravirtual GPU with Metal
+Shading Language 3.1. Platform-independent Wine plan tests remain the automated substitute
+for hardware-specific plan choices; they do not prove that the hosted prefix or rendering succeeded.
+
 **B7, social idle soak for 24 h (GAME-13).** Hosted jobs stop at 6 h, so `soak.yml` runs 5 h 30 min. On a Linux
 machine that stays awake for a day, from a checkout of `main`:
 
