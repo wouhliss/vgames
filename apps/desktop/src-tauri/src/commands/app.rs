@@ -20,6 +20,7 @@ pub fn app_ready(window: WebviewWindow, state: State<'_, AppState>) -> CommandRe
         ));
     }
     state.ui_ready.cancel();
+    tracing::info!("main UI ready");
     show_main_window(&window);
     Ok(())
 }

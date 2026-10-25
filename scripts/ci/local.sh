@@ -228,6 +228,7 @@ job_workflows() {
     "https://github.com/rhysd/actionlint/releases/download/v{v}/actionlint_{v}_linux_amd64.tar.gz")
   command -v shellcheck >/dev/null 2>&1 || echo "note: shellcheck not on PATH; actionlint skips run: scripts (CI has it)"
   "$actionlint" -no-color
+  python3 -m unittest discover -s apps/desktop/perf -p test_soak.py
 }
 
 # ---- run ----------------------------------------------------------------------------------------
