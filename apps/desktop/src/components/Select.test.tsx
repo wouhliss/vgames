@@ -1,8 +1,11 @@
-import { screen } from "@testing-library/react";
+import { act, fireEvent, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { renderWithProviders } from "../test/render";
+import { events } from "../ipc";
+import { installMockBackend } from "../mocks/backend";
+import { flush, renderWithProviders, setRect } from "../test/render";
+import { Button } from "./Button";
 import { Dialog } from "./Dialog";
 import { Select } from "./Select";
 
@@ -31,6 +34,20 @@ describe("Select", () => {
     expect(combo).toHaveAttribute("aria-expanded", "false");
   });
 
+  it("ignores queued scroll events but closes when its anchor moves", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<Harness />);
+    const combo = screen.getByRole("combobox", { name: /Theme/ });
+    setRect(combo, 10, 50, 200, 36);
+    await user.click(combo);
+    expect(screen.getByRole("listbox", { name: "Theme" })).toBeVisible();
+    fireEvent.scroll(window);
+    expect(screen.getByRole("listbox", { name: "Theme" })).toBeVisible();
+    setRect(combo, 10, 20, 200, 36);
+    fireEvent.scroll(window);
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  });
+
   it("opens with ArrowDown, skips disabled options, selects with Enter", async () => {
     const user = userEvent.setup();
     renderWithProviders(<Harness />);
@@ -45,6 +62,35 @@ describe("Select", () => {
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
     expect(combo).toHaveTextContent("High contrast");
     expect(combo).toHaveFocus();
+  });
+
+  it("leaves the D-pad to move past a closed list; A opens it", async () => {
+    installMockBackend();
+    renderWithProviders(
+      <div>
+        <Harness />
+        <Button>Below</Button>
+      </div>,
+    );
+    const combo = screen.getByRole("combobox", { name: /Theme/ });
+    const below = screen.getByRole("button", { name: "Below" });
+    setRect(combo, 0, 0, 200, 36);
+    setRect(below, 0, 60, 200, 36);
+    const pad = (action: "down" | "up" | "accept") =>
+      act(async () => {
+        await events.uiNav.emit({ action, controller: "dualsense", repeat: false });
+        await flush();
+      });
+    combo.focus();
+    await pad("down");
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    expect(below).toHaveFocus();
+    await pad("up");
+    expect(combo).toHaveFocus();
+    await pad("accept");
+    expect(screen.getByRole("listbox", { name: "Theme" })).toBeInTheDocument();
+    await pad("down");
+    expect(combo).toHaveAttribute("aria-activedescendant", expect.stringContaining("opt-2"));
   });
 
   it("closes on Escape without changing the value", async () => {
