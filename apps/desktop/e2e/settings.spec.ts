@@ -27,6 +27,7 @@ test("every section has no serious accessibility violations", async ({ page }) =
     "Downloads",
     "Cloud saves",
     "Compatibility",
+    "Controllers",
     "Privacy",
     "Overlay",
     "Updates",
