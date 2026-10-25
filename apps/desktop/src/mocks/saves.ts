@@ -108,6 +108,7 @@ export function savesHandlers(
           conflict_id: null,
         };
   };
+  let restores = Object.values(state.saveHistories).flatMap((h) => h.entries).length;
   return {
     saves_status: (args) => status(args.pkg as PackageRef),
     saves_history: (args) => {
@@ -132,7 +133,25 @@ export function savesHandlers(
       const known = history?.entries.some(
         (entry) => JSON.stringify(entry.source) === JSON.stringify(source),
       );
-      if (!known) fail({ kind: "not_found" } satisfies AppError);
+      if (!history || !known) fail({ kind: "not_found" } satisfies AppError);
+      // Like the Rust service: the current files are backed up before anything is written.
+      restores += 1;
+      state.saveHistories[pkg.package_id] = {
+        ...history,
+        entries: [
+          {
+            source: {
+              kind: "backup",
+              backup_id: `bacc0000-0000-7000-8000-${String(restores).padStart(12, "0")}`,
+            },
+            created_at: new Date().toISOString(),
+            device_name: null,
+            file_count: 3,
+            total_bytes: 2_400_000,
+          },
+          ...history.entries,
+        ],
+      };
       return {
         package: pkg,
         state: "pending",

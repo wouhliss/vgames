@@ -62,6 +62,8 @@ export const PERSISTED = [
   "runtimes",
   "controllerSettings",
   "controllerProfiles",
+  "saveConflicts",
+  "saveHistories",
 ] as const;
 
 export function loadPersisted(key: string | null): Record<string, unknown> {
