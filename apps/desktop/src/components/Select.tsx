@@ -11,6 +11,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { isGamepadEvent } from "../nav/NavProvider";
 import styles from "./Field.module.css";
 import { Icon } from "./Icon";
 import { popoverContainer } from "./layers";
@@ -125,7 +126,11 @@ export function Select<V extends string>({
       return;
     }
     if (!open) {
-      if (["ArrowDown", "ArrowUp", "Enter", " "].includes(e.key)) {
+      // A closed list keeps the D-pad for moving between controls; A (Enter) opens it.
+      const opens = isGamepadEvent(e.nativeEvent)
+        ? ["Enter"]
+        : ["ArrowDown", "ArrowUp", "Enter", " "];
+      if (opens.includes(e.key)) {
         e.preventDefault();
         openAt(selectedIndex >= 0 ? selectedIndex : e.key === "ArrowUp" ? edge(true) : edge(false));
       }
