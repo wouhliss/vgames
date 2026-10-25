@@ -1,0 +1,192 @@
+# PLAY-06 acceptance: one player's cloud saves travel Windows → Linux → macOS through the real
+# API (tests/saves_roundtrip.rs). Each job runs one step on the server state the previous job
+# left (the save tables as JSON plus the fs storage folder, moved as an artifact): a fresh
+# device pulls, checks every file and its Windows-relative path, changes the saves and pushes.
+# Owner: PLAY.
+#
+# Rules: actions pinned by SHA, no secrets, read-only token. Each runner uses the PostgreSQL it
+# can start quickly; scripts/ci/pg-uuidv7-polyfill.sql adds uuidv7() where it is older than 18.
+
+name: Cloud-save round trip
+
+on:
+  pull_request:
+    paths:
+      - "apps/desktop/src-tauri/src/saves/**"
+      - "apps/desktop/src-tauri/src/db/saves*"
+      - "apps/desktop/src-tauri/tests/saves_roundtrip.rs"
+      - "apps/api/src/saves.rs"
+      - "crates/vgames-proto/src/saves.rs"
+      - "scripts/ci/pg-uuidv7-polyfill.sql"
+      - ".github/workflows/saves-roundtrip.yml"
+  schedule:
+    - cron: "41 4 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: saves-roundtrip-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  SQLX_OFFLINE: "true"
+  VGAMES_ROUNDTRIP_DIR: ${{ github.workspace }}/roundtrip
+
+jobs:
+  windows:
+    name: "1: Windows pushes"
+    runs-on: windows-2025
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      VGAMES_ROUNDTRIP_STEP: "1"
+      VGAMES_TEST_DATABASE_URL: postgres://postgres:root@127.0.0.1:5432/roundtrip
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: PostgreSQL (preinstalled)
+        shell: pwsh
+        run: |
+          $service = Get-Service -Name "postgresql*"
+          Set-Service -InputObject $service -StartupType Manual
+          Start-Service -InputObject $service
+          $env:PGPASSWORD = "root"
+          & "$env:PGBIN\psql.exe" -U postgres -h 127.0.0.1 -v ON_ERROR_STOP=1 -c "CREATE DATABASE roundtrip"
+          & "$env:PGBIN\psql.exe" -U postgres -h 127.0.0.1 -d roundtrip -v ON_ERROR_STOP=1 -f scripts/ci/pg-uuidv7-polyfill.sql
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Install toolchain (rust-toolchain.toml)
+        shell: bash
+        run: rustup toolchain install && rustup show active-toolchain
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: saves-roundtrip-windows
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'schedule' }}
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build the launcher UI (embedded by tauri::generate_context!)
+        run: pnpm --filter @vgames/desktop build
+      - name: Step 1 on Windows
+        run: cargo test --locked -p vgames-desktop --test saves_roundtrip -- --ignored --nocapture
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: saves-roundtrip-1
+          path: roundtrip
+          if-no-files-found: error
+          retention-days: 3
+
+  linux:
+    name: "2: Linux pulls and pushes"
+    needs: windows
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:18.6-alpine
+        env:
+          POSTGRES_USER: vgames
+          POSTGRES_PASSWORD: vgames-roundtrip-only
+          POSTGRES_DB: roundtrip
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U vgames -d roundtrip"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      VGAMES_ROUNDTRIP_STEP: "2"
+      VGAMES_TEST_DATABASE_URL: postgres://vgames:vgames-roundtrip-only@localhost:5432/roundtrip
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: saves-roundtrip-1
+          path: roundtrip
+      - name: System libraries (Tauri 2 on Linux)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            desktop-file-utils librsvg2-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev \
+            cmake libxss-dev libxcursor-dev libxi-dev libxfixes-dev libxrandr-dev \
+            libxinerama-dev libasound2-dev libpulse-dev libwayland-dev \
+            libxkbcommon-dev libegl1-mesa-dev libgles2-mesa-dev libdrm-dev \
+            libgbm-dev libdecor-0-dev \
+            libdbus-1-dev libudev-dev pkg-config build-essential
+      - name: Install toolchain (rust-toolchain.toml)
+        run: rustup toolchain install && rustup show active-toolchain
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: saves-roundtrip-linux
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'schedule' }}
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build the launcher UI (embedded by tauri::generate_context!)
+        run: pnpm --filter @vgames/desktop build
+      - name: Step 2 on Linux
+        run: cargo test --locked -p vgames-desktop --test saves_roundtrip -- --ignored --nocapture
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: saves-roundtrip-2
+          path: roundtrip
+          if-no-files-found: error
+          retention-days: 3
+
+  macos:
+    name: "3: macOS pulls and pushes"
+    needs: linux
+    runs-on: macos-15
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      VGAMES_ROUNDTRIP_STEP: "3"
+      VGAMES_TEST_DATABASE_URL: postgres://postgres@127.0.0.1:5432/roundtrip
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: saves-roundtrip-2
+          path: roundtrip
+      - name: PostgreSQL (Homebrew, a private cluster)
+        run: |
+          brew install postgresql@17
+          bin="$(brew --prefix postgresql@17)/bin"
+          "$bin/initdb" -D "$RUNNER_TEMP/pg" -U postgres -A trust >/dev/null
+          "$bin/pg_ctl" -D "$RUNNER_TEMP/pg" -l "$RUNNER_TEMP/pg.log" -o "-c listen_addresses=127.0.0.1 -p 5432" -w start
+          "$bin/psql" -U postgres -h 127.0.0.1 -v ON_ERROR_STOP=1 -c "CREATE DATABASE roundtrip"
+          "$bin/psql" -U postgres -h 127.0.0.1 -d roundtrip -v ON_ERROR_STOP=1 -f scripts/ci/pg-uuidv7-polyfill.sql
+      - name: Install toolchain (rust-toolchain.toml)
+        run: rustup toolchain install && rustup show active-toolchain
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: saves-roundtrip-macos
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'schedule' }}
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build the launcher UI (embedded by tauri::generate_context!)
+        run: pnpm --filter @vgames/desktop build
+      - name: Step 3 on macOS
+        run: cargo test --locked -p vgames-desktop --test saves_roundtrip -- --ignored --nocapture
+      - name: The saves went through all three systems
+        run: python3 -c "import json,sys; s=json.load(open('roundtrip/state.json'))['steps']; print(s); sys.exit(s != ['windows','linux','macos'])"
