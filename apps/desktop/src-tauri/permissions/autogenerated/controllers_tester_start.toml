@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-controllers-tester-start"
+description = "Enables the controllers_tester_start command without any pre-configured scope."
+commands.allow = ["controllers_tester_start"]
+
+[[permission]]
+identifier = "deny-controllers-tester-start"
+description = "Denies the controllers_tester_start command without any pre-configured scope."
+commands.deny = ["controllers_tester_start"]

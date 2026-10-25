@@ -75,6 +75,8 @@ pub struct SaveHook {
     db: Db,
     folders: KnownFolders,
     data_dir: PathBuf,
+    /// [`PULL_BUDGET`]; tests on loaded runners widen it.
+    pull_budget: Duration,
 }
 
 /// One launch's resolved saves.
@@ -102,7 +104,14 @@ impl SaveHook {
             db,
             folders,
             data_dir,
+            pull_budget: PULL_BUDGET,
         })
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_pull_budget(mut self, budget: Duration) -> Self {
+        self.pull_budget = budget;
+        self
     }
 
     /// `None` when the release declares no saves or nobody is signed in.
@@ -310,7 +319,7 @@ impl LaunchHooks for SaveHook {
             tokio::pin!(work);
             let result = tokio::select! {
                 result = &mut work => result,
-                () = tokio::time::sleep(PULL_BUDGET) => {
+                () = tokio::time::sleep(self.pull_budget) => {
                     cancel.cancel();
                     work.await
                 }

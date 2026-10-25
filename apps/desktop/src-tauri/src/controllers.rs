@@ -3,6 +3,7 @@
 //! build on these.
 
 pub mod decision;
+pub mod handle;
 pub mod idle;
 pub mod input;
 pub mod mapping;

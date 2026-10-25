@@ -32,6 +32,7 @@ fn main() {
 
     embed_runtime_catalog_key();
     embed_third_party_notices();
+    link_clang_runtime_on_macos();
 
     let mut attributes = tauri_build::Attributes::new()
         .app_manifest(tauri_build::AppManifest::new().commands(commands));
@@ -78,6 +79,37 @@ fn embed_third_party_notices() {
         eprintln!("cannot generate third-party notices; install the locked npm dependencies first");
         std::process::exit(1);
     }
+}
+
+/// SDL3 is built from source, and its Cocoa code uses Objective-C `@available`, which calls
+/// `___isPlatformVersionAtLeast` from clang's runtime library. rustc links with `-nodefaultlibs`,
+/// so the app binary (which starts SDL) fails to link on macOS unless that archive is named.
+fn link_clang_runtime_on_macos() {
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("macos") {
+        return;
+    }
+    let ask = |flag: &str| {
+        std::process::Command::new("clang")
+            .arg(flag)
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+    };
+    let candidates = [
+        ask("--print-runtime-dir").map(std::path::PathBuf::from),
+        ask("--print-resource-dir").map(|dir| std::path::Path::new(&dir).join("lib/darwin")),
+    ];
+    let Some(archive) = candidates
+        .into_iter()
+        .flatten()
+        .map(|dir| dir.join("libclang_rt.osx.a"))
+        .find(|archive| archive.is_file())
+    else {
+        eprintln!("cannot find clang's libclang_rt.osx.a (needed to link SDL3 on macOS)");
+        std::process::exit(1);
+    };
+    println!("cargo:rustc-link-arg={}", archive.display());
 }
 
 /// Copies `runtimes/runtime-catalog.pub` (INT-08) into `OUT_DIR` for

@@ -130,6 +130,9 @@
     "allow-saves-history",
     "allow-saves-restore",
     "allow-open-external-url",
-    "allow-app-licenses"
+    "allow-app-licenses",
+    "allow-controllers-list",
+    "allow-controllers-tester-start",
+    "allow-controllers-tester-stop"
   ]
 }

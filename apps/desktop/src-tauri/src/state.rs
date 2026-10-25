@@ -64,6 +64,7 @@ pub struct AppState {
     pub compat_profiles: Arc<crate::compat::profiles::Profiles<Servers>>,
     /// Cloud saves: status, and the launch hook once conflicts can be resolved (PLAY-06).
     pub saves: Arc<crate::saves::service::Saves>,
+    pub controllers: crate::controllers::handle::Controllers,
 }
 
 impl AppState {
@@ -180,6 +181,7 @@ impl AppState {
             compat_profiles,
             runtime_store,
             runtime_catalog,
+            controllers: Default::default(),
             publisher,
             paths,
             catalog,

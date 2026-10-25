@@ -2,6 +2,7 @@
 //! a single cancellable deadline, and releasing it leaves no scheduled task.
 
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Instant;
 
@@ -32,22 +33,38 @@ pub enum ServiceError {
 pub struct Service {
     router: Arc<Mutex<Router>>,
     input: InputThread,
+    running: Arc<AtomicBool>,
 }
 impl Service {
     pub fn start(
         runtime: Handle,
         emit: Arc<dyn Fn(Output) + Send + Sync>,
     ) -> Result<Self, ServiceError> {
-        let router = Arc::new(Mutex::new(Router::new(emit)));
+        let running = Arc::new(AtomicBool::new(true));
+        let stopped = Stopped {
+            running: running.clone(),
+            emit: emit.clone(),
+        };
+        let mut routing = Router::new(emit);
+        routing.navigation_enabled(false);
+        let router = Arc::new(Mutex::new(routing));
         let routed = router.clone();
         let input = InputThread::start_with_wake(move |subsystem, wake| {
-            sdl_handler(subsystem, routed, runtime, wake)
+            let mut route = sdl_handler(subsystem, routed, runtime, wake);
+            move |event: InputEvent, subsystem: &GamepadSubsystem| {
+                let _ = &stopped;
+                route(event, subsystem);
+            }
         })
         .map_err(ServiceError::Unavailable)?;
-        Ok(Self { router, input })
+        Ok(Self {
+            router,
+            input,
+            running,
+        })
     }
     fn state(&self) -> Result<MutexGuard<'_, Router>, ServiceError> {
-        if !self.input.is_running() {
+        if !self.running.load(Ordering::Acquire) || !self.input.is_running() {
             return Err(ServiceError::Unavailable(
                 "The input worker has stopped.".into(),
             ));
@@ -69,6 +86,23 @@ impl Service {
     pub fn navigation_enabled(&self, enabled: bool) -> Result<(), ServiceError> {
         self.state()?.navigation_enabled(enabled);
         self.input.wake().map_err(ServiceError::Unavailable)
+    }
+}
+
+struct Stopped {
+    running: Arc<AtomicBool>,
+    emit: Arc<dyn Fn(Output) + Send + Sync>,
+}
+impl Drop for Stopped {
+    fn drop(&mut self) {
+        self.running.store(false, Ordering::Release);
+        if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            (self.emit)(Output::PadsChanged)
+        }))
+        .is_err()
+        {
+            tracing::warn!("controller stop notification panicked");
+        }
     }
 }
 
@@ -259,6 +293,25 @@ fn canonical_button(button: sdl3::gamepad::Button) -> Option<Button> {
 mod tests {
     use super::*;
     #[test]
+    fn worker_stop_marks_input_unavailable_before_notifying_the_screen() {
+        let running = Arc::new(AtomicBool::new(true));
+        let observed = running.clone();
+        let notifications = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let count = notifications.clone();
+        let stopped = Stopped {
+            running: running.clone(),
+            emit: Arc::new(move |output| {
+                assert!(!observed.load(Ordering::Acquire));
+                assert!(matches!(output, Output::PadsChanged));
+                count.fetch_add(1, Ordering::Relaxed);
+            }),
+        };
+        drop(stopped);
+        assert!(!running.load(Ordering::Acquire));
+        assert_eq!(notifications.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
     fn native_sdl_hotplug_routes_buttons_testers_and_disconnect() {
         use sdl3::joystick::{JoystickType, VirtualJoystickDescription};
         use std::sync::mpsc;
@@ -321,12 +374,12 @@ mod tests {
         })
         .unwrap();
         let wake = wake.recv_timeout(Duration::from_secs(1)).unwrap();
-        let next = |accept: &dyn Fn(&Output) -> bool| {
+        let next = |label: &str, accept: &dyn Fn(&Output) -> bool| {
             let until = Instant::now() + Duration::from_secs(3);
             loop {
                 let output = receive
                     .recv_timeout(until.saturating_duration_since(Instant::now()))
-                    .unwrap();
+                    .unwrap_or_else(|error| panic!("{label}: {error}"));
                 if accept(&output) {
                     return output;
                 }
@@ -334,7 +387,9 @@ mod tests {
         };
         send.send(Control::Plug).unwrap();
         wake.wake().unwrap();
-        let Output::Connected(pad) = next(&|output| matches!(output, Output::Connected(_))) else {
+        let Output::Connected(pad) =
+            next("connect", &|output| matches!(output, Output::Connected(_)))
+        else {
             unreachable!()
         };
         assert_eq!(pad.name, "vgames software fixture");
@@ -345,14 +400,15 @@ mod tests {
             .unwrap();
         send.send(Control::Button(true)).unwrap();
         wake.wake().unwrap();
-        let Output::Navigation { action, repeat, .. } =
-            next(&|output| matches!(output, Output::Navigation { .. }))
-        else {
+        let Output::Navigation { action, repeat, .. } = next("navigation", &|output| {
+            matches!(output, Output::Navigation { .. })
+        }) else {
             unreachable!()
         };
         assert_eq!(action, super::super::navigation::NavAction::Accept);
         assert!(!repeat);
         let Output::Tester(state) = next(
+            "tester",
             &|output| matches!(output, Output::Tester(state) if state.buttons.contains(&Button::South)),
         ) else {
             unreachable!()
@@ -361,8 +417,9 @@ mod tests {
         send.send(Control::Button(false)).unwrap();
         send.send(Control::Unplug).unwrap();
         wake.wake().unwrap();
-        let Output::Disconnected(id) = next(&|output| matches!(output, Output::Disconnected(_)))
-        else {
+        let Output::Disconnected(id) = next("disconnect", &|output| {
+            matches!(output, Output::Disconnected(_))
+        }) else {
             unreachable!()
         };
         assert_eq!(id, pad.instance_id);
