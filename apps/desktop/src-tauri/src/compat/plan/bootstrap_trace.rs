@@ -5,7 +5,7 @@ use std::sync::Mutex;
 use tokio::io::AsyncReadExt;
 
 const MAX_LINE: usize = 8192;
-const CODES: [(u32, &str); 7] = [
+const CODES: [(u32, &str); 25] = [
     (0xc0000005, "access_violation"),
     (0xc000001d, "illegal_instruction"),
     (0xc000007b, "invalid_image"),
@@ -13,7 +13,59 @@ const CODES: [(u32, &str); 7] = [
     (0x80000003, "breakpoint"),
     (0xe06d7363, "cpp_exception"),
     (0x406d1388, "thread_name"),
+    (0x40010006, "debug_print_ansi"),
+    (0x4001000a, "debug_print_unicode"),
+    (0x80000100, "wine_stub"),
+    (0x80000101, "wine_assertion"),
+    (0x000006ba, "rpc_server_unavailable"),
+    (0x000006be, "rpc_call_failed"),
+    (0x000006d9, "rpc_no_endpoints"),
+    (0x000006f7, "rpc_bad_stub_data"),
+    (0xc0000142, "dll_init_failed"),
+    (0xc0000139, "entry_point_not_found"),
+    (0xc00000fd, "stack_overflow"),
+    (0xc0000008, "invalid_handle"),
+    (0xc0000006, "in_page_error"),
+    (0xc0000194, "possible_deadlock"),
+    (0xc0000374, "heap_corruption"),
+    (0xc000041d, "callback_exception"),
+    (0xc0000420, "assertion_failure"),
+    (0xe0434352, "clr_exception"),
 ];
+
+const PHASES: [(&str, &str, &str); 7] = [
+    ("appwizcpl", "get_cache_file", "addon_cache_checks"),
+    ("appwizcpl", "get_install_dir", "addon_search_events"),
+    ("appwizcpl", "start_download", "addon_download_events"),
+    ("appwizcpl", "install_file", "addon_install_events"),
+    ("msi", "MSI_InstallPackage", "msi_install_events"),
+    ("dialog", "DIALOG_CreateIndirect", "dialog_create_events"),
+    (
+        "dialog",
+        "DialogBoxIndirectParamAorW",
+        "modal_dialog_events",
+    ),
+];
+const ERRORS: [&str; 5] = ["winediag", "winemac", "rpc", "ole", "service"];
+
+// Function tags are parsed only from the Wine header, never searched for in payload text.
+fn header(line: &str) -> Option<(&str, &str, &str)> {
+    let mut parts = line.splitn(4, ':');
+    let thread = parts.next()?;
+    if thread.is_empty() || thread.len() > 8 || !thread.bytes().all(|byte| byte.is_ascii_hexdigit())
+    {
+        return None;
+    }
+    let level = parts.next()?;
+    if !matches!(level, "trace" | "warn" | "err" | "fixme") {
+        return None;
+    }
+    Some((
+        level,
+        parts.next()?,
+        parts.next()?.split_ascii_whitespace().next()?,
+    ))
+}
 
 #[derive(Default)]
 struct Trace {
@@ -21,7 +73,9 @@ struct Trace {
     discarding: bool,
     bytes: u64,
     oversized_lines: u64,
-    codes: [u64; 7],
+    codes: [u64; CODES.len()],
+    phases: [u64; PHASES.len()],
+    errors: [u64; ERRORS.len()],
     other_exceptions: u64,
     import_errors: u64,
     loader_errors: u64,
@@ -48,15 +102,34 @@ impl Trace {
     fn finish(&mut self) {
         if !self.discarding {
             let line = String::from_utf8_lossy(&self.line);
-            if line.contains("err:module:import_dll") {
-                self.import_errors = self.import_errors.saturating_add(1);
+            let fields = header(&line);
+            if let Some((level, channel, function)) = fields {
+                if let Some(index) = PHASES
+                    .iter()
+                    .position(|(known_channel, known_function, _)| {
+                        *known_channel == channel && *known_function == function
+                    })
+                    && let Some(count) = self.phases.get_mut(index)
+                {
+                    *count = count.saturating_add(1);
+                }
+                if level == "err" {
+                    if let Some(index) = ERRORS.iter().position(|known| *known == channel)
+                        && let Some(count) = self.errors.get_mut(index)
+                    {
+                        *count = count.saturating_add(1);
+                    }
+                    if channel == "module" && function == "import_dll" {
+                        self.import_errors = self.import_errors.saturating_add(1);
+                    }
+                    if channel == "module"
+                        && matches!(function, "loader_init" | "LdrInitializeThunk")
+                    {
+                        self.loader_errors = self.loader_errors.saturating_add(1);
+                    }
+                }
             }
-            if line.contains("err:module:loader_init")
-                || line.contains("err:module:LdrInitializeThunk")
-            {
-                self.loader_errors = self.loader_errors.saturating_add(1);
-            }
-            if line.contains(":seh:")
+            if fields.is_some_and(|(_, channel, _)| channel == "seh")
                 && let Some((_, raw)) = line.split_once("code=")
             {
                 let raw = raw.strip_prefix("0x").unwrap_or(raw);
@@ -88,7 +161,19 @@ impl Trace {
             .zip(self.codes)
             .map(|((_, name), count)| (*name, count))
             .collect();
+        let phases: BTreeMap<_, _> = PHASES
+            .iter()
+            .zip(self.phases)
+            .map(|((_, _, name), count)| (*name, count))
+            .collect();
+        let errors: BTreeMap<_, _> = ERRORS
+            .iter()
+            .zip(self.errors)
+            .map(|(name, count)| (*name, count))
+            .collect();
         serde_json::json!({
+            "phase_events": phases,
+            "error_channels": errors,
             "bytes": self.bytes,
             "oversized_lines": self.oversized_lines,
             "exception_classes": codes,
@@ -122,7 +207,7 @@ pub(super) async fn status(
         return command.status().await;
     }
     command
-        .env("WINEDEBUG", "+seh,+module")
+        .env("WINEDEBUG", "+seh,+module,+appwizcpl,+dialog,+msi,err+winediag,err+winemac,err+rpc,err+ole,err+service")
         .stderr(std::process::Stdio::piped());
     let mut child = command.spawn()?;
     let mut stderr = child
@@ -162,7 +247,12 @@ fn only_fixed_classes_and_counts_leave_the_trace_boundary() {
     for byte in input {
         trace.feed(&[*byte]);
     }
+    trace.feed(b"0034:trace:appwizcpl:get_cache_file private-path\n0035:trace:dialog:DIALOG_CreateIndirect private-title\n0036:trace:module:load_dll payload appwizcpl:get_cache_file private-value\n0037:trace:seh:dispatch_exception code=000006ba private-value\n0038:err:winediag:nodrv_CreateWindow private-argument\n");
     let report = trace.report();
+    assert_eq!(report["phase_events"]["addon_cache_checks"], 1);
+    assert_eq!(report["phase_events"]["dialog_create_events"], 1);
+    assert_eq!(report["exception_classes"]["rpc_server_unavailable"], 1);
+    assert_eq!(report["error_channels"]["winediag"], 1);
     assert_eq!(report["exception_classes"]["dll_not_found"], 1);
     assert_eq!(report["import_errors"], 1);
     assert_eq!(report["loader_errors"], 1);
