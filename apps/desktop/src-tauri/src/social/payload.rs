@@ -287,6 +287,45 @@ mod tests {
     }
 
     #[test]
+    fn an_old_grammar_join_secret_is_dropped_and_the_payload_stays_valid() {
+        let (c, m) = ids();
+        let invite = Uuid::now_v7();
+        // Valid under the older grammar, option-shaped under the current one.
+        for (i, secret) in ["--windowed", "-console", ".hidden", ":x", "]x"]
+            .into_iter()
+            .enumerate()
+        {
+            let raw = format!(
+                r#"{{"v":1,"conversation_id":"{c}","client_message_id":"{m}","sent_at":"2026-09-24T10:00:00Z","type":"invite.join","invite_id":"{invite}","join_secret":"{secret}"}}"#
+            );
+            let Ok(Decoded::Known(Payload {
+                content:
+                    Content::InviteJoin {
+                        invite_id,
+                        join_secret,
+                    },
+                ..
+            })) = decode(raw.as_bytes())
+            else {
+                panic!("old-grammar case {i}: not a known invite.join");
+            };
+            assert_eq!(invite_id, invite, "old-grammar case {i}");
+            assert!(join_secret.is_none(), "old-grammar case {i}");
+            assert!(
+                Payload::invite_join(
+                    c,
+                    m,
+                    OffsetDateTime::UNIX_EPOCH,
+                    invite,
+                    Some(secret.into())
+                )
+                .is_err(),
+                "old-grammar case {i}"
+            );
+        }
+    }
+
+    #[test]
     fn invite_join_with_valid_secret() {
         let (c, m) = ids();
         let p = Payload {

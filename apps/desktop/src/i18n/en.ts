@@ -663,7 +663,8 @@ export const en = {
     joinInfo: "Server address or lobby code (optional)",
     joinInfoHint:
       "Sent end-to-end encrypted when they're ready. Letters, numbers and . _ : - [ ] only. Leave it empty to just start the game.",
-    joinInfoInvalid: "Use only letters, numbers and . _ : - [ ] (up to 256).",
+    joinInfoInvalid:
+      "Use only letters, numbers and . _ : - [ ] (up to 256), starting with a letter, number, _ or [.",
     send: "Send invite",
     sent: "Invite sent to {name}",
     sentTitle: "Invites you sent",
