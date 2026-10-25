@@ -73,6 +73,7 @@ struct Trace {
     discarding: bool,
     bytes: u64,
     oversized_lines: u64,
+    parsed_headers: u64,
     codes: [u64; CODES.len()],
     phases: [u64; PHASES.len()],
     errors: [u64; ERRORS.len()],
@@ -104,6 +105,7 @@ impl Trace {
             let line = String::from_utf8_lossy(&self.line);
             let fields = header(&line);
             if let Some((level, channel, function)) = fields {
+                self.parsed_headers = self.parsed_headers.saturating_add(1);
                 if let Some(index) = PHASES
                     .iter()
                     .position(|(known_channel, known_function, _)| {
@@ -176,6 +178,7 @@ impl Trace {
             "error_channels": errors,
             "bytes": self.bytes,
             "oversized_lines": self.oversized_lines,
+            "parsed_headers": self.parsed_headers,
             "exception_classes": codes,
             "other_exceptions": self.other_exceptions,
             "import_errors": self.import_errors,
