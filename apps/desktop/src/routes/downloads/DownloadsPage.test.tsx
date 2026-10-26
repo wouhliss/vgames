@@ -89,7 +89,7 @@ beforeEach(() => {
 
 describe("downloads", () => {
   it("refreshes a terminal outcome received during the initial queue snapshot", async () => {
-    let releaseInitial = (_value: DownloadQueue) => {
+    let releaseInitial: (value: DownloadQueue) => void = () => {
       throw new Error("initial snapshot resolver was not set");
     };
     const initial = new Promise<DownloadQueue>((resolve) => {
