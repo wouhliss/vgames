@@ -30,7 +30,7 @@ Agents append each item with exact steps and the build to use. Expected list:
 | B2 | macOS panel visible over a fullscreen-Space game without taking focus | Needs a visual check on a real Mac |
 | B3 | A D3D11 game through Proton on Ubuntu 24.04 and on a SteamOS-like Arch install with a real GPU, overlay layer active | lavapipe proves correctness, not real drivers |
 | B4 | A D3D11 game through Wine + DXMT and DXVK-macOS on an Apple silicon Mac (macOS 15 and 26), if the hosted runner had no Metal | Hosted macOS VMs may lack Metal |
-| B5 | Cloud save round trip between a real Windows, Linux and Mac machine | Cross-runner automation is pending PLAY-06; this will confirm the behavior on real devices |
+| B5 | Cloud save round trip between a real Windows, Linux and Mac machine | Hosted Windows → Linux → macOS automation is on main (PLAY-06, `saves-roundtrip.yml`); this confirms behavior on real devices |
 | B6 | Fresh installs on clean Windows 11, Ubuntu 24.04 and macOS 14 machines (installer, deep links, shortcuts, uninstall) | Fresh-VM checklist (PLAY-09) |
 | B7 | 24 h launcher idle soak and 8 h controller soak with two emulated pads | Hosted jobs stop at 6 h |
 | B8 | Two physical controllers of different brands (e.g. DualSense, Switch Pro) mapped by position and by label in a real game | Needs real pads |
