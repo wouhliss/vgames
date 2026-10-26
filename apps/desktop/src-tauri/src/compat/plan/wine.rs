@@ -197,7 +197,13 @@ async fn prepare_prefix(wine: &Path, prefix: &Path) -> Result<(), LaunchError> {
     tokio::fs::create_dir_all(prefix)
         .await
         .map_err(|e| unavailable(format!("Cannot create the game's prefix: {e}")))?;
+    #[cfg(test)]
+    eprintln!("Wine prefix stage: wineboot:start");
     run_wine(wine, prefix, &["wineboot", "--init"]).await?;
+    #[cfg(test)]
+    eprintln!("Wine prefix stage: wineboot:complete");
+    #[cfg(test)]
+    eprintln!("Wine prefix stage: retina:start");
     run_wine(
         wine,
         prefix,
@@ -214,7 +220,10 @@ async fn prepare_prefix(wine: &Path, prefix: &Path) -> Result<(), LaunchError> {
             "/f",
         ],
     )
-    .await
+    .await?;
+    #[cfg(test)]
+    eprintln!("Wine prefix stage: retina:complete");
+    Ok(())
 }
 
 async fn run_wine(wine: &Path, prefix: &Path, args: &[&str]) -> Result<(), LaunchError> {
@@ -231,7 +240,11 @@ async fn run_wine(wine: &Path, prefix: &Path, args: &[&str]) -> Result<(), Launc
         .env("WINEPREFIX", prefix)
         .env("WINEDEBUG", "-all")
         .kill_on_drop(true);
-    let status = tokio::time::timeout(WINEBOOT_TIMEOUT, command.status())
+    #[cfg(test)]
+    let wait = super::bootstrap_trace::status(&mut command, args == ["wineboot", "--init"]);
+    #[cfg(not(test))]
+    let wait = command.status();
+    let status = tokio::time::timeout(WINEBOOT_TIMEOUT, wait)
         .await
         .map_err(|_| unavailable("Creating the game's Wine prefix took too long."))?
         .map_err(|e| unavailable(format!("Cannot run Wine: {e}")))?;
