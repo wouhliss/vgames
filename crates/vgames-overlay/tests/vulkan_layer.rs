@@ -104,14 +104,44 @@ fn broker(
     std::thread::spawn(move || {
         let (mut s, _) = l.accept().unwrap();
         let ToBroker::Hello {
-            token: got,
+            client_nonce,
             renderer,
-            ..
+            version,
         } = protocol::read_frame::<ToBroker>(&mut s).unwrap()
         else {
             panic!("expected Hello");
         };
-        assert_eq!(got, token);
+        assert_eq!(version, PROTOCOL_VERSION);
+        let server_nonce = protocol::fresh_nonce().unwrap();
+        let proof = protocol::auth_proof(
+            &token,
+            protocol::AuthRole::Broker,
+            version,
+            renderer,
+            &client_nonce,
+            &server_nonce,
+        )
+        .unwrap();
+        protocol::write_frame(
+            &mut s,
+            &ToRenderer::Challenge {
+                server_nonce,
+                proof,
+            },
+        )
+        .unwrap();
+        let ToBroker::Authenticate { proof } = protocol::read_frame(&mut s).unwrap() else {
+            panic!("expected renderer proof");
+        };
+        assert!(protocol::verify_auth(
+            &token,
+            protocol::AuthRole::Renderer,
+            version,
+            renderer,
+            &client_nonce,
+            &server_nonce,
+            &proof
+        ));
         tx.send(renderer).unwrap();
         protocol::write_frame(
             &mut s,

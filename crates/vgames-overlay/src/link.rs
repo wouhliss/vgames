@@ -1,7 +1,8 @@
 //! The in-game side of the broker link (05-social §6.1), shared by every renderer backend.
 //!
 //! One background thread owns the socket: it connects to `VGAMES_OVERLAY_ENDPOINT`, sends
-//! `Hello` with the token, keeps the latest [`View`], answers heartbeats, forwards queued
+//! a nonce Hello and authenticates both endpoints without sending the key, keeps the
+//! latest [`View`], answers heartbeats, forwards queued
 //! [`Action`]s and reconnects with backoff when the link drops. The render thread never
 //! touches the socket and never blocks:
 //!
@@ -21,6 +22,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
+
 use crate::protocol::{
     self, Action, DEAD_AFTER, FrameError, HEARTBEAT_EVERY, PROTOCOL_VERSION, RendererKind,
     TOKEN_LEN, ToBroker, ToRenderer, View,
@@ -37,8 +40,9 @@ const MAX_BACKOFF: Duration = Duration::from_secs(10);
 const MAX_REFUSALS: u32 = 3;
 
 /// Where to connect, from the launch environment.
-#[derive(Clone)]
+#[derive(Clone, Zeroize, ZeroizeOnDrop)]
 pub struct Endpoint {
+    #[zeroize(skip)]
     pub addr: SocketAddr,
     pub token: [u8; TOKEN_LEN],
 }
@@ -55,10 +59,11 @@ impl std::fmt::Debug for Endpoint {
 impl Endpoint {
     /// `None` unless `VGAMES_OVERLAY=1` and a loopback endpoint and a valid token are set.
     pub fn from_env() -> Option<Self> {
+        let token = std::env::var(protocol::env::TOKEN).ok().map(Zeroizing::new);
         Self::from_vars(
             std::env::var(protocol::env::ENABLED).ok().as_deref(),
             std::env::var(protocol::env::ENDPOINT).ok().as_deref(),
-            std::env::var(protocol::env::TOKEN).ok().as_deref(),
+            token.as_ref().map(|token| token.as_str()),
         )
     }
 
@@ -225,7 +230,7 @@ impl Link {
                 s.view = Arc::new(v);
             }
             ToRenderer::Panel { open } => s.panel_open = open,
-            ToRenderer::Heartbeat | ToRenderer::Welcome { .. } => {}
+            ToRenderer::Heartbeat | ToRenderer::Welcome { .. } | ToRenderer::Challenge { .. } => {}
         }
         self.refresh(&s, now);
     }
@@ -280,28 +285,64 @@ fn run(link: &Link, endpoint: &Endpoint, renderer: RendererKind) {
     }
 }
 
+/// Recompute the remaining handshake budget before every syscall: a peer that
+/// trickles partial bytes cannot renew a per-read or per-write timeout.
+struct HandshakeIo<'a> {
+    stream: &'a mut TcpStream,
+    deadline: Instant,
+}
+
+impl HandshakeIo<'_> {
+    fn remaining(&self) -> std::io::Result<Duration> {
+        self.deadline
+            .checked_duration_since(Instant::now())
+            .filter(|left| !left.is_zero())
+            .ok_or_else(|| ErrorKind::TimedOut.into())
+    }
+}
+
+impl std::io::Read for HandshakeIo<'_> {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        self.stream.set_read_timeout(Some(self.remaining()?))?;
+        std::io::Read::read(self.stream, buffer)
+    }
+}
+
+impl Write for HandshakeIo<'_> {
+    fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+        self.stream.set_write_timeout(Some(self.remaining()?))?;
+        self.stream.write(buffer)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.stream.set_write_timeout(Some(self.remaining()?))?;
+        self.stream.flush()
+    }
+}
+
 fn session(link: &Link, endpoint: &Endpoint, renderer: RendererKind) -> Session {
     let Ok(mut stream) = TcpStream::connect_timeout(&endpoint.addr, CONNECT_TIMEOUT) else {
         return Session::Refused;
     };
     let _ = stream.set_nodelay(true);
-    let hello = ToBroker::Hello {
-        version: PROTOCOL_VERSION,
-        token: endpoint.token,
-        renderer,
+    let mut bounded = HandshakeIo {
+        stream: &mut stream,
+        deadline: Instant::now() + CONNECT_TIMEOUT,
     };
-    if stream.set_read_timeout(Some(CONNECT_TIMEOUT)).is_err()
-        || protocol::write_frame(&mut stream, &hello).is_err()
-    {
-        return Session::Refused;
+    match protocol::renderer_authenticate(&mut bounded, &endpoint.token, renderer) {
+        Ok(()) => {}
+        Err(FrameError::Io(_)) => return Session::Refused,
+        Err(_) => return Session::Fatal,
     }
-    match protocol::read_frame::<ToRenderer>(&mut stream) {
+    match protocol::read_frame::<ToRenderer>(&mut bounded) {
         Ok(ToRenderer::Welcome { version }) if version == PROTOCOL_VERSION => {}
         Ok(_) => return Session::Fatal,
         Err(_) => return Session::Refused,
     }
     link.connected.store(true, Ordering::Relaxed);
-    if stream.set_read_timeout(Some(TICK)).is_err() {
+    if stream.set_read_timeout(Some(TICK)).is_err()
+        || stream.set_write_timeout(Some(CONNECT_TIMEOUT)).is_err()
+    {
         return Session::Dropped;
     }
     let mut reader = FrameReader::default();
@@ -311,7 +352,12 @@ fn session(link: &Link, endpoint: &Endpoint, renderer: RendererKind) -> Session 
         match reader.poll(&mut stream) {
             Ok(Some(msg)) => {
                 last_heard = Instant::now();
-                if msg.validate().is_err() {
+                if msg.validate().is_err()
+                    || matches!(
+                        msg,
+                        ToRenderer::Welcome { .. } | ToRenderer::Challenge { .. }
+                    )
+                {
                     return Session::Fatal;
                 }
                 link.apply(msg);
@@ -420,26 +466,56 @@ mod tests {
 
     const TOKEN: [u8; TOKEN_LEN] = [9; TOKEN_LEN];
 
+    fn server_handshake(stream: &mut TcpStream) {
+        let ToBroker::Hello {
+            version,
+            renderer,
+            client_nonce,
+        } = protocol::read_frame(stream).unwrap()
+        else {
+            panic!("expected nonce Hello");
+        };
+        assert_eq!(version, PROTOCOL_VERSION);
+        let server_nonce = protocol::fresh_nonce().unwrap();
+        let proof = protocol::auth_proof(
+            &TOKEN,
+            protocol::AuthRole::Broker,
+            version,
+            renderer,
+            &client_nonce,
+            &server_nonce,
+        )
+        .unwrap();
+        protocol::write_frame(
+            stream,
+            &ToRenderer::Challenge {
+                server_nonce,
+                proof,
+            },
+        )
+        .unwrap();
+        let ToBroker::Authenticate { proof } = protocol::read_frame(stream).unwrap() else {
+            panic!("expected renderer proof");
+        };
+        assert!(protocol::verify_auth(
+            &TOKEN,
+            protocol::AuthRole::Renderer,
+            version,
+            renderer,
+            &client_nonce,
+            &server_nonce,
+            &proof
+        ));
+        protocol::write_frame(stream, &ToRenderer::Welcome { version }).unwrap();
+    }
+
     /// A minimal broker: welcome, then run `script` on the connection.
     fn broker(script: impl FnOnce(&mut TcpStream) + Send + 'static) -> SocketAddr {
         let l = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = l.local_addr().unwrap();
         thread::spawn(move || {
             let (mut s, _) = l.accept().unwrap();
-            match protocol::read_frame::<ToBroker>(&mut s).unwrap() {
-                ToBroker::Hello { token, version, .. } => {
-                    assert_eq!(token, TOKEN);
-                    assert_eq!(version, PROTOCOL_VERSION);
-                }
-                other => panic!("{other:?}"),
-            }
-            protocol::write_frame(
-                &mut s,
-                &ToRenderer::Welcome {
-                    version: PROTOCOL_VERSION,
-                },
-            )
-            .unwrap();
+            server_handshake(&mut s);
             script(&mut s);
         });
         addr
@@ -465,6 +541,142 @@ mod tests {
             body: "gg".into(),
             ttl_secs: ttl,
         }
+    }
+
+    #[test]
+    fn an_untrusted_listener_never_receives_the_session_key() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let peer = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let first: ToBroker = protocol::read_frame(&mut stream).unwrap();
+            let bytes = protocol::encode(&first).unwrap();
+            let leaked = bytes.windows(TOKEN_LEN).any(|window| window == TOKEN);
+            // An endpoint impostor can write old welcome/panel frames, but cannot
+            // prove possession of the session key after the launcher has exited.
+            let _ = protocol::write_frame(
+                &mut stream,
+                &ToRenderer::Welcome {
+                    version: PROTOCOL_VERSION,
+                },
+            );
+            let _ = protocol::write_frame(&mut stream, &ToRenderer::Panel { open: true });
+            leaked
+        });
+        let link = Link::new();
+        let _ = session(
+            &link,
+            &Endpoint { addr, token: TOKEN },
+            RendererKind::OpenGl,
+        );
+        assert!(
+            !peer.join().unwrap(),
+            "the replacement listener received the session key"
+        );
+        assert!(
+            !link.is_connected(),
+            "the replacement listener authenticated without the key"
+        );
+        assert!(!link.should_draw());
+    }
+
+    #[test]
+    fn an_invalid_or_replayed_broker_proof_cannot_receive_a_renderer_proof() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let peer = thread::spawn(move || {
+            for replay in [false, true] {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                let ToBroker::Hello {
+                    version,
+                    renderer,
+                    client_nonce,
+                } = protocol::read_frame(&mut stream).unwrap()
+                else {
+                    panic!("expected nonce Hello");
+                };
+                let server_nonce = [4; TOKEN_LEN];
+                let key = if replay { TOKEN } else { [3; TOKEN_LEN] };
+                let nonce = if replay { [5; TOKEN_LEN] } else { client_nonce };
+                let proof = protocol::auth_proof(
+                    &key,
+                    protocol::AuthRole::Broker,
+                    version,
+                    renderer,
+                    &nonce,
+                    &server_nonce,
+                )
+                .unwrap();
+                protocol::write_frame(
+                    &mut stream,
+                    &ToRenderer::Challenge {
+                        server_nonce,
+                        proof,
+                    },
+                )
+                .unwrap();
+                match protocol::read_frame::<ToBroker>(&mut stream) {
+                    Err(FrameError::Io(error))
+                        if matches!(
+                            error.kind(),
+                            ErrorKind::UnexpectedEof
+                                | ErrorKind::ConnectionReset
+                                | ErrorKind::ConnectionAborted
+                        ) => {}
+                    _ => {
+                        panic!("an unverified broker received a renderer response or did not close")
+                    }
+                }
+            }
+        });
+        for _ in 0..2 {
+            let link = Link::new();
+            assert!(matches!(
+                session(
+                    &link,
+                    &Endpoint { addr, token: TOKEN },
+                    RendererKind::Vulkan
+                ),
+                Session::Fatal
+            ));
+            assert!(!link.is_connected());
+            assert!(!link.should_draw());
+        }
+        peer.join().unwrap();
+    }
+
+    #[test]
+    fn partial_progress_cannot_extend_the_handshake_deadline() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let peer = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .write_all(&u32::try_from(protocol::MAX_FRAME).unwrap().to_le_bytes())
+                .unwrap();
+            for _ in 0..100 {
+                if stream.write_all(&[0]).is_err() {
+                    break;
+                }
+                thread::sleep(Duration::from_millis(20));
+            }
+        });
+        let mut stream = TcpStream::connect(addr).unwrap();
+        let mut bounded = HandshakeIo {
+            stream: &mut stream,
+            deadline: Instant::now() + Duration::from_millis(120),
+        };
+        let error = protocol::read_frame::<ToRenderer>(&mut bounded).unwrap_err();
+        assert!(matches!(error, FrameError::Io(error)
+            if matches!(error.kind(), ErrorKind::TimedOut | ErrorKind::WouldBlock)));
+        stream.shutdown(std::net::Shutdown::Both).unwrap();
+        peer.join().unwrap();
     }
 
     #[test]
@@ -543,14 +755,7 @@ mod tests {
         let addr = l.local_addr().unwrap();
         let serve = move |l: &TcpListener, open: bool| {
             let (mut s, _) = l.accept().unwrap();
-            protocol::read_frame::<ToBroker>(&mut s).unwrap();
-            protocol::write_frame(
-                &mut s,
-                &ToRenderer::Welcome {
-                    version: PROTOCOL_VERSION,
-                },
-            )
-            .unwrap();
+            server_handshake(&mut s);
             protocol::write_frame(&mut s, &ToRenderer::Panel { open }).unwrap();
             s
         };
