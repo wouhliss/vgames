@@ -7,6 +7,7 @@ import type {
   DownloadError,
   DownloadHistoryEntry,
   DownloadJob,
+  DownloadQueue,
   InstallPhase,
   PauseReason,
 } from "../../ipc";
@@ -87,6 +88,46 @@ beforeEach(() => {
 });
 
 describe("downloads", () => {
+  it("refreshes a terminal outcome received during the initial queue snapshot", async () => {
+    let releaseInitial = (_value: DownloadQueue) => {
+      throw new Error("initial snapshot resolver was not set");
+    };
+    const initial = new Promise<DownloadQueue>((resolve) => {
+      releaseInitial = resolve;
+    });
+    const installed: DownloadHistoryEntry = {
+      id: "finished-during-first-read",
+      package: HARBOR.package,
+      title: HARBOR.title,
+      kind: "install",
+      version_label: HARBOR.version_label,
+      bytes_total: HARBOR.bytes_total,
+      finished_at: "2026-10-26T00:00:00Z",
+      outcome: { kind: "installed" },
+    };
+    let reads = 0;
+    setup({}, (backend) => {
+      backend.on("downloads_list", () => {
+        reads += 1;
+        return reads === 1 ? initial : { jobs: [], history: [installed] };
+      });
+    });
+    await waitFor(() => expect(reads).toBe(1));
+    await act(async () => {
+      await flush();
+      await events.installFinished.emit({
+        package: HARBOR.package,
+        outcome: { kind: "installed" },
+      });
+      releaseInitial({ jobs: [HARBOR], history: [] });
+      await flush();
+    });
+    const completed = await screen.findByRole("region", { name: "Completed" });
+    expect(completed).toHaveTextContent(HARBOR.title);
+    expect(screen.queryByRole("region", { name: "Downloading" })).toBeNull();
+    expect(reads).toBeGreaterThanOrEqual(2);
+  });
+
   it("shows an empty state with a way to the catalog", async () => {
     const { user, router } = setup({ downloads: [] });
     expect(await screen.findByRole("heading", { name: "Nothing is downloading" })).toBeVisible();

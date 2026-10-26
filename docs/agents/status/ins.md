@@ -198,3 +198,5 @@ Install & Library (phase 2, `docs/agents/phase-2/ins-install-library.md`).
 - **Open risks:** Windows peak memory at 32 connections is 244 MiB of 256 on release builds; Windows
   engine-only throughput is not measured on hosted runners (no RAM disk); `move_install` can only rename a folder
   with no open handles on Windows, so a game still running blocks a move (the caller stops it first).
+
+- From INT (2026-10-26): main real-app E2E timed out on the completed install row. Built a regression for an install-finished event arriving during the first Downloads read: the old response overwrites invalidation and stays active indefinitely. Prepare the smallest shared IPC cache fix, cancelling the old cache promise before invalidating install/download snapshots. No worker, timer, assertion or timeout changes; validation and actual hosted E2E remain required.

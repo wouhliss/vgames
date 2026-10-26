@@ -67,6 +67,13 @@ export function createQueryClient(): QueryClient {
   });
 }
 
+// An event may beat the initial IPC response. Cancelling the cache read first prevents
+// its older snapshot from clearing the invalidation while staleTime is infinite.
+async function invalidateSnapshot(client: QueryClient, queryKey: readonly unknown[]) {
+  await client.cancelQueries({ queryKey });
+  await client.invalidateQueries({ queryKey });
+}
+
 /** Maps "something changed" events from Rust to query invalidations. Mounted once, in the app root. */
 export function useIpcInvalidation(): void {
   const client = useQueryClient();
@@ -76,8 +83,8 @@ export function useIpcInvalidation(): void {
   useTauriEvent(events.librariesChanged, () => {
     void client.invalidateQueries({ queryKey: queryKeys.libraries });
   });
-  const installs = () => void client.invalidateQueries({ queryKey: queryKeys.installs });
-  const downloads = () => void client.invalidateQueries({ queryKey: queryKeys.downloads });
+  const installs = () => void invalidateSnapshot(client, queryKeys.installs);
+  const downloads = () => void invalidateSnapshot(client, queryKeys.downloads);
   useTauriEvent(events.installsChanged, installs);
   useTauriEvent(events.installFinished, () => {
     installs();
