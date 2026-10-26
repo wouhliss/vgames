@@ -113,3 +113,5 @@
 - From INT (INT-06 restart proof): initialize the process TLS provider before service startup, matching the updater's ring provider. The real signed update diagnostic exposed a Rustls panic on realtime reconnect in the restarted process; HTTP and SQL features enable two providers. This startup repair changes no trust policy.
 
 - From PLAY (PLAY-06): `LaunchContext` gained `saves: Option<Arc<vgames_core::manifest::Saves>>`; the two overlay test contexts (`overlay/mod.rs`) and `compat/plan/tests.rs::context` now set `saves: None`. No behavior change in GAME code.
+
+- From INT (2026-10-26): main Windows matrix `40288692673` reproduced SQLITE_BUSY in the profile-restart test. Main-health repair adopts your #293 source, fragment and original authorship onto current main, retaining all regression tests; close the original only after actual merge.
