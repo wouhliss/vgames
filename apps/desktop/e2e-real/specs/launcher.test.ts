@@ -10,6 +10,7 @@ import { createReadStream, existsSync, readFileSync, writeFileSync } from "node:
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { nativeAxeViolations } from "../lib/accessibility.ts";
+import { summarizeDownloads } from "../lib/downloads.ts";
 import { type Locator, Session, WebDriverError } from "../lib/webdriver.ts";
 
 const env = (name: string): string => {
@@ -327,7 +328,26 @@ async function part2() {
     async () => (await exists(css("[data-job]"))) || (await exists(css("li[data-outcome]"))),
     60_000,
   );
-  await shown(css('li[data-outcome="installed"]'), 300_000);
+  try {
+    await shown(css('li[data-outcome="installed"]'), 300_000);
+  } catch (error) {
+    const snapshot = await session
+      .executeAsync(`
+      const done = arguments[arguments.length - 1];
+      let finished = false;
+      const finish = value => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timer);
+        done(value);
+      };
+      const timer = setTimeout(() => finish(null), 2000);
+      window.__TAURI_INTERNALS__.invoke("downloads_list").then(finish, () => finish(null));
+    `)
+      .catch(() => null);
+    console.error("Download checkpoint:", JSON.stringify(summarizeDownloads(snapshot)));
+    throw error;
+  }
   await scanAccessibility();
 
   // Play: the game records its start in the instance's HOME; then stop it.
