@@ -34,11 +34,15 @@ const CODES: [(u32, &str); 25] = [
 ];
 
 const PHASES: [(&str, &str, &str); 7] = [
-    ("appwizcpl", "get_cache_file", "addon_cache_checks"),
-    ("appwizcpl", "get_install_dir", "addon_search_events"),
-    ("appwizcpl", "start_download", "addon_download_events"),
-    ("appwizcpl", "install_file", "addon_install_events"),
-    ("msi", "MSI_InstallPackage", "msi_install_events"),
+    ("appwizcpl", "get_cache_file_name", "addon_cache_events"),
+    ("appwizcpl", "get_url", "addon_url_events"),
+    (
+        "appwizcpl",
+        "InstallCallback_GetBindInfo",
+        "addon_download_events",
+    ),
+    ("appwizcpl", "install_file", "addon_install_errors"),
+    ("msi", "MsiInstallProductW", "msi_install_events"),
     ("dialog", "DIALOG_CreateIndirect", "dialog_create_events"),
     (
         "dialog",
@@ -135,13 +139,11 @@ impl Trace {
                 && let Some((_, raw)) = line.split_once("code=")
             {
                 let raw = raw.strip_prefix("0x").unwrap_or(raw);
-                if let Some(code) = raw
-                    .get(..8)
-                    .and_then(|code| u32::from_str_radix(code, 16).ok())
-                    && raw
-                        .as_bytes()
-                        .get(8)
-                        .is_none_or(|next| !next.is_ascii_hexdigit())
+                let digits = raw.bytes().take_while(u8::is_ascii_hexdigit).count();
+                if (1..=8).contains(&digits)
+                    && let Some(code) = raw
+                        .get(..digits)
+                        .and_then(|code| u32::from_str_radix(code, 16).ok())
                 {
                     if let Some(index) = CODES.iter().position(|(known, _)| *known == code) {
                         if let Some(count) = self.codes.get_mut(index) {
@@ -250,9 +252,9 @@ fn only_fixed_classes_and_counts_leave_the_trace_boundary() {
     for byte in input {
         trace.feed(&[*byte]);
     }
-    trace.feed(b"0034:trace:appwizcpl:get_cache_file private-path\n0035:trace:dialog:DIALOG_CreateIndirect private-title\n0036:trace:module:load_dll payload appwizcpl:get_cache_file private-value\n0037:trace:seh:dispatch_exception code=000006ba private-value\n0038:err:winediag:nodrv_CreateWindow private-argument\n");
+    trace.feed(b"0034:trace:appwizcpl:get_cache_file_name private-path\n0035:trace:dialog:DIALOG_CreateIndirect private-title\n0036:trace:module:load_dll payload appwizcpl:get_cache_file_name private-value\n0037:trace:seh:dispatch_exception code=6ba private-value\n0038:err:winediag:nodrv_CreateWindow private-argument\n");
     let report = trace.report();
-    assert_eq!(report["phase_events"]["addon_cache_checks"], 1);
+    assert_eq!(report["phase_events"]["addon_cache_events"], 1);
     assert_eq!(report["phase_events"]["dialog_create_events"], 1);
     assert_eq!(report["exception_classes"]["rpc_server_unavailable"], 1);
     assert_eq!(report["error_channels"]["winediag"], 1);
