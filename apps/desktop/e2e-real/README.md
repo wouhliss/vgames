@@ -109,3 +109,5 @@ The updater restart ends WebKit's original automation session. The fixture captu
 only the local inspector address when starting the lower build, then attaches to
 the real restarted process with `webkitgtk:browserOptions.targetAddress`. The
 attach request contains no executable path and cannot launch a replacement.
+
+On an install-outcome timeout, the suite prints only fixed download state, pause and error-kind counts. Job titles, paths, messages, URLs and credentials are excluded. The original assertion and deadline still fail; this checkpoint does not retry the install.
