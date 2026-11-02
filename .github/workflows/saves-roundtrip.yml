@@ -62,7 +62,7 @@ jobs:
       - name: Install toolchain (rust-toolchain.toml)
         shell: bash
         run: rustup toolchain install && rustup show active-toolchain
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: saves-roundtrip-windows
           save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'schedule' }}
@@ -125,7 +125,7 @@ jobs:
             libdbus-1-dev libudev-dev pkg-config build-essential
       - name: Install toolchain (rust-toolchain.toml)
         run: rustup toolchain install && rustup show active-toolchain
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: saves-roundtrip-linux
           save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'schedule' }}
@@ -174,7 +174,7 @@ jobs:
           "$bin/psql" -U postgres -h 127.0.0.1 -d roundtrip -v ON_ERROR_STOP=1 -f scripts/ci/pg-uuidv7-polyfill.sql
       - name: Install toolchain (rust-toolchain.toml)
         run: rustup toolchain install && rustup show active-toolchain
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: saves-roundtrip-macos
           save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'schedule' }}
